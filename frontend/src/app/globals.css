@@ -1,0 +1,853 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Soft “nude” hotel palette — warm neutrals (#F1EDE6 … #3A2D28), accent rosewood (#A48374) */
+    --background: 40 28% 94%;
+    --foreground: 15 18% 19%;
+    --card: 40 22% 99%;
+    --card-foreground: 15 18% 19%;
+    --popover: 40 22% 99%;
+    --popover-foreground: 15 18% 19%;
+    --primary: 18 21% 52%;
+    --primary-foreground: 40 35% 97%;
+    /** Slightly deeper rosewood for hover (replaces cold gray primary/90). */
+    --primary-hover: 18 26% 44%;
+    --secondary: 30 16% 92%;
+    --secondary-foreground: 15 18% 20%;
+    --muted: 30 18% 93%;
+    --muted-foreground: 18 12% 40%;
+    --accent: 31 26% 90%;
+    --accent-foreground: 15 18% 20%;
+    --destructive: 8 65% 48%;
+    --destructive-foreground: 40 35% 98%;
+    --border: 30 14% 86%;
+    --input: 30 14% 86%;
+    --ring: 18 21% 52%;
+    --radius: 0.75rem;
+
+    /* Hotel brand — aligned with palette */
+    --hotel-gold: 31 37% 62%;
+    --hotel-navy: 15 18% 19%;
+    --hotel-slate: 18 14% 38%;
+
+    /* Legacy vars for backward compat */
+    --canvas: #f1ede6;
+    --panel: #ffffff;
+    --surface: #ebe3db;
+    --bg: #f1ede6;
+    --text: #3a2d28;
+    --muted-legacy: #8a7a72;
+    --accent-legacy: #a48374;
+    --accent-contrast: #f1ede6;
+    --border-legacy: #d1c7bd;
+    --error: #b4534a;
+
+    /* Shadows — warm brown ink */
+    --shadow-soft: 0 2px 16px rgba(58, 45, 40, 0.06);
+    --shadow-card: 0 20px 50px rgba(58, 45, 40, 0.08);
+    --shadow-float: 0 8px 28px rgba(58, 45, 40, 0.08);
+    --shadow-glow: 0 0 24px rgba(164, 131, 116, 0.22);
+
+    /* Radius */
+    --radius-sm: 0.5rem;
+    --radius-md: 0.75rem;
+    --radius-lg: 1rem;
+    --radius-xl: 1.25rem;
+    --radius-2xl: 1.5rem;
+    --radius-pill: 9999px;
+  }
+
+  .dark {
+    --background: 15 12% 11%;
+    --foreground: 40 28% 94%;
+    --card: 15 10% 14%;
+    --card-foreground: 40 28% 94%;
+    --popover: 15 10% 14%;
+    --popover-foreground: 40 28% 94%;
+    --primary: 18 24% 58%;
+    --primary-foreground: 15 12% 10%;
+    --primary-hover: 18 28% 50%;
+    --secondary: 15 8% 18%;
+    --secondary-foreground: 40 25% 92%;
+    --muted: 15 8% 20%;
+    --muted-foreground: 30 12% 68%;
+    --accent: 18 10% 22%;
+    --accent-foreground: 40 28% 94%;
+    --destructive: 8 55% 40%;
+    --destructive-foreground: 40 35% 98%;
+    --border: 15 8% 22%;
+    --input: 15 8% 22%;
+    --ring: 18 24% 58%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply scroll-smooth antialiased;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  /* Legacy theme support */
+  .theme-staff {
+    --bg: #f1f5f9;
+    --panel: #ffffff;
+    --surface: #f8fafc;
+  }
+
+  .theme-guest {
+    --bg: #f8fafc;
+    --panel: #ffffff;
+    --surface: #f1f5f9;
+  }
+
+  /* Card styles */
+  .hms-surface-card {
+    @apply bg-white rounded-xl shadow-card border border-border/50 overflow-hidden;
+    max-width: min(1680px, calc(100vw - 28px));
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .hms-surface-card--narrow {
+    @apply max-w-xl;
+  }
+
+  .hms-surface-card--stretch {
+    @apply min-h-[calc(100vh-36px)] flex flex-col;
+    max-width: min(1680px, calc(100vw - 28px));
+  }
+
+  /* Panel styles */
+  .panel {
+    @apply bg-card rounded-lg border border-border/60 p-5 shadow-soft;
+  }
+
+  /* Error styles */
+  .error {
+    @apply text-destructive text-sm mt-2;
+  }
+
+  /* Navigation styles */
+  .hms-public-header {
+    @apply flex items-center justify-between gap-4 flex-wrap px-5 py-4 border-b bg-white/80 backdrop-blur-sm sticky top-0 z-50;
+  }
+
+  .hms-public-logo {
+    @apply font-bold text-xl tracking-tight text-foreground hover:text-primary transition-colors no-underline;
+  }
+
+  .hms-public-nav {
+    @apply flex flex-wrap gap-1 items-center justify-center;
+  }
+
+  .hms-public-nav a {
+    @apply text-sm font-medium text-muted-foreground hover:text-primary transition-colors px-3 py-2 rounded-md no-underline;
+  }
+
+  .hms-public-nav-accent {
+    @apply text-primary font-semibold;
+  }
+
+  .hms-public-actions {
+    @apply flex flex-wrap gap-2 items-center;
+  }
+
+  /* Button styles — one warm system (solid + outline share primary hue) */
+  .hms-btn-solid {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-full font-semibold text-sm
+           text-primary-foreground transition-all shadow-md hover:shadow-lg active:scale-[0.98] no-underline;
+    background-color: hsl(var(--primary));
+  }
+
+  .hms-btn-solid:hover {
+    background-color: hsl(var(--primary-hover));
+  }
+
+  .hms-btn-outline {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-full font-semibold text-sm
+           border-2 transition-all active:scale-[0.98] no-underline;
+    border-color: hsl(var(--primary));
+    color: hsl(var(--primary));
+    background-color: transparent;
+  }
+
+  .hms-btn-outline:hover {
+    background-color: hsl(var(--accent));
+    border-color: hsl(var(--primary-hover));
+    color: hsl(var(--primary-hover));
+  }
+
+  /* Guest shell */
+  .guest-shell {
+    @apply min-h-screen flex flex-col bg-gradient-to-br from-[hsl(40,33%,96%)] to-[hsl(31,30%,92%)];
+  }
+
+  .guest-shell-main {
+    @apply flex-1 w-full p-6;
+  }
+
+  .guest-shell-footer {
+    @apply mt-auto border-t py-4 px-6 text-sm text-muted-foreground text-center bg-white/50;
+  }
+
+  /* App shell */
+  .app-shell {
+    @apply flex min-h-screen;
+  }
+
+  .app-shell-aside {
+    @apply w-60 shrink-0 p-5 border-r bg-white flex flex-col;
+  }
+
+  .app-shell-main {
+    @apply flex-1 p-6 min-w-0;
+    background-color: hsl(40 26% 96% / 0.85);
+  }
+
+  .app-shell-nav {
+    @apply flex flex-col gap-1;
+  }
+
+  .app-shell-nav-link {
+    @apply text-sm font-medium text-foreground hover:bg-accent px-3 py-2 rounded-lg transition-colors no-underline;
+  }
+
+  .app-shell-nav-link.is-active {
+    @apply bg-primary/10 text-primary;
+  }
+
+  /* Form styles */
+  input, select, textarea {
+    @apply w-full px-4 py-2.5 rounded-lg border border-input bg-background text-sm
+           focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary/30
+           placeholder:text-muted-foreground/60 transition-all;
+  }
+
+  input[type="date"], input[type="search"], input[type="number"] {
+    @apply w-full;
+  }
+
+  label {
+    @apply block text-sm font-medium text-foreground mb-1.5;
+  }
+
+  /* Table styles */
+  table {
+    @apply w-full text-sm;
+  }
+
+  th, td {
+    @apply py-3 px-2 text-left border-b border-border;
+  }
+
+  th {
+    @apply font-semibold text-muted-foreground text-xs uppercase tracking-wider;
+  }
+
+  /* Typography */
+  h1 {
+    @apply text-2xl font-bold tracking-tight text-foreground mb-4;
+  }
+
+  h2 {
+    @apply text-xl font-semibold tracking-tight text-foreground mb-3;
+  }
+
+  h3 {
+    @apply text-lg font-semibold tracking-tight text-foreground mb-2;
+  }
+
+  /* Link styles */
+  a {
+    @apply text-primary hover:text-primary-hover transition-colors;
+  }
+
+  /* Button reset — match .hms-btn-solid hover (no slate /90 wash) */
+  button {
+    @apply inline-flex items-center justify-center px-4 py-2.5 rounded-lg font-semibold text-sm
+           text-primary-foreground transition-all shadow-sm hover:shadow active:scale-[0.98]
+           disabled:opacity-50 disabled:cursor-not-allowed;
+    background-color: hsl(var(--primary));
+  }
+
+  button:hover:not(:disabled) {
+    background-color: hsl(var(--primary-hover));
+  }
+
+  button.secondary {
+    @apply text-primary border border-border shadow-none;
+    background-color: hsl(var(--secondary));
+  }
+
+  button.secondary:hover:not(:disabled) {
+    background-color: hsl(var(--accent));
+    color: hsl(var(--primary-hover));
+  }
+
+  /* Grid layouts */
+  .hms-kpi-grid {
+    @apply grid gap-4;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+
+  .hms-kpi-card {
+    @apply bg-card rounded-lg border border-border/60 p-4 shadow-soft;
+  }
+
+  /* Animation utilities */
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  .animate-slide-in {
+    animation: slideIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-10px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  /* Shimmer loading */
+  .shimmer {
+    @apply relative overflow-hidden bg-muted/50;
+  }
+
+  .shimmer::after {
+    @apply absolute inset-0;
+    content: "";
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+
+  /* Status badges */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-default {
+    @apply bg-primary/10 text-primary;
+  }
+
+  .badge-success {
+    @apply bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400;
+  }
+
+  .badge-warning {
+    @apply bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400;
+  }
+
+  .badge-destructive {
+    @apply bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400;
+  }
+
+  /* Container utilities */
+  .container-page {
+    @apply w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  .container-narrow {
+    @apply w-full max-w-xl mx-auto px-4 sm:px-6;
+  }
+
+  /* Legacy landing styles - updated */
+  .landing {
+    @apply flex flex-col min-h-[calc(100vh-36px)];
+  }
+
+  .landing.hms-surface-card {
+    @apply p-0;
+  }
+
+  .landing-main {
+    @apply flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8;
+  }
+
+  /* Hero section */
+  .landing-hero-media {
+    @apply relative w-full;
+  }
+
+  .landing-hero-image-wrap {
+    @apply relative w-full min-h-[50vh] max-h-[600px] bg-gradient-to-br from-[hsl(30,16%,88%)] to-[hsl(31,22%,82%)];
+  }
+
+  .landing-hero-img {
+    @apply object-cover object-center;
+  }
+
+  .landing-hero-overlay {
+    @apply absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent;
+  }
+
+  .landing-hero-content {
+    @apply absolute inset-0 flex flex-col justify-end p-6 sm:p-10 lg:p-16;
+    max-width: 1040px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .landing-tagline {
+    @apply text-xs font-semibold uppercase tracking-widest text-white/80 mb-2;
+  }
+
+  .landing-headline {
+    @apply text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white leading-tight mb-4;
+    text-shadow: 0 2px 24px rgba(0, 0, 0, 0.25);
+  }
+
+  .landing-sub {
+    @apply text-base sm:text-lg text-white/90 leading-relaxed max-w-xl mb-6;
+  }
+
+  .landing-hero-ctas {
+    @apply flex flex-wrap gap-3 pb-2;
+  }
+
+  .landing-cta-primary {
+    @apply inline-flex items-center justify-center px-6 py-3 rounded-full font-bold
+           text-primary-foreground shadow-lg hover:shadow-xl transition-all active:scale-[0.98] no-underline;
+    background-color: hsl(var(--primary));
+  }
+
+  .landing-cta-primary:hover {
+    background-color: hsl(var(--primary-hover));
+  }
+
+  /* Opacity + hover: use raw CSS — @apply cannot reliably resolve bg-white/15, hover:bg-white/28, etc. */
+  .landing-cta-outline {
+    @apply inline-flex items-center justify-center px-6 py-3 rounded-full font-semibold
+           text-white border-2 backdrop-blur-sm transition-all active:scale-[0.98] no-underline;
+    background-color: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.5);
+  }
+
+  .landing-cta-outline:hover {
+    background-color: rgba(255, 255, 255, 0.28);
+    border-color: rgba(255, 255, 255, 0.65);
+  }
+
+  /* Same solid system as .hms-btn-solid (was harsh bg-foreground gray) */
+  .landing-cta-secondary {
+    @apply inline-flex items-center justify-center px-5 py-2.5 rounded-full font-semibold
+           text-primary-foreground shadow-sm transition-all active:scale-[0.98] no-underline;
+    background-color: hsl(var(--primary));
+  }
+
+  .landing-cta-secondary:hover {
+    background-color: hsl(var(--primary-hover));
+  }
+
+  .landing-cta-soft {
+    @apply inline-flex items-center justify-center px-5 py-2.5 rounded-full font-semibold
+           bg-white border-2 transition-all active:scale-[0.98] no-underline;
+    border-color: hsl(var(--primary));
+    color: hsl(var(--primary));
+  }
+
+  .landing-cta-soft:hover {
+    background-color: hsl(var(--accent));
+    border-color: hsl(var(--primary-hover));
+    color: hsl(var(--primary-hover));
+  }
+
+  /* Steps section */
+  .landing-band {
+    @apply mb-8 p-6 rounded-xl border border-border bg-gradient-to-br from-white to-[hsl(40,28%,96%)] shadow-soft;
+  }
+
+  .landing-section-title {
+    @apply text-lg font-bold mb-4;
+  }
+
+  .landing-steps {
+    @apply grid gap-4 list-none m-0 p-0;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  .landing-steps li {
+    @apply flex gap-3 items-start;
+  }
+
+  .landing-step-num {
+    @apply flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg font-bold
+           bg-primary/10 text-primary border border-primary/20;
+  }
+
+  .landing-step-desc {
+    @apply block text-sm text-muted-foreground mt-0.5;
+  }
+
+  /* Grid cards */
+  .landing-grid {
+    @apply grid gap-6;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+
+  .landing-card {
+    @apply flex flex-col min-h-full;
+  }
+
+  .landing-card-title {
+    @apply text-lg font-bold mb-1;
+  }
+
+  .landing-card-lead {
+    @apply text-sm text-muted-foreground leading-relaxed mb-4;
+  }
+
+  .landing-guest-links {
+    @apply list-none m-0 mb-4 p-0 space-y-2;
+  }
+
+  .landing-guest-links li {
+    @apply py-2 border-b border-border last:border-0;
+  }
+
+  .landing-guest-links a {
+    @apply font-semibold text-foreground hover:text-primary transition-colors no-underline;
+  }
+
+  .landing-guest-links span {
+    @apply block text-xs text-muted-foreground mt-1;
+  }
+
+  .landing-actions {
+    @apply flex flex-wrap gap-3 mt-auto;
+  }
+
+  /* Footer */
+  .landing-site-footer {
+    @apply mt-auto py-10 px-6 border-t bg-gradient-to-b from-[hsl(40,30%,96%)] to-[hsl(30,18%,90%)];
+  }
+
+  .landing-site-footer-inner {
+    @apply max-w-5xl mx-auto grid gap-8;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .landing-footer-brand strong {
+    @apply text-lg font-bold tracking-tight;
+  }
+
+  .landing-footer-brand span {
+    @apply text-sm text-muted-foreground leading-relaxed block mt-1;
+  }
+
+  .landing-footer-col-title {
+    @apply text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3;
+  }
+
+  .landing-footer-links {
+    @apply list-none m-0 p-0 space-y-2;
+  }
+
+  .landing-footer-links a {
+    @apply text-sm font-medium text-foreground hover:text-primary transition-colors no-underline;
+  }
+
+  .landing-footer-bottom {
+    @apply max-w-5xl mx-auto mt-8 pt-6 border-t border-border/50 text-xs text-muted-foreground text-center;
+  }
+
+  /* Booking search hero */
+  .book-search-layout {
+    @apply -mx-6 -mt-6;
+  }
+
+  .book-search-hero {
+    @apply bg-gradient-to-br from-[hsl(15,18%,16%)] via-[hsl(18,16%,20%)] to-[hsl(15,18%,14%)] text-white p-6 sm:p-10;
+  }
+
+  .book-search-headline {
+    @apply text-2xl sm:text-3xl font-extrabold tracking-tight mb-2;
+  }
+
+  .book-search-sub {
+    @apply text-white/80 text-sm sm:text-base max-w-2xl mb-6;
+  }
+
+  .book-search-widget {
+    @apply bg-white rounded-xl border-4 border-primary/30 shadow-2xl p-2;
+  }
+
+  .book-search-widget-inner {
+    @apply flex flex-wrap items-stretch gap-2;
+  }
+
+  .book-search-field {
+    @apply flex-1 min-w-[160px] flex gap-3 items-start p-3 rounded-lg border border-transparent
+           hover:border-primary/20 hover:bg-primary/[0.02] transition-all;
+  }
+
+  .book-search-field--grow {
+    @apply flex-[2] min-w-[220px];
+  }
+
+  .book-search-field-icon {
+    @apply shrink-0 mt-0.5 text-muted-foreground;
+  }
+
+  .book-search-field-label {
+    @apply text-[10px] font-bold uppercase tracking-wider text-foreground mb-0.5;
+  }
+
+  .book-search-widget-select, .book-search-date {
+    @apply w-full border-0 bg-transparent p-0 text-sm font-semibold text-foreground
+           focus:ring-0 focus:outline-none cursor-pointer;
+  }
+
+  .book-search-party {
+    @apply flex flex-col gap-2;
+  }
+
+  .book-search-party-row {
+    @apply flex items-center justify-between gap-3 text-sm text-muted-foreground;
+  }
+
+  .book-search-stepper {
+    @apply inline-flex items-center gap-1 border rounded-lg p-1 bg-muted/60;
+  }
+
+  .book-search-stepper-btn {
+    @apply w-7 h-7 flex items-center justify-center rounded bg-white border-0
+           text-foreground font-semibold hover:bg-accent transition-colors shadow-sm;
+  }
+
+  .book-search-stepper-val {
+    @apply w-5 text-center font-bold text-sm;
+  }
+
+  .book-search-submit-wrap {
+    @apply flex-1 min-w-full sm:min-w-0 flex items-stretch p-1;
+  }
+
+  @media (min-width: 900px) {
+    .book-search-submit-wrap {
+      @apply flex-initial items-center;
+    }
+  }
+
+  .book-search-submit {
+    @apply flex-1 min-h-12 px-8 rounded-lg font-bold text-primary-foreground
+           shadow-lg hover:shadow-xl active:scale-[0.99] transition-all;
+    background-color: hsl(var(--primary));
+  }
+
+  .book-search-submit:hover {
+    background-color: hsl(var(--primary-hover));
+  }
+
+  .book-search-form-error {
+    @apply mx-2 mt-2 text-sm font-semibold text-red-600;
+  }
+
+  .book-search-secondary {
+    @apply mx-6 mt-4;
+  }
+
+  /* Hotel catalog */
+  .book-catalog-page {
+    @apply w-full max-w-6xl mx-auto;
+  }
+
+  .book-catalog-intro {
+    @apply mb-6;
+  }
+
+  .book-catalog-intro h1 {
+    @apply text-2xl sm:text-3xl font-extrabold tracking-tight mb-2;
+  }
+
+  .book-catalog-intro p {
+    @apply text-muted-foreground leading-relaxed;
+  }
+
+  .book-hotel-toolbar-ota {
+    @apply flex flex-wrap gap-4 items-end mb-6 p-4 rounded-xl border bg-card shadow-soft;
+  }
+
+  .book-hotel-grid {
+    @apply grid gap-4;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+
+  .book-hotel-card {
+    @apply flex flex-col h-full p-5 rounded-xl border bg-card shadow-soft
+           hover:border-primary/30 hover:shadow-float transition-all duration-200;
+  }
+
+  .book-hotel-card-thumb {
+    @apply relative h-36 -mx-5 -mt-5 mb-4 rounded-t-xl overflow-hidden;
+    background: linear-gradient(135deg, #1e3a5f 0%, #0f766e 45%, #0ea5e9 100%);
+  }
+
+  .book-hotel-card-thumb::after {
+    @apply absolute inset-0;
+    content: "";
+    background: linear-gradient(0deg, rgba(0,0,0,0.35) 0%, transparent 55%);
+  }
+
+  .book-hotel-card h2 {
+    @apply text-lg font-bold mb-1;
+  }
+
+  .book-hotel-card-meta {
+    @apply text-sm text-muted-foreground flex-1 leading-relaxed;
+  }
+
+  .book-hotel-card-cta {
+    @apply inline-flex items-center justify-center mt-auto px-4 py-2.5 rounded-lg
+           bg-primary text-primary-foreground font-semibold text-sm shadow-md
+           hover:bg-primary-hover hover:shadow-lg transition-all no-underline;
+  }
+
+  /* Pagination */
+  .hms-pagination {
+    @apply flex flex-wrap items-center justify-between gap-4 mt-6 pt-4 border-t;
+  }
+
+  .hms-pagination-meta {
+    @apply text-sm text-muted-foreground;
+  }
+
+  .hms-pagination-actions {
+    @apply flex items-center gap-2;
+  }
+
+  .hms-pagination-page {
+    @apply text-sm font-semibold min-w-[6rem] text-center;
+  }
+
+  /* Registration form */
+  .book-register-page {
+    @apply w-full max-w-2xl mx-auto;
+  }
+
+  .book-register-back {
+    @apply mb-4 text-sm;
+  }
+
+  .book-register-back a {
+    @apply font-semibold;
+  }
+
+  .book-register-intro {
+    @apply mb-4;
+  }
+
+  .book-register-form-title {
+    @apply text-base font-bold tracking-tight mb-3;
+  }
+
+  .book-register-muted {
+    @apply text-sm text-muted-foreground;
+  }
+
+  .book-register-form input,
+  .book-register-form select {
+    @apply max-w-full;
+  }
+
+  .book-register-name-row {
+    @apply grid gap-4;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  .book-register-advanced {
+    @apply mt-4 p-4 rounded-lg border border-dashed border-border bg-muted/50;
+  }
+
+  .book-register-foot {
+    @apply mt-6 text-sm;
+  }
+
+  .book-register-foot.muted {
+    @apply text-muted-foreground;
+  }
+
+  /* Book hotel page */
+  .book-hotel-page {
+    @apply w-full max-w-4xl mx-auto;
+  }
+
+  /* Auth shell */
+  .hms-auth-shell {
+    @apply min-h-screen flex items-start justify-center pt-20 px-4;
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #f1f5f9 100%);
+  }
+
+  /* Staff sidebar */
+  .staff-sidebar-brand strong {
+    @apply text-lg font-bold tracking-tight;
+  }
+
+  /* Utility classes */
+  .hms-body {
+    @apply min-h-screen;
+  }
+
+  .hms-canvas {
+    @apply min-h-screen p-3 pb-5;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400;
+  }
+
+  /* Selection */
+  ::selection {
+    @apply bg-primary/20 text-primary;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

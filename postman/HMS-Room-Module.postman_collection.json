@@ -1,0 +1,1868 @@
+{
+  "info": {
+    "name": "HMS — Room, Facilities, Inventory, Guest, F&B & Reports",
+    "description": "## Credentials (after **01 — Setup → Initialize**)\n\n| User | Username | Password (default from Initialize body) | Use for |\n|------|----------|------------------------------------------|---------|\n| **Super admin** | `admin` | `ChangeMe!Strong1` | **All** `/api/v1/platform/**` routes and **03 — Platform Admin** (including **08 Create hotel**). Run **02 — Auth** → **01 Login super admin (admin)**. |\n| **Hotel admin** | `hoteladmin` | `ChangeMe!Strong2` | Tenant APIs under `/api/v1/hotels/{{hotelId}}/**`. Run **02 — Auth** → **02 Login hotel admin (hoteladmin)**. |\n\n**Create extra hotel (optional):** `POST {{baseUrl}}/api/v1/platform/hotels` — request **08 Create hotel**. The new hotel id is saved as **`extraHotelId`** only — **`hotelId` stays the Initialize hotel** so `hoteladmin` + `X-Hotel-ID` keep working.\n\n---\n\n## If you see **403 Forbidden** (hotel APIs)\n\n1. **Wrong JWT for folder:** **04–12** need **02 → 02 Login hotel admin**. **03** needs **02 → 01 Login super admin**. Using super-admin token on hotel routes can fail method security; using `hoteladmin` on `/platform/**` fails.\n2. **`X-Hotel-ID` must equal** the UUID in the URL and **must match the hotel in the JWT** for `hoteladmin`. If **`hotelId` was overwritten** (old collections did this), re-run **01 Initialize** or set **`hotelId`** to the same id as in the admin user’s hotel (from DB or setup response).\n3. **`X-Impersonate-Token`:** leave **disabled/removed** unless you use **03 → 04 Impersonate** with a real JWT. A placeholder or empty value is ignored and does not clear Bearer auth.\n4. Do **not** reuse **03 → 03 Onboard tenant** for **`hoteladmin`** unless you log in as that tenant’s admin user; onboarded id is stored in **`onboardedTenantHotelId`**.\n\n---\n\n## Run order (folders **01 → 02 → 03 → 04 → …**)\n\n**01 — Setup** → **01 Initialize** (once). Saves **hotelId**.\n\n**02 — Auth** → **01 Login super admin** before **03 — Platform Admin**. → **02 Login hotel admin** before **04–12** (hotel APIs). Optional **03 Refresh** (`POST /auth/refresh`) after any login.\n\n**03 — Platform Admin** (super admin) → optional **03 Onboard tenant** / **08 Create hotel** (see **`onboardedTenantHotelId`**, **`extraHotelId`** — **`hotelId` unchanged**).\n\n**04 — Room types** → **05 — Rooms** → **06 — Reservations** → **07 — Housekeeping** → **08 — Guests** → **09 — Facilities** → **10 — Inventory** → **11 — F&B** → **12 — Reports**.\n\n---\n\n### Environment\n\n- **baseUrl** — e.g. `http://localhost:8080`.\n- **setupToken** — must match `hms.setup.token`.\n- **token** — from Login scripts; strip newlines on UUID vars (collection pre-request).\n\n### Module notes\n\n- **Post room charge** after **Check-in**; **roomId** in path must match reservation.\n- **Create reservation** saves **guestId**.\n- **Facilities / Inventory / F&B** — see folder descriptions.\n- **v2.3-aligned responses:** See **docs/BACKEND_CHECKLIST_ALIGNED.md** in the repo. Room list **pagination** includes **totalPages**, **hasNext**, **hasPrevious**. Create/patch room, create reservation, check-in/out, folio, and post-charge responses use nested DTOs in **ApiDtos** (e.g. folio **guest** is `{ id, name, email }`, not a flat **guestName**).\n\nNo real secrets in this file.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "setupToken", "value": "hms-local-dev-setup-token-replace-me" },
+    { "key": "token", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "hotelId", "value": "" },
+    { "key": "roomId", "value": "" },
+    { "key": "roomTypeId", "value": "" },
+    { "key": "reservationId", "value": "" },
+    { "key": "guestId", "value": "" },
+    { "key": "facilityId", "value": "" },
+    { "key": "facilitySlotId", "value": "" },
+    { "key": "facilityBookingId", "value": "" },
+    { "key": "facilityAccessCode", "value": "" },
+    { "key": "inventoryCategoryId", "value": "" },
+    { "key": "inventoryItemId", "value": "" },
+    { "key": "supplierId", "value": "" },
+    { "key": "purchaseOrderId", "value": "" },
+    { "key": "poLineId", "value": "" },
+    { "key": "fbOutletId", "value": "" },
+    { "key": "menuItemId", "value": "" },
+    { "key": "fbOrderId", "value": "" },
+    { "key": "reportStartDate", "value": "2026-04-01" },
+    { "key": "reportEndDate", "value": "2026-04-27" },
+    { "key": "impersonationToken", "value": "" },
+    { "key": "onboardedTenantHotelId", "value": "" },
+    { "key": "extraHotelId", "value": "" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "['hotelId','roomId','roomTypeId','reservationId','guestId','facilityId','facilitySlotId','facilityBookingId','inventoryItemId','inventoryCategoryId','supplierId','purchaseOrderId','poLineId','fbOutletId','menuItemId','fbOrderId','impersonationToken','onboardedTenantHotelId','extraHotelId'].forEach(function (k) {",
+          "  var v = pm.variables.get(k);",
+          "  if (v == null || v === undefined) return;",
+          "  var s = String(v).replace(/\\r|\\n|\\u2028|\\u2029/g, '').trim();",
+          "  if (s === String(v)) return;",
+          "  pm.collectionVariables.set(k, s);",
+          "  try {",
+          "    if (pm.environment && pm.environment.name) pm.environment.set(k, s);",
+          "  } catch (e) { /* ignore */ }",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 — Setup",
+      "item": [
+        {
+          "name": "01 Initialize (once, empty DB)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var t = pm.variables.get('setupToken');",
+                  "if (!t || String(t).trim() === '') {",
+                  "    t = 'hms-local-dev-setup-token-replace-me';",
+                  "}",
+                  "pm.request.headers.upsert({ key: 'X-Setup-Token', value: t });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.hotelId) {",
+                  "            pm.collectionVariables.set('hotelId', j.hotelId);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('hotelId', j.hotelId); }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "Requires X-Setup-Token (or ?setupToken=) matching hms.setup.token. If your Postman Environment defines `setupToken` as empty, it overrides the collection — delete it or fill it. A pre-request script fills the header when setupToken is blank (local dev default).",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Setup-Token", "value": "{{setupToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hotel\": {\n    \"name\": \"Grand Hotel\",\n    \"code\": \"GH01\",\n    \"timezone\": \"UTC\",\n    \"currency\": \"USD\",\n    \"subscriptionStatus\": \"ACTIVE\"\n  },\n  \"superAdmin\": {\n    \"username\": \"admin\",\n    \"password\": \"ChangeMe!Strong1\"\n  },\n  \"hotelAdmin\": {\n    \"username\": \"hoteladmin\",\n    \"password\": \"ChangeMe!Strong2\"\n  },\n  \"roomTypes\": [\n    {\n      \"code\": \"DLX\",\n      \"name\": \"Deluxe King\",\n      \"description\": \"Deluxe\",\n      \"maxOccupancy\": 3,\n      \"bedCount\": 1,\n      \"baseRate\": 150.00,\n      \"amenities\": [\"wifi\", \"ac\"]\n    }\n  ],\n  \"rooms\": [\n    {\n      \"roomNumber\": \"301\",\n      \"roomTypeCode\": \"DLX\",\n      \"floor\": 3,\n      \"building\": \"Main\",\n      \"initialStatus\": \"AVAILABLE\"\n    }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/setup/initialize?setupToken={{setupToken}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 — Auth",
+      "description": "Run **01 Login super admin** before **03 — Platform Admin**. Run **02 Login hotel admin** before **04–12**. Each login overwrites **`token`** and **`refreshToken`** (v2.3). **03 Refresh** issues a new access + refresh pair.",
+      "item": [
+        {
+          "name": "01 Login super admin (admin) — platform & SUPER_ADMIN APIs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.accessToken) {",
+                  "            pm.collectionVariables.set('token', j.accessToken);",
+                  "            if (pm.environment && pm.environment.name) {",
+                  "                pm.environment.set('token', j.accessToken);",
+                  "            }",
+                  "        }",
+                  "        if (j.refreshToken) {",
+                  "            pm.collectionVariables.set('refreshToken', j.refreshToken);",
+                  "            if (pm.environment && pm.environment.name) {",
+                  "                pm.environment.set('refreshToken', j.refreshToken);",
+                  "            }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "**Super admin** — matches Initialize `superAdmin`: **`admin`** / **`ChangeMe!Strong1`**. Saves **`token`** + **`refreshToken`**. Optional: add `\"email\":\"you@example.com\"` if you set **email** on the user (v2.3 login-by-email).",
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"ChangeMe!Strong1\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/login"
+          }
+        },
+        {
+          "name": "02 Login hotel admin (hoteladmin) — tenant / hotel APIs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.accessToken) {",
+                  "            pm.collectionVariables.set('token', j.accessToken);",
+                  "            if (pm.environment && pm.environment.name) {",
+                  "                pm.environment.set('token', j.accessToken);",
+                  "            }",
+                  "        }",
+                  "        if (j.refreshToken) {",
+                  "            pm.collectionVariables.set('refreshToken', j.refreshToken);",
+                  "            if (pm.environment && pm.environment.name) {",
+                  "                pm.environment.set('refreshToken', j.refreshToken);",
+                  "            }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "**Hotel admin** — matches Initialize `hotelAdmin`: **`hoteladmin`** / **`ChangeMe!Strong2`**. Saves **`token`** + **`refreshToken`**. Use **`token`** for `/api/v1/hotels/{{hotelId}}/**` (folders **04–12**). Do **not** use this token for **03** (super admin only).",
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"hoteladmin\",\n  \"password\": \"ChangeMe!Strong2\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/login"
+          }
+        },
+        {
+          "name": "03 Refresh access token (v2.3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.accessToken) {",
+                  "            pm.collectionVariables.set('token', j.accessToken);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('token', j.accessToken); }",
+                  "        }",
+                  "        if (j.refreshToken) {",
+                  "            pm.collectionVariables.set('refreshToken', j.refreshToken);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('refreshToken', j.refreshToken); }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "**POST /api/v1/auth/refresh** — body `{ \"refreshToken\": \"{{refreshToken}}\" }`. Run after **01** or **02** login so **`refreshToken`** is set. Returns new **`accessToken`** + rotated **`refreshToken`**.",
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/refresh"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 — Platform Admin (super admin `admin` only)",
+      "description": "**Requires JWT from 02 — Auth → 01 Login super admin (admin).** Every request sends `Authorization: Bearer {{token}}` as **super admin** — not hoteladmin. Paths that use **`{{hotelId}}`** refer to the **Initialize** hotel (same as **02 → 02 hoteladmin**). **`03 Onboard tenant`** saves **`onboardedTenantHotelId`** (does not change **`hotelId`**). **`08 Create hotel`** saves **`extraHotelId`** only. **Impersonate** saves **impersonationToken** (see **05 List rooms…**). WebSocket: `?token=<jwt>&impersonateToken=<jwt>`.",
+      "item": [
+        {
+          "name": "01 List tenants (super admin Bearer)",
+          "request": {
+            "description": "`Authorization: Bearer {{token}}` must be from **02 → 01 Login super admin (admin)**.",
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/platform/tenants?status=ACTIVE&tier=PROFESSIONAL&search="
+          }
+        },
+        {
+          "name": "02 Tenant dashboard (super admin Bearer)",
+          "request": {
+            "description": "Super admin **`admin`** JWT only.",
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/platform/tenants/{{hotelId}}/dashboard"
+          }
+        },
+        {
+          "name": "03 Onboard tenant (super admin Bearer)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var body = JSON.parse(pm.request.body.raw);",
+                  "var suf = Date.now().toString(36).toUpperCase().substring(0, 6);",
+                  "body.hotel.code = 'TNT' + suf;",
+                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify(body, null, 2) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.tenantId) {",
+                  "            pm.collectionVariables.set('onboardedTenantHotelId', j.tenantId);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('onboardedTenantHotelId', j.tenantId); }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "Creates **Hotel** + **PlatformTenant** + **HOTEL_ADMIN** user. **Super admin (`admin`)** Bearer required. Pre-request sets a unique **hotel.code**. On **201**, Tests save **`onboardedTenantHotelId`** from `tenantId` — **`hotelId` is not changed** (still the Initialize hotel for **`hoteladmin`**). To call hotel APIs for this tenant, log in as that tenant’s admin (see request body **contact.adminEmail** / set password via your onboarding flow).",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hotel\": {\n    \"name\": \"Seaside Resort & Spa\",\n    \"code\": \"SEASIDE\",\n    \"timezone\": \"America/New_York\",\n    \"currency\": \"USD\",\n    \"contact\": {\n      \"adminEmail\": \"admin.seaside@example.com\",\n      \"adminName\": \"Jane Smith\",\n      \"phone\": \"+1-555-0199\"\n    }\n  },\n  \"subscription\": {\n    \"tier\": \"PROFESSIONAL\",\n    \"billingCycle\": \"ANNUAL\",\n    \"startDate\": \"2026-05-01\",\n    \"customLimits\": {\n      \"maxRooms\": 200,\n      \"maxUsers\": 75\n    }\n  },\n  \"provisioning\": {\n    \"createDatabase\": false,\n    \"seedDemoData\": false,\n    \"enableFeatures\": [\"channel_manager\", \"mobile_app\", \"advanced_reporting\"]\n  },\n  \"billing\": {\n    \"paymentMethod\": \"\",\n    \"stripeCustomerId\": null,\n    \"invoiceEmail\": \"billing@seasideresort.com\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/platform/tenants"
+          }
+        },
+        {
+          "name": "04 Impersonate hotel admin (super admin Bearer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.impersonationToken) {",
+                  "            pm.collectionVariables.set('impersonationToken', j.impersonationToken);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('impersonationToken', j.impersonationToken); }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "Call as **super admin (`admin`)** only (same Bearer as **03**). Returns short-lived **HOTEL_ADMIN** JWT for **hotelId**. Use **impersonationToken** as `Authorization: Bearer` alone, or keep **admin** Bearer and add **X-Impersonate-Token: {{impersonationToken}}**.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Support ticket demo\",\n  \"duration\": 60,\n  \"notifyTenant\": false,\n  \"restrictActions\": [\"DELETE_HOTEL_DATA\", \"MODIFY_SUBSCRIPTION\"]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/platform/tenants/{{hotelId}}/impersonate"
+          }
+        },
+        {
+          "name": "05 List rooms (super admin + X-Impersonate-Token)",
+          "request": {
+            "description": "Run **04 Impersonate** first so **impersonationToken** is set. **Main Bearer** = super admin **`admin`** `{{token}}`; header **X-Impersonate-Token** = impersonation JWT. **X-Hotel-ID** = **hotelId**.",
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Impersonate-Token", "value": "{{impersonationToken}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/rooms?page=1&size=20"
+          }
+        },
+        {
+          "name": "06 Platform revenue analytics (super admin Bearer)",
+          "request": {
+            "description": "Super admin **`admin`** JWT only.",
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/platform/analytics/revenue?period=monthly&groupBy=tier"
+          }
+        },
+        {
+          "name": "07 Platform audit logs (super admin Bearer)",
+          "request": {
+            "description": "Super admin **`admin`** JWT only.",
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/platform/audit/logs"
+          }
+        },
+        {
+          "name": "08 Create hotel — POST /api/v1/platform/hotels (super admin Bearer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.id) {",
+                  "            pm.collectionVariables.set('extraHotelId', j.id);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('extraHotelId', j.id); }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "**Endpoint:** `POST {{baseUrl}}/api/v1/platform/hotels`. Same **super admin `admin`** Bearer as requests **01–07**. On **201**, Tests save **`extraHotelId`** only — **`hotelId` stays the Initialize hotel** so **02 → 02 hoteladmin** + **`X-Hotel-ID: {{hotelId}}`** in **04–12** still work. To work on the new property, create/link a hotel user for **`{{extraHotelId}}`** and log in as that user (or impersonate that tenant). Change **code** in the body if **409** conflict.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Second Property\",\n  \"code\": \"SP02\",\n  \"timezone\": \"UTC\",\n  \"currency\": \"USD\",\n  \"subscriptionStatus\": \"TRIAL\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/platform/hotels"
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 — Room types",
+      "description": "Use **02 — Auth → 02 Login hotel admin (hoteladmin)** so `{{token}}` is a hotel-scoped user (and **X-Hotel-ID** matches **hotelId** from Initialize).",
+      "item": [
+        {
+          "name": "List room types",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        var arr = pm.response.json();",
+                  "        if (Array.isArray(arr) && arr.length > 0 && arr[0].id) {",
+                  "            pm.collectionVariables.set('roomTypeId', arr[0].id);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('roomTypeId', arr[0].id); }",
+                  "        }",
+                  "        pm.test('RoomTypeSummary shape', function () {",
+                  "            pm.expect(Array.isArray(arr)).to.be.true;",
+                  "            if (arr.length > 0) { pm.expect(arr[0]).to.have.keys('id','name','baseRate','maxOccupancy','bedCount'); }",
+                  "        });",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "On 200, Tests set **roomTypeId** from the first room type (for Create room). Each element is **RoomTypeSummary** (**id**, **name**, **baseRate**, **maxOccupancy**, **bedCount**). Empty array means this hotel has no types yet — use **Create room type** first.",
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/room-types"
+          }
+        },
+        {
+          "name": "Create room type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.id) {",
+                  "            pm.collectionVariables.set('roomTypeId', j.id);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('roomTypeId', j.id); }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "On 201, Tests save returned **id** into **roomTypeId** for Create room.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"STD\",\n  \"name\": \"Standard\",\n  \"description\": \"Standard room\",\n  \"maxOccupancy\": 2,\n  \"bedCount\": 1,\n  \"baseRate\": 99.00,\n  \"amenities\": [\"wifi\"]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/room-types"
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 — Rooms",
+      "description": "Hotel admin token from **02 → 02** + **X-Hotel-ID: {{hotelId}}**.\n\n**Responses (v2.3-aligned):** **List rooms** returns **PagedData** with **pagination.totalPages**, **hasNext**, **hasPrevious**; each row includes **lastUpdated**, **building**, and expanded **roomType** / **currentReservation**. **Create room** returns **roomType**, **amenities**, **createdAt**, **createdBy**. **Patch room** returns **previousValues**, **updatedValues**, **broadcast**.",
+      "item": [
+        {
+          "name": "List rooms",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('List rooms 200', function () { pm.response.to.have.status(200); });",
+                  "try {",
+                  "    var j = pm.response.json();",
+                  "    pm.test('PagedData + pagination hints', function () {",
+                  "        pm.expect(j).to.have.property('data');",
+                  "        pm.expect(j).to.have.property('pagination');",
+                  "        pm.expect(j.pagination).to.have.keys('page','size','total','totalPages','hasNext','hasPrevious');",
+                  "    });",
+                  "    if (j.data && j.data.length > 0) {",
+                  "        pm.test('Room list item nested fields', function () {",
+                  "            pm.expect(j.data[0]).to.have.keys('lastUpdated','building');",
+                  "            pm.expect(j.data[0].roomType).to.have.keys('maxOccupancy','bedCount');",
+                  "        });",
+                  "    }",
+                  "} catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "**PagedData:** **data** + **pagination** with **totalPages**, **hasNext**, **hasPrevious**. Each **RoomListItem** includes **lastUpdated**, **building**, **RoomTypeSummary** (**maxOccupancy**, **bedCount**), and optional **currentReservation** (**guestId**, **status**, **checkOutDate**).",
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/rooms?page=1&size=20"
+          }
+        },
+        {
+          "name": "Get room by id",
+          "request": {
+            "description": "Returns **RoomDetailResponse**: **lastUpdated**, **maintenanceNotes**, **amenitiesOverride**, **currentReservation** (with **guestId**, **status**, **checkOutDate**), **RoomTypeSummary** (**maxOccupancy**, **bedCount**). Uses **roomId** in the path.",
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/rooms/{{roomId}}"
+          }
+        },
+        {
+          "name": "Create room",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var body = JSON.parse(pm.request.body.raw);",
+                  "var id = pm.variables.get('roomTypeId');",
+                  "if (id && String(id).trim() && String(id).indexOf('{{') !== 0) {",
+                  "    body.roomTypeId = String(id).trim();",
+                  "} else {",
+                  "    delete body.roomTypeId;",
+                  "}",
+                  "if (!body.roomTypeCode || String(body.roomTypeCode).trim() === '') {",
+                  "    body.roomTypeCode = 'STD';",
+                  "}",
+                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify(body, null, 2) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.id) {",
+                  "            pm.collectionVariables.set('roomId', j.id);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('roomId', j.id); }",
+                  "        }",
+                  "        pm.test('CreateRoomResponse shape', function () {",
+                  "            pm.expect(j).to.include.keys('id','roomNumber','roomType','status','cleanliness','createdAt','createdBy');",
+                  "            pm.expect(j.roomType).to.have.keys('maxOccupancy','bedCount');",
+                  "        });",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "Send **roomTypeId** (UUID from room-types) and/or **roomTypeCode** (e.g. STD, DLX) for this hotel. If `roomTypeId` is unset, the pre-request script drops it and defaults **roomTypeCode** to STD — create a type with that code first, or change the code in the body to match your hotel.\n\n**201 body:** **CreateRoomResponse** — **roomType**, **floor**, **building**, **cleanliness**, **amenities**, **createdAt**, **createdBy**, **message**.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomNumber\": \"305\",\n  \"floor\": 3,\n  \"building\": \"Main\",\n  \"roomTypeId\": \"{{roomTypeId}}\",\n  \"roomTypeCode\": \"STD\",\n  \"initialStatus\": \"AVAILABLE\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/rooms"
+          }
+        },
+        {
+          "name": "Patch room",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        pm.test('PatchRoomResponse shape', function () {",
+                  "            pm.expect(j).to.include.keys('id','roomNumber','previousValues','updatedValues','updatedAt','updatedBy','broadcast');",
+                  "            pm.expect(j.broadcast).to.have.keys('event','channel','payload');",
+                  "        });",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "**PatchRoomResponse:** **previousValues** / **updatedValues** (**RoomLifecycleSnapshot**), **broadcast** (**event**, **channel**, **payload**).",
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"OUT_OF_ORDER\",\n  \"isOutOfOrder\": true,\n  \"maintenanceNotes\": \"AC repair\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/rooms/{{roomId}}"
+          }
+        },
+        {
+          "name": "Delete room (soft)",
+          "request": {
+            "description": "Soft-deletes the room (`deleted=true`). **409** if the room has CONFIRMED or CHECKED_IN reservations.",
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/rooms/{{roomId}}"
+          }
+        },
+        {
+          "name": "Housekeeping patch room status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"AVAILABLE\",\n  \"cleanliness\": \"INSPECTED\",\n  \"notes\": \"Ready\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/rooms/{{roomId}}/status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 — Reservations",
+      "description": "**Availability** is public (no Bearer). Other calls: **02 → 02** hotel admin + **X-Hotel-ID**.\n\n**Responses:** **Create reservation** — **guest**, **stay**, **pricing**, **cancellation**, **nextSteps**; root **guestId** still saved to variables. **Check-in** — **guest**, **folio**, **broadcast**, **room.cleanliness**. **Folio** — **guest**, **stay**, **payments**, **summary** (incl. **currency**), **actions**, **realtime**. **Post charge** — **roomNumber**, **folio**, **postedBy**. **Check-out** — **invoiceBreakdown**, optional **feedback** / **postCheckout**.",
+      "item": [
+        {
+          "name": "Availability (public)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/reservations/availability?checkIn=2026-06-01&checkOut=2026-06-04&adults=2&children=0&roomTypeId={{roomTypeId}}"
+          }
+        },
+        {
+          "name": "Create reservation",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var body = JSON.parse(pm.request.body.raw);",
+                  "var id = pm.variables.get('roomTypeId');",
+                  "if (id && String(id).trim() && String(id).indexOf('{{') !== 0) {",
+                  "    body.roomTypeId = String(id).trim();",
+                  "} else {",
+                  "    delete body.roomTypeId;",
+                  "}",
+                  "if (!body.roomTypeCode || String(body.roomTypeCode).trim() === '') {",
+                  "    body.roomTypeCode = 'STD';",
+                  "}",
+                  "function ymd(d) {",
+                  "    var y = d.getFullYear();",
+                  "    var m = String(d.getMonth() + 1).padStart(2, '0');",
+                  "    var day = String(d.getDate()).padStart(2, '0');",
+                  "    return y + '-' + m + '-' + day;",
+                  "}",
+                  "var ci = new Date();",
+                  "ci.setDate(ci.getDate() + 21);",
+                  "var co = new Date(ci);",
+                  "co.setDate(co.getDate() + 3);",
+                  "body.checkInDate = ymd(ci);",
+                  "body.checkOutDate = ymd(co);",
+                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify(body, null, 2) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.id) {",
+                  "            pm.collectionVariables.set('reservationId', j.id);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('reservationId', j.id); }",
+                  "        }",
+                  "        if (j.room && j.room.id) {",
+                  "            pm.collectionVariables.set('roomId', j.room.id);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('roomId', j.room.id); }",
+                  "        }",
+                  "        var gid = j.guestId || (j.guest && j.guest.id);",
+                  "        if (gid) {",
+                  "            pm.collectionVariables.set('guestId', gid);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('guestId', gid); }",
+                  "        }",
+                  "        pm.test('CreateReservationResponse shape', function () {",
+                  "            pm.expect(j).to.include.keys('guest','stay','pricing','cancellation','nextSteps','guestId','room');",
+                  "            pm.expect(j.pricing).to.have.keys('nightlyRate','roomSubtotal','estimatedTaxes','estimatedFees','depositPaid','balanceDue');",
+                  "        });",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "Send **roomTypeId** and/or **roomTypeCode** for this hotel. Pre-request: clears empty roomTypeId, defaults **roomTypeCode** STD, and sets **checkInDate**/**checkOutDate** to rolling windows (check-in +21 days, 3-night stay) so repeated runs avoid “No rooms available” from old overlapping bookings. On 201, Tests save **reservationId**, **roomId**, and **guestId** (root **guestId** or **guest.id**). Response includes **guest**, **stay**, **pricing**, **cancellation**, **nextSteps**.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guest\": {\n    \"firstName\": \"Jane\",\n    \"lastName\": \"Guest\",\n    \"email\": \"jane@example.com\",\n    \"phone\": \"+10000000000\"\n  },\n  \"roomTypeId\": \"{{roomTypeId}}\",\n  \"roomTypeCode\": \"STD\",\n  \"checkInDate\": \"2026-06-01\",\n  \"checkOutDate\": \"2026-06-04\",\n  \"adults\": 2,\n  \"children\": 0,\n  \"source\": \"direct\",\n  \"ratePlan\": {\n    \"nightlyRate\": 145.00,\n    \"includesBreakfast\": false,\n    \"cancellationPolicy\": \"FREE_CANCELLATION_48H\"\n  },\n  \"payment\": {\n    \"depositRequired\": true,\n    \"depositAmount\": 145.00,\n    \"paymentMethod\": \"card\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/reservations"
+          }
+        },
+        {
+          "name": "Apply guest preferences",
+          "request": {
+            "description": "Reservation must be **CONFIRMED**. Run after **Create reservation** and before **Check-in**. Merges `overrides` into the guest’s stored `preferencesJson` for this call (e.g. `room.preferredFloor`). If a better **AVAILABLE** room exists for the same room type and dates, the reservation room may be reassigned.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"applyPreferences\": {\n    \"roomAssignment\": true,\n    \"amenities\": true,\n    \"services\": true\n  },\n  \"overrides\": {\n    \"room\": { \"preferredFloor\": 4 }\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/reservations/{{reservationId}}/apply-guest-preferences"
+          }
+        },
+        {
+          "name": "Cancel reservation",
+          "request": {
+            "description": "**CONFIRMED** → CANCELLED; room returns **AVAILABLE**. Idempotent if already cancelled. **409** if CHECKED_IN / CHECKED_OUT.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Guest changed plans\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/reservations/{{reservationId}}/cancel"
+          }
+        },
+        {
+          "name": "Check-in",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        pm.test('CheckInResponse shape', function () {",
+                  "            pm.expect(j).to.include.keys('reservationId','status','room','guest','digitalKey','folio','broadcast','nextSteps');",
+                  "            pm.expect(j.room).to.have.key('cleanliness');",
+                  "            pm.expect(j.folio).to.have.keys('folioRef','viewPathTemplate','openingBalancePreTax');",
+                  "            pm.expect(j.broadcast).to.have.keys('event','channels','payload');",
+                  "        });",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "CONFIRMED → CHECKED_IN. Run after **Create reservation** (so `reservationId` is set). Required before **Post room charge**.\n\n**200 body:** **CheckInResponse** — **guest** (**idVerified**, …), **folio** (**folioRef**, **viewPathTemplate**, **openingBalancePreTax**), **broadcast**, **room.cleanliness**, **digitalKey**, **nextSteps**. **payment** is present only if the request includes **paymentMethod**.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/reservations/{{reservationId}}/check-in"
+          }
+        },
+        {
+          "name": "Post room charge",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var rid = pm.variables.get('reservationId');",
+                  "if (!rid || String(rid).trim() === '' || String(rid).indexOf('{{') === 0) {",
+                  "    throw new Error('reservationId is empty. Run **Create reservation** (201) then **Check-in**; Create reservation Tests save reservationId and overwrite roomId with the booked room. URL roomId must match that reservation after check-in.');",
+                  "}",
+                  "var body = JSON.parse(pm.request.body.raw);",
+                  "body.reservationId = String(rid).trim();",
+                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify(body, null, 2) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        pm.test('PostChargeResponse shape', function () {",
+                  "            pm.expect(j).to.include.keys('chargeId','reservationId','roomNumber','folio','postedBy','quantity','type','runningTotal');",
+                  "            pm.expect(j.folio).to.have.keys('previousTotalPreTax','newBalancePreTax');",
+                  "        });",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "POST body must include **reservationId** (pre-request injects it from the variable). Reservation must be **CHECKED_IN** and **roomId** in the URL must be the reservation's assigned room (set by **Create reservation** Tests). If you only used **Create room**, run **Create reservation** + **Check-in** first or paste a checked-in reservation UUID.\n\n**201:** **PostChargeResponse** — **roomNumber**, **quantity**, **type**, **postedBy**, **folio** (**previousTotalPreTax**, **newBalancePreTax**), **inventoryImpact** (often null).",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reservationId\": \"{{reservationId}}\",\n  \"description\": \"Minibar: water\",\n  \"amount\": 5.00,\n  \"type\": \"MINIBAR\",\n  \"quantity\": 1\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/rooms/{{roomId}}/charges"
+          }
+        },
+        {
+          "name": "Folio",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        pm.test('FolioResponse shape', function () {",
+                  "            pm.expect(j).to.include.keys('reservationId','hotelId','guest','stay','roomNumber','roomTypeName','charges','payments','summary','actions','realtime');",
+                  "            pm.expect(j.guest).to.have.keys('id','name','email');",
+                  "            pm.expect(j.summary).to.include.keys('balanceDue','currency','totalCharges');",
+                  "        });",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "**FolioResponse:** **guest** (object), **stay**, **roomNumber**, **roomTypeName**, **charges** (each with **quantity**, **postedBy**, **reversible**, **productSku**), **payments** (e.g. synthetic **DEPOSIT** when applicable), **summary** (**subtotal**, **taxes**, **currency**, …), **actions**, **realtime**.",
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/reservations/{{reservationId}}/folio"
+          }
+        },
+        {
+          "name": "Check-out",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        pm.test('CheckOutResponse shape', function () {",
+                  "            pm.expect(j).to.include.keys('reservationId','status','room','invoice','invoiceBreakdown','loyaltyPointsEarned','message');",
+                  "            pm.expect(j.invoiceBreakdown).to.have.keys('roomCharges','consumptionCharges','subtotalBeforeTax','taxes','depositCredit','grandTotal');",
+                  "            pm.expect(j.room).to.have.key('cleanliness');",
+                  "        });",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "**CheckOutResponse** includes **invoice** (lines + totals), **invoiceBreakdown** (**roomCharges**, **consumptionCharges**, **subtotalBeforeTax**, **taxes**, **depositCredit**, **grandTotal**), optional **feedback** / **postCheckout** when sent in the body, and **room.cleanliness**.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"finalPayment\": {\n    \"method\": \"card\",\n    \"amount\": 100.00,\n    \"transactionId\": \"txn_demo\"\n  },\n  \"feedback\": { \"rating\": 5, \"comment\": \"Great stay (Postman)\" },\n  \"postCheckout\": { \"sendInvoiceEmail\": true, \"addToLoyaltyProgram\": false, \"scheduleFollowUp\": null }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/reservations/{{reservationId}}/check-out"
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 — Housekeeping",
+      "description": "**02 → 02** hotel admin + **X-Hotel-ID**.",
+      "item": [
+        {
+          "name": "Tasks",
+          "request": {
+            "description": "Returns room cleaning tasks plus **minibarRestockTasks** (OPEN minibar restock rows) after checkout-driven restock logic.",
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/housekeeping/tasks"
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 — Guests (Module 6)",
+      "description": "**02 → 02** hotel admin + **X-Hotel-ID** (loyalty endpoints may require manager role per backend).",
+      "description": "Uses **guestId** saved by **Create reservation** (201). Update **guest** row `preferences_json` in the DB if you need richer profile/preferences than inline guest creation.",
+      "item": [
+        {
+          "name": "Guest profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/guests/{{guestId}}/profile"
+          }
+        },
+        {
+          "name": "Loyalty earn (manual points)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"points\": 150,\n  \"type\": \"EARNED\",\n  \"reference\": { \"type\": \"RESERVATION\", \"id\": \"{{reservationId}}\" },\n  \"description\": \"Bonus points (Postman demo)\",\n  \"expiryDate\": \"2027-12-31\",\n  \"notifyGuest\": false\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/guests/{{guestId}}/loyalty/earn"
+          }
+        },
+        {
+          "name": "Loyalty redeem",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"redemptionType\": \"DISCOUNT\",\n  \"pointsToRedeem\": 50,\n  \"reference\": { \"type\": \"RESERVATION\", \"id\": \"{{reservationId}}\" },\n  \"guestConfirmation\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/guests/{{guestId}}/loyalty/redeem"
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 — Facilities (Module 8)",
+      "description": "**02 → 02** hotel admin + **X-Hotel-ID**; follow requests top-to-bottom.",
+      "item": [
+        {
+          "name": "Create facility",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.id) {",
+                  "            pm.collectionVariables.set('facilityId', j.id);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('facilityId', j.id); }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "Requires **HOTEL_ADMIN** (or MANAGER). Run **Login as hotel admin** first. Saves **facilityId** on 201.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Infinity Pool\",\n  \"code\": \"POOL\",\n  \"description\": \"Rooftop pool\",\n  \"type\": \"POOL\",\n  \"maxCapacity\": 30,\n  \"basePrice\": 0,\n  \"requiresAdvanceBooking\": true,\n  \"allowsWalkIn\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/facilities"
+          }
+        },
+        {
+          "name": "List facilities",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/facilities"
+          }
+        },
+        {
+          "name": "Create facility slot",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var d = new Date();",
+                  "d.setDate(d.getDate() + 1);",
+                  "var y = d.getFullYear();",
+                  "var m = String(d.getMonth() + 1).padStart(2, '0');",
+                  "var day = String(d.getDate()).padStart(2, '0');",
+                  "var start = y + '-' + m + '-' + day + 'T10:00:00';",
+                  "var end = y + '-' + m + '-' + day + 'T11:00:00';",
+                  "var body = JSON.parse(pm.request.body.raw);",
+                  "body.startTime = start;",
+                  "body.endTime = end;",
+                  "body.maxBookings = 10;",
+                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify(body, null, 2) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.slotId) {",
+                  "            pm.collectionVariables.set('facilitySlotId', j.slotId);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('facilitySlotId', j.slotId); }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "Pre-request sets **startTime**/**endTime** to tomorrow 10:00–11:00 local. Needs **facilityId**. Saves **facilitySlotId** on 201.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startTime\": \"2026-06-01T10:00:00\",\n  \"endTime\": \"2026-06-01T11:00:00\",\n  \"maxBookings\": 10\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/facilities/{{facilityId}}/slots"
+          }
+        },
+        {
+          "name": "Create facility booking (walk-in)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var sid = pm.variables.get('facilitySlotId');",
+                  "if (!sid || String(sid).trim() === '' || String(sid).indexOf('{{') === 0) {",
+                  "    throw new Error('facilitySlotId missing. Run Create facility slot (201) first.');",
+                  "}",
+                  "var body = JSON.parse(pm.request.body.raw);",
+                  "body.slotId = String(sid).trim();",
+                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify(body, null, 2) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.bookingId) {",
+                  "            pm.collectionVariables.set('facilityBookingId', j.bookingId);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('facilityBookingId', j.bookingId); }",
+                  "        }",
+                  "        if (j.access && j.access.accessCode) {",
+                  "            pm.collectionVariables.set('facilityAccessCode', j.access.accessCode);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('facilityAccessCode', j.access.accessCode); }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotId\": \"00000000-0000-0000-0000-000000000000\",\n  \"guestCount\": 2,\n  \"specialRequests\": \"Towels\",\n  \"chargeToRoom\": false,\n  \"guest\": {\n    \"firstName\": \"Pool\",\n    \"lastName\": \"Guest\",\n    \"email\": \"pool.guest@example.com\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/facilities/{{facilityId}}/bookings"
+          }
+        },
+        {
+          "name": "Create facility booking (charge to room folio)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var sid = pm.variables.get('facilitySlotId');",
+                  "var rid = pm.variables.get('reservationId');",
+                  "if (!sid || String(sid).trim() === '' || String(sid).indexOf('{{') === 0) {",
+                  "    throw new Error('facilitySlotId missing. Run Create facility slot first.');",
+                  "}",
+                  "if (!rid || String(rid).trim() === '' || String(rid).indexOf('{{') === 0) {",
+                  "    throw new Error('reservationId missing. Run Reservations → Create reservation + Check-in first.');",
+                  "}",
+                  "var body = JSON.parse(pm.request.body.raw);",
+                  "body.slotId = String(sid).trim();",
+                  "body.reservationId = String(rid).trim();",
+                  "body.chargeToRoom = true;",
+                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify(body, null, 2) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.bookingId) {",
+                  "            pm.collectionVariables.set('facilityBookingId', j.bookingId);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('facilityBookingId', j.bookingId); }",
+                  "        }",
+                  "        if (j.access && j.access.accessCode) {",
+                  "            pm.collectionVariables.set('facilityAccessCode', j.access.accessCode);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('facilityAccessCode', j.access.accessCode); }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "Requires **CHECKED_IN** reservation. Uses **facilitySlotId** and **reservationId**; posts RECREATION room charge when basePrice > 0 (set facility basePrice or use free pool with charge-to-room false for walk-through).",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slotId\": \"00000000-0000-0000-0000-000000000000\",\n  \"guestCount\": 2,\n  \"reservationId\": \"{{reservationId}}\",\n  \"specialRequests\": \"\",\n  \"chargeToRoom\": true,\n  \"guest\": { \"firstName\": \"X\", \"lastName\": \"Y\", \"email\": \"x@example.com\" }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/facilities/{{facilityId}}/bookings"
+          }
+        },
+        {
+          "name": "Facility check-in",
+          "request": {
+            "description": "Uses **facilityBookingId** and **facilityAccessCode** from Create facility booking.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accessCode\": \"{{facilityAccessCode}}\",\n  \"actualGuestCount\": 2,\n  \"staffNotes\": \"On time\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/facilities/bookings/{{facilityBookingId}}/check-in"
+          }
+        },
+        {
+          "name": "Facility charge to room (if not charged at booking)",
+          "request": {
+            "description": "For bookings without **chargeToRoom** at creation, with an active CHECKED_IN reservation linked. **02 → 02 hoteladmin** is allowed (same as reception/finance).",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"postedBy\": \"reception\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/facilities/bookings/{{facilityBookingId}}/charge-to-room"
+          }
+        },
+        {
+          "name": "Cancel facility booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/facilities/bookings/{{facilityBookingId}}/cancel"
+          }
+        },
+        {
+          "name": "Report facility maintenance",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Pump inspection\",\n  \"description\": \"Scheduled maintenance\",\n  \"priority\": \"HIGH\",\n  \"affectedSlots\": [\"{{facilitySlotId}}\"],\n  \"scheduledStart\": \"2026-12-01T08:00:00Z\",\n  \"estimatedDurationMinutes\": 120,\n  \"cost\": 0\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/facilities/{{facilityId}}/maintenance"
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 — Inventory (Module 4)",
+      "description": "**02 → 02** hotel admin + **X-Hotel-ID**.",
+      "item": [
+        {
+          "name": "Create supplier",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.id) {",
+                  "            pm.collectionVariables.set('supplierId', j.id);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('supplierId', j.id); }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Beverages Inc\",\n  \"contactPerson\": \"Procurement\",\n  \"email\": \"orders@beverages.example\",\n  \"phone\": \"+10000000001\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/inventory/suppliers"
+          }
+        },
+        {
+          "name": "Create inventory category",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.id) {",
+                  "            pm.collectionVariables.set('inventoryCategoryId', j.id);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('inventoryCategoryId', j.id); }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Minibar\",\n  \"code\": \"MINIBAR\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/inventory/categories"
+          }
+        },
+        {
+          "name": "Create inventory item",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var cid = pm.variables.get('inventoryCategoryId');",
+                  "if (!cid || String(cid).trim() === '' || String(cid).indexOf('{{') === 0) {",
+                  "    throw new Error('inventoryCategoryId missing. Run Create inventory category first.');",
+                  "}",
+                  "var body = JSON.parse(pm.request.body.raw);",
+                  "body.categoryId = String(cid).trim();",
+                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify(body, null, 2) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.id) {",
+                  "            pm.collectionVariables.set('inventoryItemId', j.id);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('inventoryItemId', j.id); }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Premium Water 500ml\",\n  \"sku\": \"MINI-WATER-500\",\n  \"categoryId\": \"00000000-0000-0000-0000-000000000000\",\n  \"currentStock\": 100,\n  \"reorderPoint\": 20,\n  \"unitCost\": 1.25,\n  \"isMinibarItem\": true,\n  \"minibarReorderThreshold\": 5,\n  \"unitOfMeasure\": \"piece\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/inventory/items"
+          }
+        },
+        {
+          "name": "List inventory items",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/inventory/items?category=MINIBAR&lowStock=false&search=water"
+          }
+        },
+        {
+          "name": "Consume inventory (optional room folio)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var rid = pm.variables.get('reservationId');",
+                  "if (!rid || String(rid).trim() === '' || String(rid).indexOf('{{') === 0) {",
+                  "    var body = JSON.parse(pm.request.body.raw);",
+                  "    body.reference = null;",
+                  "    pm.request.body.update({ mode: 'raw', raw: JSON.stringify(body, null, 2) });",
+                  "} else {",
+                  "    var b = JSON.parse(pm.request.body.raw);",
+                  "    b.reference = { type: 'ROOM_CHARGE', id: String(rid).trim() };",
+                  "    pm.request.body.update({ mode: 'raw', raw: JSON.stringify(b, null, 2) });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "If **reservationId** is set and guest is CHECKED_IN, pre-request adds **reference** for folio charge. Otherwise consumption only.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 1,\n  \"type\": \"CONSUMPTION\",\n  \"reference\": {\n    \"type\": \"ROOM_CHARGE\",\n    \"id\": \"{{reservationId}}\"\n  },\n  \"location\": { \"from\": \"Room minibar\", \"to\": null },\n  \"performedBy\": \"staff\",\n  \"notes\": \"Guest consumption\",\n  \"autoReorderCheck\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/inventory/items/{{inventoryItemId}}/consume"
+          }
+        },
+        {
+          "name": "Create purchase order",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var sid = pm.variables.get('supplierId');",
+                  "var iid = pm.variables.get('inventoryItemId');",
+                  "if (!sid || String(sid).trim() === '' || String(sid).indexOf('{{') === 0) {",
+                  "    throw new Error('supplierId missing. Run Create supplier first.');",
+                  "}",
+                  "if (!iid || String(iid).trim() === '' || String(iid).indexOf('{{') === 0) {",
+                  "    throw new Error('inventoryItemId missing. Run Create inventory item first.');",
+                  "}",
+                  "var body = JSON.parse(pm.request.body.raw);",
+                  "body.supplierId = String(sid).trim();",
+                  "body.lines = [{ itemId: String(iid).trim(), quantity: 10, unitPrice: 1.1, notes: 'Restock' }];",
+                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify(body, null, 2) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.poId) {",
+                  "            pm.collectionVariables.set('purchaseOrderId', j.poId);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('purchaseOrderId', j.poId); }",
+                  "        }",
+                  "        if (j.lines && j.lines[0] && j.lines[0].lineId) {",
+                  "            pm.collectionVariables.set('poLineId', j.lines[0].lineId);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('poLineId', j.lines[0].lineId); }",
+                  "        }",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplierId\": \"00000000-0000-0000-0000-000000000000\",\n  \"expectedDelivery\": \"2026-12-31\",\n  \"paymentTerms\": \"NET_30\",\n  \"lines\": [],\n  \"approvalWorkflow\": { \"requiresApproval\": false, \"approverRoles\": [\"FINANCE\"], \"thresholdAmount\": 500 },\n  \"deliveryInstructions\": \"Main store 9-17\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/inventory/purchase-orders"
+          }
+        },
+        {
+          "name": "Receive goods (against PO)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var pid = pm.variables.get('purchaseOrderId');",
+                  "var lid = pm.variables.get('poLineId');",
+                  "if (!pid || String(pid).trim() === '' || String(pid).indexOf('{{') === 0) {",
+                  "    throw new Error('purchaseOrderId missing. Run Create purchase order first.');",
+                  "}",
+                  "if (!lid || String(lid).trim() === '' || String(lid).indexOf('{{') === 0) {",
+                  "    throw new Error('poLineId missing. Run Create purchase order first.');",
+                  "}",
+                  "var body = JSON.parse(pm.request.body.raw);",
+                  "body.purchaseOrderId = String(pid).trim();",
+                  "body.receivedLines = [{",
+                  "    poLineId: String(lid).trim(),",
+                  "    quantityReceived: 10,",
+                  "    qualityCheck: \"PASSED\",",
+                  "    notes: \"OK\",",
+                  "    batchNumber: \"BATCH-1\",",
+                  "    expiryDate: null",
+                  "}];",
+                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify(body, null, 2) });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "Path **itemId** must match the SKU on every **receivedLines** entry (single-item PO). Uses **purchaseOrderId** and **poLineId** from Create PO.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purchaseOrderId\": \"00000000-0000-0000-0000-000000000000\",\n  \"receivedLines\": [],\n  \"deliveryNote\": \"DN-001\",\n  \"receivedBy\": \"warehouse\",\n  \"location\": \"Main Store\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/inventory/items/{{inventoryItemId}}/receive"
+          }
+        }
+      ]
+    },
+    {
+      "name": "11 — F&B (Module 7)",
+      "description": "**02 → 02** hotel admin + **X-Hotel-ID**.\n\n**Run order:** **List F&B outlets** (optional) → **Create F&B outlet** (saves **fbOutletId**) → **Create menu item** (saves **menuItemId**) → **06 — Reservations** **Check-in** (needs **reservationId**) → **Create F&B order** (saves **fbOrderId**). Pre-request scripts inject real UUIDs so **outletId** / **menuItemId** are never null. You can still paste UUIDs into collection variables manually.",
+      "item": [
+        {
+          "name": "List F&B outlets",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    try {",
+                  "        var arr = pm.response.json();",
+                  "        pm.test('Outlets array', function () { pm.expect(Array.isArray(arr)).to.be.true; });",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "**GET** `/fb/outlets` — returns **FbOutletListItem** rows (**id**, **name**, **code**, **outletType**, **allowsRoomCharge**).",
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/fb/outlets"
+          }
+        },
+        {
+          "name": "Create F&B outlet",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var body = JSON.parse(pm.request.body.raw);",
+                  "var suffix = Date.now().toString(36);",
+                  "body.code = 'P-' + suffix;",
+                  "body.name = 'Postman F&B ' + suffix;",
+                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify(body, null, 2) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.id) {",
+                  "            pm.collectionVariables.set('fbOutletId', j.id);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('fbOutletId', j.id); }",
+                  "        }",
+                  "        pm.test('CreateFbOutletResponse', function () { pm.expect(j).to.include.keys('id','code','allowsRoomCharge'); });",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "**POST** `/fb/outlets` — creates an outlet with **allowsRoomCharge** true (room orders). Pre-request sets a unique **code** each run. On **201**, saves **fbOutletId**.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman F&B Outlet\",\n  \"code\": \"PLACEHOLDER\",\n  \"outletType\": \"ROOM_SERVICE\",\n  \"description\": \"Seeded from Postman\",\n  \"allowsRoomCharge\": true,\n  \"acceptsReservations\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/fb/outlets"
+          }
+        },
+        {
+          "name": "Create menu item",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var oid = pm.variables.get('fbOutletId');",
+                  "if (!oid || String(oid).trim() === '' || String(oid).indexOf('{{') === 0) {",
+                  "    throw new Error('fbOutletId is empty. Run **Create F&B outlet** first (201).');",
+                  "}",
+                  "var body = JSON.parse(pm.request.body.raw);",
+                  "var suffix = Date.now().toString(36);",
+                  "body.code = 'MI-' + suffix;",
+                  "body.name = 'Postman Item ' + suffix;",
+                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify(body, null, 2) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.id) {",
+                  "            pm.collectionVariables.set('menuItemId', j.id);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('menuItemId', j.id); }",
+                  "        }",
+                  "        pm.test('CreateMenuItemResponse', function () { pm.expect(j).to.include.keys('id','outletId','code'); });",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "**POST** `/fb/outlets/{fbOutletId}/menu-items`. Requires **fbOutletId** from **Create F&B outlet**. Pre-request sets a unique item **code**. On **201**, saves **menuItemId**.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Burger\",\n  \"code\": \"PLACEHOLDER\",\n  \"price\": 18.50,\n  \"itemKind\": \"FOOD\",\n  \"categories\": [\"Mains\"],\n  \"description\": \"Demo menu line\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/fb/outlets/{{fbOutletId}}/menu-items"
+          }
+        },
+        {
+          "name": "Get outlet menu",
+          "request": {
+            "description": "Requires **fbOutletId**. Returns grouped menu (same contract as before).",
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/fb/outlets/{{fbOutletId}}/menu?availableOnly=true"
+          }
+        },
+        {
+          "name": "Create F&B order (room charge)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var oid = pm.variables.get('fbOutletId');",
+                  "var mid = pm.variables.get('menuItemId');",
+                  "var rid = pm.variables.get('reservationId');",
+                  "if (!oid || String(oid).trim() === '' || String(oid).indexOf('{{') === 0) {",
+                  "    throw new Error('fbOutletId missing. Run **Create F&B outlet** first.');",
+                  "}",
+                  "if (!mid || String(mid).trim() === '' || String(mid).indexOf('{{') === 0) {",
+                  "    throw new Error('menuItemId missing. Run **Create menu item** first.');",
+                  "}",
+                  "if (!rid || String(rid).trim() === '' || String(rid).indexOf('{{') === 0) {",
+                  "    throw new Error('reservationId missing. Run **06 — Create reservation** then **Check-in**.');",
+                  "}",
+                  "var body = JSON.parse(pm.request.body.raw);",
+                  "body.outletId = String(oid).trim();",
+                  "body.reservationId = String(rid).trim();",
+                  "body.lines[0].menuItemId = String(mid).trim();",
+                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify(body, null, 2) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    try {",
+                  "        var j = pm.response.json();",
+                  "        if (j.orderId) {",
+                  "            pm.collectionVariables.set('fbOrderId', j.orderId);",
+                  "            if (pm.environment && pm.environment.name) { pm.environment.set('fbOrderId', j.orderId); }",
+                  "        }",
+                  "        pm.test('CreateFbOrderResponse', function () { pm.expect(j).to.include.keys('orderId','orderNumber','status'); });",
+                  "    } catch (e) { /* ignore */ }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "**POST** `/fb/orders`. Pre-request copies **fbOutletId**, **menuItemId**, and **reservationId** into the JSON as real UUID strings (avoids **VALIDATION_FAILED** when variables were empty). Guest must be **CHECKED_IN** and outlet **allowsRoomCharge**. On **201**, saves **fbOrderId**.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outletId\": \"00000000-0000-0000-0000-000000000001\",\n  \"type\": \"ROOM_SERVICE\",\n  \"reservationId\": \"00000000-0000-0000-0000-000000000002\",\n  \"lines\": [\n    {\n      \"menuItemId\": \"00000000-0000-0000-0000-000000000003\",\n      \"quantity\": 1,\n      \"modifiers\": [],\n      \"specialInstructions\": null\n    }\n  ],\n  \"payment\": {\n    \"method\": \"ROOM_CHARGE\",\n    \"roomChargeDescription\": \"Room service (Postman)\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/fb/orders"
+          }
+        },
+        {
+          "name": "Patch F&B order status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"SERVED\",\n  \"inventoryDeducted\": false,\n  \"notes\": \"Demo status update\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/fb/orders/{{fbOrderId}}/status"
+          }
+        },
+        {
+          "name": "Charge F&B order to room (alternate)",
+          "request": {
+            "description": "Use when the order was created without **ROOM_CHARGE**; charges **order.total** to folio. Reservation must be **CHECKED_IN**.",
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reservationId\": \"{{reservationId}}\",\n  \"chargeDescription\": \"Restaurant charge (Postman)\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/fb/orders/{{fbOrderId}}/charge-to-room"
+          }
+        }
+      ]
+    },
+    {
+      "name": "12 — Reports (Module 9)",
+      "description": "**02 → 02** hotel admin + **X-Hotel-ID**.",
+      "description": "Adjust **reportStartDate** / **reportEndDate** collection variables for your window. Nightly job (02:00 UTC) writes **daily_revenue_snapshots** from invoices.",
+      "item": [
+        {
+          "name": "Occupancy report",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/reports/occupancy?startDate={{reportStartDate}}&endDate={{reportEndDate}}&groupBy=day"
+          }
+        },
+        {
+          "name": "Guest analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/reports/guest-analytics?segment=RETURNING&tier=GOLD&minSpend=500"
+          }
+        },
+        {
+          "name": "Realtime dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "X-Hotel-ID", "value": "{{hotelId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/hotels/{{hotelId}}/reports/realtime-dashboard"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+node_modules/
+.next/
+target/
+*.class
+.idea/
+*.iml
+.env
+.env.local
+~$*

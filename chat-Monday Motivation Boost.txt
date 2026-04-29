@@ -1,0 +1,5648 @@
+### USER
+yeah happy monday ;) we are going to build big things today, u ready?
+
+
+
+### ASSISTANT
+Happy Monday to you too! 😄🚀
+
+Absolutely ready! Big things start with bold intentions, and I'm here to help you crush them. Whether it's:
+
+💡 Brainstorming ideas
+🔧 Building code or prototypes
+📊 Researching markets or trends
+✍️ Crafting content or strategy
+🧠 Solving complex problems
+
+...or something totally new you've got cooking.
+
+What's the first move? Let's make today count. 🔥
+
+### USER
+
+
+
+
+
+
+
+
+THIS IS IT, THE HOTEL MANAGEMENT SYSTEM WHICH INCLUDES ALL THESE MODULES, YOU UNDERSTAND IT WILL BE HOTEL MANAGEMENT SO ITS MANY HOTELS BUT FIRST LETS MANAGE ONE AND MAKE SURE IT RUNS SMOOTHLY, I WNT FOR NOW TO START ON ROOM MANAGEMENT MODULE AND MAKE SURE THIS IS FULLY IMPLEMENTED I NEED YOU TO LOOK AROUND AND TELL ME HOW WE WILL DESING FULLY FUNCTIONAL SYSTEM FOR ROOM+OTHER MODULES TO BE ADDED BUT MAKE SURE WE ARE ALLIGNED. FOR NOW YOU ARE GOING TO TELL ME EVERYTHING I NEED TO BUILD THIS, INCLUDING ROLE BASED AND ALL FEATURES TO USE, ALL THINGS ROOM NEEDS, EVERY ASPECT CORNER MUST BE SERVED PLS, FROM THE ONE WHO BOOK THE ROOM TO THE FINAL CHECKPOINT OF LEAVING(INCLUDES CONSUPTIONS, RESERVATIONS, TO FINAL PAMENT DAY AND OUT)
+
+PLEASE WE STARTS WITH ROOM BUT IF ANY MODULE THAT WILL REFERS (OR GOES HAND IN HAND)TO ROOM NOT MENTIONED IN ROOM PARAGRAPH  MAKE SURE IT IS DISCUSSED HOW IT WILL WORK TOO
+KNOW THAT THIS SYSTEM WILL BE BUILT IN SPRINGBOOT  HIBERNATE AND NEXT JS.  
+
+THIS WILL BE ANALYSED AND GIVEN TO CURSOR TO BUILD THIS SYSTEM
+
+
+
+
+
+
+LIST ALL REMAINING MODULES NOT ATTACHED TO ROOM DIRECTLY SO TAHT I KNOW WHAT WILL BE MISSING, I ALSO NEED YOU TO MENTION API'S TO CONSUME AND PLAYLOADS, FOR ALL ROLES AND OTHER ENDPOINTS I NEED TO CONSUME. REMEMBER HOTEL HAS USERS TO USE SYSTEM AND THEN THERS ADMIN(ME) WHO WILL SELL THIS APP BUT ALSO HAVE TO MANAGE MY SYSTEM. MEANS I OWN IT I MANAGE IT. HOTELS WILL PAY ME TO GIVE THEM SMALL PARTIAL TO THIS SYSTEM. EACH HOTEL WORKER HAS THEIR ROLE AND SOME ONE WHO BOOKS GUESTS HAS WHAT TO DO AND THEIR DASHBOARDS TOO. I AS ADMIN WILL NOT MANAGE HOTEL ROOMS, RESERVATIONS,... THERE ARE THE ONE TO DO(HOTEL ITSELF). YOU UNDERSTAND, SO IF THERE WAS MISTAKES IN ABOVE DOCUMENT YOU CAN CORRECT IT AND ALSO MAKE SURE THIS SPECIFICATION IS FIT TO DEVELOPEMENT FOR NOW. NOW GIVE ME UPDATED HMS SPECIFICATION IF NEEDED BUT CORRECT ONLY PARTS NEEDED, AND THE REMAINING MODULES TO BE IMPLEMENTED(REMEMBER TO GIVE API, PLAYLOADS THAT I WILL BE ABLE TO TEST WITH POSTMAN TOO)
+
+HOTEL MANAGEMENT SYSTEM
+Requirements & Features Specification
+
+Version
+2.0	Status
+Final Draft	Date
+April 21, 2026
+
+ 
+1.  Executive Summary
+
+This document defines the comprehensive requirements and feature specifications for a Hotel Management System (HMS). The system is designed to digitally unify and automate all core hotel operations — from guest check-in to pool reservations, inventory tracking, billing, and compliance — within a single, scalable platform.
+
+The HMS will serve front-desk staff, housekeeping teams, food & beverage managers, finance controllers, and senior management, enabling real-time decision-making and exceptional guest experiences.
+
+Scope:  This HMS covers 9 functional modules serving all departments of a full-service hotel property. The system is designed to scale from boutique hotels to large resort chains.
+
+Project Overview
+
+Field	Details
+System Name	Hotel Management System (HMS)
+Version	2.0
+Primary Users	Receptionists, Housekeeping, F&B, Finance, Management
+Deployment	Cloud-hosted SaaS with offline fallback capability
+Integration	PMS, POS, Payment Gateways, IoT, Mobile Apps
+Compliance	GDPR, PCI-DSS, local data privacy regulations
+
+Table of Contents
+1.  Executive Summary	2
+Project Overview	2
+Table of Contents	2
+2.  Room Management	4
+Core Features	4
+Room Status Dashboard	4
+3.  Pool & Recreational Facilities Management	5
+Core Features	5
+4.  Inventory Management	6
+Core Features	6
+5.  Invoice & Billing System	7
+Core Features	7
+6.  Guest Management & CRM	8
+Core Features	8
+7.  Food & Beverage Management	9
+Core Features	9
+8.  Reporting & Analytics	10
+Core Reports	10
+9.  Additional System Features	11
+Staff & HR Integration	11
+Mobile & Digital Guest Experience	11
+Integrations & Connectivity	11
+10.  Security & Data Privacy	12
+Security Architecture	12
+Data Privacy & Compliance	12
+11.  Non-Functional Requirements	13
+12.  Conclusion	14
+
+ 
+2.  Room Management
+The Room Management module is the operational heart of the HMS. It manages the entire lifecycle of a hotel room — from online booking and assignment through check-in, stay, and check-out — with full real-time visibility.
+
+Core Features
+‣	Online Booking System: Enable guests to book rooms from the hotel website, mobile app, or OTA channels. Specify dates, room type (single, double, suite, deluxe), number of guests, and special preferences.
+◦	Support for group bookings and corporate blocks
+◦	Integration with Google Hotel Ads and OTAs (Booking.com, Expedia)
+‣	Real-time Room Availability: Live calendar view of all rooms with current status. Prevents overbooking through a centralized availability engine synchronized across all booking channels.
+‣	Check-in / Check-out Management: Efficient digital processing of arrivals and departures, including early check-ins, late check-outs, and express checkout via mobile.
+◦	Digital ID verification and e-signature support
+◦	Automated pre-arrival communication with digital key delivery
+‣	Automated Room Assignment: Intelligently assign rooms based on guest tier, preferences, floor preferences, proximity requests, and real-time availability.
+‣	Dynamic Rate Management: Yield management engine adjusting pricing based on occupancy, seasonality, competitor rates, and special events or promotions.
+◦	Revenue management dashboard with pricing recommendations
+◦	Integration with channel managers for consistent rate parity
+‣	Housekeeping & Room Status: Track every room across statuses: Occupied, Vacant-Clean, Vacant-Dirty, Inspected, Out of Order, Under Maintenance.
+◦	Mobile app for housekeeping staff to update status in real-time
+◦	Supervisor inspection workflow with photo evidence capability
+‣	Do Not Disturb (DND) Integration: Guests can set DND via room controls, mobile app, or front desk. Staff are automatically notified and rooms are skipped in housekeeping routes.
+‣	Room Blocking & Holds: Place courtesy holds, maintenance blocks, or VIP pre-assignments with expiry timers and automatic release rules.
+
+Room Status Dashboard
+Occupied	Vacant-Clean	Vacant-Dirty
+Inspected	Out of Order	Under Maintenance
+Reserved	Blocked	Early Check-in
+
+ 
+3.  Pool & Recreational Facilities Management
+This module manages all recreational amenities including swimming pools, spa, gym, and other leisure facilities. It ensures optimal utilization, safety compliance, and a premium guest experience.
+
+Core Features
+‣	Online Booking & Slot Reservations: Guests can reserve time slots for the pool, spa, or gym via the mobile app or front desk. Configurable slot durations and buffer times between sessions.
+◦	QR code access passes generated on booking confirmation
+◦	Waitlist management when slots are full
+‣	Access Control Integration: Digital check-in at facility entry. Logs guest identity, entry/exit times, and duration. Integrated with wristband or key card systems.
+‣	Capacity Management: Set and enforce maximum occupancy per facility. Real-time counters with automated alerts to staff when nearing capacity limits.
+◦	Display boards at facility entrances showing live capacity
+‣	Maintenance & Hygiene Scheduling: Automated maintenance windows with blackout periods preventing bookings. Water quality logs, chemical balance records, and inspector sign-off workflows.
+◦	Preventive maintenance task assignment and tracking
+◦	Compliance reporting for health inspections
+‣	Cabana & Sunbed Reservations: Assign and manage premium poolside seating, cabanas, and loungers with optional add-on services (towels, beverages, sunscreen).
+‣	Lifeguard & Staff Scheduling: Manage lifeguard rosters, certification expiry tracking, and incident reporting integrated with the facility management module.
+‣	Revenue Tracking: Track revenue from paid pool access, spa treatments, cabana rentals, and F&B orders poolside.
+
+ 
+4.  Inventory Management
+A centralized inventory system tracking all hotel supplies across departments — housekeeping, F&B, maintenance, and front office. Ensures optimal stock levels, prevents pilferage, and enables cost-efficient procurement.
+
+Core Features
+‣	Multi-department Stock Tracking: Maintain separate inventory registers for housekeeping (linens, toiletries), F&B (food, beverages, dry goods), maintenance (tools, spare parts), and front office (stationery).
+‣	Automated Reorder Alerts: Configurable minimum stock thresholds per item. Automatic purchase order generation or alert to procurement team when levels fall below threshold.
+◦	Email/SMS notifications to department heads and procurement
+◦	Priority flagging for critical or high-usage items
+‣	Consumption Rate Analytics: Track usage patterns by department, season, and room occupancy to forecast demand and optimize order quantities.
+‣	Supplier & Purchase Order Management: Maintain a supplier directory with contracts, lead times, and pricing. Raise, approve, and track purchase orders through a digital workflow.
+◦	Multi-level approval workflows for purchases above threshold amounts
+◦	Supplier performance scoring based on delivery and quality
+‣	Barcode & QR Code Scanning: Staff can log stock receipts, transfers, and consumption using barcode scanners or mobile app cameras — eliminating manual entry errors.
+‣	Waste & Spoilage Tracking: Record and categorize waste events to identify loss patterns and implement corrective actions.
+‣	Asset Register Integration: Track fixed assets (furniture, appliances, linen sets) alongside consumables with depreciation schedules and replacement forecasting.
+
+ 
+5.  Invoice & Billing System
+A comprehensive billing engine that automates guest invoicing from arrival to departure, integrates with multiple payment channels, and ensures tax compliance for both domestic and international guests.
+
+Core Features
+‣	Automatic Invoice Generation: Consolidated bill created at checkout reflecting room charges, F&B, spa, minibar, parking, telephone, and any incidental charges.
+‣	Split Billing: Divide bills between multiple guests, company accounts, or payment methods. Handle partial payments and deposit allocations.
+◦	Room-sharing billing splits with individual or shared charges
+‣	Payment Gateway Integration: Seamless integration with major payment processors for credit/debit cards, mobile money, bank transfers, and digital wallets.
+◦	PCI-DSS compliant card storage for repeat guests
+◦	Contactless and QR code payment support
+‣	Tax & Levy Management: Automatic calculation of applicable taxes (VAT, tourism levies, service charges) based on item type and jurisdiction. Tax-exempt handling for corporate or diplomatic guests.
+‣	Multi-currency & FX Support: Accept payment in any currency with real-time exchange rate integration. Automatically convert and display amounts in hotel base currency.
+‣	Discount & Promotion Engine: Apply negotiated corporate rates, loyalty discounts, promotional codes, and package inclusions. Full audit trail of all discounts applied.
+‣	Proforma & Final Invoices: Generate proforma invoices for advance confirmation or credit facilities, and final tax invoices with hotel's fiscal details for corporate reimbursement.
+‣	Night Audit Automation: End-of-day reconciliation posting room charges to all occupied rooms, generating balance reports and flagging discrepancies automatically.
+
+ 
+6.  Guest Management & CRM
+A powerful guest relationship management module that builds rich guest profiles, enables personalized service delivery, and drives loyalty and repeat bookings.
+
+Core Features
+‣	Unified Guest Profiles: Centralized profiles containing contact details, ID records, stay history, preferences (pillow type, floor, dietary, language), special occasions, and feedback history.
+◦	Profile merge for duplicate records
+◦	GDPR-compliant consent management and data retention policies
+‣	Loyalty & Rewards Program: Points-based loyalty engine awarding guests for stays, F&B spend, and spa services. Tiered membership (Silver, Gold, Platinum) with escalating benefits.
+◦	Points redemption for room upgrades, discounts, or complimentary services
+◦	Partner program integration for airline miles and travel rewards
+‣	Pre-arrival Personalization: Automated pre-arrival email/SMS with check-in instructions, upsell offers (room upgrades, airport transfers), and preference confirmations.
+‣	In-stay Service Requests: Guests can make requests (extra pillows, room service, wake-up calls, laundry) via mobile app or in-room tablet, routed directly to the relevant department.
+‣	Post-stay Engagement: Automated thank-you emails with feedback survey links. Re-engagement campaigns for past guests with personalized return offers.
+‣	VIP & Blacklist Management: Flag VIP guests for priority treatment workflows. Maintain a sensitive incidents register for security awareness.
+‣	Group & Event Management: Handle group bookings with rooming lists, event schedules, banquet requirements, and group billing under a single master folio.
+
+ 
+7.  Food & Beverage Management
+An integrated F&B module covering restaurant reservations, room service orders, banqueting, and bar operations — all linked to inventory and billing for seamless operations.
+
+Core Features
+‣	Restaurant Reservation System: Manage table bookings for in-house restaurants with floor plan visualization, dietary preference recording, and wait-list management.
+‣	Room Service Order Management: Guests order via mobile app, in-room tablet, or telephone. Orders routed to kitchen display system (KDS) with real-time status tracking.
+◦	Estimated delivery time display and guest notification on delivery
+‣	Point of Sale (POS) Integration: Seamless POS terminals at restaurants, bars, and room service. Charges automatically posted to the guest's room folio.
+‣	Menu Engineering & Costing: Digital menu management with recipe costing, margin analysis, and seasonal menu updates. Integration with inventory to track ingredient consumption.
+‣	Banquet & Events Management: Plan and manage banquet events with event-specific menus, seating arrangements, AV requirements, and event-day staffing schedules.
+‣	Dietary & Allergen Management: Flag dishes with allergen information. Guests can record dietary restrictions in their profile for kitchen awareness on all food orders.
+
+ 
+8.  Reporting & Analytics
+A data intelligence layer providing management with actionable insights across all hotel operations. Pre-built dashboards and ad hoc reporting capabilities support both operational and strategic decisions.
+
+Core Reports
+‣	Occupancy & RevPAR Reports: Daily, weekly, monthly occupancy rates, Average Daily Rate (ADR), Revenue Per Available Room (RevPAR), and pickup pace vs prior periods.
+‣	Financial Reports: Income statements, revenue by department, outstanding accounts, collection efficiency, and month-end reconciliation reports.
+‣	Housekeeping Performance: Room turnaround times, cleaning efficiency by housekeeper, DND impact analysis, and maintenance resolution times.
+‣	Guest Analytics: New vs returning guest ratios, nationality mix, booking channel analysis, average length of stay, and repeat guest lifetime value.
+‣	Inventory & Procurement Reports: Consumption trends, stock variance analysis, wastage reports, supplier performance, and procurement cost tracking.
+‣	Guest Feedback & NPS: Aggregated survey scores, Net Promoter Score (NPS) trends, review monitoring from OTAs and Google, and complaint resolution tracking.
+‣	Forecast & Budget Variance: Actual performance vs budget and forecast, with variance analysis and trend-based demand forecasting for the next 30/60/90 days.
+
+Executive Dashboard:  A real-time command center view accessible on desktop, tablet, and mobile showing live occupancy, revenue, issues, and KPIs at a glance.
+
+ 
+9.  Additional System Features
+
+Staff & HR Integration
+‣	Role-Based Access Control (RBAC): Granular permissions by job role. Receptionists, housekeepers, F&B staff, and managers only see the modules relevant to their function.
+‣	Shift Scheduling: Digital shift planner integrated with the HMS allowing department heads to schedule, swap, and track staff attendance.
+‣	Staff Performance Metrics: Track individual KPIs for front desk (check-in speed, upsell success), housekeeping (rooms per shift, quality scores), and F&B (order accuracy, delivery times).
+
+Mobile & Digital Guest Experience
+‣	Guest Mobile App: Full-featured app for booking, mobile check-in/out, digital key access, service requests, F&B ordering, and account review.
+‣	In-room Digital Concierge: Tablet-based system providing room controls, hotel information, local attractions, and direct service ordering — reducing front desk call volume.
+‣	Digital Signage Integration: Manage content on lobby screens, restaurant menu boards, and elevator displays from within the HMS.
+
+Integrations & Connectivity
+‣	Channel Manager: Synchronize availability and rates across OTAs, GDS channels, and the hotel's direct booking engine in real time.
+‣	Accounting Software Integration: Export financial data to accounting platforms (e.g., QuickBooks, Sage, SAP) for streamlined finance operations.
+‣	IoT & Smart Room Integration: Connect to smart room controls (temperature, lighting, curtains) and energy management systems to enable automation and sustainability tracking.
+‣	Offline Mode & Data Sync: The system remains operational during internet outages. All transactions are queued and synchronized automatically once connectivity is restored.
+‣	API & Webhook Support: Open REST API and webhook infrastructure enabling custom integrations with third-party systems, loyalty platforms, and property add-ons.
+
+ 
+10.  Security & Data Privacy
+Security is built into every layer of the HMS — from data encryption and access controls to compliance with international data protection laws. All guest data is treated with the highest standard of confidentiality.
+
+Security Architecture
+‣	End-to-End Data Encryption: AES-256 encryption for all data at rest; TLS 1.3 for all data in transit. Payment card data tokenized in compliance with PCI-DSS standards.
+‣	Role-Based Access Control: Principle of least privilege enforced across all user accounts. Multi-Factor Authentication (MFA) required for admin and manager accounts.
+‣	Audit Trail & Activity Logs: Immutable logs of all user actions, data accesses, configuration changes, and financial transactions. Available for compliance review and forensic investigation.
+‣	Automated Backups & Disaster Recovery: Automated daily backups with geo-redundant storage. Recovery Point Objective (RPO) of 1 hour and Recovery Time Objective (RTO) of 4 hours.
+‣	Intrusion Detection & Monitoring: 24/7 system monitoring with anomaly detection, failed login alerts, and automated account lockout after repeated failed authentication attempts.
+
+Data Privacy & Compliance
+‣	GDPR Compliance: Guest consent management, right-to-erasure workflows, data portability exports, and Data Processing Agreement templates for third-party vendors.
+‣	PCI-DSS Compliance: Quarterly vulnerability scans, annual penetration testing, and SAQ-D compliance for cardholder data environment.
+‣	Local Regulatory Compliance: Configurable compliance settings for local hospitality data laws, government guest registration requirements (e.g., passport/ID logging for immigration compliance).
+
+Security Certifications:  The HMS is designed to achieve ISO 27001 certification and comply with PCI-DSS Level 1 requirements. Security assessment reports are available upon request.
+
+ 
+11.  Non-Functional Requirements
+
+Requirement	Specification	Notes
+Performance	Page load < 2s; API response < 500ms under normal load	P95 target
+Scalability	Support up to 500 concurrent users; horizontal scaling via cloud	Auto-scale enabled
+Availability	99.9% uptime SLA (< 9 hrs downtime/year)	Excludes scheduled maintenance
+Browser Support	Latest 2 versions of Chrome, Firefox, Safari, Edge	Mobile responsive
+Data Retention	Guest records: 7 years; Financial records: 10 years	Per regulatory requirement
+Languages	UI supports English + configurable locale translations	RTL support included
+Accessibility	WCAG 2.1 AA compliance for all user-facing interfaces	Screen reader compatible
+
+ 
+12.  Conclusion
+
+This Hotel Management System Requirements Specification defines a comprehensive, enterprise-grade platform designed to digitally transform hotel operations. By consolidating room management, guest CRM, F&B, inventory, billing, analytics, and security into a single unified system, the HMS enables hotels to:
+
+‣	Improve Operational Efficiency: Eliminate manual processes, reduce errors, and enable data-driven decision-making across all departments.
+‣	Enhance Guest Experience: Deliver personalized, frictionless service from pre-arrival to post-departure, driving repeat business and positive reviews.
+‣	Maximize Revenue: Dynamic pricing, upselling automation, and channel management work together to optimize RevPAR and total revenue per guest.
+‣	Ensure Compliance & Security: Built-in security architecture and compliance tools protect guest data and maintain regulatory standing.
+‣	Scale with Growth: Cloud-native architecture ensures the system grows with the property — from a single-site boutique hotel to a multi-property chain.
+
+Next Steps:  This document should be reviewed and signed off by key stakeholders before proceeding to vendor selection, system design, and development phases. A Request for Proposal (RFP) can be generated from this specification.
+
+
+
+### ASSISTANT
+# 🏨 HOTEL MANAGEMENT SYSTEM - ROOM MODULE SPECIFICATION v2.1
+*Spring Boot + Hibernate + Next.js | Multi-tenant SaaS Architecture*
+
+---
+
+## 🎯 ARCHITECTURE OVERVIEW
+
+### Multi-Tenant SaaS Model
+```
+🔹 SUPER ADMIN (YOU - Platform Owner)
+   ├── Manages: All hotels (tenants), subscriptions, platform settings
+   ├── DOES NOT manage: Individual rooms, reservations, hotel operations
+   └── Revenue: Hotels pay subscription → you provide isolated tenant instance
+
+🔹 HOTEL TENANT (Your Customer)
+   ├── Hotel Admin: Full access to THEIR hotel's data only
+   ├── Staff Roles: Receptionist, Housekeeping, F&B, Finance, Manager
+   └── Data Isolation: hotel_id scoped in EVERY query (Hibernate @Where clause)
+
+🔹 GUEST/BOOKER (End User)
+   ├── Books rooms, manages reservations, checks in/out
+   └── Limited API access via public endpoints + JWT guest token
+```
+
+### Tech Stack Alignment
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| Backend | Spring Boot 3.x + Hibernate 6 | REST API, Business Logic, JPA |
+| Database | PostgreSQL 15 + Redis | Relational data + caching/session |
+| Auth | Spring Security + JWT + OAuth2 | RBAC, multi-tenant auth |
+| Frontend | Next.js 14 (App Router) + TypeScript | Admin dashboards, guest portal |
+| Real-time | WebSocket/STOMP + Redis Pub/Sub | Live room status, notifications |
+| File Storage | AWS S3 / MinIO | Room photos, ID documents, invoices |
+| Queue | RabbitMQ / Kafka | Async tasks: emails, reports, sync |
+
+### Core RBAC Roles Matrix
+```java
+public enum Role {
+    // PLATFORM LEVEL (You)
+    SUPER_ADMIN,          // Manage all hotels, billing, platform config
+    
+    // HOTEL LEVEL (Tenant Staff)
+    HOTEL_ADMIN,          // Full access to ONE hotel's data
+    RECEPTIONIST,         // Reservations, check-in/out, guest management
+    HOUSEKEEPING,         // Room status updates, cleaning tasks
+    HOUSEKEEPING_SUPERVISOR, // Inspect rooms, assign tasks
+    MAINTENANCE,          // Mark rooms OOO, log repairs
+    FNB_STAFF,           // Post minibar/F&B charges to room
+    FINANCE,             // Invoices, payments, reports
+    MANAGER,             // Analytics, overrides, approvals
+    
+    // GUEST LEVEL (External)
+    GUEST,               // Book rooms, view own reservations, mobile check-in
+    CORPORATE_BOOKER     // Book for others, manage company accounts
+}
+```
+
+---
+
+## 🚪 ROOM MANAGEMENT MODULE - COMPLETE SPECIFICATION
+
+### 📦 Core Entities (JPA Models)
+
+```java
+// 1. Hotel (Tenant Root)
+@Entity
+@Table(name = "hotels")
+public class Hotel {
+    @Id @GeneratedValue UUID id;
+    String name, code, timezone, currency;
+    @Enumerated(STRING) SubscriptionStatus status; // ACTIVE, TRIAL, SUSPENDED
+    @OneToMany(mappedBy = "hotel") List<Room> rooms;
+    // ... audit fields, settings
+}
+
+// 2. Room Type (Template)
+@Entity
+@Table(name = "room_types")
+public class RoomType {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Hotel hotel; // Tenant isolation
+    String code, name, description;
+    Integer maxOccupancy, bedCount;
+    BigDecimal baseRate;
+    @ElementCollection List<String> amenities; // ["wifi", "ac", "minibar"]
+    @OneToMany List<Room> rooms;
+}
+
+// 3. Room (Physical Instance)
+@Entity
+@Table(name = "rooms")
+@Where(clause = "deleted = false") // Soft delete
+public class Room {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Hotel hotel;
+    @ManyToOne RoomType roomType;
+    String roomNumber, floor, building;
+    
+    @Enumerated(STRING) RoomStatus status; // See state machine below
+    @Enumerated(STRING) CleanlinessStatus cleanliness; // DIRTY, CLEAN, INSPECTED
+    
+    Boolean isOutOfOrder;
+    String maintenanceNotes;
+    
+    @OneToMany(mappedBy = "room") List<Reservation> reservations;
+    @OneToMany(mappedBy = "room") List<RoomCharge> charges; // minibar, extras
+}
+
+// 4. Room Status Enum (State Machine)
+public enum RoomStatus {
+    AVAILABLE,      // Ready to book
+    RESERVED,       // Booked but guest not arrived
+    CHECKED_IN,     // Guest occupying
+    CHECKED_OUT,    // Guest left, pending cleaning
+    OUT_OF_ORDER,   // Maintenance/repair
+    BLOCKED         // Admin hold (staff use, VIP prep)
+}
+
+// 5. Reservation (Booking Lifecycle)
+@Entity
+@Table(name = "reservations")
+public class Reservation {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Hotel hotel;
+    @ManyToOne Room room;
+    @ManyToOne Guest guest;
+    
+    LocalDate checkInDate, checkOutDate;
+    LocalDateTime actualCheckIn, actualCheckOut;
+    
+    Integer adults, children;
+    BigDecimal nightlyRate, totalAmount;
+    
+    @Enumerated(STRING) ReservationStatus status; // CONFIRMED, CHECKED_IN, CHECKED_OUT, CANCELLED
+    String specialRequests, source; // "direct", "booking.com", "corporate"
+    
+    @OneToMany(mappedBy = "reservation") List<RoomCharge> charges;
+    @OneToOne Invoice invoice;
+}
+
+// 6. RoomCharge (Consumptions during stay)
+@Entity
+public class RoomCharge {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Reservation reservation;
+    @ManyToOne Room room;
+    
+    String description; // "Minibar: Coca-Cola x2", "Laundry: Shirt"
+    BigDecimal amount;
+    LocalDateTime timestamp;
+    
+    @Enumerated(STRING) ChargeType type; // MINIBAR, FNB, LAUNDRY, PHONE, OTHER
+    String postedBy; // staff user ID who logged it
+}
+```
+
+### 🔄 Room Lifecycle State Machine
+```
+[AVAILABLE] 
+    │
+    ├──(Guest Books)──▶ [RESERVED] 
+    │       │
+    │       ├──(Guest Arrives)──▶ [CHECKED_IN] 
+    │       │       │
+    │       │       ├──(Charge Added)──▶ [CHECKED_IN]* (status unchanged, charges accumulate)
+    │       │       │
+    │       │       └──(Guest Checks Out)──▶ [CHECKED_OUT]
+    │       │               │
+    │       │               └──(Housekeeping Cleans)──▶ [AVAILABLE]
+    │       │
+    │       └──(Cancelled)──▶ [AVAILABLE]
+    │
+    ├──(Admin Block)──▶ [BLOCKED] ──(Release)──▶ [AVAILABLE]
+    │
+    └──(Maintenance)──▶ [OUT_OF_ORDER] ──(Repair Done)──▶ [AVAILABLE]
+```
+
+---
+
+## 🔌 ROOM MODULE API ENDPOINTS (With Payloads for Postman)
+
+### 🔐 Auth & Tenant Context
+All hotel-staff endpoints require:
+```http
+Authorization: Bearer <JWT_TOKEN>
+X-Hotel-ID: {{hotel_uuid}}  // Critical for multi-tenant isolation
+```
+
+Guest endpoints use public auth or guest JWT with limited scope.
+
+---
+
+### 📋 ROOM CRUD (Hotel Admin / Manager)
+
+#### `GET /api/v1/hotels/{hotelId}/rooms`
+*List rooms with filters*
+```json
+// Query Params
+?status=AVAILABLE,CLEAN&floor=3&roomType=DELUXE
+
+// Response 200
+{
+  "data": [
+    {
+      "id": "room_uuid",
+      "roomNumber": "301",
+      "floor": 3,
+      "roomType": { "id": "type_uuid", "name": "Deluxe King", "baseRate": 150.00 },
+      "status": "AVAILABLE",
+      "cleanliness": "INSPECTED",
+      "isOutOfOrder": false,
+      "currentReservation": null // or simplified reservation object if occupied
+    }
+  ],
+  "pagination": { "page": 1, "size": 20, "total": 45 }
+}
+```
+
+#### `POST /api/v1/hotels/{hotelId}/rooms`
+*Create new room*
+```json
+// Request Body (Hotel Admin only)
+{
+  "roomNumber": "305",
+  "floor": 3,
+  "building": "Main", // optional
+  "roomTypeId": "room_type_uuid",
+  "initialStatus": "AVAILABLE", // or OUT_OF_ORDER for new construction
+  "amenitiesOverride": ["balcony", "ocean_view"] // optional, extends room type
+}
+
+// Response 201
+{
+  "id": "new_room_uuid",
+  "roomNumber": "305",
+  "status": "AVAILABLE",
+  "message": "Room created successfully"
+}
+```
+
+#### `PATCH /api/v1/hotels/{hotelId}/rooms/{roomId}`
+*Update room (partial)*
+```json
+// Request Body
+{
+  "status": "OUT_OF_ORDER",
+  "maintenanceNotes": "AC unit leaking - ticket #MAINT-204",
+  "isOutOfOrder": true
+}
+
+// Response 200
+{
+  "id": "room_uuid",
+  "status": "OUT_OF_ORDER",
+  "updatedAt": "2026-04-27T10:30:00Z",
+  "updatedBy": "staff_user_id"
+}
+```
+
+---
+
+### 🗓️ RESERVATION MANAGEMENT (Receptionist / Guest)
+
+#### `POST /api/v1/hotels/{hotelId}/reservations`
+*Create booking (Guest or Staff)*
+```json
+// Request Body
+{
+  "guestId": "existing_guest_uuid", // or include guest object for new guest
+  "guest": { // if new guest
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "john@example.com",
+    "phone": "+1234567890",
+    "idDocument": { "type": "passport", "number": "AB123456" } // optional at booking
+  },
+  "roomTypeId": "room_type_uuid", // book by type, auto-assign room later
+  "preferredRoomId": "room_uuid", // optional, if specific room requested
+  "checkInDate": "2026-05-15",
+  "checkOutDate": "2026-05-18",
+  "adults": 2,
+  "children": 1,
+  "specialRequests": "High floor, quiet area, extra pillow",
+  "source": "direct", // "booking.com", "expedia", "corporate"
+  "ratePlan": {
+    "nightlyRate": 145.00,
+    "includesBreakfast": true,
+    "cancellationPolicy": "FREE_CANCELLATION_48H"
+  },
+  "payment": {
+    "depositRequired": true,
+    "depositAmount": 145.00,
+    "paymentMethod": "card" // or "cash", "bank_transfer"
+  }
+}
+
+// Response 201
+{
+  "id": "reservation_uuid",
+  "confirmationCode": "HMS-2026-7X9K2",
+  "status": "CONFIRMED",
+  "room": { // auto-assigned if preferredRoomId not provided
+    "id": "assigned_room_uuid",
+    "roomNumber": "412"
+  },
+  "totalAmount": 435.00,
+  "checkInDate": "2026-05-15",
+  "message": "Reservation confirmed. Confirmation email sent."
+}
+```
+
+#### `GET /api/v1/hotels/{hotelId}/reservations/availability`
+*Check room availability (Public endpoint for booking widget)*
+```json
+// Query Params
+?checkIn=2026-05-15&checkOut=2026-05-18&adults=2&children=1&roomTypeId=optional_uuid
+
+// Response 200
+{
+  "available": true,
+  "availableRooms": [
+    { "roomId": "uuid", "roomNumber": "301", "floor": 3, "rate": 145.00 },
+    { "roomId": "uuid", "roomNumber": "412", "floor": 4, "rate": 165.00 }
+  ],
+  "alternativeDates": [ // if not available
+    { "checkIn": "2026-05-16", "available": true }
+  ],
+  "pricing": {
+    "baseRate": 145.00,
+    "taxes": 21.75,
+    "fees": 10.00,
+    "totalPerNight": 176.75
+  }
+}
+```
+
+---
+
+### 🔄 CHECK-IN / CHECK-OUT WORKFLOW (Receptionist)
+
+#### `POST /api/v1/hotels/{hotelId}/reservations/{reservationId}/check-in`
+*Process guest arrival*
+```json
+// Request Body
+{
+  "actualCheckInTime": "2026-05-15T14:30:00Z", // optional, defaults to now
+  "assignedRoomId": "room_uuid", // if not pre-assigned
+  "idVerification": {
+    "documentType": "passport",
+    "documentNumber": "AB123456",
+    "photoUrl": "https://s3/.../id_scan.jpg", // uploaded separately
+    "verifiedBy": "staff_user_id"
+  },
+  "paymentMethod": {
+    "type": "card",
+    "last4": "4242",
+    "brand": "visa",
+    "token": "pm_stripe_token" // for future charges
+  },
+  "specialInstructions": "Guest requested late checkout if possible"
+}
+
+// Response 200
+{
+  "reservationId": "uuid",
+  "status": "CHECKED_IN",
+  "room": {
+    "id": "room_uuid",
+    "roomNumber": "412",
+    "status": "CHECKED_IN" // auto-updated
+  },
+  "digitalKey": { // if IoT integration enabled
+    "enabled": true,
+    "keyCode": "DK-8821-XJ9",
+    "validFrom": "2026-05-15T14:30:00Z",
+    "validUntil": "2026-05-18T11:00:00Z"
+  },
+  "nextSteps": [
+    "Room charges can now be posted via /api/v1/rooms/{roomId}/charges",
+    "Guest can access mobile app features"
+  ]
+}
+```
+
+#### `POST /api/v1/hotels/{hotelId}/reservations/{reservationId}/check-out`
+*Process departure + generate invoice*
+```json
+// Request Body
+{
+  "actualCheckOutTime": "2026-05-18T10:15:00Z",
+  "finalPayment": {
+    "method": "card",
+    "amount": 298.50, // remaining balance after deposit
+    "transactionId": "txn_stripe_123"
+  },
+  "feedback": { // optional
+    "rating": 5,
+    "comment": "Excellent stay, will return!"
+  },
+  "postCheckout": {
+    "sendInvoiceEmail": true,
+    "addToLoyaltyProgram": true,
+    "scheduleFollowUp": "7_days"
+  }
+}
+
+// Response 200
+{
+  "reservationId": "uuid",
+  "status": "CHECKED_OUT",
+  "room": {
+    "id": "room_uuid",
+    "status": "CHECKED_OUT", // triggers housekeeping workflow
+    "cleanliness": "DIRTY"
+  },
+  "invoice": {
+    "id": "invoice_uuid",
+    "invoiceNumber": "INV-2026-00451",
+    "totalAmount": 435.00,
+    "pdfUrl": "https://s3/.../invoice_00451.pdf",
+    "items": [
+      { "description": "Room (3 nights @ $145)", "amount": 435.00 },
+      { "description": "Minibar", "amount": 24.50 },
+      { "description": "Laundry", "amount": 15.00 },
+      { "description": "Tax (15%)", "amount": 71.18 },
+      { "description": "Deposit Paid", "amount": -145.00 }
+    ]
+  },
+  "loyaltyPointsEarned": 435,
+  "message": "Check-out complete. Invoice sent to john@example.com"
+}
+```
+
+---
+
+### 🧹 HOUSEKEEPING INTEGRATION (Room Status Updates)
+
+#### `PATCH /api/v1/hotels/{hotelId}/rooms/{roomId}/status`
+*Update room status (Housekeeping / Supervisor)*
+```json
+// Request Body
+{
+  "status": "AVAILABLE", // from CHECKED_OUT
+  "cleanliness": "INSPECTED", // DIRTY → CLEAN → INSPECTED
+  "notes": "Room ready, minibar restocked",
+  "inspection": { // if supervisor
+    "inspectorId": "supervisor_uuid",
+    "photos": ["https://s3/.../room301_1.jpg"],
+    "qualityScore": 95
+  }
+}
+
+// Response 200 + WebSocket Broadcast
+{
+  "roomId": "uuid",
+  "previousStatus": "CHECKED_OUT",
+  "newStatus": "AVAILABLE",
+  "updatedAt": "2026-04-27T09:15:00Z",
+  "broadcast": "Room 301 now available for booking" // sent via WebSocket to all receptionists
+}
+```
+
+#### `GET /api/v1/hotels/{hotelId}/housekeeping/tasks`
+*Housekeeping dashboard: rooms needing attention*
+```json
+// Response 200
+{
+  "tasks": [
+    {
+      "roomId": "uuid",
+      "roomNumber": "301",
+      "priority": "HIGH", // based on early check-in, VIP guest
+      "currentStatus": "CHECKED_OUT",
+      "requiredActions": ["clean", "restock_minibar", "inspect"],
+      "estimatedTime": 25, // minutes
+      "assignedTo": "housekeeper_uuid" // optional
+    }
+  ],
+  "summary": {
+    "totalDirty": 12,
+    "inProgress": 3,
+    "readyForInspection": 5
+  }
+}
+```
+
+---
+
+### 💰 ROOM CHARGES (Minibar, F&B, Extras)
+
+#### `POST /api/v1/hotels/{hotelId}/rooms/{roomId}/charges`
+*Post consumption to guest folio (F&B Staff / Receptionist)*
+```json
+// Request Body
+{
+  "reservationId": "reservation_uuid", // required to link to active guest
+  "description": "Minibar: Premium Whiskey 50ml",
+  "amount": 18.50,
+  "type": "MINIBAR", // MINIBAR, FNB, LAUNDRY, PHONE, SPA, OTHER
+  "quantity": 1,
+  "postedBy": "staff_user_id",
+  "metadata": { // optional structured data
+    "productId": "whiskey_premium_50ml",
+    "timestamp": "2026-04-27T22:15:00Z"
+  }
+}
+
+// Response 201
+{
+  "chargeId": "charge_uuid",
+  "reservationId": "reservation_uuid",
+  "description": "Minibar: Premium Whiskey 50ml",
+  "amount": 18.50,
+  "runningTotal": 453.50, // updated reservation total
+  "postedAt": "2026-04-27T22:16:01Z"
+}
+```
+
+#### `GET /api/v1/hotels/{hotelId}/reservations/{reservationId}/folio`
+*View live guest folio (Receptionist / Guest)*
+```json
+// Response 200
+{
+  "reservationId": "uuid",
+  "guestName": "John Doe",
+  "roomNumber": "412",
+  "checkIn": "2026-05-15",
+  "checkOut": "2026-05-18",
+  "charges": [
+    {
+      "id": "charge_uuid",
+      "date": "2026-04-27T22:15:00Z",
+      "description": "Minibar: Premium Whiskey 50ml",
+      "amount": 18.50,
+      "type": "MINIBAR"
+    },
+    {
+      "id": "charge_uuid2",
+      "date": "2026-04-27T19:30:00Z", 
+      "description": "Restaurant: Dinner for 2",
+      "amount": 89.00,
+      "type": "FNB"
+    }
+  ],
+  "summary": {
+    "roomCharges": 435.00,
+    "consumptionCharges": 107.50,
+    "taxes": 81.38,
+    "depositPaid": -145.00,
+    "balanceDue": 478.88
+  }
+}
+```
+
+---
+
+## 🔗 INTEGRATION POINTS: ROOM + OTHER MODULES
+
+The Room module doesn't exist in isolation. Here's how it connects:
+
+| Module | Integration Point | Data Flow | API/Webhook |
+|--------|------------------|-----------|------------|
+| **Guest Management** | Reservation creation requires guest profile | Guest ID ↔ Reservation | `POST /guests` → returns guest_id for reservation |
+| **Billing/Invoice** | Room charges + reservation totals feed invoice engine | RoomCharge → Invoice line items | Webhook: `room.charge.posted` → billing service |
+| **F&B Module** | Minibar/room service orders post charges to room | F&B Order → RoomCharge | `POST /rooms/{id}/charges` with type=FNB |
+| **Housekeeping** | Check-out triggers cleaning task; status updates affect availability | Room.status → Housekeeping queue | WebSocket: `room.status.changed` |
+| **Inventory** | Minibar consumption triggers stock deduction | RoomCharge (MINIBAR) → Inventory decrement | Async event: `minibar.consumed` |
+| **Reporting** | Room occupancy, ADR, RevPAR calculated from reservations | Reservation + Room data → Analytics DB | Scheduled job: nightly aggregation |
+| **Mobile App** | Guests view room status, request services, digital key | Room data → Guest app via filtered API | Guest-scoped endpoints: `GET /guest/reservations` |
+
+### Critical Cross-Module Events (Use Domain Events / Kafka)
+```java
+// Example: When room status changes to CHECKED_OUT
+@EventListener
+public void onRoomCheckedOut(RoomStatusChangedEvent event) {
+    // 1. Create housekeeping task
+    housekeepingService.createCleaningTask(event.getRoomId());
+    
+    // 2. Notify billing: finalize provisional invoice
+    billingService.provisionalInvoice(event.getReservationId());
+    
+    // 3. Update inventory: flag minibar for restock check
+    if (event.getRoom().hasMinibar()) {
+        inventoryService.flagForRestock(event.getRoomId(), "MINIBAR");
+    }
+    
+    // 4. Broadcast to frontend via WebSocket
+    websocketTemplate.convertAndSend(
+        "/topic/hotel/" + event.getHotelId() + "/rooms",
+        new RoomUpdateDTO(event.getRoomId(), event.getNewStatus())
+    );
+}
+```
+
+---
+
+## 📦 REMAINING MODULES (Not Directly Tied to Room Core)
+
+These modules can be developed in parallel but integrate via APIs/events:
+
+### 🔹 Module 8: Pool & Recreational Facilities
+```http
+POST /api/v1/hotels/{hotelId}/facilities/pool/slots
+GET /api/v1/hotels/{hotelId}/facilities/{facilityId}/availability
+```
+*Integration with Room*: Guest can book pool slot during check-in; charges posted to room folio.
+
+### 🔹 Module 4: Inventory Management (Standalone Core)
+```http
+POST /api/v1/hotels/{hotelId}/inventory/items
+GET /api/v1/hotels/{hotelId}/inventory/low-stock-alerts
+```
+*Integration with Room*: Minibar consumption triggers inventory deduction; housekeeping supplies tracking.
+
+### 🔹 Module 6: Guest CRM & Loyalty
+```http
+GET /api/v1/guests/{guestId}/profile
+POST /api/v1/guests/{guestId}/preferences
+```
+*Integration with Room*: Guest preferences (floor, pillow type) auto-applied during room assignment.
+
+### 🔹 Module 7: F&B Management (POS Integration)
+```http
+POST /api/v1/hotels/{hotelId}/pos/orders
+GET /api/v1/hotels/{hotelId}/restaurants/{id}/tables
+```
+*Integration with Room*: Table orders can be charged to room; room service orders linked to reservation.
+
+### 🔹 Module 9: Reporting & Analytics (Read-Only Aggregator)
+```http
+GET /api/v1/hotels/{hotelId}/reports/occupancy?period=monthly
+GET /api/v1/hotels/{hotelId}/analytics/revpar
+```
+*Integration with Room*: Pulls reservation + room status data for KPIs.
+
+### 🔹 Module 10: Super Admin Platform Management (YOUR DASHBOARD)
+```http
+// Platform Owner Endpoints (NO hotelId in path - you see all)
+GET /api/v1/platform/hotels?status=ACTIVE
+POST /api/v1/platform/hotels/{hotelId}/subscription/update
+GET /api/v1/platform/analytics/total-revenue
+```
+*Critical*: These endpoints bypass hotel_id scoping - only SUPER_ADMIN role can access.
+
+---
+
+## 🧪 POSTMAN TESTING COLLECTION STRUCTURE
+
+```
+HMS API v1.postman_collection.json
+├── Auth
+│   ├── POST /auth/login (super_admin)
+│   ├── POST /auth/login (hotel_staff)
+│   └── POST /auth/guest/login
+├── Platform Admin (You)
+│   ├── GET /platform/hotels
+│   └── POST /platform/hotels/{id}/provision
+├── Hotel: Room Management
+│   ├── GET /hotels/{id}/rooms
+│   ├── POST /hotels/{id}/rooms
+│   ├── PATCH /hotels/{id}/rooms/{roomId}
+│   └── PATCH /hotels/{id}/rooms/{roomId}/status
+├── Hotel: Reservations
+│   ├── GET /hotels/{id}/reservations/availability
+│   ├── POST /hotels/{id}/reservations
+│   ├── POST /reservations/{id}/check-in
+│   └── POST /reservations/{id}/check-out
+├── Hotel: Charges & Folio
+│   ├── POST /rooms/{id}/charges
+│   ├── GET /reservations/{id}/folio
+│   └── GET /rooms/{id}/charges
+├── Hotel: Housekeeping
+│   ├── GET /housekeeping/tasks
+│   └── PATCH /rooms/{id}/status (housekeeping role)
+└── Guest-Facing (Public/Limited)
+    ├── GET /hotels/{id}/rooms/availability
+    ├── POST /reservations (guest token)
+    └── GET /guest/reservations
+```
+
+### Sample Environment Variables for Postman
+```json
+{
+  "baseUrl": "http://localhost:8080/api/v1",
+  "superAdminToken": "{{login_super_admin}}",
+  "hotelAdminToken": "{{login_hotel_admin}}",
+  "receptionistToken": "{{login_receptionist}}",
+  "guestToken": "{{login_guest}}",
+  "testHotelId": "550e8400-e29b-41d4-a716-446655440000",
+  "testRoomId": "660e8400-e29b-41d4-a716-446655440001",
+  "testReservationId": "770e8400-e29b-41d4-a716-446655440002"
+}
+```
+
+---
+
+## 🗂️ DEVELOPMENT ROADMAP FOR CURSOR
+
+### Phase 1: Foundation (Week 1-2)
+```bash
+✅ Spring Boot project setup with:
+   - Spring Security + JWT + Method Security
+   - Hibernate with multi-tenant @Where(clause = "hotel_id = :tenantId")
+   - PostgreSQL + Flyway migrations
+   - Redis for caching room availability
+
+✅ Next.js app setup with:
+   - App Router + TypeScript
+   - Auth context (JWT storage, role-based redirects)
+   - API client with axios interceptors (auto-inject X-Hotel-ID)
+
+✅ Core Entities: Hotel, Room, RoomType, Guest, Reservation (JPA)
+✅ RBAC Implementation: Role enum + @PreAuthorize annotations
+```
+
+### Phase 2: Room Module MVP (Week 3-4)
+```bash
+✅ Room CRUD APIs (hotel-scoped)
+✅ Reservation creation + availability check
+✅ Basic check-in/check-out workflow
+✅ Room status state machine + housekeeping integration
+✅ WebSocket broadcast for real-time room updates
+
+✅ Next.js Dashboards:
+   - Receptionist: Room grid + reservation calendar
+   - Housekeeping: Task list + status update UI
+   - Hotel Admin: Room management + reporting
+```
+
+### Phase 3: Integrations & Polish (Week 5-6)
+```bash
+✅ RoomCharge system + folio view
+✅ Invoice generation stub (integrate with Billing module later)
+✅ Guest mobile endpoints (limited scope)
+✅ Audit logging + soft deletes
+✅ Comprehensive Postman collection + test data scripts
+
+✅ Error handling standardization:
+   - Global exception handler
+   - Validation groups per role
+   - Tenant isolation enforcement tests
+```
+
+### Phase 4: Production Ready (Week 7+)
+```bash
+✅ Rate limiting + API versioning
+✅ Health checks + metrics (Prometheus)
+✅ Docker compose for local dev
+✅ CI/CD pipeline (GitHub Actions)
+✅ Documentation: OpenAPI 3.0 spec + Postman docs
+```
+
+---
+
+## ⚠️ CRITICAL CORRECTIONS TO ORIGINAL SPEC
+
+1. **Multi-tenancy was implied but not explicit** → Added `hotel_id` scoping in EVERY entity + Hibernate `@Where` clause + JWT claim injection.
+
+2. **Super Admin vs Hotel Admin confusion** → Clarified: YOU (Super Admin) never touch room/reservation data. Hotels manage their own data in isolated tenants.
+
+3. **Room lifecycle missing state transitions** → Added explicit state machine with triggers (check-in, check-out, cleaning).
+
+4. **API payloads were abstract** → Provided concrete JSON examples for Postman testing with all required/optional fields.
+
+5. **Integration points were vague** → Mapped exact data flows + events between Room module and other modules.
+
+6. **Missing tenant provisioning flow** → Added Super Admin endpoints to onboard new hotels (create tenant, assign subscription, generate credentials).
+
+---
+
+## 🚀 READY FOR CURSOR
+
+This specification is now:
+✅ **Developer-ready**: Concrete entities, APIs, payloads, state machines  
+✅ **Testable**: Postman collection structure + environment variables  
+✅ **Architected**: Multi-tenant isolation, RBAC, event-driven integrations  
+✅ **Phased**: Clear roadmap for incremental delivery  
+✅ **Corrected**: Fixed ambiguities in original spec  
+
+**Next step for Cursor**:  
+1. Generate Spring Boot entities from the JPA models above  
+2. Scaffold REST controllers with `@PreAuthorize("hasRole('RECEPTIONIST')")`  
+3. Implement tenant filter: `@EntityListeners(TenantFilterListener.class)`  
+4. Build Next.js page: `/app/hotel/[hotelId]/rooms/page.tsx` with role-based UI  
+
+Let me know if you want me to generate the actual Spring Boot entity code, Next.js component scaffolds, or the Postman collection JSON to kickstart development. 🛠️✨
+
+### USER
+develop these remaining please explaining playloads and endpoints as we did 
+📦 REMAINING MODULES (Not Directly Tied to Room Core)
+These modules can be developed in parallel but integrate via APIs/events:
+🔹 Module 8: Pool & Recreational Facilities
+http
+12
+Integration with Room: Guest can book pool slot during check-in; charges posted to room folio.
+🔹 Module 4: Inventory Management (Standalone Core)
+http
+12
+Integration with Room: Minibar consumption triggers inventory deduction; housekeeping supplies tracking.
+🔹 Module 6: Guest CRM & Loyalty
+http
+12
+Integration with Room: Guest preferences (floor, pillow type) auto-applied during room assignment.
+🔹 Module 7: F&B Management (POS Integration)
+http
+12
+Integration with Room: Table orders can be charged to room; room service orders linked to reservation.
+🔹 Module 9: Reporting & Analytics (Read-Only Aggregator)
+http
+12
+Integration with Room: Pulls reservation + room status data for KPIs.
+🔹 Module 10: Super Admin Platform Management (YOUR DASHBOARD)
+http
+1234
+Critical: These endpoints bypass hotel_id scoping - only SUPER_ADMIN role can access.
+🧪 POSTMAN TESTING COLLECTION STRUCTURE
+1234567891011121314151617181920212223242526272829
+Sample Environment Variables for Postman
+json
+12345678910
+🗂️ DEVELOPMENT ROADMAP FOR CURSOR
+Phase 1: Foundation (Week 1-2)
+bash
+12345678910111213
+Phase 2: Room Module MVP (Week 3-4)
+bash
+12345678910
+Phase 3: Integrations & Polish (Week 5-6)
+bash
+12345678910
+Phase 4: Production Ready (Week 7+)
+bash
+12345
+
+
+### ASSISTANT
+# 🏨 HOTEL MANAGEMENT SYSTEM - REMAINING MODULES SPECIFICATION v2.2
+*Spring Boot + Hibernate + Next.js | Complete API Contracts for Cursor*
+
+---
+
+## 🔹 MODULE 8: POOL & RECREATIONAL FACILITIES MANAGEMENT
+
+### 📦 Core Entities (JPA Models)
+
+```java
+// Facility (Pool, Spa, Gym, etc.)
+@Entity
+@Table(name = "facilities")
+public class Facility {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Hotel hotel; // Tenant isolation
+    
+    String name, code, description;
+    @Enumerated(STRING) FacilityType type; // POOL, SPA, GYM, SAUNA, TENNIS
+    
+    Integer maxCapacity; // max guests at once
+    Integer slotDurationMinutes; // default 60
+    Integer bufferMinutesBetweenSlots; // cleaning time
+    
+    BigDecimal basePrice; // 0 = free for guests
+    Boolean requiresAdvanceBooking;
+    Boolean allowsWalkIn;
+    
+    @ElementCollection List<String> amenities; // ["towels", "lockers", "showers"]
+    @OneToMany(mappedBy = "facility") List<FacilitySlot> slots;
+    
+    // Operating hours (JSONB or separate table for complex schedules)
+    @ElementCollection Map<DayOfWeek, LocalTime> openTime;
+    @ElementCollection Map<DayOfWeek, LocalTime> closeTime;
+}
+
+// FacilitySlot (Bookable time window)
+@Entity
+@Table(name = "facility_slots", uniqueConstraints = @UniqueConstraint(columnNames = {"facility_id", "start_time"}))
+public class FacilitySlot {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Facility facility;
+    
+    LocalDateTime startTime, endTime;
+    Integer currentBookings, maxBookings; // for capacity management
+    
+    @Enumerated(STRING) SlotStatus status; // AVAILABLE, BOOKED, MAINTENANCE, CLOSED
+    
+    @OneToMany(mappedBy = "slot") List<FacilityBooking> bookings;
+    
+    // Computed field (transient)
+    @Transient
+    public boolean isAvailable() {
+        return status == SlotStatus.AVAILABLE && currentBookings < maxBookings;
+    }
+}
+
+// FacilityBooking (Guest reservation)
+@Entity
+@Table(name = "facility_bookings")
+public class FacilityBooking {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne FacilitySlot slot;
+    @ManyToOne Reservation reservation; // null for walk-in guests
+    @ManyToOne Guest guest; // required if no reservation
+    
+    String bookingReference; // "POOL-2026-XK9"
+    LocalDateTime bookedAt;
+    
+    @Enumerated(STRING) BookingStatus status; // CONFIRMED, CHECKED_IN, COMPLETED, CANCELLED, NO_SHOW
+    
+    // Access control
+    String qrCode, accessCode; // for entry validation
+    LocalDateTime checkedInAt, checkedOutAt;
+    
+    // Charges
+    BigDecimal amountPaid;
+    @Enumerated(STRING) PaymentStatus paymentStatus; // PENDING, PAID, REFUNDED
+    
+    // Link to room charges if applicable
+    @ManyToOne RoomCharge roomCharge; // if charged to room folio
+}
+
+// Facility Maintenance Log
+@Entity
+public class FacilityMaintenance {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Facility facility;
+    
+    String title, description, reportedBy;
+    @Enumerated(STRING) PriorityLevel priority; // LOW, MEDIUM, HIGH, CRITICAL
+    
+    LocalDateTime reportedAt, scheduledStart, scheduledEnd, completedAt;
+    @Enumerated(STRING) MaintenanceStatus status; // REPORTED, SCHEDULED, IN_PROGRESS, COMPLETED
+    
+    @ElementCollection List<String> affectedSlots; // slot IDs blocked during maintenance
+    BigDecimal cost; // for reporting
+}
+```
+
+### 🔌 API Endpoints with Payloads
+
+#### `GET /api/v1/hotels/{hotelId}/facilities`
+*List all recreational facilities*
+```json
+// Query Params
+?type=POOL,SPA&availableOnly=true&date=2026-05-15
+
+// Response 200
+{
+  "data": [
+    {
+      "id": "facility_uuid",
+      "name": "Infinity Pool",
+      "type": "POOL",
+      "maxCapacity": 30,
+      "currentOccupancy": 12,
+      "basePrice": 0.00,
+      "requiresAdvanceBooking": false,
+      "operatingHours": {
+        "MONDAY": { "open": "06:00", "close": "22:00" },
+        "SATURDAY": { "open": "06:00", "close": "23:00" }
+      },
+      "amenities": ["towels", "lockers", "showers", "lifeguard"],
+      "nextAvailableSlot": "2026-05-15T14:00:00Z"
+    }
+  ]
+}
+```
+
+#### `GET /api/v1/hotels/{hotelId}/facilities/{facilityId}/slots`
+*Get bookable slots for a facility*
+```json
+// Query Params
+?date=2026-05-15&guestCount=2
+
+// Response 200
+{
+  "facilityId": "facility_uuid",
+  "date": "2026-05-15",
+  "slots": [
+    {
+      "slotId": "slot_uuid",
+      "startTime": "2026-05-15T14:00:00Z",
+      "endTime": "2026-05-15T15:00:00Z",
+      "availableSpots": 18,
+      "maxSpots": 30,
+      "price": 0.00,
+      "status": "AVAILABLE",
+      "canBook": true,
+      "requiresPayment": false
+    },
+    {
+      "slotId": "slot_uuid2",
+      "startTime": "2026-05-15T15:00:00Z",
+      "endTime": "2026-05-15T16:00:00Z",
+      "availableSpots": 0,
+      "maxSpots": 30,
+      "status": "BOOKED",
+      "waitlistAvailable": true,
+      "waitlistCount": 3
+    }
+  ],
+  "bookingRules": {
+    "maxAdvanceDays": 14,
+    "cancellationPolicy": "FREE_CANCELLATION_2H",
+    "guestsMustBeCheckedIn": true
+  }
+}
+```
+
+#### `POST /api/v1/hotels/{hotelId}/facilities/{facilityId}/bookings`
+*Book a facility slot (Guest or Receptionist)*
+```json
+// Request Body
+{
+  "slotId": "slot_uuid",
+  "guestCount": 2,
+  "reservationId": "reservation_uuid", // if booking for checked-in guest
+  "guest": { // required if no reservationId (walk-in or pre-arrival)
+    "id": "guest_uuid", // or include minimal guest object
+    "firstName": "John",
+    "email": "john@example.com"
+  },
+  "specialRequests": "Need extra towels, celebrating anniversary",
+  "chargeToRoom": true, // if reservationId provided
+  "payment": { // if chargeToRoom = false
+    "method": "card",
+    "amount": 25.00,
+    "token": "pm_stripe_token"
+  }
+}
+
+// Response 201
+{
+  "bookingId": "booking_uuid",
+  "bookingReference": "POOL-2026-XK9",
+  "status": "CONFIRMED",
+  "facility": {
+    "name": "Infinity Pool",
+    "slot": {
+      "startTime": "2026-05-15T14:00:00Z",
+      "endTime": "2026-05-15T15:00:00Z"
+    }
+  },
+  "guestCount": 2,
+  "access": {
+    "qrCode": "image/png;base64,iVBORw0KG...",
+    "accessCode": "POOL-XK9-2026",
+    "instructions": "Show QR code at pool entrance. Arrive 5 min early."
+  },
+  "charges": {
+    "amount": 0.00,
+    "chargedToRoom": true,
+    "roomChargeId": "charge_uuid" // if applicable
+  },
+  "cancellation": {
+    "allowedUntil": "2026-05-15T12:00:00Z",
+    "cancelEndpoint": "/api/v1/hotels/{hotelId}/facilities/bookings/{bookingId}/cancel"
+  }
+}
+```
+
+#### `POST /api/v1/hotels/{hotelId}/facilities/bookings/{bookingId}/check-in`
+*Guest arrives at facility (Staff or Self-Service Kiosk)*
+```json
+// Request Body
+{
+  "accessCode": "POOL-XK9-2026", // or scan QR
+  "actualGuestCount": 2, // validate against booking
+  "staffNotes": "Guests arrived on time, provided towels"
+}
+
+// Response 200 + WebSocket Broadcast
+{
+  "bookingId": "booking_uuid",
+  "status": "CHECKED_IN",
+  "checkedInAt": "2026-05-15T13:58:00Z",
+  "facility": {
+    "name": "Infinity Pool",
+    "currentOccupancy": 14,
+    "remainingCapacity": 16
+  },
+  "broadcast": {
+    "event": "facility.occupancy.updated",
+    "data": { "facilityId": "facility_uuid", "occupancy": 14, "capacity": 30 }
+  }
+}
+```
+
+#### `PATCH /api/v1/hotels/{hotelId}/facilities/{facilityId}/maintenance`
+*Report or update maintenance (Manager / Maintenance Staff)*
+```json
+// Request Body
+{
+  "title": "Pool pump malfunction",
+  "description": "Unusual noise from pump #2, reduced water circulation",
+  "priority": "HIGH",
+  "affectedSlots": ["slot_uuid", "slot_uuid2"], // auto-block these slots
+  "scheduledStart": "2026-05-16T08:00:00Z",
+  "estimatedDuration": 240, // minutes
+  "cost": 450.00
+}
+
+// Response 200 + Auto-Notifications
+{
+  "maintenanceId": "maint_uuid",
+  "status": "SCHEDULED",
+  "blockedSlots": 2,
+  "affectedBookings": [
+    {
+      "bookingId": "booking_uuid",
+      "guestEmail": "john@example.com",
+      "notificationSent": true,
+      "alternativeOffered": "2026-05-16T16:00:00Z"
+    }
+  ],
+  "publicNotice": {
+    "displayAtEntrance": true,
+    "message": "Pool maintenance May 16, 8AM-12PM. Alternative slots available."
+  }
+}
+```
+
+### 🔄 Integration with Room Module
+```java
+// When posting a facility charge to room folio
+@PostMapping("/facilities/bookings/{bookingId}/charge-to-room")
+@PreAuthorize("hasRole('RECEPTIONIST') or hasRole('FINANCE')")
+public ResponseEntity<RoomChargeDTO> chargeFacilityToRoom(
+    @PathVariable UUID bookingId,
+    @PathVariable UUID hotelId,
+    @RequestBody ChargeToRoomRequest request) {
+    
+    // 1. Validate booking belongs to active reservation
+    FacilityBooking booking = facilityService.getBooking(bookingId, hotelId);
+    if (!booking.getReservation().getStatus().equals(ReservationStatus.CHECKED_IN)) {
+        throw new BusinessException("Only active reservations can be charged");
+    }
+    
+    // 2. Create room charge via Room module API (internal service call)
+    RoomCharge charge = roomChargeService.create(
+        booking.getReservation().getId(),
+        booking.getFacility().getName() + " Access",
+        booking.getAmountPaid(),
+        ChargeType.RECREATION,
+        request.getPostedBy()
+    );
+    
+    // 3. Link booking to charge
+    booking.setRoomCharge(charge);
+    facilityBookingRepository.save(booking);
+    
+    // 4. Broadcast to guest folio (WebSocket)
+    websocketTemplate.convertAndSend(
+        "/topic/reservations/" + booking.getReservation().getId() + "/folio",
+        new FolioUpdateEvent(charge)
+    );
+    
+    return ResponseEntity.ok(RoomChargeDTO.fromEntity(charge));
+}
+```
+
+---
+
+## 🔹 MODULE 4: INVENTORY MANAGEMENT (STANDALONE CORE)
+
+### 📦 Core Entities (JPA Models)
+
+```java
+// Inventory Category (Hierarchical)
+@Entity
+@Table(name = "inventory_categories")
+public class InventoryCategory {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Hotel hotel;
+    
+    String name, code; // "HOUSEKEEPING", "FNB", "MAINTENANCE"
+    @ManyToOne InventoryCategory parent; // for subcategories
+    
+    @OneToMany(mappedBy = "category") List<InventoryItem> items;
+}
+
+// Inventory Item (SKU-level)
+@Entity
+@Table(name = "inventory_items")
+public class InventoryItem {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Hotel hotel;
+    @ManyToOne InventoryCategory category;
+    
+    String name, sku, barcode, description;
+    @Enumerated(STRING) ItemType type; // CONSUMABLE, ASSET, LINEN, MINIBAR_PRODUCT
+    
+    // Stock tracking
+    BigDecimal currentStock, minimumStock, maximumStock, reorderPoint;
+    String unitOfMeasure; // "piece", "liter", "box", "set"
+    
+    // Costing
+    BigDecimal unitCost, lastPurchasePrice;
+    @Enumerated(STRING) ValuationMethod valuation; // FIFO, AVERAGE_COST
+    
+    // Supplier info
+    @ManyToOne Supplier preferredSupplier;
+    Integer leadTimeDays; // for reorder calculations
+    
+    // Minibar specific
+    Boolean isMinibarItem;
+    Integer minibarReorderThreshold; // trigger restock when room checkout
+    
+    @OneToMany(mappedBy = "item") List<StockTransaction> transactions;
+    @OneToMany(mappedBy = "item") List<PurchaseOrderLine> poLines;
+}
+
+// Stock Transaction (Audit Trail)
+@Entity
+@Table(name = "stock_transactions")
+public class StockTransaction {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne InventoryItem item;
+    
+    @Enumerated(STRING) TransactionType type; // RECEIPT, CONSUMPTION, ADJUSTMENT, TRANSFER, WASTE
+    BigDecimal quantity; // negative for consumption
+    LocalDateTime timestamp;
+    
+    String reference; // reservation_id, po_id, housekeeping_task_id
+    String performedBy; // staff user ID
+    String notes;
+    
+    // Location tracking (optional)
+    String fromLocation, toLocation; // "Main Store", "Floor 3 Cart", "Room 301 Minibar"
+}
+
+// Purchase Order
+@Entity
+public class PurchaseOrder {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Hotel hotel;
+    @ManyToOne Supplier supplier;
+    
+    String poNumber; // auto-generated: PO-2026-00451
+    LocalDateTime orderDate, expectedDelivery, receivedDate;
+    
+    @Enumerated(STRING) POStatus status; // DRAFT, SUBMITTED, APPROVED, PARTIAL_RECEIVED, COMPLETED, CANCELLED
+    
+    BigDecimal totalAmount;
+    @Enumerated(STRING) PaymentTerms paymentTerms; // NET_30, COD, PREPAID
+    
+    @OneToMany(mappedBy = "purchaseOrder") List<PurchaseOrderLine> lines;
+    
+    // Approval workflow
+    @ElementCollection List<ApprovalStep> approvals;
+}
+
+// Supplier
+@Entity
+public class Supplier {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Hotel hotel; // or global catalog for platform-level suppliers
+    
+    String name, contactPerson, email, phone, address;
+    String taxId, paymentDetails;
+    
+    @ElementCollection List<String> categories; // ["FNB", "HOUSEKEEPING"]
+    BigDecimal rating; // 1-5 from performance tracking
+    
+    @OneToMany(mappedBy = "preferredSupplier") List<InventoryItem> suppliedItems;
+}
+```
+
+### 🔌 API Endpoints with Payloads
+
+#### `GET /api/v1/hotels/{hotelId}/inventory/items`
+*List inventory items with filters*
+```json
+// Query Params
+?category=MINIBAR&lowStock=true&search=whiskey
+
+// Response 200
+{
+  "data": [
+    {
+      "id": "item_uuid",
+      "name": "Premium Whiskey 50ml",
+      "sku": "MINI-WHISK-PREM-50",
+      "category": "MINIBAR",
+      "currentStock": 24,
+      "minimumStock": 50,
+      "reorderPoint": 30,
+      "unitOfMeasure": "piece",
+      "unitCost": 8.50,
+      "isMinibarItem": true,
+      "minibarReorderThreshold": 5, // per room
+      "status": "LOW_STOCK", // computed: current < reorderPoint
+      "lastRestocked": "2026-04-20T10:00:00Z",
+      "supplier": { "id": "sup_uuid", "name": "Beverages Inc" }
+    }
+  ],
+  "summary": {
+    "totalItems": 156,
+    "lowStockCount": 12,
+    "outOfStockCount": 2,
+    "totalValue": 45230.50
+  }
+}
+```
+
+#### `POST /api/v1/hotels/{hotelId}/inventory/items/{itemId}/consume`
+*Record consumption (Minibar, Housekeeping, F&B)*
+```json
+// Request Body
+{
+  "quantity": 2,
+  "type": "CONSUMPTION",
+  "reference": {
+    "type": "ROOM_CHARGE", // ROOM_CHARGE, HOUSEKEEPING_TASK, FNB_ORDER
+    "id": "reservation_uuid" // or task_id, order_id
+  },
+  "location": {
+    "from": "Room 412 Minibar",
+    "to": null // consumed, not transferred
+  },
+  "performedBy": "staff_user_id",
+  "notes": "Guest consumed during stay",
+  "autoReorderCheck": true // trigger reorder alert if below threshold
+}
+
+// Response 200 + Async Events
+{
+  "transactionId": "txn_uuid",
+  "item": {
+    "id": "item_uuid",
+    "name": "Premium Whiskey 50ml",
+    "previousStock": 24,
+    "newStock": 22,
+    "status": "LOW_STOCK" // updated status
+  },
+  "roomCharge": { // if reference.type = ROOM_CHARGE
+    "chargeId": "charge_uuid",
+    "amount": 17.00, // 2 x $8.50
+    "postedToFolio": true
+  },
+  "alerts": [ // if autoReorderCheck triggered
+    {
+      "type": "REORDER_ALERT",
+      "message": "Premium Whiskey 50ml below reorder point (22 < 30)",
+      "suggestedOrderQuantity": 30,
+      "supplier": "Beverages Inc"
+    }
+  ],
+  "events": [
+    { "type": "inventory.consumed", "itemId": "item_uuid", "quantity": 2 },
+    { "type": "room.charge.created", "chargeId": "charge_uuid" } // if applicable
+  ]
+}
+```
+
+#### `POST /api/v1/hotels/{hotelId}/inventory/purchase-orders`
+*Create purchase order (Procurement / Manager)*
+```json
+// Request Body
+{
+  "supplierId": "supplier_uuid",
+  "expectedDelivery": "2026-05-10",
+  "paymentTerms": "NET_30",
+  "lines": [
+    {
+      "itemId": "item_uuid",
+      "quantity": 50,
+      "unitPrice": 8.25, // negotiated price
+      "notes": "Bulk discount applied"
+    },
+    {
+      "itemId": "item_uuid2",
+      "quantity": 100,
+      "unitPrice": 1.20
+    }
+  ],
+  "approvalWorkflow": {
+    "requiresApproval": true,
+    "approverRoles": ["FINANCE", "MANAGER"],
+    "thresholdAmount": 500.00
+  },
+  "deliveryInstructions": "Deliver to main store, 9AM-4PM"
+}
+
+// Response 201
+{
+  "poId": "po_uuid",
+  "poNumber": "PO-2026-00451",
+  "status": "DRAFT", // or "SUBMITTED" if auto-submit
+  "totalAmount": 532.50,
+  "lines": [
+    {
+      "lineId": "line_uuid",
+      "item": { "name": "Premium Whiskey 50ml", "sku": "MINI-WHISK-PREM-50" },
+      "quantity": 50,
+      "unitPrice": 8.25,
+      "lineTotal": 412.50
+    }
+  ],
+  "nextSteps": [
+    "PO created in DRAFT status",
+    "Submit for approval: POST /purchase-orders/{id}/submit",
+    "Or edit: PATCH /purchase-orders/{id}"
+  ],
+  "approvalUrl": "/api/v1/hotels/{hotelId}/inventory/purchase-orders/{po_uuid}/approve"
+}
+```
+
+#### `POST /api/v1/hotels/{hotelId}/inventory/items/{itemId}/receive`
+*Receive goods against PO (Warehouse Staff)*
+```json
+// Request Body
+{
+  "purchaseOrderId": "po_uuid",
+  "receivedLines": [
+    {
+      "poLineId": "line_uuid",
+      "quantityReceived": 48, // partial receipt
+      "qualityCheck": "PASSED", // PASSED, FAILED, PARTIAL
+      "notes": "2 bottles damaged in transit",
+      "batchNumber": "BATCH-2026-WH-045",
+      "expiryDate": "2027-12-31" // if applicable
+    }
+  ],
+  "deliveryNote": "DN-2026-00891",
+  "receivedBy": "staff_user_id",
+  "location": "Main Store - Shelf B3"
+}
+
+// Response 200 + Stock Updates
+{
+  "receiptId": "receipt_uuid",
+  "purchaseOrder": {
+    "poNumber": "PO-2026-00451",
+    "status": "PARTIAL_RECEIVED", // updated
+    "remainingQuantity": 2
+  },
+  "stockUpdates": [
+    {
+      "itemId": "item_uuid",
+      "previousStock": 22,
+      "quantityReceived": 48,
+      "newStock": 70,
+      "status": "ADEQUATE" // no longer LOW_STOCK
+    }
+  ],
+  "discrepancies": [
+    {
+      "type": "SHORTAGE",
+      "itemId": "item_uuid",
+      "expected": 50,
+      "received": 48,
+      "action": "Supplier notified, credit memo pending"
+    }
+  ],
+  "alerts": [
+    {
+      "type": "STOCK_LEVEL_UPDATED",
+      "message": "Premium Whiskey 50ml stock restored to adequate level"
+    }
+  ]
+}
+```
+
+### 🔄 Integration with Room Module (Minibar Auto-Reorder)
+```java
+// Event listener: When room is checked out, trigger minibar restock check
+@EventListener
+public void onRoomCheckedOut(RoomStatusChangedEvent event) {
+    if (!event.getRoom().hasMinibar()) return;
+    
+    // 1. Get all minibar items consumed during this stay
+    List<RoomCharge> minibarCharges = roomChargeService.findByReservationAndType(
+        event.getReservationId(), 
+        ChargeType.MINIBAR
+    );
+    
+    // 2. For each consumed item, decrement room-level minibar stock
+    for (RoomCharge charge : minibarCharges) {
+        InventoryItem item = inventoryService.getBySku(charge.getProductSku());
+        
+        // Room-level minibar inventory (separate from main store)
+        RoomMinibarStock roomStock = roomMinibarRepo.findByRoomAndItem(
+            event.getRoomId(), item.getId()
+        );
+        roomStock.decrementStock(charge.getQuantity());
+        roomMinibarRepo.save(roomStock);
+        
+        // 3. If room stock below threshold, flag for restock
+        if (roomStock.getCurrentStock() <= item.getMinibarReorderThreshold()) {
+            housekeepingService.createRestockTask(
+                event.getRoomId(), 
+                item.getId(), 
+                item.getMinimumStock() - roomStock.getCurrentStock()
+            );
+        }
+    }
+}
+```
+
+---
+
+## 🔹 MODULE 6: GUEST CRM & LOYALTY
+
+### 📦 Core Entities (JPA Models)
+
+```java
+// Guest Profile (Extended)
+@Entity
+@Table(name = "guests")
+public class Guest {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Hotel hotel; // null for global guests (if cross-hotel loyalty)
+    
+    // Core identity
+    String firstName, lastName, email, phone;
+    @ElementCollection List<IdDocument> idDocuments;
+    
+    // Preferences (JSONB for flexibility)
+    @Type(JsonBinaryType.class)
+    @Column(columnDefinition = "jsonb")
+    GuestPreferences preferences; // { "floor": "high", "pillow": "firm", "dietary": ["vegetarian"] }
+    
+    // Loyalty
+    @Enumerated(STRING) LoyaltyTier tier; // BRONZE, SILVER, GOLD, PLATINUM
+    Long loyaltyPoints;
+    LocalDateTime tierValidUntil;
+    
+    // Stay history (denormalized for quick access)
+    @ElementCollection List<StaySummary> stayHistory; // { date, hotel, roomType, spend }
+    
+    // Communication
+    Boolean emailOptIn, smsOptIn;
+    @Enumerated(STRING) PreferredLanguage;
+    
+    @OneToMany(mappedBy = "guest") List<Reservation> reservations;
+    @OneToMany(mappedBy = "guest") List<FacilityBooking> facilityBookings;
+    
+    // Computed fields
+    @Transient
+    public int getLifetimeValue() { /* sum of all stays */ }
+    @Transient
+    public boolean isVIP() { return tier == LoyaltyTier.PLATINUM || lifetimeValue > 10000; }
+}
+
+// GuestPreferences (Value Object)
+@Embeddable
+public class GuestPreferences {
+    // Room preferences
+    Integer preferredFloor; // null = any
+    String bedType; // "king", "twin"
+    String pillowType; // "firm", "soft", "hypoallergenic"
+    Boolean quietRoom;
+    Boolean nearElevator;
+    
+    // Service preferences
+    String newspaper; // "none", "local", "international"
+    Integer wakeUpCallTime; // minutes from midnight
+    Boolean turndownService;
+    
+    // Dietary & accessibility
+    @ElementCollection List<String> dietaryRestrictions;
+    @ElementCollection List<String> allergies;
+    Boolean accessibilityNeeds;
+    String accessibilityNotes;
+    
+    // Communication
+    String preferredContactMethod; // "email", "sms", "app"
+    LocalDateTime doNotContactUntil; // for post-stay follow-up
+}
+
+// Loyalty Transaction (Points ledger)
+@Entity
+@Table(name = "loyalty_transactions")
+public class LoyaltyTransaction {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Guest guest;
+    
+    @Enumerated(STRING) TransactionType type; // EARNED, REDEEMED, EXPIRED, ADJUSTMENT
+    Long points; // positive for earned, negative for redeemed
+    
+    String reference; // reservation_id, redemption_id
+    String description; // "Stay at Grand Hotel - 3 nights", "Redeemed for room upgrade"
+    
+    LocalDateTime transactionDate, expiryDate; // points may expire
+    @Enumerated(STRING) Status status; // PENDING, POSTED, EXPIRED
+    
+    // Redemption details (if applicable)
+    @Enumerated(STRING) RedemptionType redemptionType; // ROOM_UPGRADE, DISCOUNT, FREE_NIGHT
+    BigDecimal redemptionValue; // monetary equivalent
+}
+
+// Guest Feedback / Review
+@Entity
+public class GuestFeedback {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Guest guest;
+    @ManyToOne Reservation reservation; // optional
+    
+    Integer rating; // 1-5
+    String category; // "room", "service", "cleanliness", "food", "overall"
+    String comment;
+    LocalDateTime submittedAt;
+    
+    @Enumerated(STRING) Source; // "post_stay_email", "mobile_app", "OTA", "in_person"
+    Boolean resolved;
+    String resolutionNotes;
+    LocalDateTime resolvedAt;
+}
+```
+
+### 🔌 API Endpoints with Payloads
+
+#### `GET /api/v1/hotels/{hotelId}/guests/{guestId}/profile`
+*Get guest profile with preferences (Receptionist / Manager)*
+```json
+// Response 200
+{
+  "id": "guest_uuid",
+  "name": "John Doe",
+  "email": "john@example.com",
+  "loyalty": {
+    "tier": "GOLD",
+    "points": 2450,
+    "nextTier": "PLATINUM",
+    "pointsToNextTier": 550,
+    "tierBenefits": ["late_checkout", "room_upgrade_priority", "welcome_amenity"]
+  },
+  "preferences": {
+    "room": {
+      "preferredFloor": "high",
+      "bedType": "king",
+      "pillowType": "firm",
+      "quietRoom": true,
+      "nearElevator": false
+    },
+    "service": {
+      "newspaper": "international",
+      "wakeUpCallTime": 420, // 7:00 AM
+      "turndownService": true
+    },
+    "dietary": {
+      "restrictions": ["vegetarian"],
+      "allergies": ["peanuts", "shellfish"]
+    }
+  },
+  "stayHistory": {
+    "totalStays": 8,
+    "totalNights": 24,
+    "lifetimeValue": 3850.00,
+    "lastStay": {
+      "date": "2026-03-15",
+      "hotel": "Grand Plaza",
+      "roomType": "Deluxe King",
+      "rating": 5
+    }
+  },
+  "communication": {
+    "emailOptIn": true,
+    "smsOptIn": false,
+    "preferredLanguage": "en",
+    "doNotContactUntil": null
+  },
+  "flags": {
+    "isVIP": true,
+    "requiresSpecialAttention": false,
+    "blacklisted": false
+  }
+}
+```
+
+#### `POST /api/v1/hotels/{hotelId}/reservations/{reservationId}/apply-guest-preferences`
+*Auto-apply guest preferences during room assignment (Receptionist / System)*
+```json
+// Request Body (optional overrides)
+{
+  "reservationId": "reservation_uuid",
+  "applyPreferences": {
+    "roomAssignment": true, // use preferences to select best available room
+    "amenities": true, // pre-stock preferred items
+    "services": true // schedule preferred services
+  },
+  "overrides": { // optional manual overrides
+    "preferredFloor": null, // ignore floor preference if no availability
+    "pillowType": "soft" // guest requested change at check-in
+  }
+}
+
+// Response 200 + Actions Taken
+{
+  "reservationId": "reservation_uuid",
+  "appliedPreferences": {
+    "roomAssigned": {
+      "roomId": "room_uuid",
+      "roomNumber": "412",
+      "matchScore": 95, // % of preferences matched
+      "matchedPreferences": ["high_floor", "king_bed", "quiet_area"],
+      "unmatchedPreferences": ["near_elevator"] // due to availability
+    },
+    "amenitiesPrepared": [
+      { "item": "Firm pillows", "location": "Room 412", "status": "READY" },
+      { "item": "Vegetarian welcome amenity", "location": "Room 412", "status": "READY" }
+    ],
+    "servicesScheduled": [
+      { "service": "Wake-up call", "time": "07:00", "method": "phone" },
+      { "service": "International newspaper", "delivery": "06:30 to room" }
+    ]
+  },
+  "alerts": [
+    {
+      "type": "ALLERGY_ALERT",
+      "message": "Guest has peanut allergy - notify F&B and housekeeping",
+      "severity": "HIGH",
+      "acknowledgedBy": null
+    }
+  ],
+  "nextSteps": [
+    "Preferences applied to reservation",
+    "Housekeeping notified of special requests",
+    "F&B team alerted to dietary restrictions"
+  ]
+}
+```
+
+#### `POST /api/v1/hotels/{hotelId}/guests/{guestId}/loyalty/earn`
+*Manually award loyalty points (Manager / Finance)*
+```json
+// Request Body
+{
+  "points": 150,
+  "type": "EARNED",
+  "reference": {
+    "type": "RESERVATION",
+    "id": "reservation_uuid"
+  },
+  "description": "Bonus points for 5-star review",
+  "expiryDate": "2027-04-27", // optional, overrides default policy
+  "notifyGuest": true
+}
+
+// Response 200
+{
+  "transactionId": "loyalty_txn_uuid",
+  "guest": {
+    "id": "guest_uuid",
+    "previousPoints": 2450,
+    "pointsEarned": 150,
+    "newPoints": 2600,
+    "tier": "GOLD",
+    "progressToNextTier": "85%"
+  },
+  "transaction": {
+    "description": "Bonus points for 5-star review",
+    "expiryDate": "2027-04-27",
+    "status": "POSTED"
+  },
+  "notification": {
+    "sent": true,
+    "method": "email",
+    "template": "loyalty_points_earned",
+    "scheduledSend": "2026-04-27T18:00:00Z" // avoid immediate spam
+  }
+}
+```
+
+#### `POST /api/v1/hotels/{hotelId}/guests/{guestId}/loyalty/redeem`
+*Redeem points for benefits (Guest via app / Receptionist)*
+```json
+// Request Body
+{
+  "redemptionType": "ROOM_UPGRADE",
+  "pointsToRedeem": 500,
+  "reference": {
+    "type": "RESERVATION",
+    "id": "reservation_uuid" // current or upcoming stay
+  },
+  "redemptionDetails": {
+    "upgradeTo": "SUITE", // from current booking
+    "effectiveDates": ["2026-05-15", "2026-05-18"]
+  },
+  "guestConfirmation": true // explicit consent
+}
+
+// Response 200 + Reservation Update
+{
+  "redemptionId": "redeem_uuid",
+  "pointsRedeemed": 500,
+  "guest": {
+    "previousPoints": 2600,
+    "newPoints": 2100,
+    "tier": "GOLD"
+  },
+  "benefit": {
+    "type": "ROOM_UPGRADE",
+    "description": "Upgraded to Junior Suite for stay May 15-18",
+    "monetaryValue": 120.00,
+    "appliedTo": {
+      "reservationId": "reservation_uuid",
+      "previousRoom": "412 (Deluxe King)",
+      "newRoom": "501 (Junior Suite)"
+    }
+  },
+  "reservationUpdated": true,
+  "notifications": [
+    "Guest notified of upgrade via email",
+    "Housekeeping notified of room change",
+    "Front desk updated in system"
+  ]
+}
+```
+
+### 🔄 Integration with Room Module (Auto-Preference Application)
+```java
+// During room assignment in ReservationService
+public Room assignRoomToReservation(Reservation reservation, AssignmentCriteria criteria) {
+    // 1. Get guest preferences
+    GuestPreferences prefs = guestService.getPreferences(reservation.getGuestId());
+    
+    // 2. Build room query with preference weights
+    RoomQuery query = RoomQuery.builder()
+        .hotelId(reservation.getHotelId())
+        .roomTypeId(reservation.getRoomTypeId())
+        .dates(reservation.getCheckInDate(), reservation.getCheckOutDate())
+        .preferences(prefs) // adds weighted filters
+        .build();
+    
+    // 3. Find best match
+    Room assignedRoom = roomRepository.findBestMatch(query);
+    
+    // 4. If room found, prepare preference-based amenities
+    if (assignedRoom != null && criteria.applyPreferences()) {
+        preferenceService.prepareRoomForGuest(assignedRoom.getId(), prefs);
+        
+        // 5. Flag any critical alerts (allergies, accessibility)
+        if (prefs.hasCriticalAlerts()) {
+            alertService.createRoomAlert(
+                assignedRoom.getId(),
+                AlertType.GUEST_PREFERENCE,
+                prefs.getCriticalAlerts(),
+                reservation.getId()
+            );
+        }
+    }
+    
+    return assignedRoom;
+}
+```
+
+---
+
+## 🔹 MODULE 7: F&B MANAGEMENT (POS INTEGRATION)
+
+### 📦 Core Entities (JPA Models)
+
+```java
+// Restaurant / Outlet
+@Entity
+@Table(name = "fb_outlets")
+public class FBOutlet {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Hotel hotel;
+    
+    String name, code, type; // RESTAURANT, BAR, ROOM_SERVICE, BANQUET
+    String description, location; // "Lobby Level", "Rooftop"
+    
+    // Operating hours
+    @ElementCollection Map<DayOfWeek, LocalTime> openTime;
+    @ElementCollection Map<DayOfWeek, LocalTime> closeTime;
+    
+    // Capacity
+    Integer tableCount, maxCovers;
+    Boolean acceptsReservations;
+    Boolean allowsRoomCharge; // can charge to guest room
+    
+    @OneToMany(mappedBy = "outlet") List<MenuItem> menuItems;
+    @OneToMany(mappedBy = "outlet") List<Table> tables;
+}
+
+// Menu Item
+@Entity
+@Table(name = "menu_items")
+public class MenuItem {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne FBOutlet outlet;
+    
+    String name, code, description;
+    BigDecimal price;
+    
+    @Enumerated(STRING) ItemType type; // FOOD, BEVERAGE, ALCOHOL, MINIBAR
+    @ElementCollection List<String> categories; // ["breakfast", "vegetarian", "signature"]
+    
+    // Dietary info
+    @ElementCollection List<String> allergens; // ["nuts", "dairy", "gluten"]
+    @ElementCollection List<String> dietaryTags; // ["vegan", "keto", "halal"]
+    
+    // Inventory linkage
+    @ManyToOne InventoryItem linkedInventoryItem; // for stock tracking
+    Integer portionSize; // grams, ml, etc.
+    
+    // Availability
+    Boolean available;
+    @ElementCollection List<TimeRange> availabilityWindows; // breakfast only, etc.
+    
+    @OneToMany(mappedBy = "menuItem") List<OrderLine> orderLines;
+}
+
+// Table (for dine-in)
+@Entity
+public class Table {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne FBOutlet outlet;
+    
+    String tableNumber, section; // "Patio", "Main Dining"
+    Integer capacity;
+    
+    @Enumerated(STRING) TableStatus status; // AVAILABLE, OCCUPIED, RESERVED, DIRTY
+    
+    @OneToMany(mappedBy = "table") List<Reservation> reservations; // F&B reservations
+    @OneToMany(mappedBy = "table") List<Order> activeOrders;
+}
+
+// Order (F&B Transaction)
+@Entity
+@Table(name = "fb_orders")
+public class Order {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne FBOutlet outlet;
+    @ManyToOne Table table; // null for room service / takeaway
+    @ManyToOne Reservation guestReservation; // if charging to room
+    
+    String orderNumber; // auto: FNB-2026-00451
+    LocalDateTime orderTime, servedTime, closedTime;
+    
+    @Enumerated(STRING) OrderType type; // DINE_IN, ROOM_SERVICE, TAKEAWAY, BANQUET
+    @Enumerated(STRING) OrderStatus status; // OPEN, PREPARING, SERVED, CLOSED, CANCELLED
+    
+    // Guest info (for non-room orders)
+    @ManyToOne Guest guest; // if walk-in or pre-registered
+    
+    // Payment
+    BigDecimal subtotal, tax, total;
+    @Enumerated(STRING) PaymentStatus paymentStatus;
+    
+    // Room charge linkage
+    @ManyToOne RoomCharge roomCharge; // if charged to guest folio
+    
+    @OneToMany(mappedBy = "order") List<OrderLine> lines;
+    @ElementCollection List<OrderNote> notes; // "no ice", "allergy alert"
+}
+
+// OrderLine
+@Entity
+public class OrderLine {
+    @Id @GeneratedValue UUID id;
+    @ManyToOne Order order;
+    @ManyToOne MenuItem menuItem;
+    
+    Integer quantity;
+    BigDecimal unitPrice, lineTotal;
+    
+    @ElementCollection List<String> modifiers; // ["extra cheese", "no onions"]
+    String specialInstructions;
+    
+    // Kitchen routing
+    @Enumerated(STRING) Station station; // GRILL, SALAD, BAR, DESSERT
+    LocalDateTime sentToKitchen, readyTime;
+    
+    // Inventory consumption
+    Boolean inventoryDeducted;
+}
+```
+
+### 🔌 API Endpoints with Payloads
+
+#### `GET /api/v1/hotels/{hotelId}/fb/outlets/{outletId}/menu`
+*Get menu for ordering (Guest App / POS Terminal)*
+```json
+// Query Params
+?category=breakfast&dietary=vegetarian&availableOnly=true
+
+// Response 200
+{
+  "outlet": {
+    "id": "outlet_uuid",
+    "name": "The Garden Restaurant",
+    "type": "RESTAURANT",
+    "allowsRoomCharge": true
+  },
+  "menu": {
+    "categories": [
+      {
+        "name": "Breakfast",
+        "items": [
+          {
+            "id": "item_uuid",
+            "name": "Avocado Toast",
+            "description": "Sourdough, poached eggs, microgreens",
+            "price": 14.50,
+            "dietaryTags": ["vegetarian", "gluten-free-option"],
+            "allergens": ["gluten", "eggs"],
+            "available": true,
+            "preparationTime": 12, // minutes
+            "imageUrl": "https://s3/.../avocado-toast.jpg"
+          }
+        ]
+      }
+    ]
+  },
+  "orderingRules": {
+    "minOrderValue": 0,
+    "roomChargeEnabled": true,
+    "requiresReservation": false,
+    "allergyDisclaimer": "Please inform staff of any allergies"
+  }
+}
+```
+
+#### `POST /api/v1/hotels/{hotelId}/fb/orders`
+*Create F&B order (POS / Guest App / Room Service)*
+```json
+// Request Body
+{
+  "outletId": "outlet_uuid",
+  "type": "ROOM_SERVICE", // DINE_IN, ROOM_SERVICE, TAKEAWAY
+  "guestContext": {
+    "reservationId": "reservation_uuid", // required for ROOM_SERVICE
+    "roomNumber": "412",
+    "guestName": "John Doe"
+  },
+  "tableId": "table_uuid", // required for DINE_IN
+  "lines": [
+    {
+      "menuItemId": "item_uuid",
+      "quantity": 2,
+      "modifiers": ["extra cheese"],
+      "specialInstructions": "Well done, no onions",
+      "allergyAlert": false // auto-set if guest has allergies matching item
+    }
+  ],
+  "delivery": { // for ROOM_SERVICE
+    "requestedTime": "2026-05-15T19:30:00Z",
+    "deliveryInstructions": "Leave at door if no answer",
+    "contactOnArrival": true
+  },
+  "payment": {
+    "method": "ROOM_CHARGE", // or CARD, CASH
+    "roomChargeDescription": "Room Service - Dinner"
+  },
+  "notes": [
+    { "type": "GUEST_REQUEST", "text": "Celebrating anniversary" },
+    { "type": "KITCHEN_NOTE", "text": "Allergy: peanuts - ensure no cross-contamination" }
+  ]
+}
+
+// Response 201 + Kitchen Routing
+{
+  "orderId": "order_uuid",
+  "orderNumber": "FNB-2026-00451",
+  "status": "OPEN",
+  "estimatedReadyTime": "2026-05-15T19:42:00Z", // orderTime + max prep time
+  "totals": {
+    "subtotal": 45.00,
+    "tax": 6.75,
+    "total": 51.75
+  },
+  "roomCharge": { // if payment.method = ROOM_CHARGE
+    "chargeId": "charge_uuid",
+    "description": "Room Service - Dinner",
+    "amount": 51.75,
+    "postedToFolio": true,
+    "folioUrl": "/api/v1/reservations/{reservationId}/folio"
+  },
+  "kitchenRouting": [
+    {
+      "station": "GRILL",
+      "items": ["Avocado Toast x2"],
+      "priority": "NORMAL",
+      "kdsUrl": "/api/v1/kitchen/orders?station=GRILL"
+    }
+  ],
+  "guestNotification": {
+    "sent": true,
+    "method": "app_push",
+    "message": "Your order FNB-2026-00451 is being prepared. Estimated delivery: 7:42 PM"
+  }
+}
+```
+
+#### `PATCH /api/v1/hotels/{hotelId}/fb/orders/{orderId}/status`
+*Update order status (Kitchen Staff / Server)*
+```json
+// Request Body
+{
+  "status": "SERVED", // OPEN → PREPARING → SERVED → CLOSED
+  "station": "GRILL", // which station updating
+  "timestamp": "2026-05-15T19:40:00Z", // optional, defaults to now
+  "notes": "Delivered to room 412, guest signed",
+  "inventoryDeducted": true // confirm stock was decremented
+}
+
+// Response 200 + Side Effects
+{
+  "orderId": "order_uuid",
+  "previousStatus": "PREPARING",
+  "newStatus": "SERVED",
+  "updatedAt": "2026-05-15T19:40:00Z",
+  "sideEffects": [
+    {
+      "type": "INVENTORY_DEDUCTED",
+      "items": [
+        { "sku": "AVOCADO-FRESH", "quantity": 2, "newStock": 45 },
+        { "sku": "BREAD-SOURDOUGH", "quantity": 2, "newStock": 28 }
+      ]
+    },
+    {
+      "type": "GUEST_NOTIFIED",
+      "method": "app_push",
+      "message": "Your order has been delivered. Enjoy your meal!"
+    },
+    {
+      "type": "TABLE_STATUS_UPDATED", // if DINE_IN
+      "tableId": "table_uuid",
+      "newStatus": "OCCUPIED"
+    }
+  ],
+  "nextActions": [
+    "Mark as CLOSED when guest finishes",
+    "Process payment if not pre-paid",
+    "Request feedback after 30 minutes"
+  ]
+}
+```
+
+#### `POST /api/v1/hotels/{hotelId}/fb/orders/{orderId}/charge-to-room`
+*Convert order to room charge (if not done at creation)*
+```json
+// Request Body
+{
+  "reservationId": "reservation_uuid", // must be CHECKED_IN
+  "chargeDescription": "Restaurant Dinner - The Garden",
+  "splitCharges": [ // optional: split between guests
+    {
+      "guestId": "guest_uuid_1",
+      "amount": 30.00,
+      "items": ["item_uuid", "item_uuid2"]
+    },
+    {
+      "guestId": "guest_uuid_2", 
+      "amount": 21.75,
+      "items": ["item_uuid3"]
+    }
+  ]
+}
+
+// Response 200
+{
+  "orderId": "order_uuid",
+  "roomCharges": [
+    {
+      "chargeId": "charge_uuid_1",
+      "guestId": "guest_uuid_1",
+      "amount": 30.00,
+      "description": "Restaurant Dinner - The Garden (Share 1)",
+      "postedToFolio": true
+    },
+    {
+      "chargeId": "charge_uuid_2",
+      "guestId": "guest_uuid_2",
+      "amount": 21.75,
+      "description": "Restaurant Dinner - The Garden (Share 2)",
+      "postedToFolio": true
+    }
+  ],
+  "order": {
+    "paymentStatus": "CHARGED_TO_ROOM",
+    "originalPaymentMethod": "CARD", // overridden
+    "refundProcessed": true // if original payment was taken
+  },
+  "folioUpdates": [
+    "Guest folios updated in real-time",
+    "WebSocket broadcast sent to reception dashboard"
+  ]
+}
+```
+
+### 🔄 Integration with Room Module (Real-time Folio Updates)
+```java
+// When F&B order is charged to room
+@Service
+public class FbRoomChargeIntegration {
+    
+    @Autowired private RoomChargeService roomChargeService;
+    @Autowired private WebSocketMessagingTemplate websocketTemplate;
+    
+    @Transactional
+    public RoomCharge postOrderToRoomFolio(Order order, UUID reservationId) {
+        // 1. Validate reservation is active
+        Reservation reservation = reservationService.getActiveReservation(reservationId);
+        if (reservation == null) {
+            throw new BusinessException("Cannot charge to inactive reservation");
+        }
+        
+        // 2. Create room charge
+        RoomCharge charge = roomChargeService.create(
+            reservationId,
+            order.getOutlet().getName() + " - " + order.getOrderNumber(),
+            order.getTotal(),
+            ChargeType.FNB,
+            order.getCreatedBy()
+        );
+        
+        // 3. Link order to charge
+        order.setRoomCharge(charge);
+        order.setPaymentStatus(PaymentStatus.CHARGED_TO_ROOM);
+        orderRepository.save(order);
+        
+        // 4. Real-time folio update via WebSocket
+        FolioUpdateEvent event = FolioUpdateEvent.builder()
+            .reservationId(reservationId)
+            .charge(RoomChargeDTO.fromEntity(charge))
+            .newBalance(reservation.calculateBalance())
+            .timestamp(LocalDateTime.now())
+            .build();
+            
+        websocketTemplate.convertAndSend(
+            "/topic/reservations/" + reservationId + "/folio",
+            event
+        );
+        
+        // 5. Log for audit
+        auditService.logRoomCharge(
+            reservation.getHotelId(),
+            "F&B_ORDER_CHARGED",
+            Map.of("orderId", order.getId(), "chargeId", charge.getId())
+        );
+        
+        return charge;
+    }
+}
+```
+
+---
+
+## 🔹 MODULE 9: REPORTING & ANALYTICS (READ-ONLY AGGREGATOR)
+
+### 📦 Core Architecture (CQRS Pattern)
+
+```java
+// Read Models (Optimized for Queries)
+@Document // MongoDB for analytics (or PostgreSQL materialized views)
+public class OccupancyReport {
+    @Id String id; // hotelId_date
+    UUID hotelId;
+    LocalDate date;
+    
+    Integer totalRooms, occupiedRooms, availableRooms;
+    Double occupancyRate; // occupied / total
+    BigDecimal adr; // Average Daily Rate
+    BigDecimal revpar; // Revenue Per Available Room
+    
+    // Breakdowns
+    Map<String, Integer> occupancyByRoomType; // {"DELUXE": 12, "SUITE": 3}
+    Map<String, BigDecimal> revenueByChannel; // {"direct": 4500, "booking.com": 3200}
+    
+    LocalDateTime lastUpdated;
+}
+
+// Pre-aggregated tables for fast reporting
+@Entity
+@Table(name = "daily_revenue_summary")
+public class DailyRevenueSummary {
+    @Id @GeneratedValue UUID id;
+    UUID hotelId;
+    LocalDate date;
+    
+    BigDecimal roomRevenue, fnbRevenue, facilityRevenue, otherRevenue;
+    BigDecimal totalRevenue;
+    Integer totalTransactions;
+    
+    // Channel breakdown
+    @ElementCollection Map<String, BigDecimal> revenueBySource;
+    
+    // Computed KPIs
+    public BigDecimal getRevPAR() { /* totalRevenue / totalRooms */ }
+}
+```
+
+### 🔌 API Endpoints with Payloads
+
+#### `GET /api/v1/hotels/{hotelId}/reports/occupancy`
+*Occupancy & RevPAR report (Manager / Finance)*
+```json
+// Query Params
+?startDate=2026-04-01&endDate=2026-04-27&groupBy=day&roomType=DELUXE
+
+// Response 200
+{
+  "reportType": "OCCUPANCY",
+  "hotelId": "hotel_uuid",
+  "period": {
+    "start": "2026-04-01",
+    "end": "2026-04-27",
+    "groupBy": "day"
+  },
+  "summary": {
+    "averageOccupancy": 78.5,
+    "peakOccupancy": 95.0,
+    "peakDate": "2026-04-20",
+    "averageADR": 145.50,
+    "averageRevPAR": 114.22,
+    "totalRoomNights": 1240
+  },
+  "data": [
+    {
+      "date": "2026-04-27",
+      "totalRooms": 100,
+      "occupiedRooms": 82,
+      "occupancyRate": 82.0,
+      "adr": 152.00,
+      "revpar": 124.64,
+      "breakdown": {
+        "byRoomType": {
+          "DELUXE": { "occupied": 45, "total": 60, "rate": 75.0 },
+          "SUITE": { "occupied": 12, "total": 15, "rate": 80.0 }
+        },
+        "byChannel": {
+          "direct": 35,
+          "booking.com": 28,
+          "expedia": 12,
+          "corporate": 7
+        }
+      }
+    }
+  ],
+  "exportOptions": {
+    "csv": "/api/v1/hotels/{hotelId}/reports/occupancy/export?format=csv",
+    "pdf": "/api/v1/hotels/{hotelId}/reports/occupancy/export?format=pdf",
+    "schedule": "/api/v1/hotels/{hotelId}/reports/schedule" // for recurring reports
+  }
+}
+```
+
+#### `GET /api/v1/hotels/{hotelId}/reports/guest-analytics`
+*Guest behavior & loyalty report*
+```json
+// Query Params
+?segment=RETURNING&tier=GOLD&minSpend=500
+
+// Response 200
+{
+  "reportType": "GUEST_ANALYTICS",
+  "filters": {
+    "segment": "RETURNING",
+    "loyaltyTier": "GOLD",
+    "minLifetimeValue": 500.00
+  },
+  "summary": {
+    "totalGuests": 245,
+    "averageLifetimeValue": 1850.00,
+    "averageStaysPerGuest": 4.2,
+    "topNationality": "United States",
+    "repeatGuestRate": 68.5
+  },
+  "insights": [
+    {
+      "type": "PREFERENCE_TREND",
+      "finding": "78% of GOLD tier guests prefer high-floor rooms",
+      "actionable": "Prioritize high-floor assignments for loyalty members"
+    },
+    {
+      "type": "REVENUE_OPPORTUNITY",
+      "finding": "Guests with dietary restrictions spend 22% more on F&B",
+      "actionable": "Train staff on upselling premium dietary options"
+    }
+  ],
+  "segments": [
+    {
+      "name": "High-Value Returners",
+      "count": 89,
+      "criteria": "lifetimeValue > 2000 AND stays >= 5",
+      "avgSpend": 3200.00,
+      "preferredRoomType": "SUITE",
+      "bookingChannel": "direct"
+    }
+  ],
+  "exportUrl": "/api/v1/hotels/{hotelId}/reports/guest-analytics/export"
+}
+```
+
+#### `GET /api/v1/hotels/{hotelId}/reports/realtime-dashboard`
+*Live operational dashboard (Reception / Manager)*
+```json
+// No params - returns current snapshot
+
+// Response 200 (WebSocket pushed every 30s)
+{
+  "timestamp": "2026-04-27T14:30:00Z",
+  "hotelId": "hotel_uuid",
+  "liveMetrics": {
+    "occupancy": {
+      "current": 82,
+      "forecast": 91, // for tonight
+      "trend": "increasing"
+    },
+    "arrivals": {
+      "today": 24,
+      "checkedIn": 18,
+      "pending": 6,
+      "earlyCheckIns": 2
+    },
+    "departures": {
+      "today": 19,
+      "checkedOut": 12,
+      "pending": 7,
+      "lateCheckOuts": 3
+    },
+    "housekeeping": {
+      "roomsToClean": 15,
+      "inProgress": 4,
+      "readyForInspection": 3,
+      "averageTurnaround": 22 // minutes
+    },
+    "revenue": {
+      "todayToDate": 12450.00,
+      "projected": 18200.00,
+      "vsForecast": "+5.2%"
+    }
+  },
+  "alerts": [
+    {
+      "priority": "HIGH",
+      "type": "CAPACITY_WARNING",
+      "message": "Pool at 90% capacity - consider limiting new bookings",
+      "facilityId": "pool_uuid",
+      "action": "/api/v1/facilities/pool/slots"
+    },
+    {
+      "priority": "MEDIUM",
+      "type": "STOCK_ALERT",
+      "message": "Premium Whiskey low stock (22 units)",
+      "itemId": "item_uuid",
+      "action": "/api/v1/inventory/items/item_uuid"
+    }
+  ],
+  "quickActions": [
+    { "label": "Check-in Pending Guests", "url": "/reservations?status=CONFIRMED" },
+    { "label": "Assign Housekeeping Tasks", "url": "/housekeeping/tasks" }
+  ]
+}
+```
+
+### 🔄 Integration with Room Module (Data Aggregation)
+```java
+// Scheduled job: Nightly aggregation for reports
+@Component
+public class ReportAggregationJob {
+    
+    @Autowired private RoomRepository roomRepo;
+    @Autowired private ReservationRepository reservationRepo;
+    @Autowired private AnalyticsRepository analyticsRepo;
+    
+    @Scheduled(cron = "0 0 2 * * ?") // 2 AM daily
+    @Transactional
+    public void aggregateDailyReports() {
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+        
+        List<Hotel> hotels = hotelService.getAllActive();
+        
+        for (Hotel hotel : hotels) {
+            // 1. Calculate occupancy metrics
+            long totalRooms = roomRepo.countByHotelId(hotel.getId());
+            long occupiedRooms = reservationRepo.countOccupiedRooms(hotel.getId(), yesterday);
+            double occupancyRate = (double) occupiedRooms / totalRooms * 100;
+            
+            // 2. Calculate revenue metrics
+            BigDecimal roomRevenue = reservationRepo.sumRevenueByDate(hotel.getId(), yesterday);
+            BigDecimal revpar = roomRevenue.divide(new BigDecimal(totalRooms), 2, RoundingMode.HALF_UP);
+            
+            // 3. Save to analytics store
+            OccupancyReport report = OccupancyReport.builder()
+                .hotelId(hotel.getId())
+                .date(yesterday)
+                .totalRooms((int) totalRooms)
+                .occupiedRooms((int) occupiedRooms)
+                .occupancyRate(occupancyRate)
+                .adr(roomRevenue.divide(new BigDecimal(occupiedRooms), 2, RoundingMode.HALF_UP))
+                .revpar(revpar)
+                .lastUpdated(LocalDateTime.now())
+                .build();
+                
+            analyticsRepo.save(report);
+            
+            // 4. Trigger cache invalidation for real-time dashboards
+            redisTemplate.delete("dashboard:" + hotel.getId() + ":live");
+        }
+    }
+}
+```
+
+---
+
+## 🔹 MODULE 10: SUPER ADMIN PLATFORM MANAGEMENT (YOUR DASHBOARD)
+
+### 📦 Core Entities (Platform-Level)
+
+```java
+// Platform Tenant (Hotel Subscription)
+@Entity
+@Table(name = "platform_tenants")
+public class PlatformTenant {
+    @Id @GeneratedValue UUID id; // same as hotel.id for linkage
+    
+    String hotelName, subdomain; // grandplaza.yourhms.com
+    String contactEmail, contactPhone;
+    
+    @Enumerated(STRING) SubscriptionTier tier; // STARTER, PROFESSIONAL, ENTERPRISE
+    LocalDateTime subscriptionStart, subscriptionEnd;
+    @Enumerated(STRING) BillingCycle; // MONTHLY, ANNUAL
+    
+    // Usage limits
+    Integer maxRooms, maxUsers, maxReservationsPerMonth;
+    Boolean featuresAdvancedReporting, featuresChannelManager, featuresMobileApp;
+    
+    // Billing
+    BigDecimal monthlyPrice;
+    String paymentMethodId; // Stripe customer ID
+    @Enumerated(STRING) BillingStatus; // ACTIVE, PAST_DUE, SUSPENDED
+    
+    // Provisioning
+    @Enumerated(STRING) ProvisioningStatus; // PENDING, PROVISIONED, SUSPENDED, TERMINATED
+    String databaseSchema; // isolated schema per tenant
+    String awsAccountId; // if multi-account architecture
+    
+    @OneToOne Hotel hotel; // JPA link to operational data
+}
+
+// Platform Usage Metrics (For billing & monitoring)
+@Entity
+@Table(name = "platform_usage_metrics")
+public class PlatformUsageMetric {
+    @Id @GeneratedValue UUID id;
+    UUID tenantId;
+    LocalDate date;
+    
+    // Counters
+    Integer activeRooms, activeUsers, reservationsCreated;
+    Long apiCalls, storageUsedMB, bandwidthUsedGB;
+    
+    // Computed for billing
+    public boolean exceedsLimit(PlatformTenant tenant) {
+        return reservationsCreated > tenant.getMaxReservationsPerMonth();
+    }
+}
+
+// Platform Audit Log (Your oversight)
+@Entity
+@Table(name = "platform_audit_logs")
+public class PlatformAuditLog {
+    @Id @GeneratedValue UUID id;
+    
+    UUID actorUserId; // your admin account
+    String action; // "TENANT_CREATED", "SUBSCRIPTION_UPDATED", "USER_IMPERSONATED"
+    UUID targetTenantId; // which hotel was affected
+    UUID targetResourceId; // specific resource if applicable
+    
+    Map<String, Object> changes; // before/after snapshot
+    String ipAddress, userAgent;
+    
+    LocalDateTime timestamp;
+    String notes; // manual notes for sensitive actions
+}
+```
+
+### 🔌 API Endpoints with Payloads (SUPER_ADMIN ONLY)
+
+#### `GET /api/v1/platform/tenants`
+*List all hotel tenants (Your master view)*
+```json
+// Query Params
+?status=ACTIVE&tier=PROFESSIONAL&search=grand
+
+// Response 200
+{
+  "data": [
+    {
+      "tenantId": "hotel_uuid",
+      "hotelName": "Grand Plaza Hotel",
+      "subdomain": "grandplaza",
+      "subscription": {
+        "tier": "PROFESSIONAL",
+        "status": "ACTIVE",
+        "billingCycle": "ANNUAL",
+        "nextBillingDate": "2027-01-15",
+        "monthlyPrice": 299.00
+      },
+      "usage": {
+        "rooms": { "used": 85, "limit": 150, "percent": 56.7 },
+        "users": { "used": 24, "limit": 50, "percent": 48.0 },
+        "reservations": { "used": 1240, "limit": 5000, "percent": 24.8 }
+      },
+      "health": {
+        "uptime": 99.98,
+        "lastBackup": "2026-04-27T02:00:00Z",
+        "alerts": []
+      },
+      "actions": [
+        { "label": "View Dashboard", "url": "/platform/tenants/{id}/dashboard" },
+        { "label": "Manage Subscription", "url": "/platform/tenants/{id}/subscription" },
+        { "label": "Impersonate Admin", "url": "/platform/tenants/{id}/impersonate", "method": "POST" }
+      ]
+    }
+  ],
+  "summary": {
+    "totalTenants": 42,
+    "activeTenants": 38,
+    "mrr": 11250.00, // Monthly Recurring Revenue
+    "churnRisk": 2 // tenants with usage >90% or payment issues
+  }
+}
+```
+
+#### `POST /api/v1/platform/tenants`
+*Onboard new hotel tenant (Your sales/admin workflow)*
+```json
+// Request Body
+{
+  "hotel": {
+    "name": "Seaside Resort & Spa",
+    "code": "SEASIDE", // for internal references
+    "timezone": "America/New_York",
+    "currency": "USD",
+    "contact": {
+      "adminEmail": "admin@seasideresort.com",
+      "adminName": "Jane Smith",
+      "phone": "+1-555-0199"
+    }
+  },
+  "subscription": {
+    "tier": "PROFESSIONAL",
+    "billingCycle": "ANNUAL",
+    "startDate": "2026-05-01",
+    "customLimits": { // optional overrides
+      "maxRooms": 200, // default for PROFESSIONAL: 150
+      "maxUsers": 75
+    }
+  },
+  "provisioning": {
+    "createDatabase": true,
+    "seedDemoData": false,
+    "enableFeatures": ["channel_manager", "mobile_app", "advanced_reporting"]
+  },
+  "billing": {
+    "paymentMethod": "stripe",
+    "stripeCustomerId": "cus_stripe_123", // from your billing system
+    "invoiceEmail": "billing@seasideresort.com"
+  }
+}
+
+// Response 201 + Provisioning Status
+{
+  "tenantId": "new_hotel_uuid",
+  "status": "PROVISIONING",
+  "hotel": {
+    "id": "new_hotel_uuid",
+    "name": "Seaside Resort & Spa",
+    "subdomain": "seasideresort",
+    "adminCredentials": {
+      "temporaryPassword": "TempPass#2026!", // one-time use
+      "passwordResetRequired": true,
+      "setupUrl": "https://seasideresort.yourhms.com/setup?token=xyz"
+    }
+  },
+  "subscription": {
+    "id": "sub_uuid",
+    "tier": "PROFESSIONAL",
+    "status": "ACTIVE",
+    "nextBillingDate": "2027-05-01",
+    "amount": 299.00
+  },
+  "provisioningSteps": [
+    { "step": "CREATE_DATABASE_SCHEMA", "status": "COMPLETED", "timestamp": "2026-04-27T10:00:00Z" },
+    { "step": "SEED_REFERENCE_DATA", "status": "IN_PROGRESS", "estimatedCompletion": "2026-04-27T10:05:00Z" },
+    { "step": "CREATE_ADMIN_USER", "status": "PENDING" },
+    { "step": "CONFIGURE_FEATURE_FLAGS", "status": "PENDING" }
+  ],
+  "nextActions": [
+    "Share setup URL with hotel admin",
+    "Monitor provisioning: GET /platform/tenants/{id}/provisioning-status",
+    "Send welcome email template: /platform/templates/welcome"
+  ],
+  "webhook": {
+    "provisioningComplete": "https://your-crm.com/webhooks/hms-tenant-ready",
+    "payload": { "tenantId": "new_hotel_uuid", "subdomain": "seasideresort" }
+  }
+}
+```
+
+#### `POST /api/v1/platform/tenants/{tenantId}/impersonate`
+*Temporarily act as hotel admin (Support / Troubleshooting)*
+```json
+// Request Body
+{
+  "reason": "Customer support ticket #SUP-2026-445: Room assignment bug",
+  "duration": 60, // minutes of impersonation
+  "notifyTenant": true, // send email to hotel admin
+  "restrictActions": [ // optional: limit what you can do while impersonating
+    "DELETE_HOTEL_DATA",
+    "MODIFY_SUBSCRIPTION",
+    "ACCESS_FINANCIAL_REPORTS"
+  ]
+}
+
+// Response 200 + Impersonation Token
+{
+  "impersonationId": "imp_uuid",
+  "tenantId": "hotel_uuid",
+  "impersonationToken": "imp_token_xyz", // short-lived JWT with hotel admin scopes
+  "expiresAt": "2026-04-27T15:30:00Z",
+  "restrictions": {
+    "blockedActions": ["DELETE_HOTEL_DATA", "MODIFY_SUBSCRIPTION"],
+    "auditLogging": "ENHANCED" // all actions logged with impersonation flag
+  },
+  "notification": {
+    "sent": true,
+    "recipient": "admin@grandplaza.com",
+    "message": "Platform support is temporarily accessing your account to resolve ticket #SUP-2026-445. Access expires at 3:30 PM UTC."
+  },
+  "usage": {
+    "useHeader": "X-Impersonate-Token: imp_token_xyz",
+    "example": "curl -H 'Authorization: Bearer {{super_admin_token}}' -H 'X-Impersonate-Token: imp_token_xyz' https://api.yourhms.com/api/v1/hotels/{{hotel_uuid}}/rooms"
+  },
+  "audit": {
+    "logId": "audit_uuid",
+    "viewUrl": "/platform/audit/logs?impersonationId=imp_uuid"
+  }
+}
+```
+
+#### `GET /api/v1/platform/analytics/revenue`
+*Your platform revenue & health dashboard*
+```json
+// Query Params
+?period=monthly&groupBy=tier
+
+// Response 200
+{
+  "period": {
+    "type": "monthly",
+    "current": "2026-04",
+    "previous": "2026-03"
+  },
+  "revenue": {
+    "mrr": 11250.00, // Monthly Recurring Revenue
+    "mrrGrowth": "+8.2%",
+    "arr": 135000.00, // Annual Recurring Revenue
+    "ltv": 3600.00, // Average Lifetime Value per tenant
+    "churnRate": 2.1 // % of tenants lost this month
+  },
+  "byTier": [
+    {
+      "tier": "STARTER",
+      "tenants": 15,
+      "mrr": 1485.00,
+      "avgRevenuePerTenant": 99.00,
+      "churnRisk": 1
+    },
+    {
+      "tier": "PROFESSIONAL",
+      "tenants": 20,
+      "mrr": 5980.00,
+      "avgRevenuePerTenant": 299.00,
+      "churnRisk": 0
+    },
+    {
+      "tier": "ENTERPRISE",
+      "tenants": 3,
+      "mrr": 3785.00,
+      "avgRevenuePerTenant": 1261.67,
+      "churnRisk": 1
+    }
+  ],
+  "usage": {
+    "totalApiCalls": 2450000,
+    "storageUsed": "1.2 TB",
+    "avgUptime": 99.97,
+    "supportTickets": { "open": 12, "resolved": 45, "avgResolutionTime": "4.2h" }
+  },
+  "alerts": [
+    {
+      "type": "CHURN_RISK",
+      "tenantId": "hotel_uuid_123",
+      "reason": "Usage at 98% of limit, payment past due",
+      "action": "/platform/tenants/hotel_uuid_123/subscription"
+    }
+  ],
+  "exportOptions": {
+    "financialReport": "/platform/analytics/revenue/export?format=pdf",
+    "tenantList": "/platform/tenants/export?format=csv"
+  }
+}
+```
+
+### 🔐 Super Admin Security Model
+```java
+// All platform endpoints require SUPER_ADMIN role + additional validation
+@RestController
+@RequestMapping("/api/v1/platform")
+@PreAuthorize("hasRole('SUPER_ADMIN')")
+public class PlatformAdminController {
+    
+    // Impersonation requires explicit reason logging
+    @PostMapping("/tenants/{tenantId}/impersonate")
+    @AuditLog(action = "IMPERSONATE_TENANT", target = "#tenantId")
+    public ResponseEntity<ImpersonationResponse> impersonateTenant(
+            @PathVariable UUID tenantId,
+            @RequestBody @Valid ImpersonateRequest request,
+            Authentication auth) {
+        
+        // 1. Validate tenant exists and is active
+        PlatformTenant tenant = tenantService.getOrThrow(tenantId);
+        if (tenant.getProvisioningStatus() != ProvisioningStatus.PROVISIONED) {
+            throw new BusinessException("Cannot impersonate non-active tenant");
+        }
+        
+        // 2. Create limited-scope token for hotel admin actions
+        String impersonationToken = jwtService.createImpersonationToken(
+            tenant.getHotel().getId(),
+            request.getDuration(),
+            request.getRestrictActions()
+        );
+        
+        // 3. Log to platform audit trail
+        platformAuditService.log(
+            auth.getName(),
+            "IMPERSONATE_TENANT",
+            tenantId,
+            Map.of("reason", request.getReason(), "duration", request.getDuration())
+        );
+        
+        // 4. Notify tenant if requested
+        if (request.isNotifyTenant()) {
+            notificationService.sendImpersonationNotice(
+                tenant.getHotel().getContactEmail(),
+                request.getReason(),
+                LocalDateTime.now().plusMinutes(request.getDuration())
+            );
+        }
+        
+        return ResponseEntity.ok(new ImpersonationResponse(impersonationToken, ...));
+    }
+}
+```
+
+---
+
+## 🧪 UPDATED POSTMAN COLLECTION STRUCTURE
+
+```
+HMS API v2.2.postman_collection.json
+├── Auth
+│   ├── POST /auth/login (super_admin)
+│   ├── POST /auth/login (hotel_staff)
+│   ├── POST /auth/login (guest)
+│   └── POST /auth/refresh
+├── Platform Admin (YOU)
+│   ├── GET /platform/tenants
+│   ├── POST /platform/tenants
+│   ├── GET /platform/tenants/{id}/dashboard
+│   ├── POST /platform/tenants/{id}/impersonate
+│   ├── GET /platform/analytics/revenue
+│   └── GET /platform/audit/logs
+├── Hotel: Room Management (from v2.1)
+│   ├── [All room endpoints...]
+├── Hotel: Pool & Facilities (Module 8)
+│   ├── GET /facilities
+│   ├── GET /facilities/{id}/slots
+│   ├── POST /facilities/{id}/bookings
+│   ├── POST /facilities/bookings/{id}/check-in
+│   └── PATCH /facilities/{id}/maintenance
+├── Hotel: Inventory (Module 4)
+│   ├── GET /inventory/items
+│   ├── POST /inventory/items/{id}/consume
+│   ├── POST /inventory/purchase-orders
+│   ├── POST /inventory/items/{id}/receive
+│   └── GET /inventory/low-stock-alerts
+├── Hotel: Guest CRM (Module 6)
+│   ├── GET /guests/{id}/profile
+│   ├── POST /reservations/{id}/apply-guest-preferences
+│   ├── POST /guests/{id}/loyalty/earn
+│   └── POST /guests/{id}/loyalty/redeem
+├── Hotel: F&B Management (Module 7)
+│   ├── GET /fb/outlets/{id}/menu
+│   ├── POST /fb/orders
+│   ├── PATCH /fb/orders/{id}/status
+│   └── POST /fb/orders/{id}/charge-to-room
+├── Hotel: Reporting (Module 9)
+│   ├── GET /reports/occupancy
+│   ├── GET /reports/guest-analytics
+│   └── GET /reports/realtime-dashboard
+└── Guest-Facing (Public)
+    ├── GET /hotels/{id}/rooms/availability
+    ├── POST /reservations (guest token)
+    ├── GET /guest/reservations
+    └── POST /facilities/bookings (guest token)
+```
+
+### Sample Environment Variables (Expanded)
+```json
+{
+  "baseUrl": "http://localhost:8080/api/v1",
+  "superAdminToken": "{{login_super_admin}}",
+  "hotelAdminToken": "{{login_hotel_admin}}",
+  "receptionistToken": "{{login_receptionist}}",
+  "guestToken": "{{login_guest}}",
+  "testHotelId": "550e8400-e29b-41d4-a716-446655440000",
+  "testRoomId": "660e8400-e29b-41d4-a716-446655440001",
+  "testReservationId": "770e8400-e29b-41d4-a716-446655440002",
+  "testFacilityId": "880e8400-e29b-41d4-a716-446655440003",
+  "testInventoryItemId": "990e8400-e29b-41d4-a716-446655440004",
+  "testGuestId": "aa0e8400-e29b-41d4-a716-446655440005",
+  "testOutletId": "bb0e8400-e29b-41d4-a716-446655440006"
+}
+```
+
+---
+
+## 🗂️ UPDATED DEVELOPMENT ROADMAP FOR CURSOR
+
+### Phase 1: Foundation (Week 1-2) ✅ *Already Defined*
+```bash
+✅ Spring Boot + Security + Hibernate multi-tenant setup
+✅ Next.js app router + TypeScript + auth context
+✅ Core entities: Hotel, Room, Guest, Reservation
+✅ RBAC implementation + tenant filter
+```
+
+### Phase 2: Room Module MVP (Week 3-4) ✅ *Already Defined*
+```bash
+✅ Room CRUD + Reservation workflow
+✅ Check-in/out + housekeeping integration
+✅ WebSocket real-time updates
+✅ Next.js dashboards for reception/housekeeping
+```
+
+### Phase 3: Parallel Module Development (Week 5-7) 🔄 *NEW*
+```bash
+🔹 Module 8: Pool & Facilities
+   - Facility/Slot/Booking entities
+   - Booking API + QR access generation
+   - Capacity management + maintenance blocking
+
+🔹 Module 4: Inventory Management  
+   - Item/Transaction/PO entities
+   - Consumption API + minibar integration
+   - Reorder alerts + supplier management
+
+🔹 Module 6: Guest CRM
+   - Extended Guest entity with preferences JSONB
+   - Preference application service
+   - Loyalty points ledger + redemption
+
+🔹 Module 7: F&B Management
+   - Outlet/Menu/Order entities
+   - POS order API + kitchen routing
+   - Room charge integration service
+
+🔹 Module 9: Reporting
+   - Read-model aggregation jobs
+   - Real-time dashboard WebSocket
+   - Export endpoints (CSV/PDF)
+
+🔹 Module 10: Super Admin
+   - PlatformTenant entity + provisioning service
+   - Impersonation token service
+   - Platform analytics endpoints
+```
+
+### Phase 4: Integration & Polish (Week 8-9) 🔄 *NEW*
+```bash
+✅ Cross-module event bus (Kafka/RabbitMQ)
+✅ Minibar → Inventory → Housekeeping workflow
+✅ Guest preferences → Room assignment → F&B alerts
+✅ Real-time folio updates across all charge types
+✅ Comprehensive error handling + validation groups
+✅ OpenAPI 3.0 spec generation + Postman sync
+```
+
+### Phase 5: Production Ready (Week 10+) 🔄 *NEW*
+```bash
+✅ Multi-tenant database isolation testing
+✅ Load testing: 500 concurrent users per hotel
+✅ Backup/restore procedures per tenant schema
+✅ Security audit: RBAC bypass tests, SQL injection scans
+✅ Documentation: Tenant onboarding guide, API reference
+✅ CI/CD: Blue-green deployment per tenant group
+```
+
+---
+
+## ⚡ CRITICAL INTEGRATION PATTERNS FOR CURSOR
+
+### 1. Tenant Isolation Enforcement (Non-Negotiable)
+```java
+// Base repository with automatic hotel_id filtering
+public interface BaseRepository<T, ID> extends JpaRepository<T, ID> {
+    @PreFilter("filterObject.hotel.id == authentication.details.hotelId")
+    List<T> findAllByHotelId(UUID hotelId);
+    
+    @PreFilter("filterObject.hotel.id == authentication.details.hotelId")
+    Optional<T> findByIdAndHotelId(ID id, UUID hotelId);
+}
+
+// Usage in service layer - NO manual hotel_id checks needed
+@Service
+public class RoomService {
+    @Autowired private RoomRepository roomRepo; // extends BaseRepository
+    
+    public Room getRoom(UUID roomId, UUID hotelId) {
+        // Automatically filtered by @PreFilter + Hibernate @Where
+        return roomRepo.findByIdAndHotelId(roomId, hotelId)
+            .orElseThrow(() -> new ResourceNotFoundException("Room not found"));
+    }
+}
+```
+
+### 2. Cross-Module Event Bus (Loose Coupling)
+```java
+// Domain event definition
+public record RoomCheckedOutEvent(
+    UUID roomId,
+    UUID reservationId,
+    UUID hotelId,
+    LocalDateTime checkedOutAt
+) implements DomainEvent {}
+
+// Publisher in Room module
+@Component
+public class RoomService {
+    @Autowired private ApplicationEventPublisher eventPublisher;
+    
+    public void checkOut(UUID reservationId) {
+        // ... check-out logic ...
+        eventPublisher.publishEvent(new RoomCheckedOutEvent(...));
+    }
+}
+
+// Subscriber in Inventory module (no direct dependency on Room)
+@Component
+public class MinibarRestockListener {
+    @EventListener
+    @Async // process asynchronously to avoid blocking check-out
+    public void onRoomCheckedOut(RoomCheckedOutEvent event) {
+        // Trigger minibar restock workflow
+        inventoryService.scheduleMinibarRestock(event.roomId());
+    }
+}
+```
+
+### 3. Real-Time Updates via WebSocket (Guest + Staff)
+```java
+// WebSocket config with role-based channel access
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+    
+    @Override
+    public void configureClientInboundChannel(ChannelRegistration registration) {
+        registration.interceptors(new ChannelInterceptor() {
+            @Override
+            public Message<?> preSend(Message<?> message, MessageChannel channel) {
+                // Validate JWT and extract hotelId/role
+                // Reject if user tries to subscribe to another hotel's channel
+                return message;
+            }
+        });
+    }
+    
+    @Override
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
+        registry.addEndpoint("/ws")
+            .setAllowedOrigins("https://*.yourhms.com")
+            .withSockJS();
+    }
+    
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry registry) {
+        // Tenant-scoped channels
+        registry.enableSimpleBroker(
+            "/topic/hotel",    // /topic/hotel/{hotelId}/rooms
+            "/topic/reservation", // /topic/reservation/{reservationId}/folio
+            "/topic/guest"     // /topic/guest/{guestId}/notifications
+        );
+        registry.setApplicationDestinationPrefixes("/app");
+    }
+}
+
+// Usage in service: Broadcast room status change
+websocketTemplate.convertAndSend(
+    "/topic/hotel/" + hotelId + "/rooms",
+    new RoomStatusUpdateDTO(roomId, newStatus, updatedAt)
+);
+```
+
+---
+
+## 🎯 READY FOR CURSOR: NEXT STEPS
+
+1. **Generate JPA Entities**: Use the entity definitions above to create `@Entity` classes with proper relationships and tenant isolation.
+
+2. **Scaffold REST Controllers**: Create `@RestController` classes with:
+   - `@PreAuthorize("hasRole('RECEPTIONIST')")` annotations
+   - `@PathVariable UUID hotelId` + tenant validation
+   - Request/Response DTOs matching the payloads above
+
+3. **Implement Tenant Filter**: Add Hibernate `@Where(clause = "hotel_id = :tenantId")` + Spring Security context population.
+
+4. **Build Next.js Pages**: Create role-based dashboards:
+   - `/app/hotel/[hotelId]/facilities/page.tsx` (Pool management)
+   - `/app/hotel/[hotelId]/inventory/page.tsx` (Stock tracking)
+   - `/app/platform/tenants/page.tsx` (Your super admin view)
+
+5. **Set Up WebSocket**: Configure STOMP endpoints with tenant-scoped channels for real-time updates.
+
+6. **Create Postman Collection**: Import the structure above with environment variables for easy testing.
+
+**Pro Tip for Cursor**: Start with Module 10 (Super Admin) first - it's isolated from hotel operations and lets you test tenant provisioning before building hotel-facing features.
+
+Need me to generate the actual Spring Boot entity code, Next.js component scaffolds, or the complete Postman collection JSON? Just say the word and I'll output it ready to paste into Cursor. 🚀✨
+
+### USER
+create backen verification checklist include an endpoint and playlods expected wth statuses for all endpoints
+
+### ASSISTANT
+# 🔐 BACKEND VERIFICATION CHECKLIST - HOTEL MANAGEMENT SYSTEM v2.3
+*Spring Boot + Hibernate + Next.js | Complete API Test Matrix*
+
+---
+
+## 📋 HOW TO USE THIS CHECKLIST
+
+```bash
+✅ For Manual Testing: Use Postman with environment variables
+✅ For Automated Testing: Generate JUnit/MockMvc tests from this spec
+✅ For QA Sign-off: Each endpoint must pass ALL scenarios before merge
+✅ For Documentation: Sync with OpenAPI 3.0 spec generator
+
+🔑 Auth Header Format (All Hotel Endpoints):
+Authorization: Bearer {{jwt_token}}
+X-Hotel-ID: {{hotel_uuid}}
+
+🔑 Auth Header Format (Platform Endpoints):
+Authorization: Bearer {{super_admin_jwt}}
+# NO X-Hotel-ID header for platform endpoints
+```
+
+---
+
+## 🔐 AUTHENTICATION & TENANT ISOLATION (Foundation Tests)
+
+### `POST /api/v1/auth/login`
+*Authenticate user and receive JWT*
+
+| Field | Value | Required | Validation |
+|-------|-------|----------|-----------|
+| `email` | string | ✅ | Valid email format |
+| `password` | string | ✅ | Min 8 chars, 1 uppercase, 1 number |
+| `role` | string | ❌ | Auto-detected from user record |
+
+**✅ Success Response (200 OK)**
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "dGhpc2lzYXJlZnJlc2h0b2tlbg==",
+  "expiresIn": 3600,
+  "user": {
+    "id": "user_uuid",
+    "email": "admin@grandplaza.com",
+    "role": "HOTEL_ADMIN",
+    "hotelId": "hotel_uuid", // null for SUPER_ADMIN
+    "permissions": ["room:read", "room:write", "reservation:manage"]
+  },
+  "tokenType": "Bearer"
+}
+```
+
+**❌ Error Responses**
+```json
+// 401 Unauthorized - Invalid credentials
+{
+  "error": "INVALID_CREDENTIALS",
+  "message": "Email or password is incorrect",
+  "timestamp": "2026-04-27T10:30:00Z",
+  "path": "/api/v1/auth/login"
+}
+
+// 403 Forbidden - Account suspended
+{
+  "error": "ACCOUNT_SUSPENDED",
+  "message": "Your account has been suspended. Contact support.",
+  "hotelId": "hotel_uuid", // if applicable
+  "supportEmail": "support@yourhms.com"
+}
+
+// 422 Unprocessable Entity - Validation failed
+{
+  "error": "VALIDATION_FAILED",
+  "message": "Request payload validation failed",
+  "errors": [
+    { "field": "email", "message": "must be a valid email address" },
+    { "field": "password", "message": "must be at least 8 characters" }
+  ]
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] Valid credentials for SUPER_ADMIN → returns token with `hotelId: null`
+- [ ] Valid credentials for HOTEL_ADMIN → returns token with `hotelId: <uuid>`
+- [ ] Valid credentials for GUEST → returns token with limited scopes
+- [ ] Invalid password → 401 with generic message (no user enumeration)
+- [ ] Suspended hotel tenant → 403 with suspension notice
+- [ ] SQL injection attempt in email field → 422 validation error
+- [ ] Rate limiting: 5 failed attempts in 15 min → 429 Too Many Requests
+
+---
+
+### `POST /api/v1/auth/refresh`
+*Refresh expired access token*
+
+| Field | Value | Required | Validation |
+|-------|-------|----------|-----------|
+| `refreshToken` | string | ✅ | Valid, non-expired, not revoked |
+
+**✅ Success Response (200 OK)**
+```json
+{
+  "accessToken": "new_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expiresIn": 3600,
+  "tokenType": "Bearer"
+}
+```
+
+**❌ Error Responses**
+```json
+// 401 Unauthorized - Invalid/revoked refresh token
+{
+  "error": "INVALID_REFRESH_TOKEN",
+  "message": "Refresh token is invalid or has been revoked"
+}
+
+// 401 Unauthorized - Refresh token expired
+{
+  "error": "REFRESH_TOKEN_EXPIRED",
+  "message": "Refresh token has expired. Please login again.",
+  "action": "redirect_to_login"
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] Valid refresh token → new access token issued
+- [ ] Expired refresh token (7+ days) → 401 + re-login required
+- [ ] Revoked refresh token (after password change) → 401
+- [ ] Refresh token used twice (replay attack) → 401 + original token revoked
+- [ ] Refresh token from different hotel → 401 (tenant mismatch)
+
+---
+
+## 🏨 ROOM MANAGEMENT MODULE
+
+### `GET /api/v1/hotels/{hotelId}/rooms`
+*List rooms with filters*
+
+**Headers Required**
+```http
+Authorization: Bearer {{hotel_staff_token}}
+X-Hotel-ID: {{hotel_uuid}}
+```
+
+**Query Parameters**
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `status` | string[] | ❌ | Filter by status: AVAILABLE,RESERVED,CHECKED_IN |
+| `floor` | integer | ❌ | Filter by floor number |
+| `roomTypeId` | UUID | ❌ | Filter by room type |
+| `page` | integer | ❌ | Page number (default: 1) |
+| `size` | integer | ❌ | Items per page (default: 20, max: 100) |
+
+**✅ Success Response (200 OK)**
+```json
+{
+  "data": [
+    {
+      "id": "room_uuid",
+      "roomNumber": "301",
+      "floor": 3,
+      "building": "Main",
+      "roomType": {
+        "id": "type_uuid",
+        "name": "Deluxe King",
+        "baseRate": 150.00,
+        "maxOccupancy": 2
+      },
+      "status": "AVAILABLE",
+      "cleanliness": "INSPECTED",
+      "isOutOfOrder": false,
+      "currentReservation": null,
+      "amenities": ["wifi", "ac", "minibar", "balcony"],
+      "lastUpdated": "2026-04-27T09:15:00Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "size": 20,
+    "totalElements": 45,
+    "totalPages": 3,
+    "hasNext": true,
+    "hasPrevious": false
+  },
+  "filters": {
+    "applied": { "status": ["AVAILABLE"], "floor": 3 },
+    "available": {
+      "status": ["AVAILABLE", "RESERVED", "CHECKED_IN", "CHECKED_OUT", "OUT_OF_ORDER", "BLOCKED"],
+      "floors": [1, 2, 3, 4, 5]
+    }
+  }
+}
+```
+
+**❌ Error Responses**
+```json
+// 400 Bad Request - Invalid filter value
+{
+  "error": "INVALID_FILTER",
+  "message": "Invalid value for parameter 'status': 'INVALID_STATUS'",
+  "validValues": ["AVAILABLE", "RESERVED", "CHECKED_IN", "CHECKED_OUT", "OUT_OF_ORDER", "BLOCKED"]
+}
+
+// 403 Forbidden - Accessing wrong hotel
+{
+  "error": "TENANT_MISMATCH",
+  "message": "X-Hotel-ID header does not match authenticated user's hotel",
+  "expectedHotelId": "user_hotel_uuid",
+  "providedHotelId": "wrong_hotel_uuid"
+}
+
+// 404 Not Found - Hotel doesn't exist
+{
+  "error": "HOTEL_NOT_FOUND",
+  "message": "Hotel with ID 'invalid_uuid' not found"
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] No filters → returns all rooms for authenticated hotel
+- [ ] Filter by status=AVAILABLE,CHECKED_IN → only matching rooms
+- [ ] Filter by floor=3 + roomTypeId=xyz → intersection of filters
+- [ ] Pagination: page=2, size=10 → correct slice + pagination metadata
+- [ ] User from Hotel A tries to access Hotel B's rooms → 403 TENANT_MISMATCH
+- [ ] Invalid UUID format in hotelId path param → 400 BAD_REQUEST
+- [ ] Super Admin tries endpoint without X-Hotel-ID → 400 MISSING_TENANT_HEADER
+- [ ] Response time < 500ms for 100-room hotel under load
+
+---
+
+### `POST /api/v1/hotels/{hotelId}/rooms`
+*Create new room (Hotel Admin only)*
+
+**Headers Required**
+```http
+Authorization: Bearer {{hotel_admin_token}}
+X-Hotel-ID: {{hotel_uuid}}
+Content-Type: application/json
+```
+
+**Request Payload**
+```json
+{
+  "roomNumber": "305",
+  "floor": 3,
+  "building": "Main",
+  "roomTypeId": "room_type_uuid",
+  "initialStatus": "AVAILABLE",
+  "amenitiesOverride": ["balcony", "ocean_view"],
+  "notes": "Corner room with extra window"
+}
+```
+
+| Field | Type | Required | Validation |
+|-------|------|----------|-----------|
+| `roomNumber` | string | ✅ | Unique per hotel, 1-10 chars, alphanumeric |
+| `floor` | integer | ✅ | 1-50 |
+| `building` | string | ❌ | Max 50 chars |
+| `roomTypeId` | UUID | ✅ | Must exist in hotel's room types |
+| `initialStatus` | enum | ❌ | Default: AVAILABLE; valid: AVAILABLE, OUT_OF_ORDER |
+| `amenitiesOverride` | string[] | ❌ | Each item max 50 chars |
+| `notes` | string | ❌ | Max 500 chars |
+
+**✅ Success Response (201 Created)**
+```json
+{
+  "id": "new_room_uuid",
+  "roomNumber": "305",
+  "floor": 3,
+  "building": "Main",
+  "roomType": {
+    "id": "room_type_uuid",
+    "name": "Deluxe King"
+  },
+  "status": "AVAILABLE",
+  "cleanliness": "INSPECTED",
+  "isOutOfOrder": false,
+  "amenities": ["wifi", "ac", "minibar", "balcony", "ocean_view"],
+  "createdAt": "2026-04-27T10:30:00Z",
+  "createdBy": "admin_user_id",
+  "message": "Room created successfully"
+}
+```
+
+**❌ Error Responses**
+```json
+// 400 Bad Request - Validation failed
+{
+  "error": "VALIDATION_FAILED",
+  "message": "Request payload validation failed",
+  "errors": [
+    { "field": "roomNumber", "message": "Room number '305' already exists in this hotel" },
+    { "field": "roomTypeId", "message": "Room type not found for this hotel" }
+  ]
+}
+
+// 403 Forbidden - Insufficient role
+{
+  "error": "INSUFFICIENT_PERMISSIONS",
+  "message": "Role 'RECEPTIONIST' cannot create rooms. Required: HOTEL_ADMIN or MANAGER",
+  "requiredRole": "HOTEL_ADMIN"
+}
+
+// 409 Conflict - Duplicate room number
+{
+  "error": "DUPLICATE_ROOM_NUMBER",
+  "message": "Room number '305' already exists in hotel",
+  "existingRoomId": "existing_room_uuid"
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] Hotel Admin creates room with valid data → 201 + room in DB
+- [ ] Receptionist tries to create room → 403 INSUFFICIENT_PERMISSIONS
+- [ ] Duplicate roomNumber for same hotel → 409 CONFLICT
+- [ ] Invalid roomTypeId (not in hotel) → 400 VALIDATION_FAILED
+- [ ] Room number with special chars "!@#" → 400 validation error
+- [ ] Floor = 0 or 100 → 400 validation error
+- [ ] amenitiesOverride with 100+ items → 400 validation error
+- [ ] Concurrent creation of same roomNumber → one succeeds, one gets 409
+
+---
+
+### `PATCH /api/v1/hotels/{hotelId}/rooms/{roomId}`
+*Update room (partial update)*
+
+**Headers Required**
+```http
+Authorization: Bearer {{hotel_staff_token}}
+X-Hotel-ID: {{hotel_uuid}}
+Content-Type: application/json
+```
+
+**Request Payload (Any subset)**
+```json
+{
+  "status": "OUT_OF_ORDER",
+  "cleanliness": "DIRTY",
+  "isOutOfOrder": true,
+  "maintenanceNotes": "AC unit leaking - ticket #MAINT-204",
+  "roomTypeId": "new_type_uuid" // requires MANAGER role
+}
+```
+
+| Field | Type | Required | Validation | Role Restriction |
+|-------|------|----------|-----------|-----------------|
+| `status` | enum | ❌ | Valid RoomStatus; state machine rules apply | RECEPTIONIST+ |
+| `cleanliness` | enum | ❌ | DIRTY, CLEAN, INSPECTED | HOUSEKEEPING+ |
+| `isOutOfOrder` | boolean | ❌ | If true, status must be OUT_OF_ORDER | MAINTENANCE+ |
+| `maintenanceNotes` | string | ❌ | Max 1000 chars | MAINTENANCE+ |
+| `roomTypeId` | UUID | ❌ | Must exist; requires re-availability check | MANAGER only |
+
+**✅ Success Response (200 OK)**
+```json
+{
+  "id": "room_uuid",
+  "roomNumber": "305",
+  "previousValues": {
+    "status": "AVAILABLE",
+    "isOutOfOrder": false
+  },
+  "updatedValues": {
+    "status": "OUT_OF_ORDER",
+    "isOutOfOrder": true,
+    "maintenanceNotes": "AC unit leaking - ticket #MAINT-204"
+  },
+  "updatedAt": "2026-04-27T10:35:00Z",
+  "updatedBy": "maintenance_user_id",
+  "broadcast": {
+    "event": "room.status.changed",
+    "channel": "/topic/hotel/{{hotel_uuid}}/rooms",
+    "payload": {
+      "roomId": "room_uuid",
+      "newStatus": "OUT_OF_ORDER",
+      "reason": "maintenance"
+    }
+  }
+}
+```
+
+**❌ Error Responses**
+```json
+// 400 Bad Request - Invalid state transition
+{
+  "error": "INVALID_STATE_TRANSITION",
+  "message": "Cannot transition from CHECKED_IN to OUT_OF_ORDER. Guest must check out first.",
+  "currentState": "CHECKED_IN",
+  "requestedState": "OUT_OF_ORDER",
+  "validTransitions": ["CHECKED_OUT"]
+}
+
+// 403 Forbidden - Role cannot update this field
+{
+  "error": "FIELD_ACCESS_DENIED",
+  "message": "Field 'roomTypeId' can only be updated by MANAGER role",
+  "field": "roomTypeId",
+  "requiredRole": "MANAGER"
+}
+
+// 404 Not Found - Room doesn't exist in hotel
+{
+  "error": "ROOM_NOT_FOUND",
+  "message": "Room with ID 'invalid_uuid' not found in hotel '{{hotel_uuid}}'"
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] Housekeeping updates cleanliness: DIRTY → CLEAN → 200 + WebSocket broadcast
+- [ ] Receptionist tries to set roomTypeId → 403 FIELD_ACCESS_DENIED
+- [ ] Invalid state transition: CHECKED_IN → AVAILABLE → 400 INVALID_STATE_TRANSITION
+- [ ] Update room that doesn't exist in hotel → 404 ROOM_NOT_FOUND
+- [ ] Update with empty payload {} → 200 (no-op, but logged)
+- [ ] Concurrent updates to same room → last-write-wins with audit log
+- [ ] Maintenance notes with 1001 chars → 400 validation error
+- [ ] WebSocket event received by subscribed clients within 2s
+
+---
+
+### `POST /api/v1/hotels/{hotelId}/reservations`
+*Create booking*
+
+**Headers Required**
+```http
+Authorization: Bearer {{receptionist_or_guest_token}}
+X-Hotel-ID: {{hotel_uuid}}
+Content-Type: application/json
+```
+
+**Request Payload**
+```json
+{
+  "guestId": "existing_guest_uuid",
+  "guest": {
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "john@example.com",
+    "phone": "+1234567890",
+    "idDocument": { "type": "passport", "number": "AB123456" }
+  },
+  "roomTypeId": "room_type_uuid",
+  "preferredRoomId": "room_uuid",
+  "checkInDate": "2026-05-15",
+  "checkOutDate": "2026-05-18",
+  "adults": 2,
+  "children": 1,
+  "specialRequests": "High floor, quiet area",
+  "source": "direct",
+  "ratePlan": {
+    "nightlyRate": 145.00,
+    "includesBreakfast": true,
+    "cancellationPolicy": "FREE_CANCELLATION_48H"
+  },
+  "payment": {
+    "depositRequired": true,
+    "depositAmount": 145.00,
+    "paymentMethod": "card",
+    "paymentToken": "pm_stripe_token"
+  }
+}
+```
+
+| Field | Type | Required | Validation |
+|-------|------|----------|-----------|
+| `guestId` OR `guest` | UUID/Object | ✅ One required | If guest object, email must be unique per hotel |
+| `roomTypeId` | UUID | ✅ | Must exist and have availability |
+| `preferredRoomId` | UUID | ❌ | Must be AVAILABLE for dates; ignored if no availability |
+| `checkInDate` | date | ✅ | Must be >= today; format: YYYY-MM-DD |
+| `checkOutDate` | date | ✅ | Must be > checkInDate; max stay 90 days |
+| `adults` | integer | ✅ | 1-4 (configurable per room type) |
+| `children` | integer | ❌ | 0-3; must not exceed room max occupancy |
+| `nightlyRate` | decimal | ✅ | Must be > 0; max 2 decimal places |
+| `paymentToken` | string | ✅ if depositRequired | Valid Stripe/PayPal token format |
+
+**✅ Success Response (201 Created)**
+```json
+{
+  "id": "reservation_uuid",
+  "confirmationCode": "HMS-2026-7X9K2",
+  "status": "CONFIRMED",
+  "room": {
+    "id": "assigned_room_uuid",
+    "roomNumber": "412",
+    "floor": 4,
+    "roomType": "Deluxe King"
+  },
+  "guest": {
+    "id": "guest_uuid",
+    "name": "John Doe",
+    "email": "john@example.com"
+  },
+  "dates": {
+    "checkIn": "2026-05-15",
+    "checkOut": "2026-05-18",
+    "nights": 3
+  },
+  "pricing": {
+    "nightlyRate": 145.00,
+    "roomTotal": 435.00,
+    "taxes": 65.25,
+    "fees": 10.00,
+    "depositPaid": 145.00,
+    "balanceDue": 365.25
+  },
+  "cancellation": {
+    "policy": "FREE_CANCELLATION_48H",
+    "freeUntil": "2026-05-13T23:59:59Z",
+    "cancelEndpoint": "/api/v1/reservations/{id}/cancel"
+  },
+  "nextSteps": [
+    "Confirmation email sent to john@example.com",
+    "Room 412 blocked for dates May 15-18",
+    "Guest can check in from 3:00 PM on May 15"
+  ]
+}
+```
+
+**❌ Error Responses**
+```json
+// 400 Bad Request - No availability
+{
+  "error": "NO_AVAILABILITY",
+  "message": "No rooms available for requested dates and type",
+  "requested": {
+    "roomTypeId": "room_type_uuid",
+    "checkIn": "2026-05-15",
+    "checkOut": "2026-05-18"
+  },
+  "alternatives": [
+    { "roomTypeId": "other_type_uuid", "name": "Standard King", "available": true },
+    { "checkIn": "2026-05-16", "available": true }
+  ]
+}
+
+// 409 Conflict - Overbooking attempt
+{
+  "error": "OVERBOOKING_PREVENTED",
+  "message": "Room 412 is already reserved for overlapping dates",
+  "conflictingReservation": {
+    "id": "other_reservation_uuid",
+    "dates": "2026-05-17 to 2026-05-20"
+  }
+}
+
+// 402 Payment Required - Deposit failed
+{
+  "error": "PAYMENT_FAILED",
+  "message": "Deposit charge of $145.00 was declined",
+  "paymentMethod": "card",
+  "declineCode": "insufficient_funds",
+  "action": "Please provide alternative payment method"
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] Guest with existing profile books room → 201 + profile linked
+- [ ] New guest books room → 201 + guest profile created
+- [ ] preferredRoomId requested but not available → auto-assign best match
+- [ ] Check-out date <= check-in date → 400 validation error
+- [ ] Adults + children > room max occupancy → 400 validation error
+- [ ] Payment token invalid → 402 PAYMENT_FAILED with Stripe error code
+- [ ] Concurrent bookings for last available room → one succeeds, one gets 409
+- [ ] Guest tries to book for dates in the past → 400 validation error
+- [ ] Confirmation email sent within 30s of successful booking
+
+---
+
+### `POST /api/v1/hotels/{hotelId}/reservations/{reservationId}/check-in`
+*Process guest arrival*
+
+**Headers Required**
+```http
+Authorization: Bearer {{receptionist_token}}
+X-Hotel-ID: {{hotel_uuid}}
+Content-Type: application/json
+```
+
+**Request Payload**
+```json
+{
+  "actualCheckInTime": "2026-05-15T14:30:00Z",
+  "assignedRoomId": "room_uuid",
+  "idVerification": {
+    "documentType": "passport",
+    "documentNumber": "AB123456",
+    "photoUrl": "https://s3/.../id_scan.jpg",
+    "verifiedBy": "staff_user_id"
+  },
+  "paymentMethod": {
+    "type": "card",
+    "last4": "4242",
+    "brand": "visa",
+    "token": "pm_stripe_token"
+  },
+  "specialInstructions": "Guest requested late checkout"
+}
+```
+
+| Field | Type | Required | Validation |
+|-------|------|----------|-----------|
+| `actualCheckInTime` | datetime | ❌ | Must be >= reservation.checkInDate; default: now |
+| `assignedRoomId` | UUID | ❌ | Must be AVAILABLE; auto-assigned if not provided |
+| `idVerification.documentNumber` | string | ✅ | Non-empty; format validated by documentType |
+| `paymentMethod.token` | string | ✅ | Valid payment processor token |
+| `specialInstructions` | string | ❌ | Max 500 chars |
+
+**✅ Success Response (200 OK)**
+```json
+{
+  "reservationId": "reservation_uuid",
+  "status": "CHECKED_IN",
+  "room": {
+    "id": "room_uuid",
+    "roomNumber": "412",
+    "status": "CHECKED_IN",
+    "cleanliness": "INSPECTED"
+  },
+  "guest": {
+    "name": "John Doe",
+    "idVerified": true,
+    "verificationTimestamp": "2026-05-15T14:30:00Z"
+  },
+  "payment": {
+    "method": "card",
+    "last4": "4242",
+    "authorizationCode": "AUTH_123456",
+    "preAuthAmount": 365.25 // balance due held for incidentals
+  },
+  "digitalKey": {
+    "enabled": true,
+    "keyCode": "DK-8821-XJ9",
+    "validFrom": "2026-05-15T14:30:00Z",
+    "validUntil": "2026-05-18T11:00:00Z",
+    "mobileAppUrl": "yourhms://key/DK-8821-XJ9"
+  },
+  "folio": {
+    "folioId": "folio_uuid",
+    "viewUrl": "/api/v1/reservations/{id}/folio",
+    "currentBalance": 365.25
+  },
+  "broadcast": {
+    "event": "reservation.checked_in",
+    "channels": [
+      "/topic/hotel/{{hotel_uuid}}/rooms",
+      "/topic/reservations/{{reservation_uuid}}/folio"
+    ]
+  }
+}
+```
+
+**❌ Error Responses**
+```json
+// 400 Bad Request - Reservation not in CONFIRMED status
+{
+  "error": "INVALID_RESERVATION_STATUS",
+  "message": "Cannot check in reservation with status 'CANCELLED'",
+  "currentStatus": "CANCELLED",
+  "requiredStatus": "CONFIRMED"
+}
+
+// 409 Conflict - Room not available
+{
+  "error": "ROOM_NOT_AVAILABLE",
+  "message": "Room 412 is not available for check-in",
+  "roomStatus": "OUT_OF_ORDER",
+  "suggestedRooms": ["413", "415"]
+}
+
+// 422 Unprocessable Entity - ID verification failed
+{
+  "error": "ID_VERIFICATION_FAILED",
+  "message": "Passport number format invalid for country 'USA'",
+  "field": "idVerification.documentNumber",
+  "expectedFormat": "9 digits or 2 letters + 7 digits"
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] CONFIRMED reservation → check-in succeeds, room status → CHECKED_IN
+- [ ] Reservation already CHECKED_IN → 400 INVALID_RESERVATION_STATUS (idempotent)
+- [ ] Assigned room is OUT_OF_ORDER → 409 ROOM_NOT_AVAILABLE + suggestions
+- [ ] Invalid passport format → 422 ID_VERIFICATION_FAILED
+- [ ] Payment pre-auth fails → 402 PAYMENT_FAILED + reservation remains CONFIRMED
+- [ ] Digital key generated and valid for correct date range
+- [ ] WebSocket broadcast received by housekeeping dashboard
+- [ ] Guest folio created with initial balance = balanceDue
+- [ ] Audit log entry created for check-in event
+
+---
+
+### `POST /api/v1/hotels/{hotelId}/reservations/{reservationId}/check-out`
+*Process departure + generate invoice*
+
+**Headers Required**
+```http
+Authorization: Bearer {{receptionist_or_finance_token}}
+X-Hotel-ID: {{hotel_uuid}}
+Content-Type: application/json
+```
+
+**Request Payload**
+```json
+{
+  "actualCheckOutTime": "2026-05-18T10:15:00Z",
+  "finalPayment": {
+    "method": "card",
+    "amount": 298.50,
+    "transactionId": "txn_stripe_123"
+  },
+  "feedback": {
+    "rating": 5,
+    "comment": "Excellent stay!"
+  },
+  "postCheckout": {
+    "sendInvoiceEmail": true,
+    "addToLoyaltyProgram": true,
+    "scheduleFollowUp": "7_days"
+  }
+}
+```
+
+| Field | Type | Required | Validation |
+|-------|------|----------|-----------|
+| `actualCheckOutTime` | datetime | ❌ | Must be >= actualCheckInTime; default: now |
+| `finalPayment.amount` | decimal | ✅ if balanceDue > 0 | Must equal reservation.balanceDue |
+| `finalPayment.transactionId` | string | ✅ if method != cash | Valid processor transaction ID |
+| `feedback.rating` | integer | ❌ | 1-5 scale |
+| `postCheckout.scheduleFollowUp` | string | ❌ | Valid cron-like: "7_days", "30_days", "never" |
+
+**✅ Success Response (200 OK)**
+```json
+{
+  "reservationId": "reservation_uuid",
+  "status": "CHECKED_OUT",
+  "room": {
+    "id": "room_uuid",
+    "roomNumber": "412",
+    "status": "CHECKED_OUT",
+    "cleanliness": "DIRTY",
+    "nextAction": "housekeeping_task_created"
+  },
+  "invoice": {
+    "id": "invoice_uuid",
+    "invoiceNumber": "INV-2026-00451",
+    "issueDate": "2026-05-18",
+    "totalAmount": 435.00,
+    "breakdown": {
+      "roomCharges": 435.00,
+      "consumptionCharges": 39.50,
+      "taxes": 71.18,
+      "depositPaid": -145.00,
+      "finalPayment": -298.50,
+      "balanceDue": 0.00
+    },
+    "pdfUrl": "https://s3/.../invoice_00451.pdf",
+    "emailSent": true
+  },
+  "loyalty": {
+    "pointsEarned": 435,
+    "newTierProgress": "GOLD: 85%",
+    "nextReward": "Room upgrade at 100%"
+  },
+  "feedback": {
+    "submitted": true,
+    "rating": 5,
+    "surveyUrl": "https://feedback.yourhms.com/s/xyz"
+  },
+  "postCheckout": {
+    "invoiceEmailSent": true,
+    "loyaltyUpdated": true,
+    "followUpScheduled": "2026-05-25T09:00:00Z"
+  },
+  "broadcast": {
+    "event": "reservation.checked_out",
+    "channels": [
+      "/topic/hotel/{{hotel_uuid}}/housekeeping",
+      "/topic/hotel/{{hotel_uuid}}/inventory"
+    ],
+    "payload": {
+      "roomId": "room_uuid",
+      "action": "create_cleaning_task",
+      "priority": "NORMAL"
+    }
+  }
+}
+```
+
+**❌ Error Responses**
+```json
+// 400 Bad Request - Reservation not checked in
+{
+  "error": "RESERVATION_NOT_CHECKED_IN",
+  "message": "Cannot check out reservation that was never checked in",
+  "currentStatus": "CONFIRMED"
+}
+
+// 400 Bad Request - Payment amount mismatch
+{
+  "error": "PAYMENT_AMOUNT_MISMATCH",
+  "message": "Final payment amount $298.50 does not match balance due $305.00",
+  "expected": 305.00,
+  "provided": 298.50
+}
+
+// 500 Internal Server Error - Invoice generation failed
+{
+  "error": "INVOICE_GENERATION_FAILED",
+  "message": "Failed to generate PDF invoice. Support ticket #INV-ERR-445 created.",
+  "supportTicket": "INV-ERR-445",
+  "retryEndpoint": "/api/v1/reservations/{id}/invoice/regenerate"
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] CHECKED_IN reservation → check-out succeeds, room → CHECKED_OUT + DIRTY
+- [ ] Balance due = 0 (fully prepaid) → no payment required, still 200
+- [ ] Payment amount != balance due → 400 PAYMENT_AMOUNT_MISMATCH
+- [ ] Invoice PDF generated and accessible via S3 URL
+- [ ] Housekeeping task created with priority based on next reservation
+- [ ] Loyalty points calculated correctly (1 point per $1 spent)
+- [ ] Feedback survey link generated and unique per reservation
+- [ ] WebSocket broadcast triggers inventory restock check for minibar
+- [ ] Audit log records check-out with staff user ID and timestamp
+
+---
+
+## 💰 ROOM CHARGES & FOLIO
+
+### `POST /api/v1/hotels/{hotelId}/rooms/{roomId}/charges`
+*Post consumption to guest folio*
+
+**Headers Required**
+```http
+Authorization: Bearer {{receptionist_or_fnb_token}}
+X-Hotel-ID: {{hotel_uuid}}
+Content-Type: application/json
+```
+
+**Request Payload**
+```json
+{
+  "reservationId": "reservation_uuid",
+  "description": "Minibar: Premium Whiskey 50ml",
+  "amount": 18.50,
+  "type": "MINIBAR",
+  "quantity": 1,
+  "postedBy": "staff_user_id",
+  "metadata": {
+    "productId": "whiskey_premium_50ml",
+    "timestamp": "2026-04-27T22:15:00Z",
+    "roomLocation": "minibar_shelf_2"
+  }
+}
+```
+
+| Field | Type | Required | Validation |
+|-------|------|----------|-----------|
+| `reservationId` | UUID | ✅ | Must be CHECKED_IN status |
+| `description` | string | ✅ | 1-200 chars |
+| `amount` | decimal | ✅ | > 0; max 2 decimal places |
+| `type` | enum | ✅ | MINIBAR, FNB, LAUNDRY, PHONE, SPA, OTHER |
+| `quantity` | integer | ❌ | Default: 1; must be >= 1 |
+| `metadata.productId` | string | ❌ | If type=MINIBAR, must exist in inventory |
+
+**✅ Success Response (201 Created)**
+```json
+{
+  "chargeId": "charge_uuid",
+  "reservationId": "reservation_uuid",
+  "roomNumber": "412",
+  "description": "Minibar: Premium Whiskey 50ml",
+  "amount": 18.50,
+  "type": "MINIBAR",
+  "quantity": 1,
+  "postedAt": "2026-04-27T22:16:01Z",
+  "postedBy": {
+    "id": "staff_user_id",
+    "name": "Maria Garcia",
+    "role": "RECEPTIONIST"
+  },
+  "folio": {
+    "runningTotal": 453.50,
+    "previousTotal": 435.00,
+    "balanceDue": 453.50 // if no payments yet
+  },
+  "inventory": {
+    "deducted": true,
+    "itemId": "item_uuid",
+    "previousStock": 24,
+    "newStock": 23,
+    "reorderAlert": false
+  },
+  "broadcast": {
+    "event": "folio.updated",
+    "channel": "/topic/reservations/{{reservation_uuid}}/folio",
+    "payload": {
+      "charge": { "id": "charge_uuid", "amount": 18.50, "description": "..." },
+      "newBalance": 453.50
+    }
+  }
+}
+```
+
+**❌ Error Responses**
+```json
+// 400 Bad Request - Reservation not checked in
+{
+  "error": "RESERVATION_NOT_ACTIVE",
+  "message": "Cannot post charges to reservation with status 'CHECKED_OUT'",
+  "reservationStatus": "CHECKED_OUT"
+}
+
+// 400 Bad Request - Invalid product for minibar
+{
+  "error": "INVALID_MINIBAR_PRODUCT",
+  "message": "Product ID 'whiskey_premium_50ml' not found in hotel inventory",
+  "field": "metadata.productId"
+}
+
+// 403 Forbidden - Staff cannot charge to other reservations
+{
+  "error": "RESERVATION_ACCESS_DENIED",
+  "message": "Staff member cannot post charges to reservation outside their shift/department",
+  "reservationId": "reservation_uuid",
+  "staffDepartment": "HOUSEKEEPING"
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] Valid charge to CHECKED_IN reservation → 201 + folio updated
+- [ ] MINIBAR charge with valid productId → inventory stock decremented
+- [ ] Charge to CHECKED_OUT reservation → 400 RESERVATION_NOT_ACTIVE
+- [ ] Amount with 3 decimal places (18.501) → 400 validation error
+- [ ] Staff from Housekeeping posts FNB charge → 403 if not authorized
+- [ ] Concurrent charges to same folio → both succeed, running total accurate
+- [ ] WebSocket broadcast received by guest mobile app within 1s
+- [ ] Audit log entry includes staff ID, timestamp, and IP address
+
+---
+
+### `GET /api/v1/hotels/{hotelId}/reservations/{reservationId}/folio`
+*View live guest folio*
+
+**Headers Required**
+```http
+Authorization: Bearer {{receptionist_or_guest_token}}
+X-Hotel-ID: {{hotel_uuid}}
+```
+
+**Query Parameters**
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `include` | string | ❌ | Comma-separated: charges,payments,invoice (default: charges) |
+| `format` | string | ❌ | json (default), pdf (triggers download) |
+
+**✅ Success Response (200 OK)**
+```json
+{
+  "reservationId": "reservation_uuid",
+  "guest": {
+    "id": "guest_uuid",
+    "name": "John Doe",
+    "email": "john@example.com"
+  },
+  "room": {
+    "number": "412",
+    "type": "Deluxe King"
+  },
+  "stay": {
+    "checkIn": "2026-05-15",
+    "checkOut": "2026-05-18",
+    "nights": 3,
+    "status": "CHECKED_IN"
+  },
+  "charges": [
+    {
+      "id": "charge_uuid_1",
+      "date": "2026-05-15T14:30:00Z",
+      "description": "Room Charge (3 nights @ $145)",
+      "amount": 435.00,
+      "type": "ROOM",
+      "reversible": false
+    },
+    {
+      "id": "charge_uuid_2",
+      "date": "2026-05-16T22:15:00Z",
+      "description": "Minibar: Premium Whiskey 50ml",
+      "amount": 18.50,
+      "type": "MINIBAR",
+      "reversible": true,
+      "postedBy": "Maria Garcia"
+    }
+  ],
+  "payments": [
+    {
+      "id": "payment_uuid",
+      "date": "2026-05-15T14:30:00Z",
+      "method": "card",
+      "last4": "4242",
+      "amount": 145.00,
+      "type": "DEPOSIT",
+      "status": "CAPTURED"
+    }
+  ],
+  "summary": {
+    "subtotal": 453.50,
+    "taxes": 68.03,
+    "fees": 10.00,
+    "totalCharges": 531.53,
+    "totalPayments": 145.00,
+    "balanceDue": 386.53,
+    "currency": "USD"
+  },
+  "actions": [
+    {
+      "label": "Add Charge",
+      "method": "POST",
+      "url": "/api/v1/rooms/412/charges",
+      "allowedFor": ["RECEPTIONIST", "FINANCE"]
+    },
+    {
+      "label": "Process Payment",
+      "method": "POST",
+      "url": "/api/v1/reservations/{id}/payment",
+      "allowedFor": ["RECEPTIONIST", "FINANCE"]
+    },
+    {
+      "label": "Download Invoice",
+      "method": "GET",
+      "url": "/api/v1/reservations/{id}/folio?format=pdf",
+      "allowedFor": ["RECEPTIONIST", "FINANCE", "GUEST"]
+    }
+  ],
+  "realtime": {
+    "websocketChannel": "/topic/reservations/{{reservation_uuid}}/folio",
+    "lastUpdate": "2026-04-27T22:16:01Z"
+  }
+}
+```
+
+**❌ Error Responses**
+```json
+// 403 Forbidden - Guest accessing wrong reservation
+{
+  "error": "RESERVATION_ACCESS_DENIED",
+  "message": "Guest can only access their own reservations",
+  "requestedReservation": "reservation_uuid",
+  "guestOwnedReservations": ["other_reservation_uuid"]
+}
+
+// 404 Not Found - Reservation doesn't exist
+{
+  "error": "RESERVATION_NOT_FOUND",
+  "message": "Reservation with ID 'invalid_uuid' not found in hotel '{{hotel_uuid}}'"
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] Receptionist views folio for any reservation in hotel → full details
+- [ ] Guest views their own folio → charges + payments, no staff actions
+- [ ] Guest tries to view another guest's folio → 403 RESERVATION_ACCESS_DENIED
+- [ ] Format=pdf → returns application/pdf with invoice attachment
+- [ ] Real-time update: new charge posted → WebSocket pushes update within 1s
+- [ ] Folio summary recalculates correctly after each charge/payment
+- [ ] Response time < 300ms for folio with 50+ charge items
+- [ ] Currency conversion applied if guest payment in different currency
+
+---
+
+## 🏊 POOL & FACILITIES MODULE
+
+### `POST /api/v1/hotels/{hotelId}/facilities/{facilityId}/bookings`
+*Book a facility slot*
+
+**Headers Required**
+```http
+Authorization: Bearer {{guest_or_receptionist_token}}
+X-Hotel-ID: {{hotel_uuid}}
+Content-Type: application/json
+```
+
+**Request Payload**
+```json
+{
+  "slotId": "slot_uuid",
+  "guestCount": 2,
+  "reservationId": "reservation_uuid",
+  "guest": {
+    "id": "guest_uuid",
+    "firstName": "John",
+    "email": "john@example.com"
+  },
+  "specialRequests": "Need extra towels",
+  "chargeToRoom": true,
+  "payment": {
+    "method": "card",
+    "amount": 25.00,
+    "token": "pm_stripe_token"
+  }
+}
+```
+
+| Field | Type | Required | Validation |
+|-------|------|----------|-----------|
+| `slotId` | UUID | ✅ | Must be AVAILABLE and not in maintenance |
+| `guestCount` | integer | ✅ | 1-`facility.maxCapacity`; <= slot.availableSpots |
+| `reservationId` OR `guest` | UUID/Object | ✅ One required | If reservationId, must be CHECKED_IN |
+| `chargeToRoom` | boolean | ❌ | Default: false; requires valid reservationId |
+| `payment.token` | string | ✅ if !chargeToRoom && amount > 0 | Valid payment processor token |
+
+**✅ Success Response (201 Created)**
+```json
+{
+  "bookingId": "booking_uuid",
+  "bookingReference": "POOL-2026-XK9",
+  "status": "CONFIRMED",
+  "facility": {
+    "name": "Infinity Pool",
+    "slot": {
+      "startTime": "2026-05-15T14:00:00Z",
+      "endTime": "2026-05-15T15:00:00Z"
+    }
+  },
+  "guestCount": 2,
+  "access": {
+    "qrCode": "image/png;base64,iVBORw0KG...",
+    "accessCode": "POOL-XK9-2026",
+    "instructions": "Show QR code at pool entrance. Arrive 5 min early."
+  },
+  "charges": {
+    "amount": 0.00,
+    "chargedToRoom": true,
+    "roomChargeId": "charge_uuid" // if applicable
+  },
+  "cancellation": {
+    "allowedUntil": "2026-05-15T12:00:00Z",
+    "policy": "FREE_CANCELLATION_2H",
+    "cancelEndpoint": "/api/v1/facilities/bookings/{bookingId}/cancel"
+  },
+  "broadcast": {
+    "event": "facility.slot.booked",
+    "channel": "/topic/hotel/{{hotel_uuid}}/facilities/pool",
+    "payload": {
+      "slotId": "slot_uuid",
+      "remainingSpots": 16,
+      "occupancyPercent": 47
+    }
+  }
+}
+```
+
+**❌ Error Responses**
+```json
+// 409 Conflict - Slot no longer available
+{
+  "error": "SLOT_NO_LONGER_AVAILABLE",
+  "message": "Slot was booked by another guest while processing your request",
+  "slotId": "slot_uuid",
+  "action": "Please select an alternative slot",
+  "alternativeSlots": ["slot_uuid_2", "slot_uuid_3"]
+}
+
+// 400 Bad Request - Guest not checked in for room charge
+{
+  "error": "GUEST_NOT_CHECKED_IN",
+  "message": "Cannot charge to room: reservation is not in CHECKED_IN status",
+  "reservationStatus": "CONFIRMED"
+}
+
+// 422 Unprocessable Entity - Capacity exceeded
+{
+  "error": "CAPACITY_EXCEEDED",
+  "message": "Guest count (5) exceeds slot remaining capacity (3)",
+  "requested": 5,
+  "available": 3,
+  "maxPerBooking": 4
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] Guest with CHECKED_IN reservation books pool slot → chargeToRoom=true works
+- [ ] Walk-in guest books slot → payment required, no room charge option
+- [ ] Slot booked concurrently by two guests → one succeeds, one gets 409
+- [ ] Guest count > slot remaining capacity → 422 CAPACITY_EXCEEDED
+- [ ] QR code generated is scannable and contains booking reference
+- [ ] WebSocket broadcast updates facility occupancy in real-time
+- [ ] Cancellation deadline calculated correctly based on facility policy
+- [ ] Inventory deduction for towels if included in booking amenities
+
+---
+
+## 📦 INVENTORY MODULE
+
+### `POST /api/v1/hotels/{hotelId}/inventory/items/{itemId}/consume`
+*Record consumption (minibar, housekeeping, F&B)*
+
+**Headers Required**
+```http
+Authorization: Bearer {{staff_token}}
+X-Hotel-ID: {{hotel_uuid}}
+Content-Type: application/json
+```
+
+**Request Payload**
+```json
+{
+  "quantity": 2,
+  "type": "CONSUMPTION",
+  "reference": {
+    "type": "ROOM_CHARGE",
+    "id": "reservation_uuid"
+  },
+  "location": {
+    "from": "Room 412 Minibar",
+    "to": null
+  },
+  "performedBy": "staff_user_id",
+  "notes": "Guest consumed during stay",
+  "autoReorderCheck": true
+}
+```
+
+| Field | Type | Required | Validation |
+|-------|------|----------|-----------|
+| `quantity` | decimal | ✅ | > 0; must be <= currentStock |
+| `type` | enum | ✅ | CONSUMPTION, ADJUSTMENT, TRANSFER, WASTE |
+| `reference.type` | enum | ✅ if type=CONSUMPTION | ROOM_CHARGE, HOUSEKEEPING_TASK, FNB_ORDER |
+| `reference.id` | UUID | ✅ if reference.type provided | Must exist and be active |
+| `location.from` | string | ✅ | Non-empty; valid location format |
+| `autoReorderCheck` | boolean | ❌ | Default: true; triggers reorder alert if below threshold |
+
+**✅ Success Response (200 OK)**
+```json
+{
+  "transactionId": "txn_uuid",
+  "item": {
+    "id": "item_uuid",
+    "name": "Premium Whiskey 50ml",
+    "sku": "MINI-WHISK-PREM-50",
+    "previousStock": 24,
+    "quantityConsumed": 2,
+    "newStock": 22,
+    "unitOfMeasure": "piece",
+    "status": "LOW_STOCK" // computed: newStock < reorderPoint
+  },
+  "roomCharge": {
+    "chargeId": "charge_uuid",
+    "description": "Minibar: Premium Whiskey 50ml x2",
+    "amount": 17.00,
+    "postedToFolio": true,
+    "folioUrl": "/api/v1/reservations/reservation_uuid/folio"
+  },
+  "alerts": [
+    {
+      "type": "REORDER_ALERT",
+      "severity": "MEDIUM",
+      "message": "Premium Whiskey 50ml below reorder point (22 < 30)",
+      "suggestedOrderQuantity": 30,
+      "preferredSupplier": "Beverages Inc",
+      "actionUrl": "/api/v1/inventory/purchase-orders/new?itemId=item_uuid"
+    }
+  ],
+  "events": [
+    { "type": "inventory.consumed", "itemId": "item_uuid", "quantity": 2 },
+    { "type": "room.charge.created", "chargeId": "charge_uuid" }
+  ],
+  "audit": {
+    "logged": true,
+    "auditId": "audit_uuid",
+    "viewUrl": "/api/v1/audit/logs?transactionId=txn_uuid"
+  }
+}
+```
+
+**❌ Error Responses**
+```json
+// 400 Bad Request - Insufficient stock
+{
+  "error": "INSUFFICIENT_STOCK",
+  "message": "Cannot consume 2 units: only 1 unit available in Room 412 Minibar",
+  "itemId": "item_uuid",
+  "location": "Room 412 Minibar",
+  "available": 1,
+  "requested": 2
+}
+
+// 400 Bad Request - Invalid reference for consumption
+{
+  "error": "INVALID_CONSUMPTION_REFERENCE",
+  "message": "Reference type 'ROOM_CHARGE' requires a valid reservation ID",
+  "field": "reference.id",
+  "provided": "invalid_uuid"
+}
+
+// 403 Forbidden - Staff cannot consume from another room's minibar
+{
+  "error": "LOCATION_ACCESS_DENIED",
+  "message": "Housekeeping staff can only consume from assigned floor locations",
+  "staffFloor": 3,
+  "requestedLocation": "Room 412 Minibar (Floor 4)"
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] Valid consumption with ROOM_CHARGE reference → stock decremented + charge posted
+- [ ] Consumption quantity > available stock → 400 INSUFFICIENT_STOCK
+- [ ] autoReorderCheck=true + newStock < reorderPoint → REORDER_ALERT generated
+- [ ] Staff from Floor 3 tries to consume from Floor 4 minibar → 403 LOCATION_ACCESS_DENIED
+- [ ] Reference ID doesn't exist → 400 INVALID_CONSUMPTION_REFERENCE
+- [ ] Concurrent consumption requests → stock never goes negative (optimistic locking)
+- [ ] Audit log entry includes staff ID, timestamp, IP, and location
+- [ ] Inventory dashboard reflects new stock level within 5s
+
+---
+
+## 👤 GUEST CRM MODULE
+
+### `POST /api/v1/hotels/{hotelId}/reservations/{reservationId}/apply-guest-preferences`
+*Auto-apply guest preferences during room assignment*
+
+**Headers Required**
+```http
+Authorization: Bearer {{receptionist_token}}
+X-Hotel-ID: {{hotel_uuid}}
+Content-Type: application/json
+```
+
+**Request Payload**
+```json
+{
+  "applyPreferences": {
+    "roomAssignment": true,
+    "amenities": true,
+    "services": true
+  },
+  "overrides": {
+    "preferredFloor": null,
+    "pillowType": "soft"
+  }
+}
+```
+
+| Field | Type | Required | Validation |
+|-------|------|----------|-----------|
+| `applyPreferences.roomAssignment` | boolean | ❌ | Default: true |
+| `applyPreferences.amenities` | boolean | ❌ | Default: true |
+| `applyPreferences.services` | boolean | ❌ | Default: true |
+| `overrides.preferredFloor` | integer/null | ❌ | If provided, must be 1-50 |
+| `overrides.pillowType` | string | ❌ | Must be valid enum value |
+
+**✅ Success Response (200 OK)**
+```json
+{
+  "reservationId": "reservation_uuid",
+  "appliedPreferences": {
+    "roomAssigned": {
+      "roomId": "room_uuid",
+      "roomNumber": "412",
+      "matchScore": 95,
+      "matchedPreferences": ["high_floor", "king_bed", "quiet_area"],
+      "unmatchedPreferences": ["near_elevator"],
+      "reason": "No elevator-adjacent rooms available for dates"
+    },
+    "amenitiesPrepared": [
+      { "item": "Firm pillows", "location": "Room 412", "status": "READY", "task": "housekeeping_123" },
+      { "item": "Vegetarian welcome amenity", "location": "Room 412", "status": "READY", "task": "fnb_456" }
+    ],
+    "servicesScheduled": [
+      { "service": "Wake-up call", "time": "07:00", "method": "phone", "task": "frontdesk_789" },
+      { "service": "International newspaper", "delivery": "06:30 to room", "task": "concierge_012" }
+    ]
+  },
+  "alerts": [
+    {
+      "type": "ALLERGY_ALERT",
+      "severity": "HIGH",
+      "message": "Guest has peanut allergy - notify F&B and housekeeping",
+      "acknowledgedBy": null,
+      "acknowledgeEndpoint": "/api/v1/alerts/{alertId}/acknowledge"
+    }
+  ],
+  "tasks": {
+    "created": 4,
+    "assigned": {
+      "housekeeping": ["task_123"],
+      "fnb": ["task_456"],
+      "frontdesk": ["task_789"],
+      "concierge": ["task_012"]
+    }
+  },
+  "nextSteps": [
+    "Preferences applied to reservation",
+    "Housekeeping notified of special requests",
+    "F&B team alerted to dietary restrictions",
+    "Guest will receive preference confirmation email"
+  ]
+}
+```
+
+**❌ Error Responses**
+```json
+// 400 Bad Request - No rooms match preferences
+{
+  "error": "NO_PREFERENCE_MATCH",
+  "message": "No available rooms match guest preferences for requested dates",
+  "preferences": {
+    "floor": "high",
+    "bedType": "king",
+    "quietRoom": true
+  },
+  "bestMatch": {
+    "roomId": "room_uuid",
+    "matchScore": 65,
+    "missingPreferences": ["quiet_area"]
+  },
+  "action": "Proceed with best match or adjust preferences"
+}
+
+// 403 Forbidden - Cannot override critical preferences
+{
+  "error": "PREFERENCE_OVERRIDE_DENIED",
+  "message": "Field 'dietaryRestrictions' cannot be overridden for safety reasons",
+  "field": "dietaryRestrictions",
+  "reason": "Allergy information must remain accurate"
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] Guest with preferences → room assigned with 95% match score
+- [ ] No rooms match all preferences → returns best match with explanation
+- [ ] Override pillowType → new preference applied, task created for housekeeping
+- [ ] Allergy alert generated → HIGH severity, requires acknowledgment
+- [ ] Tasks created for each department with correct assignments
+- [ ] Preference confirmation email queued for sending
+- [ ] WebSocket broadcast to guest app: "Your preferences have been applied"
+- [ ] Audit log records which preferences were applied/overridden
+
+---
+
+## 🍽️ F&B MODULE
+
+### `POST /api/v1/hotels/{hotelId}/fb/orders`
+*Create F&B order (POS / Guest App / Room Service)*
+
+**Headers Required**
+```http
+Authorization: Bearer {{guest_or_staff_token}}
+X-Hotel-ID: {{hotel_uuid}}
+Content-Type: application/json
+```
+
+**Request Payload**
+```json
+{
+  "outletId": "outlet_uuid",
+  "type": "ROOM_SERVICE",
+  "guestContext": {
+    "reservationId": "reservation_uuid",
+    "roomNumber": "412",
+    "guestName": "John Doe"
+  },
+  "lines": [
+    {
+      "menuItemId": "item_uuid",
+      "quantity": 2,
+      "modifiers": ["extra cheese"],
+      "specialInstructions": "Well done, no onions",
+      "allergyAlert": false
+    }
+  ],
+  "delivery": {
+    "requestedTime": "2026-05-15T19:30:00Z",
+    "deliveryInstructions": "Leave at door if no answer",
+    "contactOnArrival": true
+  },
+  "payment": {
+    "method": "ROOM_CHARGE",
+    "roomChargeDescription": "Room Service - Dinner"
+  },
+  "notes": [
+    { "type": "GUEST_REQUEST", "text": "Celebrating anniversary" },
+    { "type": "KITCHEN_NOTE", "text": "Allergy: peanuts - ensure no cross-contamination" }
+  ]
+}
+```
+
+| Field | Type | Required | Validation |
+|-------|------|----------|-----------|
+| `outletId` | UUID | ✅ | Must exist and be open for business |
+| `type` | enum | ✅ | DINE_IN, ROOM_SERVICE, TAKEAWAY, BANQUET |
+| `guestContext.reservationId` | UUID | ✅ if type=ROOM_SERVICE | Must be CHECKED_IN |
+| `lines[].menuItemId` | UUID | ✅ | Must exist and be available |
+| `lines[].quantity` | integer | ✅ | >= 1; <= 10 per item (configurable) |
+| `payment.method` | enum | ✅ | ROOM_CHARGE, CARD, CASH |
+| `payment.method=ROOM_CHARGE` | - | requires | valid reservationId in guestContext |
+
+**✅ Success Response (201 Created)**
+```json
+{
+  "orderId": "order_uuid",
+  "orderNumber": "FNB-2026-00451",
+  "status": "OPEN",
+  "outlet": {
+    "name": "The Garden Restaurant",
+    "type": "RESTAURANT"
+  },
+  "estimatedReadyTime": "2026-05-15T19:42:00Z",
+  "totals": {
+    "subtotal": 45.00,
+    "tax": 6.75,
+    "total": 51.75
+  },
+  "roomCharge": {
+    "chargeId": "charge_uuid",
+    "description": "Room Service - Dinner",
+    "amount": 51.75,
+    "postedToFolio": true,
+    "folioUrl": "/api/v1/reservations/reservation_uuid/folio"
+  },
+  "kitchenRouting": [
+    {
+      "station": "GRILL",
+      "items": ["Avocado Toast x2"],
+      "priority": "NORMAL",
+      "kdsUrl": "/api/v1/kitchen/orders?station=GRILL",
+      "estimatedPrepTime": 12
+    }
+  ],
+  "guestNotification": {
+    "sent": true,
+    "method": "app_push",
+    "message": "Your order FNB-2026-00451 is being prepared. Estimated delivery: 7:42 PM",
+    "trackingUrl": "/api/v1/guest/orders/order_uuid/status"
+  },
+  "allergyHandling": {
+    "flagged": true,
+    "allergens": ["peanuts"],
+    "kitchenAlert": "ALLERGY ALERT: Peanuts - prevent cross-contamination",
+    "staffNotified": ["head_chef", "line_cook_grill"]
+  }
+}
+```
+
+**❌ Error Responses**
+```json
+// 400 Bad Request - Outlet closed
+{
+  "error": "OUTLET_CLOSED",
+  "message": "The Garden Restaurant is currently closed",
+  "outletId": "outlet_uuid",
+  "nextOpenTime": "2026-05-16T07:00:00Z",
+  "alternativeOutlets": [
+    { "id": "outlet_uuid_2", "name": "Lobby Bar", "openUntil": "23:00" }
+  ]
+}
+
+// 400 Bad Request - Menu item unavailable
+{
+  "error": "ITEM_UNAVAILABLE",
+  "message": "Menu item 'Truffle Pasta' is currently unavailable",
+  "menuItemId": "item_uuid",
+  "reason": "Out of stock",
+  "estimatedRestock": "2026-05-16T10:00:00Z",
+  "suggestedAlternatives": ["item_uuid_2", "item_uuid_3"]
+}
+
+// 402 Payment Required - Room charge failed
+{
+  "error": "ROOM_CHARGE_FAILED",
+  "message": "Failed to post charge to guest folio: reservation payment method declined",
+  "reservationId": "reservation_uuid",
+  "action": "Please provide alternative payment method",
+  "retryEndpoint": "/api/v1/fb/orders/{orderId}/update-payment"
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] ROOM_SERVICE order with valid reservation → charge posted to folio
+- [ ] Menu item with allergen matching guest profile → allergy alert triggered
+- [ ] Outlet closed at order time → 400 OUTLET_CLOSED + alternatives
+- [ ] Menu item out of stock → 400 ITEM_UNAVAILABLE + suggested substitutes
+- [ ] Room charge fails (card declined) → 402 ROOM_CHARGE_FAILED + retry option
+- [ ] Kitchen routing: items split correctly by station (GRILL, SALAD, BAR)
+- [ ] Guest push notification sent within 5s of order creation
+- [ ] Inventory deduction triggered for consumed ingredients (async)
+- [ ] Order status updates via WebSocket: OPEN → PREPARING → SERVED
+
+---
+
+## 📊 REPORTING MODULE
+
+### `GET /api/v1/hotels/{hotelId}/reports/occupancy`
+*Occupancy & RevPAR report*
+
+**Headers Required**
+```http
+Authorization: Bearer {{manager_or_finance_token}}
+X-Hotel-ID: {{hotel_uuid}}
+```
+
+**Query Parameters**
+| Param | Type | Required | Validation |
+|-------|------|----------|-----------|
+| `startDate` | date | ✅ | Format: YYYY-MM-DD; <= endDate |
+| `endDate` | date | ✅ | Format: YYYY-MM-DD; >= startDate; max range 90 days |
+| `groupBy` | enum | ❌ | day (default), week, month |
+| `roomType` | string | ❌ | Filter by room type code |
+| `format` | enum | ❌ | json (default), csv, pdf |
+
+**✅ Success Response (200 OK)**
+```json
+{
+  "reportType": "OCCUPANCY",
+  "hotelId": "hotel_uuid",
+  "period": {
+    "start": "2026-04-01",
+    "end": "2026-04-27",
+    "groupBy": "day",
+    "timezone": "America/New_York"
+  },
+  "summary": {
+    "averageOccupancy": 78.5,
+    "peakOccupancy": 95.0,
+    "peakDate": "2026-04-20",
+    "averageADR": 145.50,
+    "averageRevPAR": 114.22,
+    "totalRoomNights": 1240,
+    "totalRevenue": 180428.00
+  },
+  "data": [
+    {
+      "date": "2026-04-27",
+      "totalRooms": 100,
+      "occupiedRooms": 82,
+      "occupancyRate": 82.0,
+      "adr": 152.00,
+      "revpar": 124.64,
+      "breakdown": {
+        "byRoomType": {
+          "DELUXE": { "occupied": 45, "total": 60, "rate": 75.0, "revenue": 6840.00 },
+          "SUITE": { "occupied": 12, "total": 15, "rate": 80.0, "revenue": 2160.00 }
+        },
+        "byChannel": {
+          "direct": { "bookings": 35, "revenue": 5320.00 },
+          "booking.com": { "bookings": 28, "revenue": 4032.00 },
+          "expedia": { "bookings": 12, "revenue": 1728.00 },
+          "corporate": { "bookings": 7, "revenue": 1008.00 }
+        }
+      }
+    }
+  ],
+  "exportOptions": {
+    "csv": "/api/v1/hotels/{hotelId}/reports/occupancy/export?format=csv&startDate=2026-04-01&endDate=2026-04-27",
+    "pdf": "/api/v1/hotels/{hotelId}/reports/occupancy/export?format=pdf&startDate=2026-04-01&endDate=2026-04-27",
+    "schedule": "/api/v1/hotels/{hotelId}/reports/schedule"
+  },
+  "cache": {
+    "cached": true,
+    "generatedAt": "2026-04-27T02:00:00Z",
+    "nextRefresh": "2026-04-28T02:00:00Z"
+  }
+}
+```
+
+**❌ Error Responses**
+```json
+// 400 Bad Request - Date range too large
+{
+  "error": "DATE_RANGE_EXCEEDED",
+  "message": "Maximum report range is 90 days. Requested: 120 days",
+  "requestedDays": 120,
+  "maxAllowed": 90,
+  "suggestion": "Split request into multiple 90-day ranges"
+}
+
+// 403 Forbidden - Insufficient role for detailed breakdown
+{
+  "error": "REPORT_ACCESS_LEVEL",
+  "message": "Role 'RECEPTIONIST' can only view summary metrics. Upgrade to MANAGER for detailed breakdowns.",
+  "availableMetrics": ["occupancyRate", "totalRooms"],
+  "restrictedMetrics": ["revenue", "channelBreakdown", "adr"]
+}
+
+// 503 Service Unavailable - Report generation timeout
+{
+  "error": "REPORT_GENERATION_TIMEOUT",
+  "message": "Report generation exceeded 30s timeout. Please try smaller date range or off-peak hours.",
+  "retryAfter": 60,
+  "asyncEndpoint": "/api/v1/hotels/{hotelId}/reports/occupancy/async"
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] Manager requests 30-day occupancy report → returns aggregated data
+- [ ] Receptionist requests report → only summary metrics, no revenue data (403 for detailed)
+- [ ] Date range > 90 days → 400 DATE_RANGE_EXCEEDED
+- [ ] Format=csv → returns text/csv with proper headers and escaping
+- [ ] Format=pdf → returns application/pdf with formatted report
+- [ ] Report cached → subsequent requests return cached data with cache metadata
+- [ ] Large date range (90 days) → response time < 5s with pagination if needed
+- [ ] Async endpoint for very large reports → returns job ID + polling URL
+
+---
+
+## 👑 SUPER ADMIN PLATFORM MODULE
+
+### `POST /api/v1/platform/tenants`
+*Onboard new hotel tenant*
+
+**Headers Required**
+```http
+Authorization: Bearer {{super_admin_token}}
+Content-Type: application/json
+# NO X-Hotel-ID header for platform endpoints
+```
+
+**Request Payload**
+```json
+{
+  "hotel": {
+    "name": "Seaside Resort & Spa",
+    "code": "SEASIDE",
+    "timezone": "America/New_York",
+    "currency": "USD",
+    "contact": {
+      "adminEmail": "admin@seasideresort.com",
+      "adminName": "Jane Smith",
+      "phone": "+1-555-0199"
+    }
+  },
+  "subscription": {
+    "tier": "PROFESSIONAL",
+    "billingCycle": "ANNUAL",
+    "startDate": "2026-05-01",
+    "customLimits": {
+      "maxRooms": 200,
+      "maxUsers": 75
+    }
+  },
+  "provisioning": {
+    "createDatabase": true,
+    "seedDemoData": false,
+    "enableFeatures": ["channel_manager", "mobile_app", "advanced_reporting"]
+  },
+  "billing": {
+    "paymentMethod": "stripe",
+    "stripeCustomerId": "cus_stripe_123",
+    "invoiceEmail": "billing@seasideresort.com"
+  }
+}
+```
+
+| Field | Type | Required | Validation |
+|-------|------|----------|-----------|
+| `hotel.name` | string | ✅ | 3-100 chars; unique per platform |
+| `hotel.code` | string | ✅ | 3-10 chars, uppercase alphanumeric; unique |
+| `hotel.contact.adminEmail` | string | ✅ | Valid email; will receive setup credentials |
+| `subscription.tier` | enum | ✅ | STARTER, PROFESSIONAL, ENTERPRISE |
+| `subscription.billingCycle` | enum | ✅ | MONTHLY, ANNUAL |
+| `provisioning.createDatabase` | boolean | ✅ | Must be true for new tenants |
+| `billing.stripeCustomerId` | string | ✅ | Valid Stripe customer ID format |
+
+**✅ Success Response (201 Created)**
+```json
+{
+  "tenantId": "new_hotel_uuid",
+  "status": "PROVISIONING",
+  "hotel": {
+    "id": "new_hotel_uuid",
+    "name": "Seaside Resort & Spa",
+    "code": "SEASIDE",
+    "subdomain": "seasideresort",
+    "adminCredentials": {
+      "temporaryPassword": "TempPass#2026!",
+      "passwordResetRequired": true,
+      "setupUrl": "https://seasideresort.yourhms.com/setup?token=xyz123",
+      "expiresAt": "2026-05-01T23:59:59Z"
+    }
+  },
+  "subscription": {
+    "id": "sub_uuid",
+    "tier": "PROFESSIONAL",
+    "status": "ACTIVE",
+    "billingCycle": "ANNUAL",
+    "startDate": "2026-05-01",
+    "nextBillingDate": "2027-05-01",
+    "amount": 299.00,
+    "currency": "USD"
+  },
+  "provisioningSteps": [
+    { "step": "CREATE_DATABASE_SCHEMA", "status": "COMPLETED", "timestamp": "2026-04-27T10:00:00Z", "duration": "2.3s" },
+    { "step": "SEED_REFERENCE_DATA", "status": "IN_PROGRESS", "estimatedCompletion": "2026-04-27T10:05:00Z", "progress": 45 },
+    { "step": "CREATE_ADMIN_USER", "status": "PENDING" },
+    { "step": "CONFIGURE_FEATURE_FLAGS", "status": "PENDING" },
+    { "step": "SEND_WELCOME_EMAIL", "status": "PENDING" }
+  ],
+  "billing": {
+    "invoiceId": "inv_stripe_123",
+    "invoiceUrl": "https://dashboard.stripe.com/invoices/inv_stripe_123",
+    "paymentStatus": "SUCCEEDED"
+  },
+  "nextActions": [
+    "Share setup URL with hotel admin: https://seasideresort.yourhms.com/setup?token=xyz123",
+    "Monitor provisioning: GET /platform/tenants/{id}/provisioning-status",
+    "Send welcome email template: /platform/templates/welcome"
+  ],
+  "webhooks": {
+    "provisioningComplete": "https://your-crm.com/webhooks/hms-tenant-ready",
+    "payload": { "tenantId": "new_hotel_uuid", "subdomain": "seasideresort", "status": "PROVISIONED" }
+  },
+  "audit": {
+    "logged": true,
+    "auditId": "platform_audit_uuid",
+    "viewUrl": "/platform/audit/logs?tenantId=new_hotel_uuid"
+  }
+}
+```
+
+**❌ Error Responses**
+```json
+// 400 Bad Request - Hotel code already exists
+{
+  "error": "DUPLICATE_HOTEL_CODE",
+  "message": "Hotel code 'SEASIDE' is already in use",
+  "field": "hotel.code",
+  "existingTenantId": "existing_hotel_uuid",
+  "suggestion": "Try 'SEASIDE2' or 'SEASIDE_RESORT'"
+}
+
+// 402 Payment Required - Stripe payment failed
+{
+  "error": "SUBSCRIPTION_PAYMENT_FAILED",
+  "message": "Failed to charge Stripe customer for PROFESSIONAL tier annual subscription",
+  "stripeError": {
+    "code": "card_declined",
+    "decline_code": "insufficient_funds",
+    "message": "Your card has insufficient funds."
+  },
+  "action": "Update payment method in Stripe dashboard",
+  "retryEndpoint": "/api/v1/platform/tenants/{tenantId}/subscription/retry-payment"
+}
+
+// 500 Internal Server Error - Database provisioning failed
+{
+  "error": "DATABASE_PROVISIONING_FAILED",
+  "message": "Failed to create database schema for tenant. Support ticket #DB-ERR-789 created.",
+  "supportTicket": "DB-ERR-789",
+  "rollback": {
+    "performed": true,
+    "message": "Partial resources cleaned up. No billing charge applied."
+  },
+  "retry": {
+    "allowed": true,
+    "maxAttempts": 3,
+    "backoff": "exponential"
+  }
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] Super Admin creates tenant with valid data → 201 + provisioning started
+- [ ] Duplicate hotel.code → 400 DUPLICATE_HOTEL_CODE + suggestions
+- [ ] Stripe payment fails → 402 SUBSCRIPTION_PAYMENT_FAILED + rollback
+- [ ] Database creation fails → 500 with rollback confirmation (no partial billing)
+- [ ] Provisioning steps progress visible via status endpoint
+- [ ] Welcome email queued with setup URL and temporary password
+- [ ] Webhook fired to CRM when provisioning completes
+- [ ] Audit log records Super Admin action with IP and timestamp
+- [ ] Tenant subdomain resolves to new hotel instance after provisioning
+
+---
+
+### `POST /api/v1/platform/tenants/{tenantId}/impersonate`
+*Temporarily act as hotel admin*
+
+**Headers Required**
+```http
+Authorization: Bearer {{super_admin_token}}
+Content-Type: application/json
+```
+
+**Request Payload**
+```json
+{
+  "reason": "Customer support ticket #SUP-2026-445: Room assignment bug",
+  "duration": 60,
+  "notifyTenant": true,
+  "restrictActions": [
+    "DELETE_HOTEL_DATA",
+    "MODIFY_SUBSCRIPTION",
+    "ACCESS_FINANCIAL_REPORTS"
+  ]
+}
+```
+
+| Field | Type | Required | Validation |
+|-------|------|----------|-----------|
+| `reason` | string | ✅ | 20-500 chars; must reference ticket or business need |
+| `duration` | integer | ✅ | 15-240 minutes (15 min increments) |
+| `notifyTenant` | boolean | ❌ | Default: true; sends email to hotel admin |
+| `restrictActions` | enum[] | ❌ | Valid actions from ImpersonationRestriction enum |
+
+**✅ Success Response (200 OK)**
+```json
+{
+  "impersonationId": "imp_uuid",
+  "tenantId": "hotel_uuid",
+  "impersonationToken": "imp_token_xyz789",
+  "expiresAt": "2026-04-27T15:30:00Z",
+  "restrictions": {
+    "blockedActions": ["DELETE_HOTEL_DATA", "MODIFY_SUBSCRIPTION", "ACCESS_FINANCIAL_REPORTS"],
+    "auditLogging": "ENHANCED",
+    "sessionRecording": true
+  },
+  "notification": {
+    "sent": true,
+    "recipient": "admin@grandplaza.com",
+    "template": "impersonation_notice",
+    "sentAt": "2026-04-27T14:30:00Z",
+    "message": "Platform support is temporarily accessing your account to resolve ticket #SUP-2026-445. Access expires at 3:30 PM UTC."
+  },
+  "usage": {
+    "header": "X-Impersonate-Token: imp_token_xyz789",
+    "example": "curl -H 'Authorization: Bearer {{super_admin_token}}' -H 'X-Impersonate-Token: imp_token_xyz789' https://api.yourhms.com/api/v1/hotels/{{hotel_uuid}}/rooms"
+  },
+  "audit": {
+    "logged": true,
+    "auditId": "platform_audit_uuid",
+    "viewUrl": "/platform/audit/logs?impersonationId=imp_uuid",
+    "realtimeMonitoring": "/platform/audit/impersonation/imp_uuid/stream"
+  },
+  "safety": {
+    "autoRevoke": true,
+    "revokeOnSuspiciousActivity": true,
+    "emergencyRevokeEndpoint": "/api/v1/platform/impersonation/{imp_uuid}/revoke"
+  }
+}
+```
+
+**❌ Error Responses**
+```json
+// 400 Bad Request - Invalid duration
+{
+  "error": "INVALID_DURATION",
+  "message": "Duration must be between 15 and 240 minutes, in 15-minute increments",
+  "provided": 65,
+  "validValues": [15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180, 195, 210, 225, 240]
+}
+
+// 403 Forbidden - Tenant not in ACTIVE status
+{
+  "error": "TENANT_NOT_ACTIVE",
+  "message": "Cannot impersonate tenant with status 'SUSPENDED'",
+  "tenantStatus": "SUSPENDED",
+  "requiredStatus": "ACTIVE",
+  "action": "Reactivate tenant first via /platform/tenants/{id}/subscription/update"
+}
+
+// 422 Unprocessable Entity - Reason too vague
+{
+  "error": "INSUFFICIENT_REASON",
+  "message": "Impersonation reason must reference a support ticket or specific business need",
+  "field": "reason",
+  "minLength": 20,
+  "examples": [
+    "Customer support ticket #SUP-2026-445: Room assignment bug",
+    "Billing dispute resolution for invoice INV-2026-00451"
+  ]
+}
+```
+
+**🧪 Test Scenarios**
+- [ ] Super Admin impersonates active tenant → token issued with restrictions
+- [ ] Duration = 65 (not multiple of 15) → 400 INVALID_DURATION
+- [ ] Tenant status = SUSPENDED → 403 TENANT_NOT_ACTIVE
+- [ ] Reason = "testing" (too short) → 422 INSUFFICIENT_REASON
+- [ ] Impersonation token used to access hotel endpoints → works with restrictions
+- [ ] Blocked action attempted (DELETE_HOTEL_DATA) → 403 within impersonation session
+- [ ] Tenant admin receives notification email within 30s
+- [ ] Audit log streams all actions in real-time via WebSocket
+- [ ] Token auto-revokes at expiry time; further requests get 401
+- [ ] Emergency revoke endpoint works instantly, invalidating token
+
+---
+
+## 🧪 GLOBAL TEST SCENARIOS (Cross-Module)
+
+### Tenant Isolation Tests
+- [ ] Hotel A admin tries to access Hotel B's rooms → 403 TENANT_MISMATCH
+- [ ] Guest from Hotel A tries to book at Hotel B → 403 TENANT_MISMATCH
+- [ ] Super Admin accesses platform endpoints without X-Hotel-ID → works
+- [ ] Hotel staff tries platform endpoint → 403 ROLE_NOT_ALLOWED
+- [ ] JWT token from Hotel A used with X-Hotel-ID=Hotel B → 403 TOKEN_TENANT_MISMATCH
+
+### State Machine Tests (Room Lifecycle)
+```mermaid
+graph LR
+    A[AVAILABLE] -->|Guest Books| B[RESERVED]
+    B -->|Guest Arrives| C[CHECKED_IN]
+    C -->|Guest Leaves| D[CHECKED_OUT]
+    D -->|Housekeeping Cleans| A
+    A -->|Maintenance| E[OUT_OF_ORDER]
+    E -->|Repair Done| A
+    B -->|Cancelled| A
+    
+    classDef invalid fill:#ffebee,stroke:#f44336;
+    C -.->|Invalid| A;
+    D -.->|Invalid| C;
+    class C,D invalid;
+```
+
+- [ ] RESERVED → CHECKED_IN: valid transition → 200
+- [ ] CHECKED_IN → AVAILABLE: invalid transition → 400 INVALID_STATE_TRANSITION
+- [ ] CHECKED_OUT → CHECKED_IN: invalid transition → 400 INVALID_STATE_TRANSITION
+- [ ] OUT_OF_ORDER → CHECKED_IN: invalid transition → 400 INVALID_STATE_TRANSITION
+- [ ] Concurrent state updates → last-write-wins with audit log
+
+### Real-Time WebSocket Tests
+- [ ] Room status change → broadcast to /topic/hotel/{id}/rooms within 2s
+- [ ] Folio update → broadcast to /topic/reservation/{id}/folio within 1s
+- [ ] Facility occupancy change → broadcast to /topic/hotel/{id}/facilities within 3s
+- [ ] Guest subscribes to own folio channel → receives only their updates
+- [ ] Staff subscribes to hotel rooms channel → receives all room updates
+- [ ] WebSocket auth: invalid token → connection rejected with 401
+- [ ] WebSocket auth: valid token but wrong hotel → subscription rejected with 403
+
+### Performance & Load Tests
+| Endpoint | Target P95 | Max Concurrent | Notes |
+|----------|-----------|---------------|-------|
+| `GET /rooms` | < 300ms | 100 req/s | With 100-room hotel |
+| `POST /reservations` | < 800ms | 20 req/s | Includes payment processing |
+| `GET /folio` | < 200ms | 50 req/s | With 50+ charge items |
+| `POST /charges` | < 400ms | 30 req/s | Includes inventory update |
+| `GET /reports/occupancy` | < 2s | 5 req/s | 30-day range, cached |
+| `POST /platform/tenants` | < 10s | 1 req/min | Includes DB provisioning |
+
+- [ ] Load test: 100 concurrent check-ins → no overbooking, all succeed
+- [ ] Load test: 50 concurrent minibar charges → inventory never negative
+- [ ] Soak test: 24h continuous operation → no memory leaks, stable response times
+- [ ] Failover test: Primary DB down → read replicas serve read requests, writes queue
+
+### Security Tests
+- [ ] SQL injection in roomNumber parameter → 400 validation error, no DB error
+- [ ] XSS in specialRequests field → sanitized in response, not executed
+- [ ] IDOR: Guest accesses another guest's folio via ID enumeration → 403
+- [ ] Privilege escalation: Receptionist tries MANAGER-only endpoint → 403
+- [ ] JWT tampering: Modified token signature → 401 INVALID_TOKEN
+- [ ] Rate limiting: 100 login attempts in 1 min → 429 after 5 failures
+- [ ] Sensitive  Passwords, tokens never logged in audit trail
+
+### Data Integrity Tests
+- [ ] Reservation created → room status updated to RESERVED atomically
+- [ ] Check-out completed → room status → CHECKED_OUT + housekeeping task created
+- [ ] Minibar charge posted → inventory stock decremented + folio updated (transactional)
+- [ ] Facility booking created → slot capacity decremented atomically
+- [ ] Tenant provisioning failed → no partial billing, all resources rolled back
+- [ ] Concurrent updates to same entity → optimistic locking prevents lost updates
+
+---
+
+## 📋 POSTMAN COLLECTION SETUP GUIDE
+
+### Environment Variables Template
+```json
+{
+  "id": "hms-api-v2.3",
+  "name": "HMS API v2.3",
+  "values": [
+    { "key": "baseUrl", "value": "http://localhost:8080/api/v1", "enabled": true },
+    { "key": "platformUrl", "value": "http://localhost:8080/api/v1/platform", "enabled": true },
+    
+    // Auth Tokens (set after login)
+    { "key": "superAdminToken", "value": "", "enabled": true },
+    { "key": "hotelAdminToken", "value": "", "enabled": true },
+    { "key": "receptionistToken", "value": "", "enabled": true },
+    { "key": "housekeepingToken", "value": "", "enabled": true },
+    { "key": "guestToken", "value": "", "enabled": true },
+    
+    // Test Data IDs (set after creation)
+    { "key": "testHotelId", "value": "550e8400-e29b-41d4-a716-446655440000", "enabled": true },
+    { "key": "testRoomId", "value": "660e8400-e29b-41d4-a716-446655440001", "enabled": true },
+    { "key": "testReservationId", "value": "770e8400-e29b-41d4-a716-446655440002", "enabled": true },
+    { "key": "testGuestId", "value": "aa0e8400-e29b-41d4-a716-446655440005", "enabled": true },
+    { "key": "testFacilityId", "value": "880e8400-e29b-41d4-a716-446655440003", "enabled": true },
+    { "key": "testInventoryItemId", "value": "990e8400-e29b-41d4-a716-446655440004", "enabled": true },
+    
+    // Dynamic Values (set by pre-request scripts)
+    { "key": "currentTimestamp", "value": "", "enabled": true },
+    { "key": "tomorrowDate", "value": "", "enabled": true },
+    { "key": "nextWeekDate", "value": "", "enabled": true }
+  ],
+  "_postman_variable_scope": "environment"
+}
+```
+
+### Pre-Request Script Example (Auto-set timestamps)
+```javascript
+// Set dynamic dates for testing
+const tomorrow = new Date();
+tomorrow.setDate(tomorrow.getDate() + 1);
+pm.environment.set("tomorrowDate", tomorrow.toISOString().split('T')[0]);
+
+const nextWeek = new Date();
+nextWeek.setDate(nextWeek.getDate() + 7);
+pm.environment.set("nextWeekDate", nextWeek.toISOString().split('T')[0]);
+
+pm.environment.set("currentTimestamp", new Date().toISOString());
+```
+
+### Test Script Example (Validate Response)
+```javascript
+// Common response validation
+pm.test("Status code is 200/201", function () {
+    pm.response.to.have.status([200, 201]);
+});
+
+pm.test("Response has required fields", function () {
+    const jsonData = pm.response.json();
+    pm.expect(jsonData).to.have.property("id");
+    pm.expect(jsonData).to.have.property("createdAt");
+});
+
+// Tenant isolation check
+pm.test("X-Hotel-ID matches authenticated user", function () {
+    if (pm.request.headers.get("X-Hotel-ID")) {
+        const jsonData = pm.response.json();
+        pm.expect(jsonData.hotelId).to.eql(pm.environment.get("testHotelId"));
+    }
+});
+
+// Performance check
+pm.test("Response time < 500ms", function () {
+    pm.expect(pm.response.responseTime).to.be.below(500);
+});
+```
+
+---
+
+## ✅ FINAL SIGN-OFF CHECKLIST
+
+Before marking this backend as production-ready:
+
+### Core Functionality
+- [ ] All endpoints return correct status codes per spec
+- [ ] Request validation catches all invalid inputs with clear errors
+- [ ] Tenant isolation enforced at DB query level (Hibernate @Where + Spring Security)
+- [ ] RBAC enforced via @PreAuthorize on every endpoint
+- [ ] State machine transitions validated server-side (no client-side trust)
+
+### Data Integrity
+- [ ] All write operations are transactional (room + reservation + inventory)
+- [ ] Optimistic locking prevents lost updates on concurrent modifications
+- [ ] Audit logs capture who changed what, when, and from where
+- [ ] Soft deletes implemented (deleted = false) with recovery capability
+
+### Security
+- [ ] JWT tokens signed with RS256, short expiry (1h), refresh token rotation
+- [ ] Passwords hashed with bcrypt (cost factor 12), never logged
+- [ ] SQL injection prevented via JPA parameter binding (no string concatenation)
+- [ ] XSS prevented via output encoding in all user-facing responses
+- [ ] Rate limiting applied to auth endpoints (5 attempts/15 min)
+
+### Performance
+- [ ] N+1 query problem solved via @EntityGraph or JOIN FETCH
+- [ ] Frequently accessed data cached in Redis (room availability, guest profiles)
+- [ ] Database indexes on all foreign keys and filter columns
+- [ ] Async processing for non-critical tasks (emails, reports, webhooks)
+
+### Observability
+- [ ] Structured JSON logging with correlation IDs for request tracing
+- [ ] Prometheus metrics exposed for response times, error rates, business KPIs
+- [ ] Health endpoints: /actuator/health, /actuator/ready, /actuator/live
+- [ ] Distributed tracing with OpenTelemetry + Jaeger for cross-service requests
+
+### Documentation
+- [ ] OpenAPI 3.0 spec generated and served at /v3/api-docs
+- [ ] Postman collection synced with OpenAPI spec
+- [ ] Endpoint documentation includes example requests/responses for all status codes
+- [ ] Error codes documented in central catalog with remediation steps
+
+---
+
+## 🚀 READY FOR CURSOR: NEXT STEPS
+
+1. **Generate Integration Tests**: Use this checklist to create JUnit 5 + MockMvc tests:
+   ```java
+   @SpringBootTest
+   @AutoConfigureMockMvc
+   class RoomControllerIntegrationTest {
+       @Test
+       @WithMockUser(roles = "RECEPTIONIST")
+       void checkIn_validReservation_updatesRoomStatus() throws Exception {
+           mockMvc.perform(post("/api/v1/hotels/{hotelId}/reservations/{id}/check-in", hotelId, reservationId)
+                   .contentType(MediaType.APPLICATION_JSON)
+                   .content(jsonPayload))
+                   .andExpect(status().isOk())
+                   .andExpect(jsonPath("$.status").value("CHECKED_IN"))
+                   .andExpect(jsonPath("$.room.status").value("CHECKED_IN"));
+       }
+   }
+   ```
+
+2. **Create Postman Collection**: Import the structure above + environment variables for one-click testing.
+
+3. **Set Up CI/CD Gates**: Add pipeline steps that:
+   - Run all integration tests before merge
+   - Validate OpenAPI spec against implementation
+   - Check for security vulnerabilities (OWASP ZAP scan)
+   - Verify performance thresholds (P95 < 500ms)
+
+4. **Generate OpenAPI Spec**: Add springdoc-openapi dependency and annotate controllers:
+   ```java
+   @Operation(summary = "Check in guest", description = "Process guest arrival and update room status")
+   @ApiResponses(value = {
+       @ApiResponse(responseCode = "200", description = "Check-in successful", content = @Content(schema = @Schema(implementation = CheckInResponse.class))),
+       @ApiResponse(responseCode = "400", description = "Invalid reservation status", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+       @ApiResponse(responseCode = "403", description = "Insufficient permissions", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+   })
+   @PostMapping("/reservations/{reservationId}/check-in")
+   public ResponseEntity<CheckInResponse> checkIn(...) { ... }
+   ```
+
+5. **Build QA Dashboard**: Create a simple Next.js page that:
+   - Lists all endpoints with pass/fail status
+   - Shows last test run timestamp and duration
+   - Links to failed test logs and Postman collection
+   - Allows one-click re-run of failed tests
+
+Need me to generate the actual JUnit test classes, OpenAPI annotations, or the complete Postman collection JSON file? Just say the word and I'll output it ready to paste into Cursor. 🛠️✨

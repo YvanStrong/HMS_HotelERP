@@ -1,0 +1,15 @@
+package com.hms.domain;
+
+public enum Role {
+    SUPER_ADMIN,
+    HOTEL_ADMIN,
+    RECEPTIONIST,
+    HOUSEKEEPING,
+    HOUSEKEEPING_SUPERVISOR,
+    MAINTENANCE,
+    FNB_STAFF,
+    FINANCE,
+    MANAGER,
+    GUEST,
+    CORPORATE_BOOKER
+}
