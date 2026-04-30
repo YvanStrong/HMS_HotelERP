@@ -30,6 +30,12 @@ public class PlatformStaffUserService {
 
     @Transactional
     public void createHotelScopedUser(UUID hotelId, String username, String password, String email, String roleRaw) {
+        createHotelScopedUserReturning(hotelId, username, password, email, roleRaw);
+    }
+
+    @Transactional
+    public AppUser createHotelScopedUserReturning(
+            UUID hotelId, String username, String password, String email, String roleRaw) {
         if (username == null || username.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Username is required");
         }
@@ -54,7 +60,7 @@ public class PlatformStaffUserService {
         user.setPasswordHash(passwordEncoder.encode(password));
         user.setRole(parseRole(roleRaw));
         user.setHotel(hotel);
-        appUserRepository.save(user);
+        return appUserRepository.save(user);
     }
 
     private static Role parseRole(String roleRaw) {

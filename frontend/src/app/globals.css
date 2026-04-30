@@ -96,6 +96,15 @@
   body {
     @apply bg-background text-foreground font-sans;
     font-feature-settings: "rlig" 1, "calt" 1;
+    background-image: radial-gradient(circle at 0% 0%, hsl(40 40% 98%), transparent 45%);
+  }
+
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 }
 
@@ -132,7 +141,63 @@
 
   /* Panel styles */
   .panel {
-    @apply bg-card rounded-lg border border-border/60 p-5 shadow-soft;
+    @apply bg-card rounded-lg border border-border/60 p-5 shadow-soft transition-all;
+  }
+
+  .panel:hover {
+    @apply shadow-float border-border;
+  }
+
+  .hms-section-card {
+    @apply bg-card rounded-xl border border-border/60 p-5 md:p-6 shadow-soft;
+  }
+
+  .hms-section-head {
+    @apply flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-4;
+  }
+
+  .hms-section-title {
+    @apply text-lg font-semibold tracking-tight;
+  }
+
+  .hms-section-sub {
+    @apply text-sm text-muted-foreground;
+  }
+
+  .hms-empty-state {
+    @apply rounded-xl border border-dashed border-border bg-muted/30 p-6 text-center;
+  }
+
+  .hms-empty-title {
+    @apply text-base font-semibold text-foreground;
+  }
+
+  .hms-empty-copy {
+    @apply mt-1 text-sm text-muted-foreground;
+  }
+
+  .hms-table-wrap {
+    @apply overflow-x-auto rounded-xl border border-border/60 bg-white;
+  }
+
+  .hms-table {
+    @apply w-full text-sm;
+  }
+
+  .hms-table thead {
+    @apply bg-muted/40;
+  }
+
+  .hms-table th {
+    @apply py-2.5 px-3 text-left text-xs uppercase tracking-wider text-muted-foreground font-semibold border-b border-border;
+  }
+
+  .hms-table td {
+    @apply py-3 px-3 border-b border-border/60 align-top;
+  }
+
+  .hms-table tbody tr:hover {
+    @apply bg-muted/20;
   }
 
   /* Error styles */
@@ -172,6 +237,14 @@
     background-color: hsl(var(--primary));
   }
 
+  .hms-btn-sm {
+    @apply px-3 py-1.5 text-xs rounded-lg;
+  }
+
+  .hms-btn-icon {
+    @apply inline-flex items-center gap-1.5;
+  }
+
   .hms-btn-solid:hover {
     background-color: hsl(var(--primary-hover));
   }
@@ -201,6 +274,10 @@
 
   .guest-shell-footer {
     @apply mt-auto border-t py-4 px-6 text-sm text-muted-foreground text-center bg-white/50;
+  }
+
+  .guest-shell-footer-dot {
+    @apply mx-2 text-muted-foreground/70;
   }
 
   /* App shell */
@@ -345,23 +422,23 @@
 
   /* Status badges */
   .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border;
   }
 
   .badge-default {
-    @apply bg-primary/10 text-primary;
+    @apply bg-primary/10 text-primary border-primary/20;
   }
 
   .badge-success {
-    @apply bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400;
+    @apply bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800;
   }
 
   .badge-warning {
-    @apply bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400;
+    @apply bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800;
   }
 
   .badge-destructive {
-    @apply bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400;
+    @apply bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800;
   }
 
   /* Container utilities */
@@ -539,6 +616,18 @@
     @apply flex flex-wrap gap-3 mt-auto;
   }
 
+  .landing-cta-inline {
+    @apply px-5 py-2.5;
+  }
+
+  .landing-staff-tools {
+    @apply rounded-lg border border-border/70 bg-muted/40 p-3;
+  }
+
+  .landing-tools-label {
+    @apply text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2;
+  }
+
   /* Footer */
   .landing-site-footer {
     @apply mt-auto py-10 px-6 border-t bg-gradient-to-b from-[hsl(40,30%,96%)] to-[hsl(30,18%,90%)];
@@ -567,6 +656,14 @@
 
   .landing-footer-links a {
     @apply text-sm font-medium text-foreground hover:text-primary transition-colors no-underline;
+  }
+
+  .landing-footer-dev p {
+    @apply text-sm text-muted-foreground leading-relaxed;
+  }
+
+  .landing-footer-fineprint {
+    @apply text-xs mt-2;
   }
 
   .landing-footer-bottom {

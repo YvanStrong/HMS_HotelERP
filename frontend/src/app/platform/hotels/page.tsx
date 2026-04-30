@@ -131,7 +131,7 @@ export default function PlatformHotelsPage() {
         </div>
         <Link
           href="/platform/hotels/new"
-          className="hms-btn-solid inline-flex items-center gap-2"
+          className="hms-btn-solid hms-btn-sm hms-btn-icon"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -147,7 +147,12 @@ export default function PlatformHotelsPage() {
       )}
 
       {/* Search */}
-      <div className="max-w-md">
+      <section className="hms-section-card">
+        <div className="hms-section-head">
+          <h2 className="hms-section-title">Search Hotels</h2>
+          <p className="hms-section-sub">Find by property name, code, currency, or address.</p>
+        </div>
+        <div className="max-w-md">
         <div className="relative">
           <svg
             className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground"
@@ -172,7 +177,8 @@ export default function PlatformHotelsPage() {
             <strong className="text-foreground">{hotels.length}</strong> hotels
           </p>
         )}
-      </div>
+        </div>
+      </section>
 
       {/* Loading */}
       {loading && (
@@ -202,17 +208,17 @@ export default function PlatformHotelsPage() {
                 {query ? "Try adjusting your search" : "Get started by creating your first hotel"}
               </p>
               {!query && (
-                <Link href="/platform/hotels/new" className="hms-btn-solid">
+                <Link href="/platform/hotels/new" className="hms-btn-solid hms-btn-sm">
                   Create Hotel
                 </Link>
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {slice.map((hotel) => (
                 <div
                   key={hotel.id}
-                  className="bg-card rounded-xl border border-border/60 overflow-hidden shadow-soft hover:shadow-float transition-all group"
+                  className="bg-card rounded-xl border border-border/60 overflow-hidden shadow-soft hover:shadow-float hover:border-primary/30 transition-all group"
                 >
                   {/* Image */}
                   <div className="relative h-48 bg-muted">
@@ -268,8 +274,8 @@ export default function PlatformHotelsPage() {
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${
                           hotel.isActive
-                            ? "bg-green-100 text-green-700"
-                            : "bg-amber-100 text-amber-700"
+                            ? "bg-green-100 text-green-800"
+                            : "bg-amber-100 text-amber-800"
                         }`}
                       >
                         {hotel.isActive ? "Active" : "Inactive"}
@@ -342,15 +348,18 @@ export default function PlatformHotelsPage() {
                         href={`/platform/hotels/${hotel.id}/edit`}
                         className="inline-flex items-center justify-center p-2 rounded-lg text-sm font-medium bg-muted text-foreground hover:bg-muted/80 transition-colors"
                         title="Edit"
+                        aria-label={`Edit ${hotel.name}`}
                       >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                       </Link>
                       <button
+                        type="button"
                         onClick={() => deleteHotel(hotel.id, hotel.name)}
                         className="inline-flex items-center justify-center p-2 rounded-lg text-sm font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
                         title="Delete"
+                        aria-label={`Delete ${hotel.name}`}
                       >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

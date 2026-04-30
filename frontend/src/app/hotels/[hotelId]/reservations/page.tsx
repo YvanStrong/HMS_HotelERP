@@ -120,17 +120,17 @@ export default function ReservationsOperationsPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "PENDING":
-        return <span className="badge badge-default bg-gray-200 text-gray-800 border-0">Pending</span>;
+        return <span className="badge bg-gray-100 text-gray-800 border-gray-200">Pending</span>;
       case "CONFIRMED":
-        return <span className="badge badge-default bg-blue-100 text-blue-800 border-0">Confirmed</span>;
+        return <span className="badge bg-blue-100 text-blue-900 border-blue-200">Confirmed</span>;
       case "CHECKED_IN":
-        return <span className="badge badge-default bg-green-100 text-green-800 border-0">Checked in</span>;
+        return <span className="badge badge-success">Checked in</span>;
       case "CHECKED_OUT":
-        return <span className="badge badge-default bg-teal-100 text-teal-900 border-0">Checked out</span>;
+        return <span className="badge bg-teal-100 text-teal-900 border-teal-200">Checked out</span>;
       case "CANCELLED":
         return <span className="badge badge-destructive">Cancelled</span>;
       case "NO_SHOW":
-        return <span className="badge badge-default bg-orange-100 text-orange-900 border-0">No show</span>;
+        return <span className="badge badge-warning">No show</span>;
       default:
         return <span className="badge badge-default">{status}</span>;
     }
@@ -193,10 +193,10 @@ export default function ReservationsOperationsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href={staffAppPath("reservations", "new")} className="hms-btn-solid text-sm">
+          <Link href={staffAppPath("reservations", "new")} className="hms-btn-solid hms-btn-sm hms-btn-icon">
             New reservation
           </Link>
-          <Link href={`${staffAppPath("reservations", "new")}?type=walkin`} className="hms-btn-outline text-sm">
+          <Link href={`${staffAppPath("reservations", "new")}?type=walkin`} className="hms-btn-outline hms-btn-sm hms-btn-icon">
             Walk-in
           </Link>
         </div>
@@ -210,8 +210,11 @@ export default function ReservationsOperationsPage() {
       {error && <div className="error">{error}</div>}
 
       {/* Filters */}
-      <div className="bg-card rounded-xl border border-border/60 p-5 shadow-soft">
-        <h2 className="text-lg font-semibold mb-4">Filters</h2>
+      <section className="hms-section-card">
+        <div className="hms-section-head">
+          <h2 className="hms-section-title">Filters</h2>
+          <p className="hms-section-sub">Narrow by stay window, status, and guest identifiers.</p>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label>Stay from</label>
@@ -247,10 +250,10 @@ export default function ReservationsOperationsPage() {
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button type="button" onClick={() => loadList()} className="hms-btn-solid">
+          <button type="button" onClick={() => loadList()} className="hms-btn-solid hms-btn-sm">
             Apply Filters
           </button>
-          <button type="button" onClick={() => void loadTodaysArrivals()} className="hms-btn-outline">
+          <button type="button" onClick={() => void loadTodaysArrivals()} className="hms-btn-outline hms-btn-sm">
             Today&apos;s arrivals (CONFIRMED)
           </button>
           <button 
@@ -269,17 +272,17 @@ export default function ReservationsOperationsPage() {
               setQ("");
               loadList();
             }}
-            className="hms-btn-outline"
+            className="hms-btn-outline hms-btn-sm"
           >
             Clear
           </button>
         </div>
-      </div>
+      </section>
 
       {/* Availability Preview */}
-      <div className="bg-card rounded-xl border border-border/60 p-5 shadow-soft">
-        <h2 className="text-lg font-semibold mb-2">Availability Preview</h2>
-        <p className="text-muted-foreground text-sm mb-4">
+      <section className="hms-section-card">
+        <h2 className="hms-section-title mb-2">Availability Preview</h2>
+        <p className="hms-section-sub mb-4">
           Same engine guests use. Adjust dates to check inventory.
         </p>
         <div className="flex flex-wrap items-end gap-3">
@@ -294,14 +297,14 @@ export default function ReservationsOperationsPage() {
           <button 
             type="button" 
             onClick={() => loadSampleAvailability()}
-            className="hms-btn-outline"
+            className="hms-btn-outline hms-btn-sm"
           >
             Preview
           </button>
         </div>
         {availError && <p className="error mt-3">{availError}</p>}
         {avail && (
-          <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+          <div className="mt-4 p-3 bg-muted/50 rounded-lg" role="status" aria-live="polite">
             <p className="font-medium">
               {avail.available ? (
                 <span className="text-green-600">✓ Rooms available</span>
@@ -315,16 +318,17 @@ export default function ReservationsOperationsPage() {
             </p>
           </div>
         )}
-      </div>
+      </section>
 
       {/* Reservations List */}
-      <div className="bg-card rounded-xl border border-border/60 p-5 shadow-soft">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Reservations ({rows.length})</h2>
+      <section className="hms-section-card">
+        <div className="hms-section-head">
+          <h2 className="hms-section-title">Reservations ({rows.length})</h2>
+          <p className="hms-section-sub">Sorted and paginated for desk operations.</p>
         </div>
-        
-        <div className="overflow-x-auto">
-          <table className="w-full">
+
+        <div className="hms-table-wrap">
+          <table className="hms-table">
             <thead>
               <tr>
                 <th>Booking ref</th>
@@ -341,13 +345,13 @@ export default function ReservationsOperationsPage() {
             <tbody>
               {pageRows.map((r) => (
                 <tr key={r.id}>
-                  <td>
+                  <td className="min-w-[180px]">
                     <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded block">
                       {r.booking_reference || "—"}
                     </code>
                     <code className="text-[10px] text-muted-foreground font-mono">{r.confirmationCode}</code>
                   </td>
-                  <td>
+                  <td className="min-w-[220px]">
                     <p className="font-medium">{r.guestName}</p>
                     <p className="text-xs text-muted-foreground font-mono">
                       {r.guest_national_id_masked ?? "—"}
@@ -379,7 +383,7 @@ export default function ReservationsOperationsPage() {
                   <td className="font-medium">
                     {r.totalAmount} {r.currency}
                   </td>
-                  <td>
+                  <td className="whitespace-nowrap">
                     <div className="flex flex-col gap-1 items-start">
                       <Link
                         href={staffAppPath("reservations", r.id)}
@@ -400,6 +404,16 @@ export default function ReservationsOperationsPage() {
                   </td>
                 </tr>
               ))}
+              {pageRows.length === 0 && (
+                <tr>
+                  <td colSpan={9}>
+                    <div className="hms-empty-state my-2">
+                      <p className="hms-empty-title">No reservations match these filters</p>
+                      <p className="hms-empty-copy">Adjust dates/status, or clear filters to broaden results.</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -412,7 +426,7 @@ export default function ReservationsOperationsPage() {
           noun="reservations"
           onPageChange={setPage}
         />
-      </div>
+      </section>
     </div>
   );
 }

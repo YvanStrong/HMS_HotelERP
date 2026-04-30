@@ -71,6 +71,39 @@ type CreateRes = {
   message: string;
 };
 
+const GENDER_OPTIONS = ["MALE", "FEMALE", "OTHER", "PREFER_NOT_TO_SAY"] as const;
+
+const COUNTRY_OPTIONS = [
+  "Rwanda",
+  "Uganda",
+  "Kenya",
+  "Tanzania",
+  "Burundi",
+  "South Sudan",
+  "Democratic Republic of the Congo",
+  "Ethiopia",
+  "Nigeria",
+  "Ghana",
+  "South Africa",
+  "Morocco",
+  "Egypt",
+  "India",
+  "China",
+  "Japan",
+  "United Arab Emirates",
+  "United Kingdom",
+  "France",
+  "Germany",
+  "Belgium",
+  "Netherlands",
+  "Italy",
+  "Spain",
+  "Canada",
+  "United States",
+  "Brazil",
+  "Australia",
+] as const;
+
 function localYmd(d = new Date()) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -157,7 +190,7 @@ export default function NewStaffReservationPage() {
     setVillage(a.village ?? "");
     setStreetNumber(a.street_number ?? "");
     setAddressNotes(a.address_notes ?? "");
-    setNationality(g.nationality ?? "");
+    setNationality(g.nationality ?? a.country ?? "");
     setGender(g.gender ?? "");
     setIdType(g.id_type ?? "NATIONAL_ID");
     setIdDocNumber(g.id_document_number ?? g.national_id);
@@ -350,6 +383,10 @@ export default function NewStaffReservationPage() {
 
   function printOrDownloadConfirmation() {
     if (!done) return;
+    const standardCheckInTime = "15:00:00";
+    const standardCheckOutTime = "11:00:00";
+    const checkInWithTime = `${done.stay.checkIn} ${standardCheckInTime}`;
+    const checkOutWithTime = `${done.stay.checkOut} ${standardCheckOutTime}`;
     const esc = (v: unknown) =>
       String(v ?? "")
         .replaceAll("&", "&amp;")
@@ -554,8 +591,8 @@ export default function NewStaffReservationPage() {
           <div class="row"><div class="label">Room type</div><div class="value">${esc(selectedAvail?.name ?? "—")}</div></div>
           <div class="row"><div class="label">Room</div><div class="value">${esc(done.room.roomNumber)}</div></div>
           <div class="row"><div class="label">Preferred room</div><div class="value">${esc(preferredRoomId || "Auto-assign")}</div></div>
-          <div class="row"><div class="label">Check-in</div><div class="value">${esc(done.stay.checkIn)}</div></div>
-          <div class="row"><div class="label">Check-out</div><div class="value">${esc(done.stay.checkOut)}</div></div>
+          <div class="row"><div class="label">Check-in</div><div class="value">${esc(checkInWithTime)}</div></div>
+          <div class="row"><div class="label">Check-out</div><div class="value">${esc(checkOutWithTime)}</div></div>
           <div class="row"><div class="label">Nights</div><div class="value">${esc(done.stay.nights)}</div></div>
           <div class="row"><div class="label">Adults</div><div class="value">${esc(adults)}</div></div>
           <div class="row"><div class="label">Early check-in</div><div class="value">${earlyCheckIn ? "Yes" : "No"}</div></div>
@@ -748,11 +785,38 @@ export default function NewStaffReservationPage() {
                 </label>
                 <label>
                   Gender
-                  <input value={gender} onChange={(e) => setGender(e.target.value)} />
+                  <select value={gender} onChange={(e) => setGender(e.target.value)}>
+                    <option value="">Select gender</option>
+                    {GENDER_OPTIONS.map((g) => (
+                      <option key={g} value={g}>
+                        {g.replaceAll("_", " ")}
+                      </option>
+                    ))}
+                    {gender && !GENDER_OPTIONS.includes(gender as (typeof GENDER_OPTIONS)[number]) && (
+                      <option value={gender}>{gender}</option>
+                    )}
+                  </select>
                 </label>
                 <label>
                   Country *
-                  <input value={country} onChange={(e) => setCountry(e.target.value)} required />
+                  <select
+                    value={country}
+                    onChange={(e) => {
+                      const selectedCountry = e.target.value;
+                      setCountry(selectedCountry);
+                      setNationality(selectedCountry);
+                    }}
+                    required
+                  >
+                    {COUNTRY_OPTIONS.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                    {!COUNTRY_OPTIONS.includes(country as (typeof COUNTRY_OPTIONS)[number]) && (
+                      <option value={country}>{country}</option>
+                    )}
+                  </select>
                 </label>
                 <label>
                   Province
@@ -854,21 +918,19 @@ export default function NewStaffReservationPage() {
               {avail && (
                 <div>
                   <p className="text-sm font-medium mb-2">Available room types</p>
-                  <ul className="space-y-1 text-sm">
+                  <select
+                    value={roomTypeId}
+                    onChange={(e) => setRoomTypeId(e.target.value)}
+                    className="w-full"
+                    disabled={avail.available_room_types.length === 0}
+                  >
+                    <option value="">Select available room type...</option>
                     {avail.available_room_types.map((t) => (
-                      <li key={t.room_type_id}>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="rt"
-                            checked={roomTypeId === t.room_type_id}
-                            onChange={() => setRoomTypeId(t.room_type_id)}
-                          />
-                          {t.name} — {t.available_count} free · {t.total_price} {t.currency} total ({t.nights} nights)
-                        </label>
-                      </li>
+                      <option key={t.room_type_id} value={t.room_type_id}>
+                        {t.name} — {t.available_count} free · {t.total_price} {t.currency} total ({t.nights} nights)
+                      </option>
                     ))}
-                  </ul>
+                  </select>
                   {avail.available_room_types.length === 0 && (
                     <p className="text-muted-foreground text-sm">No inventory for these dates.</p>
                   )}

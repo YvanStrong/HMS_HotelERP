@@ -66,6 +66,9 @@ public class Room {
     @Column(name = "amenities_override", columnDefinition = "TEXT")
     private String amenitiesOverride;
 
+    @Column(name = "photo_url", columnDefinition = "TEXT")
+    private String photoUrl;
+
     @Column(name = "has_minibar", nullable = false)
     @ColumnDefault("true")
     private boolean hasMinibar = true;

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
 import { staffAppPath } from "@/lib/staffAppRoutes";
+import { ImageUpload } from "@/components/ImageUpload";
 
 type RoomTypeSummary = {
   id: string;
@@ -29,6 +30,7 @@ type RoomDetail = {
   roomNumber: string;
   floor: number | null;
   building?: string | null;
+  photoUrl?: string | null;
   roomType: RoomTypeSummary;
   status: string;
   cleanliness: string;
@@ -64,6 +66,8 @@ function fmtInstant(iso: string | null | undefined): string {
   }
 }
 
+const DEFAULT_ROOM_IMAGE = "/images/default-room.svg";
+
 export default function RoomDetailPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
@@ -74,6 +78,8 @@ export default function RoomDetailPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [dndEnabled, setDndEnabled] = useState(false);
   const [dndUntilLocal, setDndUntilLocal] = useState("");
+  const [photoUrlDraft, setPhotoUrlDraft] = useState("");
+  const [savingPhoto, setSavingPhoto] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -84,6 +90,7 @@ export default function RoomDetailPage() {
     try {
       const r = await apiFetch<RoomDetail>(`/api/v1/hotels/${hotelId}/rooms/${roomId}`);
       setRoom(r);
+      setPhotoUrlDraft(r.photoUrl ?? "");
       setDndEnabled(r.dnd);
       if (r.dndUntil) {
         const d = new Date(r.dndUntil);
@@ -128,6 +135,24 @@ export default function RoomDetailPage() {
     }
   }
 
+  async function savePhoto(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg(null);
+    setSavingPhoto(true);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/rooms/${roomId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ imageUrl: photoUrlDraft }),
+      });
+      setMsg("Room photo updated.");
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Photo update failed");
+    } finally {
+      setSavingPhoto(false);
+    }
+  }
+
   return (
     <>
       <p style={{ marginBottom: "0.5rem" }}>
@@ -143,6 +168,14 @@ export default function RoomDetailPage() {
         <>
           <div className="panel">
             <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>Snapshot</h2>
+            <img
+              src={room.photoUrl || DEFAULT_ROOM_IMAGE}
+              alt={`${room.roomType.name} room ${room.roomNumber}`}
+              className="mb-4 h-44 w-full max-w-xl rounded-lg border border-border/60 object-cover"
+              onError={(e) => {
+                e.currentTarget.src = DEFAULT_ROOM_IMAGE;
+              }}
+            />
             <table>
               <tbody>
                 <tr>
@@ -241,6 +274,22 @@ export default function RoomDetailPage() {
               )}
               <div style={{ marginTop: "1rem" }}>
                 <button type="submit">Save DND</button>
+              </div>
+            </form>
+          </div>
+          <div className="panel" style={{ maxWidth: 680 }}>
+            <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>Edit photo</h2>
+            <form onSubmit={savePhoto}>
+              <ImageUpload
+                value={photoUrlDraft}
+                onChange={setPhotoUrlDraft}
+                label="Room photo"
+                placeholder="Paste image URL, drop, upload, or Ctrl+V"
+              />
+              <div style={{ marginTop: "1rem" }}>
+                <button type="submit" disabled={savingPhoto}>
+                  {savingPhoto ? "Saving..." : "Save photo"}
+                </button>
               </div>
             </form>
           </div>

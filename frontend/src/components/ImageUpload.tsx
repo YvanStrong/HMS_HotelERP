@@ -81,6 +81,23 @@ export function ImageUpload({
     setPreviewError(false);
   };
 
+  const handleClipboardPaste = (e: React.ClipboardEvent<HTMLElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageItem = Array.from(items).find((i) => i.type.startsWith("image/"));
+    if (!imageItem) return;
+    const file = imageItem.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      onChange(result);
+      setPreviewError(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const showPreview = Boolean(value && !previewError && isRenderableImageSrc(value));
 
   return (
@@ -113,6 +130,7 @@ export function ImageUpload({
           type="text"
           value={value || ""}
           onChange={handleUrlChange}
+          onPaste={handleClipboardPaste}
           placeholder={placeholder}
           className="flex-1"
           autoComplete="off"
@@ -137,6 +155,7 @@ export function ImageUpload({
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
+          onPaste={handleClipboardPaste}
           className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors cursor-pointer ${
             isDragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-accent"
           }`}

@@ -100,6 +100,19 @@ type PagedRooms = {
   data: { id: string; roomNumber: string; status: string }[];
 };
 
+type CheckOutResponse = {
+  reservationId: string;
+  status: string;
+  room: { id: string; roomNumber: string; status: string; cleanliness: string };
+  invoice: {
+    id: string;
+    invoiceNumber: string;
+    totalAmount: number;
+    pdfUrl?: string | null;
+    items: { description: string; amount: number }[];
+  };
+};
+
 function canOverrideBalance(role: string | undefined) {
   return role === "MANAGER" || role === "FINANCE" || role === "SUPER_ADMIN" || role === "HOTEL_ADMIN";
 }
@@ -124,6 +137,9 @@ export default function StaffReservationDetailPage() {
   const [minibarOk, setMinibarOk] = useState(false);
   const [lateOut, setLateOut] = useState(false);
   const [overrideBal, setOverrideBal] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("CASH");
+  const [paymentTypesUsed, setPaymentTypesUsed] = useState("");
 
   const user = typeof window !== "undefined" ? loadAuthUser() : null;
 
@@ -203,6 +219,11 @@ export default function StaffReservationDetailPage() {
     setMinibarOk(false);
     setLateOut(false);
     setOverrideBal(false);
+    setPaymentMethod("CASH");
+    setPaymentTypesUsed("");
+    setPaymentAmount(
+      folio?.summary.balanceDue && folio.summary.balanceDue > 0 ? String(folio.summary.balanceDue) : "0",
+    );
     try {
       const policy = await apiFetch<FeePolicy>(`/api/v1/hotels/${hotelId}/fee-policy`);
       setFees(policy);
@@ -216,20 +237,97 @@ export default function StaffReservationDetailPage() {
     if (!minibarOk) return;
     setBanner(null);
     try {
-      await apiFetch(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/check-out`, {
+      const paid = Number(paymentAmount || "0");
+      const result = await apiFetch<CheckOutResponse>(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/check-out`, {
         method: "POST",
         body: JSON.stringify({
           minibar_inspected: true,
           is_late_checkout: lateOut,
           override_balance_warning: overrideBal,
+          finalPayment: {
+            method: paymentTypesUsed.trim() || paymentMethod,
+            amount: Number.isFinite(paid) ? paid : 0,
+            transactionId: null,
+          },
         }),
       });
       setCheckOutOpen(false);
       setBanner({ kind: "ok", text: "Checked out successfully." });
+      printInvoiceDoc(result);
       await load();
     } catch (e) {
       setBanner({ kind: "err", text: e instanceof Error ? e.message : "Check-out failed" });
     }
+  }
+
+  function printInvoiceDoc(result: CheckOutResponse) {
+    if (!folio) return;
+    /** Printed doc is `about:blank` — relative `/images/...` won't load; use absolute URLs from this app origin. */
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const assetUrl = (path: string) =>
+      `${origin}${path.startsWith("/") ? path : `/${path}`}`;
+    const esc = (v: unknown) =>
+      String(v ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    const depositPaid = folio.summary.depositPaid ?? 0;
+    const totalCharges = folio.summary.totalCharges ?? 0;
+    const remainingBeforePayment = Math.max(0, totalCharges - depositPaid);
+    const paid = Number(paymentAmount || "0");
+    const dueAfterPayment = Math.max(0, remainingBeforePayment - paid);
+    const checkoutAt = new Date().toLocaleString();
+    const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Invoice ${esc(result.invoice.invoiceNumber)}</title>
+    <style>
+    body{font-family:Arial,sans-serif;margin:20px;color:#111}
+    .top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+    .brand{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .logo-img{height:52px;width:auto;object-fit:contain;display:block}
+    .inv{border:1px solid #e2e8f0;border-radius:10px;padding:14px}
+    .row{display:flex;justify-content:space-between;margin:6px 0}
+    .muted{color:#64748b}
+    .strong{font-weight:700}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{border-bottom:1px solid #e2e8f0;padding:8px;text-align:left}
+    tfoot td{font-weight:700}
+    </style></head><body>
+    <div class="top">
+      <div class="brand">
+        <img class="logo-img" src="${esc(assetUrl("/images/RRA_LOGO.png"))}" alt="RRA" />
+        <img class="logo-img" src="${esc(assetUrl("/images/rraLogo2.png"))}" alt="RRA" />
+      </div>
+      <img class="logo-img" style="height:56px" src="${esc(assetUrl("/images/logoubumwe.png"))}" alt="Ubumwe Grand Hotel" />
+    </div>
+    <h2>Tax Invoice</h2>
+    <div class="inv">
+      <div class="row"><span class="muted">Invoice #</span><span class="strong">${esc(result.invoice.invoiceNumber)}</span></div>
+      <div class="row"><span class="muted">Booking reference</span><span>${esc(staffDetail?.booking_reference ?? folio.booking_reference ?? "—")}</span></div>
+      <div class="row"><span class="muted">Guest</span><span>${esc(folio.guest.name)}</span></div>
+      <div class="row"><span class="muted">Room</span><span>${esc(folio.roomNumber || "—")} (${esc(folio.roomTypeName || "—")})</span></div>
+      <div class="row"><span class="muted">Checkout time</span><span>${esc(checkoutAt)}</span></div>
+      <table>
+        <thead><tr><th>Description</th><th>Amount (${esc(folio.summary.currency)})</th></tr></thead>
+        <tbody>
+          ${result.invoice.items
+            .map((it) => `<tr><td>${esc(it.description)}</td><td>${esc(it.amount)}</td></tr>`)
+            .join("")}
+        </tbody>
+      </table>
+      <div class="row"><span class="muted">Total charges</span><span>${esc(totalCharges)} ${esc(folio.summary.currency)}</span></div>
+      <div class="row"><span class="muted">Deposit paid</span><span>- ${esc(depositPaid)} ${esc(folio.summary.currency)}</span></div>
+      <div class="row"><span class="muted">Remaining before checkout payment</span><span>${esc(remainingBeforePayment)} ${esc(folio.summary.currency)}</span></div>
+      <div class="row"><span class="muted">Paid at checkout (${esc(paymentMethod)})</span><span>- ${esc(paid)} ${esc(folio.summary.currency)}</span></div>
+      <div class="row"><span class="muted">Payment types used</span><span>${esc(paymentTypesUsed || paymentMethod)}</span></div>
+      <div class="row strong"><span>Balance after payment</span><span>${esc(dueAfterPayment)} ${esc(folio.summary.currency)}</span></div>
+    </div>
+    </body></html>`;
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    w.print();
   }
 
   async function doCancel() {
@@ -249,6 +347,13 @@ export default function StaffReservationDetailPage() {
 
   function printReservationDoc() {
     if (!folio) return;
+    const standardCheckInTime = "15:00:00";
+    const standardCheckOutTime = "11:00:00";
+    const checkedInAt = staffDetail?.timeline?.find((t) => t.phase === "CHECKED_IN")?.at ?? null;
+    const checkInWithTime = checkedInAt
+      ? checkedInAt.slice(0, 19).replace("T", " ")
+      : `${folio.stay.checkIn} ${standardCheckInTime}`;
+    const checkOutWithTime = `${folio.stay.checkOut} ${standardCheckOutTime}`;
     const esc = (v: unknown) =>
       String(v ?? "")
         .replaceAll("&", "&amp;")
@@ -299,9 +404,9 @@ export default function StaffReservationDetailPage() {
     <div class="row"><span class="label">Room:</span>${esc(folio.roomNumber || "Unassigned")} (${esc(folio.roomTypeName || "—")})</div>
     <div class="row"><span class="label">Room status:</span>${esc(staffDetail?.room?.room_status ?? "—")}</div>
     <div class="row"><span class="label">Cleanliness:</span>${esc(staffDetail?.room?.cleanliness ?? "—")}</div>
-    <div class="row"><span class="label">Stay:</span>${esc(folio.stay.checkIn)} → ${esc(folio.stay.checkOut)} (${esc(
-      folio.stay.totalNights,
-    )} nights)</div>
+    <div class="row"><span class="label">Check-in:</span>${esc(checkInWithTime)}</div>
+    <div class="row"><span class="label">Check-out:</span>${esc(checkOutWithTime)}</div>
+    <div class="row"><span class="label">Stay:</span>${esc(folio.stay.totalNights)} nights</div>
     <div class="row"><span class="label">Status:</span>${esc(folio.stay.reservationStatus)}</div>
     <div class="row"><span class="label">Deposit paid:</span>${esc(folio.summary.depositPaid ?? 0)} ${esc(
       folio.summary.currency,
@@ -645,6 +750,46 @@ export default function StaffReservationDetailPage() {
                 Outstanding balance: {balance} {folio.summary.currency}. Collect payment before checkout.
               </p>
             )}
+            <p style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
+              Deposit paid: <strong>{folio.summary.depositPaid ?? 0}</strong> {folio.summary.currency}
+            </p>
+            <p style={{ fontSize: "0.9rem", marginBottom: "0.75rem" }}>
+              Remaining to collect now: <strong>{Math.max(0, balance)}</strong> {folio.summary.currency}
+            </p>
+            <label style={{ display: "block", marginBottom: "0.5rem" }}>
+              Amount paid at checkout
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                style={{ width: "100%", marginTop: "0.35rem" }}
+              />
+            </label>
+            <label style={{ display: "block", marginBottom: "0.5rem" }}>
+              Payment method
+              <select
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                style={{ width: "100%", marginTop: "0.35rem" }}
+              >
+                <option value="CASH">CASH</option>
+                <option value="CARD">CARD</option>
+                <option value="BANK_TRANSFER">BANK TRANSFER</option>
+                <option value="MOBILE_MONEY">MOBILE MONEY</option>
+                <option value="MIXED">MIXED</option>
+              </select>
+            </label>
+            <label style={{ display: "block", marginBottom: "0.75rem" }}>
+              Payment types used (optional)
+              <input
+                value={paymentTypesUsed}
+                onChange={(e) => setPaymentTypesUsed(e.target.value)}
+                placeholder="e.g. CASH + CARD"
+                style={{ width: "100%", marginTop: "0.35rem" }}
+              />
+            </label>
             <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.75rem" }}>
               <input type="checkbox" checked={minibarOk} onChange={(e) => setMinibarOk(e.target.checked)} />
               Minibar inspected (required)

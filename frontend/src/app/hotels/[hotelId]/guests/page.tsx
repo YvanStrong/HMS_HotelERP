@@ -16,24 +16,11 @@ type GuestProfile = {
   flags?: Record<string, unknown>;
 };
 
-type ReservationRow = {
+type GuestListRow = {
   guestId: string;
   guestName: string;
   guestEmail: string;
-  confirmationCode: string;
-  checkInDate: string;
-  checkOutDate: string;
 };
-
-function stayRangeParams(): string {
-  const end = new Date();
-  const start = new Date();
-  start.setFullYear(start.getFullYear() - 1);
-  const p = new URLSearchParams();
-  p.set("stayStart", start.toISOString().slice(0, 10));
-  p.set("stayEnd", end.toISOString().slice(0, 10));
-  return p.toString();
-}
 
 export default function GuestsPage() {
   const params = useParams();
@@ -41,40 +28,41 @@ export default function GuestsPage() {
   const [guestId, setGuestId] = useState("");
   const [manualGuestId, setManualGuestId] = useState("");
   const [guestFilter, setGuestFilter] = useState("");
-  const [reservations, setReservations] = useState<ReservationRow[]>([]);
+  const [guests, setGuests] = useState<GuestListRow[]>([]);
   const [resErr, setResErr] = useState<string | null>(null);
   const [profile, setProfile] = useState<GuestProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const loadReservations = useCallback(async () => {
+  const loadGuests = useCallback(async () => {
     setResErr(null);
     if (!getToken()) {
       setResErr("Not signed in.");
       return;
     }
     try {
-      const rows = await apiFetch<ReservationRow[]>(
-        `/api/v1/hotels/${hotelId}/reservations?${stayRangeParams()}`,
+      const rows = await apiFetch<
+        { guest: { id: string; full_name: string; email: string | null } }[]
+      >(`/api/v1/hotels/${hotelId}/guests`);
+      setGuests(
+        rows.map((row) => ({
+          guestId: row.guest.id,
+          guestName: row.guest.full_name || "Unnamed guest",
+          guestEmail: row.guest.email ?? "—",
+        })),
       );
-      setReservations(rows);
     } catch (e) {
-      setReservations([]);
-      setResErr(e instanceof Error ? e.message : "Could not load reservations");
+      setGuests([]);
+      setResErr(e instanceof Error ? e.message : "Could not load guests");
     }
   }, [hotelId]);
 
   useEffect(() => {
-    void loadReservations();
-  }, [loadReservations]);
+    void loadGuests();
+  }, [loadGuests]);
 
   const guestChoices = useMemo(() => {
-    const map = new Map<string, ReservationRow>();
-    for (const r of reservations) {
-      if (!r.guestId) continue;
-      if (!map.has(r.guestId)) map.set(r.guestId, r);
-    }
-    return Array.from(map.values()).sort((a, b) => a.guestName.localeCompare(b.guestName));
-  }, [reservations]);
+    return [...guests].sort((a, b) => a.guestName.localeCompare(b.guestName));
+  }, [guests]);
 
   const filteredGuests = useMemo(() => {
     const q = guestFilter.trim().toLowerCase();
@@ -82,8 +70,7 @@ export default function GuestsPage() {
     return guestChoices.filter(
       (g) =>
         g.guestName.toLowerCase().includes(q) ||
-        g.guestEmail.toLowerCase().includes(q) ||
-        g.confirmationCode.toLowerCase().includes(q),
+        g.guestEmail.toLowerCase().includes(q),
     );
   }, [guestChoices, guestFilter]);
 
@@ -119,8 +106,8 @@ export default function GuestsPage() {
     <>
       <h1>Guests</h1>
       <p style={{ color: "var(--muted)", maxWidth: "40rem", lineHeight: 1.55 }}>
-        Pick someone who has a reservation in the last year (name and email), then load their profile. For guests not
-        on the list, use the advanced section.
+        Pick any saved guest (name/email), then load their profile. For guests not on the list, use the advanced
+        section.
       </p>
       {resErr && <div className="error panel">{resErr}</div>}
       <div className="panel book-register-form" style={{ maxWidth: 560 }}>
@@ -129,7 +116,7 @@ export default function GuestsPage() {
         <input
           id="guest-filter"
           type="search"
-          placeholder="Name, email, or confirmation code…"
+          placeholder="Name or email…"
           value={guestFilter}
           onChange={(e) => setGuestFilter(e.target.value)}
           autoComplete="off"
@@ -149,18 +136,18 @@ export default function GuestsPage() {
           <option value="">Choose a guest…</option>
           {selectGuestOptions.map((g) => (
             <option key={g.guestId} value={g.guestId}>
-              {g.guestName} · {g.guestEmail} · {g.confirmationCode}
+              {g.guestName} · {g.guestEmail}
             </option>
           ))}
         </select>
         {guestChoices.length === 0 && !resErr && (
           <p style={{ color: "var(--muted)", fontSize: "0.88rem", marginTop: "0.5rem" }}>
-            No reservations in range — add stays or use advanced.
+            No saved guests yet — create/import guests or use advanced.
           </p>
         )}
         {filteredGuests.length === 0 && guestChoices.length > 0 && (
           <p style={{ color: "var(--muted)", fontSize: "0.88rem", marginTop: "0.5rem" }}>
-            No matches — clear search to see all guests from reservations.
+            No matches — clear search to see all saved guests.
           </p>
         )}
         <div style={{ marginTop: "0.85rem" }}>

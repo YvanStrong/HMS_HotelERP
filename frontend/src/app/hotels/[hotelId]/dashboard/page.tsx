@@ -105,13 +105,13 @@ export default function HotelDashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href={staffAppPath("rooms")} className="hms-btn-outline text-sm">
+          <Link href={staffAppPath("rooms")} className="hms-btn-outline hms-btn-sm hms-btn-icon">
             Rooms List
           </Link>
-          <Link href={staffAppPath("room-blocks")} className="hms-btn-outline text-sm">
+          <Link href={staffAppPath("room-blocks")} className="hms-btn-outline hms-btn-sm hms-btn-icon">
             Blocks
           </Link>
-          <Link href={staffAppPath("reservations")} className="hms-btn-solid text-sm">
+          <Link href={staffAppPath("reservations")} className="hms-btn-solid hms-btn-sm hms-btn-icon">
             Reservations
           </Link>
         </div>
@@ -121,10 +121,10 @@ export default function HotelDashboardPage() {
 
       {/* Stats Grid */}
       {board && (
-        <div className="bg-card rounded-xl border border-border/60 p-6 shadow-soft">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Status Board</h2>
-            <span className="text-sm text-muted-foreground">
+        <section className="hms-section-card">
+          <div className="hms-section-head">
+            <h2 className="hms-section-title">Status Board</h2>
+            <span className="hms-section-sub">
               Total: <strong className="text-foreground">{board.totalRooms}</strong> rooms
             </span>
           </div>
@@ -141,24 +141,24 @@ export default function HotelDashboardPage() {
           <p className="text-xs text-muted-foreground mt-4">
             Buckets reflect operational states (OCCUPIED, VACANT_CLEAN, etc.). DND skips housekeeping; active blocks prevent assignment.
           </p>
-        </div>
+        </section>
       )}
 
       {/* Occupancy Grid */}
       {grid && grid.days.length > 0 && (
-        <div className="bg-card rounded-xl border border-border/60 p-6 shadow-soft">
-          <h2 className="text-lg font-semibold mb-4">
+        <section className="hms-section-card">
+          <h2 className="hms-section-title mb-4">
             Occupancy Grid <span className="text-muted-foreground font-normal">({range.from} → {range.to})</span>
           </h2>
-          
-          <div className="overflow-x-auto">
-            <table className="w-full">
+
+          <div className="hms-table-wrap">
+            <table className="hms-table">
               <thead>
                 <tr>
-                  <th className="text-left">Date</th>
-                  <th className="text-left">Occupied</th>
-                  <th className="text-left">Total</th>
-                  <th className="text-left">Occupancy %</th>
+                  <th>Date</th>
+                  <th>Occupied</th>
+                  <th>Total</th>
+                  <th>Occupancy %</th>
                 </tr>
               </thead>
               <tbody>
@@ -194,16 +194,25 @@ export default function HotelDashboardPage() {
             noun="days"
             onPageChange={setGridPage}
           />
-        </div>
+        </section>
+      )}
+
+      {grid && grid.days.length === 0 && (
+        <section className="hms-section-card">
+          <div className="hms-empty-state">
+            <p className="hms-empty-title">No occupancy data yet</p>
+            <p className="hms-empty-copy">Try a wider date range or check once reservations are added.</p>
+          </div>
+        </section>
       )}
 
       {/* Realtime KPI */}
       {kpi != null && (
-        <div className="bg-card rounded-xl border border-border/60 p-6 shadow-soft">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Realtime KPI</h2>
+        <section className="hms-section-card">
+          <div className="hms-section-head">
+            <h2 className="hms-section-title">Realtime KPI</h2>
             {kpi.timestamp && (
-              <span className="text-xs text-muted-foreground">
+              <span className="hms-section-sub">
                 Snapshot: {new Date(kpi.timestamp).toLocaleString()}
                 {kpi.alerts && kpi.alerts.length > 0 && (
                   <span className="ml-2 text-amber-600 font-medium">· {kpi.alerts.length} alert(s)</span>
@@ -215,9 +224,12 @@ export default function HotelDashboardPage() {
           <RealtimeKpiCards liveMetrics={kpi.liveMetrics as Record<string, unknown> | undefined} />
           
           {(!kpi.liveMetrics || Object.keys(kpi.liveMetrics).length === 0) && (
-            <p className="text-muted-foreground text-sm">No live metrics in this response.</p>
+            <div className="hms-empty-state">
+              <p className="hms-empty-title">No live metrics in this snapshot</p>
+              <p className="hms-empty-copy">Realtime KPIs appear here when event traffic is available.</p>
+            </div>
           )}
-        </div>
+        </section>
       )}
     </div>
   );

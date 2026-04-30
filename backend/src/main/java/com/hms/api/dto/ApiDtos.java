@@ -62,6 +62,7 @@ public final class ApiDtos {
             String roomNumber,
             Integer floor,
             String building,
+            String photoUrl,
             RoomTypeSummary roomType,
             String status,
             String cleanliness,
@@ -78,6 +79,7 @@ public final class ApiDtos {
             String roomNumber,
             Integer floor,
             String building,
+            String photoUrl,
             RoomTypeSummary roomType,
             String status,
             String cleanliness,
@@ -100,6 +102,7 @@ public final class ApiDtos {
             @NotBlank String roomNumber,
             Integer floor,
             String building,
+            String imageUrl,
             UUID roomTypeId,
             String roomTypeCode,
             String initialStatus,
@@ -110,6 +113,7 @@ public final class ApiDtos {
             String roomNumber,
             Integer floor,
             String building,
+            String photoUrl,
             RoomTypeSummary roomType,
             String status,
             String cleanliness,
@@ -125,7 +129,8 @@ public final class ApiDtos {
             String maintenanceNotes,
             Boolean isOutOfOrder,
             String building,
-            Integer floor) {}
+            Integer floor,
+            String imageUrl) {}
 
     public record RoomLifecycleSnapshot(
             String status,
@@ -300,6 +305,18 @@ public final class ApiDtos {
     public record InvoiceDto(
             UUID id, String invoiceNumber, BigDecimal totalAmount, String pdfUrl, List<InvoiceLine> items) {}
 
+    public record InvoiceListItem(
+            UUID id,
+            String invoiceNumber,
+            String confirmationCode,
+            String bookingReference,
+            String guestName,
+            String roomNumber,
+            BigDecimal totalAmount,
+            String currency,
+            Instant createdAt,
+            String pdfUrl) {}
+
     public record InvoiceBreakdown(
             BigDecimal roomCharges,
             BigDecimal consumptionCharges,
@@ -307,6 +324,35 @@ public final class ApiDtos {
             BigDecimal taxes,
             BigDecimal depositCredit,
             BigDecimal grandTotal) {}
+
+    public record ProformaInvoiceListItem(
+            UUID reservationId,
+            String proformaNumber,
+            String confirmationCode,
+            String bookingReference,
+            String guestName,
+            String status,
+            BigDecimal grandTotal,
+            String currency,
+            Instant generatedAt) {}
+
+    public record ProformaInvoiceDto(
+            UUID reservationId,
+            String proformaNumber,
+            String confirmationCode,
+            String bookingReference,
+            String status,
+            String guestName,
+            String roomNumber,
+            LocalDate checkInDate,
+            LocalDate checkOutDate,
+            BigDecimal subtotalBeforeTax,
+            BigDecimal taxes,
+            BigDecimal depositCredit,
+            BigDecimal grandTotal,
+            String currency,
+            Instant generatedAt,
+            List<InvoiceLine> items) {}
 
     public record FeedbackEcho(Integer rating, String comment) {}
 

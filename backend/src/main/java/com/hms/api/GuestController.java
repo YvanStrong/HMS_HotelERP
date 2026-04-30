@@ -38,6 +38,15 @@ public class GuestController {
         return guestService.searchGuests(hotelId, hotelHeader, q);
     }
 
+    @GetMapping
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
+    public List<GuestDtos.GuestSearchHit> listGuests(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return guestService.listGuests(hotelId, hotelHeader);
+    }
+
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST')")
     public ResponseEntity<GuestDtos.GuestSearchHit> createGuest(

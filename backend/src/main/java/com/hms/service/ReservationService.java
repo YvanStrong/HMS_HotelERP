@@ -634,6 +634,11 @@ public class ReservationService {
     }
 
     private void ensureRoomAssignable(Room room, LocalDate checkIn, LocalDate checkOut, int guests) {
+        ensureRoomAssignable(room, checkIn, checkOut, guests, null);
+    }
+
+    private void ensureRoomAssignable(
+            Room room, LocalDate checkIn, LocalDate checkOut, int guests, UUID excludeReservationId) {
         if (room.getRoomType().getMaxOccupancy() < guests) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Room type capacity insufficient for guest count");
         }
@@ -643,7 +648,7 @@ public class ReservationService {
         if (!RoomBookingEligibility.isVacantBookable(room)) {
             throw new ApiException(HttpStatus.CONFLICT, "Room is not available");
         }
-        if (reservationRepository.countOverlapping(room.getId(), checkIn, checkOut, null) > 0) {
+        if (reservationRepository.countOverlapping(room.getId(), checkIn, checkOut, excludeReservationId) > 0) {
             throw new ApiException(HttpStatus.CONFLICT, "Room is already reserved for overlapping dates");
         }
         if (roomBlockRepository.countActiveOverlapping(room.getId(), checkIn, checkOut) > 0) {
@@ -807,7 +812,12 @@ public class ReservationService {
             Room nr = roomRepository
                     .findByIdAndHotel_Id(req.assignedRoomId(), hotelId)
                     .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Assigned room not found"));
-            ensureRoomAssignable(nr, r.getCheckInDate(), r.getCheckOutDate(), r.getAdults() + r.getChildren());
+            ensureRoomAssignable(
+                    nr,
+                    r.getCheckInDate(),
+                    r.getCheckOutDate(),
+                    r.getAdults() + r.getChildren(),
+                    r.getId());
             if (room != null && !room.getId().equals(nr.getId())) {
                 RoomStatus swappedFrom = room.getStatus();
                 CleanlinessStatus swappedClean = room.getCleanliness();
@@ -963,7 +973,15 @@ public class ReservationService {
         List<RoomCharge> chargesPreview = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId());
         ApiDtos.FolioSummary folioBefore = computeFolioSummary(r, chargesPreview);
         BigDecimal due = folioBefore.balanceDue();
-        if (due.abs().compareTo(new BigDecimal("0.01")) > 0) {
+        BigDecimal paymentAmount =
+                b.finalPayment() != null && b.finalPayment().amount() != null
+                        ? b.finalPayment().amount()
+                        : BigDecimal.ZERO;
+        if (paymentAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Final payment amount cannot be negative");
+        }
+        BigDecimal dueAfterPayment = due.subtract(paymentAmount).setScale(2, RoundingMode.HALF_UP);
+        if (dueAfterPayment.abs().compareTo(new BigDecimal("0.01")) > 0) {
             boolean override = Boolean.TRUE.equals(b.overrideBalanceWarning());
             boolean allowed =
                     staff.getRole() == Role.MANAGER
@@ -974,7 +992,7 @@ public class ReservationService {
                 throw new ApiException(
                         HttpStatus.UNPROCESSABLE_ENTITY,
                         "FOLIO_BALANCE_DUE",
-                        "Outstanding balance: " + due + " " + folioBefore.currency());
+                        "Outstanding balance: " + dueAfterPayment + " " + folioBefore.currency());
             }
         }
         Hotel hotel = r.getHotel();
@@ -1027,7 +1045,7 @@ public class ReservationService {
         housekeepingTaskService.onRoomBecameVacantDirty(hotelId, room.getId(), r.getId());
 
         List<RoomCharge> charges = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId());
-        Invoice inv = buildInvoice(hotelId, r, charges);
+        Invoice inv = buildInvoice(hotelId, r, charges, b.finalPayment());
         invoiceRepository.save(inv);
 
         notificationService.schedulePostStayEmail(r);
@@ -1166,7 +1184,8 @@ public class ReservationService {
         return new ApiDtos.CancelReservationResponse(r.getId(), r.getStatus().name(), msg);
     }
 
-    private Invoice buildInvoice(UUID hotelId, Reservation r, List<RoomCharge> charges) {
+    private Invoice buildInvoice(
+            UUID hotelId, Reservation r, List<RoomCharge> charges, ApiDtos.FinalPaymentInput finalPayment) {
         long nights = ChronoUnit.DAYS.between(r.getCheckInDate(), r.getCheckOutDate());
         Invoice inv = new Invoice();
         inv.setHotel(hotelRepository.getReferenceById(hotelId));
@@ -1192,7 +1211,15 @@ public class ReservationService {
         if (deposit.signum() > 0) {
             items.add(line(inv, order++, "Deposit Paid", deposit.negate()));
         }
-        BigDecimal total = sub.add(tax).subtract(deposit);
+        BigDecimal payment = finalPayment != null && finalPayment.amount() != null ? finalPayment.amount() : BigDecimal.ZERO;
+        if (payment.signum() > 0) {
+            String method = "PAYMENT";
+            if (finalPayment != null && finalPayment.method() != null && !finalPayment.method().isBlank()) {
+                method = finalPayment.method().trim();
+            }
+            items.add(line(inv, order++, "Payment received (" + method + ")", payment.negate()));
+        }
+        BigDecimal total = sub.add(tax).subtract(deposit).subtract(payment);
         inv.setTotalAmount(total.setScale(2, RoundingMode.HALF_UP));
         for (InvoiceLineItem li : items) {
             inv.getLineItems().add(li);
