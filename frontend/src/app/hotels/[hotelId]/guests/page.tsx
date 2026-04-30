@@ -1,26 +1,22 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { KeyValueTable, recordToRows } from "@/components/KeyValueTable";
+import { PaginationBar } from "@/components/PaginationBar";
 import { apiFetch, getToken } from "@/lib/api";
+import { paginateSlice } from "@/lib/pagination";
+import { staffAppPath } from "@/lib/staffAppRoutes";
 
-type GuestProfile = {
-  id: string;
-  name: string;
-  email: string;
-  loyalty?: Record<string, unknown>;
-  preferences?: Record<string, unknown>;
-  stayHistory?: Record<string, unknown>;
-  communication?: Record<string, unknown>;
-  flags?: Record<string, unknown>;
-};
-
-type ReservationRow = {
+type ReservationGuestRow = {
   guestId: string;
   guestName: string;
   guestEmail: string;
+  guest_national_id_masked?: string;
   confirmationCode: string;
+  booking_reference?: string;
+  status: string;
+  roomNumber: string;
   checkInDate: string;
   checkOutDate: string;
 };
@@ -38,175 +34,227 @@ function stayRangeParams(): string {
 export default function GuestsPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
-  const [guestId, setGuestId] = useState("");
-  const [manualGuestId, setManualGuestId] = useState("");
-  const [guestFilter, setGuestFilter] = useState("");
-  const [reservations, setReservations] = useState<ReservationRow[]>([]);
-  const [resErr, setResErr] = useState<string | null>(null);
-  const [profile, setProfile] = useState<GuestProfile | null>(null);
+  const [rows, setRows] = useState<ReservationGuestRow[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 15;
 
-  const loadReservations = useCallback(async () => {
-    setResErr(null);
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
     if (!getToken()) {
-      setResErr("Not signed in.");
+      setError("Not signed in.");
+      setIsLoading(false);
       return;
     }
     try {
-      const rows = await apiFetch<ReservationRow[]>(
+      const data = await apiFetch<ReservationGuestRow[]>(
         `/api/v1/hotels/${hotelId}/reservations?${stayRangeParams()}`,
       );
-      setReservations(rows);
+      setRows(data);
     } catch (e) {
-      setReservations([]);
-      setResErr(e instanceof Error ? e.message : "Could not load reservations");
+      setRows([]);
+      setError(e instanceof Error ? e.message : "Could not load guests");
+    } finally {
+      setIsLoading(false);
     }
   }, [hotelId]);
 
   useEffect(() => {
-    void loadReservations();
-  }, [loadReservations]);
+    void load();
+  }, [load]);
 
-  const guestChoices = useMemo(() => {
-    const map = new Map<string, ReservationRow>();
-    for (const r of reservations) {
+  const guests = useMemo(() => {
+    const map = new Map<string, ReservationGuestRow>();
+    for (const r of rows) {
       if (!r.guestId) continue;
       if (!map.has(r.guestId)) map.set(r.guestId, r);
     }
-    return Array.from(map.values()).sort((a, b) => a.guestName.localeCompare(b.guestName));
-  }, [reservations]);
-
-  const filteredGuests = useMemo(() => {
-    const q = guestFilter.trim().toLowerCase();
-    if (!q) return guestChoices;
-    return guestChoices.filter(
-      (g) =>
-        g.guestName.toLowerCase().includes(q) ||
-        g.guestEmail.toLowerCase().includes(q) ||
-        g.confirmationCode.toLowerCase().includes(q),
+    return Array.from(map.values()).sort((a, b) =>
+      a.guestName.localeCompare(b.guestName),
     );
-  }, [guestChoices, guestFilter]);
+  }, [rows]);
 
-  const selectGuestOptions = useMemo(() => {
-    if (!guestId || filteredGuests.some((g) => g.guestId === guestId)) {
-      return filteredGuests;
-    }
-    const cur = guestChoices.find((g) => g.guestId === guestId);
-    return cur ? [cur, ...filteredGuests] : filteredGuests;
-  }, [guestChoices, guestId, filteredGuests]);
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return guests.filter((g) => {
+      const statusOk = statusFilter === "ALL" || g.status === statusFilter;
+      if (!statusOk) return false;
+      if (!needle) return true;
+      return (
+        g.guestName.toLowerCase().includes(needle) ||
+        (g.guestEmail || "").toLowerCase().includes(needle) ||
+        (g.booking_reference || "").toLowerCase().includes(needle) ||
+        g.confirmationCode.toLowerCase().includes(needle) ||
+        (g.guest_national_id_masked || "").toLowerCase().includes(needle)
+      );
+    });
+  }, [guests, q, statusFilter]);
 
-  async function loadProfile() {
-    setError(null);
-    setProfile(null);
-    if (!getToken()) {
-      setError("Not signed in.");
-      return;
-    }
-    const id = manualGuestId.trim() || guestId.trim();
-    if (!id) {
-      setError("Choose a guest from the list, or paste an id in “Guest not on the list”.");
-      return;
-    }
-    try {
-      const json = await apiFetch<GuestProfile>(`/api/v1/hotels/${hotelId}/guests/${id}/profile`);
-      setProfile(json);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed");
-    }
-  }
+  const stats = useMemo(() => {
+    const by = (s: string) => guests.filter((g) => g.status === s).length;
+    return {
+      totalGuests: guests.length,
+      inHouseGuests: by("CHECKED_IN"),
+      arrivals: by("CONFIRMED"),
+      departed: by("CHECKED_OUT"),
+    };
+  }, [guests]);
+
+  const { slice, total, totalPages } = useMemo(
+    () => paginateSlice(filtered, page, PAGE_SIZE),
+    [filtered, page],
+  );
 
   return (
-    <>
-      <h1>Guests</h1>
-      <p style={{ color: "var(--muted)", maxWidth: "40rem", lineHeight: 1.55 }}>
-        Pick someone who has a reservation in the last year (name and email), then load their profile. For guests not
-        on the list, use the advanced section.
-      </p>
-      {resErr && <div className="error panel">{resErr}</div>}
-      <div className="panel book-register-form" style={{ maxWidth: 560 }}>
-        <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>Find guest</h2>
-        <label htmlFor="guest-filter">Search (optional)</label>
-        <input
-          id="guest-filter"
-          type="search"
-          placeholder="Name, email, or confirmation code…"
-          value={guestFilter}
-          onChange={(e) => setGuestFilter(e.target.value)}
-          autoComplete="off"
-        />
-        <label htmlFor="guest-select" style={{ marginTop: "0.75rem" }}>
-          Guest
-        </label>
-        <select
-          id="guest-select"
-          value={guestId}
-          onChange={(e) => {
-            setGuestId(e.target.value);
-            setManualGuestId("");
-          }}
-          className="book-register-hotel-select"
-        >
-          <option value="">Choose a guest…</option>
-          {selectGuestOptions.map((g) => (
-            <option key={g.guestId} value={g.guestId}>
-              {g.guestName} · {g.guestEmail} · {g.confirmationCode}
-            </option>
-          ))}
-        </select>
-        {guestChoices.length === 0 && !resErr && (
-          <p style={{ color: "var(--muted)", fontSize: "0.88rem", marginTop: "0.5rem" }}>
-            No reservations in range — add stays or use advanced.
-          </p>
-        )}
-        {filteredGuests.length === 0 && guestChoices.length > 0 && (
-          <p style={{ color: "var(--muted)", fontSize: "0.88rem", marginTop: "0.5rem" }}>
-            No matches — clear search to see all guests from reservations.
-          </p>
-        )}
-        <div style={{ marginTop: "0.85rem" }}>
-          <button type="button" onClick={loadProfile}>
-            Load profile
-          </button>
+    <div className="space-y-6">
+      <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+        <h1 className="text-3xl font-bold tracking-tight">Guests</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Guest directory from current and recent stays. Search by name, email, booking reference, or masked ID.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Guests</p>
+          <p className="mt-1 text-2xl font-bold">{stats.totalGuests}</p>
         </div>
-        <details className="book-register-advanced" style={{ marginTop: "1rem" }}>
-          <summary>Guest not on the list?</summary>
-          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "0.5rem" }}>
-            Paste the guest id from the API, PMS export, or a deep link if staff gave you one.
-          </p>
-          <label htmlFor="guest-manual-id">Guest id</label>
-          <input
-            id="guest-manual-id"
-            value={manualGuestId}
-            onChange={(e) => setManualGuestId(e.target.value)}
-            placeholder="uuid"
-            autoComplete="off"
-            spellCheck={false}
-            style={{ fontFamily: "ui-monospace, monospace", fontSize: "0.88rem" }}
-          />
-          <div style={{ marginTop: "0.65rem" }}>
-            <button type="button" onClick={loadProfile}>
-              Load profile
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">In house</p>
+          <p className="mt-1 text-2xl font-bold">{stats.inHouseGuests}</p>
+        </div>
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Upcoming arrivals</p>
+          <p className="mt-1 text-2xl font-bold">{stats.arrivals}</p>
+        </div>
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Checked out</p>
+          <p className="mt-1 text-2xl font-bold">{stats.departed}</p>
+        </div>
+      </div>
+
+      {error && <div className="error">{error}</div>}
+
+      <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-soft">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <label>
+            Search
+            <input
+              type="search"
+              placeholder="Name, email, booking ref, masked ID..."
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setPage(1);
+              }}
+            />
+          </label>
+          <label>
+            Status
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="ALL">All statuses</option>
+              <option value="CONFIRMED">Confirmed</option>
+              <option value="CHECKED_IN">Checked in</option>
+              <option value="CHECKED_OUT">Checked out</option>
+              <option value="CANCELLED">Cancelled</option>
+              <option value="NO_SHOW">No show</option>
+            </select>
+          </label>
+          <div className="flex items-end">
+            <button type="button" className="hms-btn-outline w-full" onClick={() => void load()}>
+              Refresh
             </button>
           </div>
-        </details>
+        </div>
       </div>
-      {error && <div className="error panel">{error}</div>}
-      {profile != null && (
-        <>
-          <div className="panel">
-            <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>{profile.name}</h2>
-            <p style={{ margin: "0.25rem 0", color: "var(--muted)" }}>{profile.email}</p>
-            <p style={{ fontSize: "0.8rem", margin: 0 }}>
-              <code>{profile.id}</code>
-            </p>
-          </div>
-          <KeyValueTable title="Loyalty" rows={recordToRows(profile.loyalty)} />
-          <KeyValueTable title="Preferences" rows={recordToRows(profile.preferences)} />
-          <KeyValueTable title="Stay history" rows={recordToRows(profile.stayHistory)} />
-          <KeyValueTable title="Communication" rows={recordToRows(profile.communication)} />
-          <KeyValueTable title="Flags" rows={recordToRows(profile.flags)} />
-        </>
-      )}
-    </>
+
+      <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-soft">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Guest list ({filtered.length})</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <th>Guest</th>
+                <th>Contact</th>
+                <th>Last booking</th>
+                <th>Status</th>
+                <th>Room</th>
+                <th>Stay</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading &&
+                Array.from({ length: 6 }).map((_, idx) => (
+                  <tr key={`g-skeleton-${idx}`} className="border-t border-border/50 animate-pulse">
+                    <td className="py-3"><div className="h-4 w-32 rounded bg-muted" /></td>
+                    <td><div className="h-4 w-36 rounded bg-muted" /></td>
+                    <td><div className="h-4 w-28 rounded bg-muted" /></td>
+                    <td><div className="h-4 w-20 rounded bg-muted" /></td>
+                    <td><div className="h-4 w-16 rounded bg-muted" /></td>
+                    <td><div className="h-4 w-24 rounded bg-muted" /></td>
+                    <td><div className="h-4 w-16 rounded bg-muted" /></td>
+                  </tr>
+                ))}
+              {!isLoading &&
+                slice.map((g) => (
+                  <tr key={g.guestId} className="border-t border-border/50 hover:bg-muted/20 transition-colors">
+                    <td>
+                      <p className="font-medium">{g.guestName}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{g.guest_national_id_masked || "—"}</p>
+                    </td>
+                    <td>{g.guestEmail || "—"}</td>
+                    <td>
+                      <div className="font-mono text-xs">
+                        {g.booking_reference || g.confirmationCode}
+                      </div>
+                    </td>
+                    <td>{g.status.replaceAll("_", " ")}</td>
+                    <td>{g.roomNumber || "Unassigned"}</td>
+                    <td className="whitespace-nowrap">
+                      {g.checkInDate} → {g.checkOutDate}
+                    </td>
+                    <td>
+                      <Link
+                        href={staffAppPath("guests", g.guestId)}
+                        className="text-sm font-medium text-primary hover:text-primary/80"
+                      >
+                        Open →
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              {!isLoading && slice.length === 0 && (
+                <tr className="border-t border-border/50">
+                  <td colSpan={7} className="py-10 text-center text-muted-foreground">
+                    No guests match the current filters.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          totalItems={total}
+          pageSize={PAGE_SIZE}
+          noun="guests"
+          onPageChange={setPage}
+        />
+      </div>
+    </div>
   );
 }

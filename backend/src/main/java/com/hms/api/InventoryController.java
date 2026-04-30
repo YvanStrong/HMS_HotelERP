@@ -36,6 +36,15 @@ public class InventoryController {
                 .body(inventoryService.createSupplier(hotelId, hotelHeader, body));
     }
 
+    @GetMapping("/suppliers")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_HOUSEKEEPING')")
+    public java.util.List<InventoryDtos.SupplierSummary> listSuppliers(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return inventoryService.listSuppliers(hotelId, hotelHeader);
+    }
+
     @PostMapping("/categories")
     @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
     public ResponseEntity<InventoryDtos.CreatedIdResponse> createCategory(
@@ -44,6 +53,15 @@ public class InventoryController {
             @Valid @RequestBody InventoryDtos.CategoryCreateRequest body) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(inventoryService.createCategory(hotelId, hotelHeader, body));
+    }
+
+    @GetMapping("/categories")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_HOUSEKEEPING')")
+    public java.util.List<InventoryDtos.CategorySummary> listCategories(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return inventoryService.listCategories(hotelId, hotelHeader);
     }
 
     @PostMapping("/items")

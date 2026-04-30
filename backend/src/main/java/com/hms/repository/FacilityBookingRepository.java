@@ -32,4 +32,17 @@ public interface FacilityBookingRepository extends JpaRepository<FacilityBooking
             @Param("slotId") UUID slotId, @Param("statuses") List<FacilityBookingStatus> statuses);
 
     List<FacilityBooking> findBySlot_IdAndStatus(UUID slotId, FacilityBookingStatus status);
+
+    @Query(
+            """
+            select b from FacilityBooking b
+            where b.facility.id = :facilityId
+              and b.slot.startTime >= :startInclusive
+              and b.slot.startTime < :endExclusive
+            order by b.slot.startTime asc, b.createdAt desc
+            """)
+    List<FacilityBooking> findForFacilityWindow(
+            @Param("facilityId") UUID facilityId,
+            @Param("startInclusive") java.time.LocalDateTime startInclusive,
+            @Param("endExclusive") java.time.LocalDateTime endExclusive);
 }

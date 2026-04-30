@@ -3,6 +3,7 @@ package com.hms.api;
 import com.hms.api.dto.FacilityDtos;
 import com.hms.service.FacilityService;
 import jakarta.validation.Valid;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -33,6 +35,28 @@ public class FacilityController {
     public List<FacilityDtos.FacilitySummary> listFacilities(
             @PathVariable UUID hotelId, @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         return facilityService.listFacilities(hotelId, hotelHeader);
+    }
+
+    @GetMapping("/{facilityId}/dashboard")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_GUEST','ROLE_CORPORATE_BOOKER')")
+    public FacilityDtos.FacilityDashboardResponse dashboard(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID facilityId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) LocalDate fromDate,
+            @RequestParam(required = false) LocalDate toDate) {
+        return facilityService.dashboard(hotelId, hotelHeader, facilityId, fromDate, toDate);
+    }
+
+    @GetMapping("/{facilityId}/maintenances")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_MAINTENANCE')")
+    public List<FacilityDtos.FacilityMaintenanceListItem> listMaintenance(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID facilityId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return facilityService.listMaintenance(hotelId, hotelHeader, facilityId);
     }
 
     @PostMapping

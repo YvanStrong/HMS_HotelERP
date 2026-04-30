@@ -39,6 +39,18 @@ public final class ApiDtos {
     public record AuthUserInfo(
             UUID id, String email, String username, String role, UUID hotelId, List<String> permissions) {}
 
+    public record HotelStaffUserRow(UUID id, String username, String email, String role, boolean isActive, Instant createdAt) {}
+
+    public record HotelStaffCreateRequest(
+            @NotBlank String username,
+            @NotBlank String password,
+            @Email String email,
+            @NotBlank String role) {}
+
+    public record HotelStaffRoleUpdateRequest(@NotBlank String role) {}
+
+    public record HotelStaffPasswordResetRequest(@NotBlank String newPassword) {}
+
     public record LoginResponse(
             String accessToken,
             String refreshToken,
@@ -375,6 +387,12 @@ public final class ApiDtos {
             Instant postedAt,
             Map<String, Object> inventoryImpact) {}
 
+    public record ReservationChargePostRequest(
+            @NotBlank @JsonProperty("charge_type") String chargeType,
+            @NotBlank String description,
+            @NotNull BigDecimal amount,
+            String currency) {}
+
     public record FolioCharge(
             UUID id,
             Instant date,
@@ -387,15 +405,15 @@ public final class ApiDtos {
             String productSku) {}
 
     public record FolioSummary(
-            BigDecimal roomCharges,
-            BigDecimal consumptionCharges,
-            BigDecimal subtotal,
-            BigDecimal taxes,
-            BigDecimal fees,
-            BigDecimal depositPaid,
-            BigDecimal totalPayments,
-            BigDecimal totalCharges,
-            BigDecimal balanceDue,
+            @JsonProperty("reservation_id") UUID reservationId,
+            @JsonProperty("room_charges_total") BigDecimal roomChargesTotal,
+            @JsonProperty("other_charges_total") BigDecimal otherChargesTotal,
+            @JsonProperty("gross_total") BigDecimal grossTotal,
+            @JsonProperty("tax_total") BigDecimal taxTotal,
+            @JsonProperty("discount_total") BigDecimal discountTotal,
+            @JsonProperty("grand_total") BigDecimal grandTotal,
+            @JsonProperty("payments_total") BigDecimal paymentsTotal,
+            @JsonProperty("balance_due") BigDecimal balanceDue,
             String currency) {}
 
     public record FolioGuestBlock(UUID id, String name, String email) {}
@@ -410,7 +428,19 @@ public final class ApiDtos {
             String last4,
             BigDecimal amount,
             String type,
-            String status) {}
+            String status,
+            String reference,
+            String notes) {}
+
+    public record PaymentCreateRequest(
+            @NotBlank @JsonProperty("payment_type") String paymentType,
+            @NotBlank String method,
+            @NotNull BigDecimal amount,
+            @NotBlank String currency,
+            String reference,
+            String notes) {}
+
+    public record PaymentVoidRequest(@NotBlank String reason) {}
 
     public record FolioRealtimeHint(String channelTemplate, String note) {}
 
@@ -429,6 +459,16 @@ public final class ApiDtos {
             FolioSummary summary,
             List<String> actions,
             FolioRealtimeHint realtime) {}
+
+    public record NightAuditRunResponse(
+            @JsonProperty("run_date") LocalDate runDate,
+            @JsonProperty("rooms_audited") int roomsAudited,
+            @JsonProperty("charges_posted") int chargesPosted,
+            @JsonProperty("total_amount") BigDecimal totalAmount,
+            String status,
+            String errors,
+            @JsonProperty("run_at") Instant runAt,
+            @JsonProperty("run_by") String runBy) {}
 
     public record HousekeepingTask(
             UUID roomId,
@@ -464,7 +504,9 @@ public final class ApiDtos {
             UUID assignedTo,
             String assignedToName,
             Instant createdAt,
-            String notes) {}
+            String notes,
+            @JsonProperty("room_dnd") Boolean roomDnd,
+            @JsonProperty("room_dnd_until") Instant roomDndUntil) {}
 
     public record HousekeepingBoardResponse(
             List<HousekeepingBoardTask> pending,
@@ -533,6 +575,15 @@ public final class ApiDtos {
             @NotNull BigDecimal baseRate,
             List<String> amenities) {}
 
+    public record RoomTypeUpdateInput(
+            @NotBlank String code,
+            @NotBlank String name,
+            String description,
+            @NotNull Integer maxOccupancy,
+            @NotNull Integer bedCount,
+            @NotNull BigDecimal baseRate,
+            List<String> amenities) {}
+
     public record BootstrapRoomInput(
             @NotBlank String roomNumber,
             @NotBlank String roomTypeCode,
@@ -553,6 +604,8 @@ public final class ApiDtos {
     public record CreateHotelResponse(UUID id, String code, String name, String message) {}
 
     public record CreateRoomTypeResponse(UUID id, String code, String name, String message) {}
+
+    public record DeleteRoomTypeResponse(UUID id, String message) {}
 
     /** Room Management module — live dashboard buckets (spec §2). */
     public record RoomDashboardResponse(

@@ -35,6 +35,9 @@ public class AppUser {
     @JoinColumn(name = "hotel_id")
     private Hotel hotel;
 
+    @Column(name = "is_active", nullable = false)
+    private boolean active = true;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

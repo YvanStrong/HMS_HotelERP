@@ -106,6 +106,11 @@ public class HousekeepingTaskService {
         return toBoardDto(t);
     }
 
+    @Transactional(readOnly = true)
+    public ApiDtos.HousekeepingBoardTask toBoardTaskDto(UUID hotelId, UUID taskId) {
+        return toBoardDto(loadTask(hotelId, taskId));
+    }
+
     /**
      * @param skipIfDuplicate when true (auto hooks), do nothing if an active duplicate exists
      */
@@ -148,13 +153,16 @@ public class HousekeepingTaskService {
     public HousekeepingTask assignTask(UUID hotelId, String hotelHeader, UUID taskId, UUID staffUserId) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         UserPrincipal actor = tenantAccessService.currentUser();
-        requireRole(actor, Role.HOUSEKEEPING_SUPERVISOR, Role.SUPER_ADMIN);
+        requireRole(actor, Role.HOTEL_ADMIN, Role.MANAGER, Role.HOUSEKEEPING_SUPERVISOR, Role.SUPER_ADMIN);
         HousekeepingTask t = loadTask(hotelId, taskId);
         AppUser staff = appUserRepository
                 .findById(staffUserId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Staff user not found"));
         if (staff.getHotel() == null || !staff.getHotel().getId().equals(hotelId)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Staff user is not scoped to this hotel");
+        }
+        if (staff.getRole() != Role.HOUSEKEEPING && staff.getRole() != Role.HOUSEKEEPING_SUPERVISOR) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_ASSIGNEE_ROLE", "Assignee must be housekeeping staff");
         }
         t.setAssignedTo(staff);
         t.setAssignedBy(appUserRepository.getReferenceById(actor.getId()));
@@ -167,7 +175,7 @@ public class HousekeepingTaskService {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         HousekeepingTask t = loadTask(hotelId, taskId);
         assertAssignedOrElevated(t);
-        if (t.getStatus() != HousekeepingTaskStatus.PENDING) {
+        if (t.getStatus() != HousekeepingTaskStatus.PENDING && t.getStatus() != HousekeepingTaskStatus.SKIPPED_DND) {
             throw new ApiException(HttpStatus.CONFLICT, "Task is not pending");
         }
         t.setStatus(HousekeepingTaskStatus.IN_PROGRESS);
@@ -310,7 +318,9 @@ public class HousekeepingTaskService {
                 t.getAssignedTo() != null ? t.getAssignedTo().getId() : null,
                 assignee,
                 t.getCreatedAt(),
-                t.getNotes());
+                t.getNotes(),
+                t.getRoom().isDnd(),
+                t.getRoom().getDndUntil());
     }
 
     private HousekeepingTask loadTask(UUID hotelId, UUID taskId) {

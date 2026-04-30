@@ -50,8 +50,11 @@ export async function apiFetch<T>(
     let msg = res.statusText;
     try {
       const body = await res.json();
-      if (body?.message) msg = body.message;
-      else if (body?.error) msg = body.error;
+      const code = typeof body?.error === "string" ? body.error : null;
+      const message = typeof body?.message === "string" ? body.message : null;
+      if (code && message) msg = `${code}: ${message}`;
+      else if (message) msg = message;
+      else if (code) msg = code;
     } catch {
       /* ignore */
     }

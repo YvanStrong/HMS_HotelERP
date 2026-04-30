@@ -64,6 +64,16 @@ function fmtInstant(iso: string | null | undefined): string {
   }
 }
 
+function statusTone(status: string): string {
+  if (status.includes("OCCUPIED")) return "bg-blue-100 text-blue-800";
+  if (status.includes("VACANT_CLEAN") || status.includes("INSPECTED")) return "bg-emerald-100 text-emerald-800";
+  if (status.includes("VACANT_DIRTY")) return "bg-amber-100 text-amber-900";
+  if (status.includes("BLOCKED") || status.includes("OUT_OF_ORDER") || status.includes("MAINTENANCE")) {
+    return "bg-rose-100 text-rose-800";
+  }
+  return "bg-slate-100 text-slate-800";
+}
+
 export default function RoomDetailPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
@@ -74,6 +84,11 @@ export default function RoomDetailPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [dndEnabled, setDndEnabled] = useState(false);
   const [dndUntilLocal, setDndUntilLocal] = useState("");
+  const [activeTab, setActiveTab] = useState<"info" | "history" | "housekeeping" | "maintenance">("info");
+  const [nextStatus, setNextStatus] = useState("");
+  const [statusReason, setStatusReason] = useState("");
+  const [blockReason, setBlockReason] = useState("");
+  const [blockUntilLocal, setBlockUntilLocal] = useState("");
 
   const load = useCallback(async () => {
     setError(null);
@@ -128,20 +143,133 @@ export default function RoomDetailPage() {
     }
   }
 
+  async function applyHousekeepingStatus(e: React.FormEvent) {
+    e.preventDefault();
+    if (!nextStatus) {
+      setMsg("Choose a status.");
+      return;
+    }
+    if (!statusReason.trim()) {
+      setMsg("Reason is required.");
+      return;
+    }
+    setMsg(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/rooms/${roomId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: nextStatus, reason: statusReason.trim() }),
+      });
+      setMsg("Room status updated.");
+      setStatusReason("");
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Status update failed");
+    }
+  }
+
+  async function releaseRoomBlock() {
+    setMsg(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/rooms/${roomId}/blocks`, { method: "DELETE" });
+      setMsg("Room block released.");
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Block release failed");
+    }
+  }
+
+  async function createMaintenanceBlock(e: React.FormEvent) {
+    e.preventDefault();
+    if (!blockReason.trim()) {
+      setMsg("Block reason is required.");
+      return;
+    }
+    const untilDate = new Date(blockUntilLocal);
+    if (Number.isNaN(untilDate.getTime())) {
+      setMsg("Choose a valid block-until date and time.");
+      return;
+    }
+    setMsg(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/rooms/${roomId}/blocks`, {
+        method: "POST",
+        body: JSON.stringify({
+          block_type: "MAINTENANCE",
+          reason: blockReason.trim(),
+          blocked_from: new Date().toISOString(),
+          blocked_until: untilDate.toISOString(),
+          auto_release: true,
+        }),
+      });
+      setMsg("Maintenance block created.");
+      setBlockReason("");
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Failed to create maintenance block");
+    }
+  }
+
   return (
-    <>
-      <p style={{ marginBottom: "0.5rem" }}>
-        <Link href={staffAppPath("rooms")}>← Rooms</Link>
-      </p>
-      <h1>Room {room?.roomNumber ?? "…"}</h1>
-      <p style={{ color: "var(--muted)" }}>
-        Operational state, DND, and status audit trail from the Room Management API.
-      </p>
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+        <p style={{ marginBottom: "0.5rem" }}>
+          <Link href={staffAppPath("rooms")} className="text-primary">← Rooms</Link>
+        </p>
+        <h1 className="text-3xl font-bold tracking-tight">Room {room?.roomNumber ?? "…"}</h1>
+        <p style={{ color: "var(--muted)" }}>
+          Operational state, DND, and status audit trail from the Room Management API.
+        </p>
+        {room && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusTone(room.status)}`}>{room.status}</span>
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusTone(room.cleanliness)}`}>{room.cleanliness}</span>
+            <span className="rounded-full px-3 py-1 text-xs font-semibold bg-slate-100 text-slate-700">
+              {room.roomType.name}
+            </span>
+            <span className="rounded-full px-3 py-1 text-xs font-semibold bg-slate-100 text-slate-700">
+              Floor {room.floor ?? "—"}
+            </span>
+          </div>
+        )}
+      </div>
       {error && <div className="error panel">{error}</div>}
       {msg && <div className="panel">{msg}</div>}
       {room && (
         <>
-          <div className="panel">
+          <div className="panel rounded-2xl border border-border/60 bg-card p-3 shadow-sm">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={activeTab === "info" ? "hms-btn-solid text-sm" : "hms-btn-outline text-sm"}
+                onClick={() => setActiveTab("info")}
+              >
+                Room Info
+              </button>
+              <button
+                type="button"
+                className={activeTab === "history" ? "hms-btn-solid text-sm" : "hms-btn-outline text-sm"}
+                onClick={() => setActiveTab("history")}
+              >
+                Status History
+              </button>
+              <button
+                type="button"
+                className={activeTab === "housekeeping" ? "hms-btn-solid text-sm" : "hms-btn-outline text-sm"}
+                onClick={() => setActiveTab("housekeeping")}
+              >
+                Housekeeping
+              </button>
+              <button
+                type="button"
+                className={activeTab === "maintenance" ? "hms-btn-solid text-sm" : "hms-btn-outline text-sm"}
+                onClick={() => setActiveTab("maintenance")}
+              >
+                Maintenance
+              </button>
+            </div>
+          </div>
+          {activeTab === "info" && (
+          <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
             <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>Snapshot</h2>
             <table>
               <tbody>
@@ -186,9 +314,7 @@ export default function RoomDetailPage() {
                 {room.activeRoomBlockId && (
                   <tr>
                     <th style={{ textAlign: "left" }}>Active block</th>
-                    <td>
-                      <code style={{ fontSize: "0.8rem" }}>{room.activeRoomBlockId}</code>
-                    </td>
+                    <td>Active maintenance/operational block</td>
                   </tr>
                 )}
                 <tr>
@@ -211,20 +337,64 @@ export default function RoomDetailPage() {
               </tbody>
             </table>
           </div>
-          <div className="panel" style={{ maxWidth: 480 }}>
+          )}
+          {activeTab === "housekeeping" && (
+          <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm" style={{ maxWidth: 560 }}>
             <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>Do not disturb</h2>
             <form onSubmit={saveDnd}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={dndEnabled}
-                  onChange={(e) => {
-                    setDndEnabled(e.target.checked);
-                    if (!e.target.checked) setDndUntilLocal("");
+              <div
+                style={{
+                  border: "1px solid var(--border)",
+                  borderRadius: "12px",
+                  padding: "10px 12px",
+                  marginBottom: "0.65rem",
+                  background: "#fff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "10px",
+                }}
+              >
+                <div>
+                  <p style={{ margin: 0, fontWeight: 600 }}>DND on</p>
+                  <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                    Housekeeping will skip this room while enabled
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDndEnabled((v) => {
+                      const next = !v;
+                      if (!next) setDndUntilLocal("");
+                      return next;
+                    });
                   }}
-                />{" "}
-                DND on
-              </label>
+                  aria-pressed={dndEnabled}
+                  style={{
+                    width: "56px",
+                    height: "30px",
+                    borderRadius: "999px",
+                    border: "1px solid var(--border)",
+                    background: dndEnabled ? "#0f766e" : "#e5e7eb",
+                    position: "relative",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: "3px",
+                      left: dndEnabled ? "29px" : "3px",
+                      width: "22px",
+                      height: "22px",
+                      borderRadius: "999px",
+                      background: "#fff",
+                      transition: "left 120ms ease",
+                    }}
+                  />
+                </button>
+              </div>
               {dndEnabled && (
                 <>
                   <label style={{ display: "block", marginTop: "0.75rem" }}>Until (optional, local)</label>
@@ -243,8 +413,42 @@ export default function RoomDetailPage() {
                 <button type="submit">Save DND</button>
               </div>
             </form>
+            <hr style={{ margin: "1rem 0", borderColor: "var(--border)" }} />
+            <h3 style={{ marginTop: 0, fontSize: "1rem" }}>Housekeeping status update</h3>
+            <form onSubmit={applyHousekeepingStatus}>
+              <label style={{ display: "block", marginTop: "0.4rem" }}>Next room status</label>
+              <select value={nextStatus} onChange={(e) => setNextStatus(e.target.value)}>
+                <option value="">Select…</option>
+                {[
+                  "VACANT_CLEAN",
+                  "VACANT_DIRTY",
+                  "INSPECTED",
+                  "UNDER_MAINTENANCE",
+                  "OUT_OF_ORDER",
+                  "BLOCKED",
+                  "RESERVED",
+                ].map((s) => (
+                  <option key={s} value={s}>
+                    {s.replaceAll("_", " ")}
+                  </option>
+                ))}
+              </select>
+              <label style={{ display: "block", marginTop: "0.7rem" }}>Reason</label>
+              <textarea
+                value={statusReason}
+                onChange={(e) => setStatusReason(e.target.value)}
+                placeholder="e.g. Deep cleaning completed"
+              />
+              <div style={{ marginTop: "0.8rem" }}>
+                <button type="submit" disabled={!nextStatus || !statusReason.trim()}>
+                  Apply status
+                </button>
+              </div>
+            </form>
           </div>
-          <div className="panel">
+          )}
+          {activeTab === "history" && (
+          <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
             <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>Status history</h2>
             <table>
               <thead>
@@ -280,8 +484,44 @@ export default function RoomDetailPage() {
               </tbody>
             </table>
           </div>
+          )}
+          {activeTab === "maintenance" && (
+          <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm" style={{ maxWidth: 620 }}>
+            <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>Maintenance controls</h2>
+            {room.activeRoomBlockId ? (
+              <div>
+                <p style={{ color: "var(--muted)" }}>
+                  This room currently has an active operational block.
+                </p>
+                <button type="button" onClick={() => void releaseRoomBlock()}>
+                  Release active block
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={createMaintenanceBlock}>
+                <label style={{ display: "block" }}>Maintenance reason</label>
+                <textarea
+                  value={blockReason}
+                  onChange={(e) => setBlockReason(e.target.value)}
+                  placeholder="e.g. Plumbing repair"
+                />
+                <label style={{ display: "block", marginTop: "0.7rem" }}>Block until</label>
+                <input
+                  type="datetime-local"
+                  value={blockUntilLocal}
+                  onChange={(e) => setBlockUntilLocal(e.target.value)}
+                />
+                <div style={{ marginTop: "0.8rem" }}>
+                  <button type="submit" disabled={!blockReason.trim() || !blockUntilLocal}>
+                    Create maintenance block
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+          )}
         </>
       )}
-    </>
+    </div>
   );
 }

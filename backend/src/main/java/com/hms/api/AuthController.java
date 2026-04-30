@@ -56,6 +56,9 @@ public class AuthController {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Invalid username or password");
         }
         AppUser user = resolved.get();
+        if (!user.isActive()) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "ACCOUNT_DISABLED", "This staff account is deactivated");
+        }
         try {
             var auth = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(user.getUsername(), request.password()));
@@ -73,6 +76,9 @@ public class AuthController {
                 .findById(userId)
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_INVALID", "User no longer exists"));
+        if (!user.isActive()) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "ACCOUNT_DISABLED", "This staff account is deactivated");
+        }
         return ResponseEntity.ok(buildLoginResponse(UserPrincipal.fromEntity(user)));
     }
 

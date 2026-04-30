@@ -32,6 +32,7 @@ import com.hms.web.ApiException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Year;
 import java.time.ZoneOffset;
@@ -42,6 +43,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -393,12 +395,81 @@ public class FacilityService {
     }
 
     @Transactional(readOnly = true)
+    public List<FacilityDtos.FacilityMaintenanceListItem> listMaintenance(
+            UUID hotelId, String hotelHeader, UUID facilityId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        facilityRepository.findByIdAndHotel_Id(facilityId, hotelId).orElseThrow(() -> notFound("Facility"));
+        return facilityMaintenanceRepository.findByFacility_IdOrderByCreatedAtDesc(facilityId).stream()
+                .map(m -> new FacilityDtos.FacilityMaintenanceListItem(
+                        m.getId(),
+                        m.getTitle(),
+                        m.getDescription(),
+                        m.getPriority().name(),
+                        m.getStatus().name(),
+                        m.getScheduledStart(),
+                        m.getScheduledEnd(),
+                        m.getCost(),
+                        m.getCreatedAt()))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<FacilityDtos.FacilitySummary> listFacilities(UUID hotelId, String hotelHeader) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         return facilityRepository.findByHotel_IdOrderByNameAsc(hotelId).stream()
                 .map(f -> new FacilityDtos.FacilitySummary(
                         f.getId(), f.getName(), f.getCode(), f.getType().name()))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public FacilityDtos.FacilityDashboardResponse dashboard(
+            UUID hotelId, String hotelHeader, UUID facilityId, LocalDate fromDate, LocalDate toDate) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Facility facility =
+                facilityRepository.findByIdAndHotel_Id(facilityId, hotelId).orElseThrow(() -> notFound("Facility"));
+
+        LocalDate from = fromDate != null ? fromDate : LocalDate.now();
+        LocalDate to = toDate != null ? toDate : from.plusDays(7);
+        if (to.isBefore(from)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "toDate must be on/after fromDate");
+        }
+        LocalDateTime start = from.atStartOfDay();
+        LocalDateTime end = to.plusDays(1).atStartOfDay();
+
+        List<FacilitySlot> slots =
+                facilitySlotRepository.findByFacility_IdAndStartTimeBetweenOrderByStartTimeAsc(facilityId, start, end);
+        List<FacilityBooking> bookings = facilityBookingRepository.findForFacilityWindow(facilityId, start, end);
+
+        int totalCapacity = slots.stream().mapToInt(FacilitySlot::getMaxBookings).sum();
+        int occupied = slots.stream().mapToInt(FacilitySlot::getCurrentBookings).sum();
+        int available = Math.max(0, totalCapacity - occupied);
+
+        List<FacilityDtos.FacilitySlotCalendarItem> slotDtos = slots.stream()
+                .map(s -> new FacilityDtos.FacilitySlotCalendarItem(
+                        s.getId(),
+                        s.getStartTime().atZone(ZoneOffset.UTC).toInstant(),
+                        s.getEndTime().atZone(ZoneOffset.UTC).toInstant(),
+                        s.getStatus().name(),
+                        s.getMaxBookings(),
+                        s.getCurrentBookings(),
+                        Math.max(0, s.getMaxBookings() - s.getCurrentBookings())))
+                .toList();
+
+        List<FacilityDtos.FacilityBookingListItem> bookingDtos = bookings.stream()
+                .map(b -> new FacilityDtos.FacilityBookingListItem(
+                        b.getId(),
+                        b.getBookingReference(),
+                        b.getStatus().name(),
+                        b.getGuest().getFullName(),
+                        b.getGuestCount(),
+                        b.getSlot().getStartTime().atZone(ZoneOffset.UTC).toInstant(),
+                        b.getSlot().getEndTime().atZone(ZoneOffset.UTC).toInstant(),
+                        b.getAccessCode()))
+                .toList();
+
+        return new FacilityDtos.FacilityDashboardResponse(
+                facility.getId(), facility.getName(), from, to, totalCapacity, occupied, available, slotDtos, bookingDtos);
     }
 
     @Transactional
@@ -452,7 +523,13 @@ public class FacilityService {
         slot.setMaxBookings(Math.max(1, req.maxBookings()));
         slot.setStatus(FacilitySlotStatus.AVAILABLE);
         slot.setCurrentBookings(0);
-        slot = facilitySlotRepository.save(slot);
+        try {
+            slot = facilitySlotRepository.save(slot);
+        } catch (DataIntegrityViolationException ex) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "Slot already exists for this facility at the selected start time. Choose a different start time.");
+        }
         return new FacilityDtos.FacilitySlotResponse(
                 slot.getId(),
                 slot.getStartTime().atZone(ZoneOffset.UTC).toInstant(),

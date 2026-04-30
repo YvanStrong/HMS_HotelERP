@@ -14,6 +14,7 @@ export type HotelNavKey =
   | "roomBlocks"
   | "reservations"
   | "guests"
+  | "staff"
   | "housekeeping"
   | "hkMyTasks"
   | "facilities"
@@ -65,6 +66,12 @@ function canGuests(user: AuthUser | null): boolean {
   if (isSuperAdmin(user)) return true;
   if (userHasRole(user, ["HOTEL_ADMIN", "MANAGER", "RECEPTIONIST", "FINANCE"])) return true;
   return userHasAnyPermission(user, ["guest:read", "guest:*", "hotel:*"]);
+}
+
+function canStaff(user: AuthUser | null): boolean {
+  if (!user) return false;
+  if (isSuperAdmin(user)) return true;
+  return userHasRole(user, ["HOTEL_ADMIN", "MANAGER"]);
 }
 
 function canHousekeeping(user: AuthUser | null): boolean {
@@ -146,6 +153,8 @@ export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): bool
       return canReservations(user);
     case "guests":
       return canGuests(user);
+    case "staff":
+      return canStaff(user);
     case "housekeeping":
       return canHousekeeping(user);
     case "hkMyTasks":
@@ -170,6 +179,7 @@ export function navHint(key: HotelNavKey): string {
     roomBlocks: "Courtesy holds / maintenance blocks: admin, manager, receptionist (list); create: admin/manager.",
     reservations: "Permission: reservation:* or reservation:self (availability is public).",
     guests: "Guest profile and loyalty routes: receptionist read; finance loyalty earn.",
+    staff: "Hotel staff management: hotel admin and manager.",
     housekeeping: "Permission: housekeeping:* or room:status.",
     hkMyTasks: "Housekeeping line staff: tasks assigned to you.",
     facilities: "List facilities: receptionist and reservation-capable roles.",
