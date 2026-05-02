@@ -53,12 +53,16 @@ The system is structured into:
 
 ## How to run Backend
 -cd backend
+
 -mvn clean install
+
 -mvn spring-boot:run
 
 ## How to run FrontEnd
 -cd frontend
+
 -npm install
+
 -npm run dev
 
 ## 📂 Project Structure
