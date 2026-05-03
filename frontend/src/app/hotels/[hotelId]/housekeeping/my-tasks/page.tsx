@@ -18,6 +18,15 @@ type BoardTask = {
   assignedToName: string | null;
   createdAt: string;
   notes: string | null;
+  room_dnd?: boolean | null;
+  room_dnd_until?: string | null;
+};
+
+type Board = {
+  pending: BoardTask[];
+  inProgress: BoardTask[];
+  completed: BoardTask[];
+  inspected: BoardTask[];
 };
 
 function roleCanSupervise(role: string | undefined) {
@@ -43,6 +52,12 @@ export default function HousekeepingMyTasksPage() {
     refetchInterval: 60_000,
     queryFn: () => apiFetch<BoardTask[]>(`/api/v1/hotels/${hotelId}/housekeeping/tasks/my`),
   });
+  const boardQ = useQuery({
+    queryKey: ["hk-board-lite", hotelId],
+    enabled: !!getToken(),
+    refetchInterval: 60_000,
+    queryFn: () => apiFetch<Board>(`/api/v1/hotels/${hotelId}/housekeeping/tasks`),
+  });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["hk-my", hotelId] });
 
@@ -66,6 +81,14 @@ export default function HousekeepingMyTasksPage() {
 
   const supervisor = roleCanSupervise(user?.role);
   const tasks = q.data ?? [];
+  const assignedToOthers =
+    boardQ.data == null
+      ? []
+      : [...boardQ.data.pending, ...boardQ.data.inProgress]
+          .filter((t) => t.assignedTo && t.assignedTo !== user?.id)
+          .map((t) => ({ id: t.id, roomNumber: t.roomNumber, assignedToName: t.assignedToName }))
+          .filter((v, i, a) => a.findIndex((x) => x.id === v.id) === i)
+          .slice(0, 6);
 
   return (
     <div className="max-w-lg mx-auto space-y-4 px-2 pb-8">
@@ -93,6 +116,9 @@ export default function HousekeepingMyTasksPage() {
                 <span className="text-xs font-semibold uppercase text-muted-foreground">{t.priority}</span>
               </div>
               <p className="text-sm font-medium">{t.taskType.replace(/_/g, " ")}</p>
+              {t.room_dnd && (
+                <p className="text-xs font-semibold text-red-700">DND ACTIVE</p>
+              )}
               <p className="text-xs text-muted-foreground">{t.status}</p>
               {t.notes && <p className="text-sm text-muted-foreground">{t.notes}</p>}
               <div className="flex flex-col gap-2">
@@ -157,7 +183,21 @@ export default function HousekeepingMyTasksPage() {
         })}
       </ul>
       {tasks.length === 0 && !q.isLoading && (
-        <p className="text-center text-muted-foreground py-8">No tasks assigned to you.</p>
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-4 text-sm">
+          <p className="text-muted-foreground">No tasks assigned to you.</p>
+          {assignedToOthers.length > 0 && (
+            <div className="mt-2">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Assigned to other staff</p>
+              <ul className="mt-1 space-y-1">
+                {assignedToOthers.map((t) => (
+                  <li key={t.id}>
+                    Room <strong>{t.roomNumber}</strong> → {t.assignedToName ?? "Assigned user"}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

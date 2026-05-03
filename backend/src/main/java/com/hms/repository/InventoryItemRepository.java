@@ -25,8 +25,6 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem, UU
             select i from InventoryItem i join fetch i.category c left join fetch i.preferredSupplier
             where i.hotel.id = :hotelId
             and (:categoryId is null or c.id = :categoryId)
-            and (:search is null or lower(i.name) like lower(concat('%', :search, '%'))
-                 or lower(i.sku) like lower(concat('%', :search, '%')))
             """)
     List<InventoryItem> search(
             @Param("hotelId") UUID hotelId,

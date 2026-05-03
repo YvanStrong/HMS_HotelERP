@@ -7,7 +7,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -16,6 +15,8 @@ public final class InventoryDtos {
     private InventoryDtos() {}
 
     public record SupplierSummary(UUID id, String name) {}
+
+    public record CategorySummary(UUID id, String name, String code) {}
 
     public record InventoryItemRow(
             UUID id,

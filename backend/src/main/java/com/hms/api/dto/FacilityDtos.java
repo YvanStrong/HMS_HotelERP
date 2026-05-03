@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -81,6 +82,17 @@ public final class FacilityDtos {
             List<AffectedBookingNotice> affectedBookings,
             FacilityPublicNotice publicNotice) {}
 
+    public record FacilityMaintenanceListItem(
+            UUID maintenanceId,
+            String title,
+            String description,
+            String priority,
+            String status,
+            Instant scheduledStart,
+            Instant scheduledEnd,
+            BigDecimal cost,
+            Instant createdAt) {}
+
     public record ChargeFacilityToRoomRequest(String postedBy) {}
 
     public record ChargeFacilityToRoomResponse(
@@ -89,6 +101,36 @@ public final class FacilityDtos {
     public record FacilitySlotCreateRequest(String startTime, String endTime, int maxBookings) {}
 
     public record FacilitySummary(UUID id, String name, String code, String type) {}
+
+    public record FacilitySlotCalendarItem(
+            UUID id,
+            Instant start,
+            Instant end,
+            String status,
+            int maxBookings,
+            int currentBookings,
+            int availableSpots) {}
+
+    public record FacilityBookingListItem(
+            UUID bookingId,
+            String bookingReference,
+            String status,
+            String guestName,
+            int guestCount,
+            Instant slotStart,
+            Instant slotEnd,
+            String accessCode) {}
+
+    public record FacilityDashboardResponse(
+            UUID facilityId,
+            String facilityName,
+            LocalDate fromDate,
+            LocalDate toDate,
+            int totalCapacity,
+            int occupiedCount,
+            int availableCount,
+            List<FacilitySlotCalendarItem> slots,
+            List<FacilityBookingListItem> bookings) {}
 
     public record FacilitySlotResponse(UUID slotId, Instant start, Instant end, int maxBookings, String status) {}
 

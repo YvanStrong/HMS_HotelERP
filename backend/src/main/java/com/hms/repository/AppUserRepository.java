@@ -22,4 +22,7 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 
     @Query("select u from AppUser u where u.hotel.id = :hotelId and u.role in :roles")
     List<AppUser> findByHotel_IdAndRoleIn(@Param("hotelId") UUID hotelId, @Param("roles") Collection<Role> roles);
+
+    @Query("select u from AppUser u where u.hotel.id = :hotelId order by u.createdAt desc")
+    List<AppUser> findByHotel_IdOrderByCreatedAtDesc(@Param("hotelId") UUID hotelId);
 }

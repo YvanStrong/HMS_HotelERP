@@ -1,6 +1,7 @@
 package com.hms.repository;
 
 import com.hms.entity.Reservation;
+import com.hms.domain.FolioStatus;
 import com.hms.domain.ReservationStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -70,6 +71,14 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
     long countDeparturesOnDate(@Param("hotelId") UUID hotelId, @Param("day") LocalDate day);
 
     @Query(
+            "select count(r) from Reservation r where r.hotel.id = :hotelId and r.checkInDate = :day and r.status = 'CHECKED_IN'")
+    long countArrivalsCheckedInOnDate(@Param("hotelId") UUID hotelId, @Param("day") LocalDate day);
+
+    @Query(
+            "select count(r) from Reservation r where r.hotel.id = :hotelId and r.checkOutDate = :day and r.status = 'CHECKED_OUT'")
+    long countDeparturesCheckedOutOnDate(@Param("hotelId") UUID hotelId, @Param("day") LocalDate day);
+
+    @Query(
             """
             select coalesce(sum(r.totalAmount), 0) from Reservation r
             where r.hotel.id = :hotelId
@@ -78,6 +87,8 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
             and r.checkOutDate > :day
             """)
     BigDecimal sumTotalAmountForOccupiedNight(@Param("hotelId") UUID hotelId, @Param("day") LocalDate day);
+
+    long countByHotel_IdAndCheckInDateBetween(UUID hotelId, LocalDate fromInclusive, LocalDate toInclusive);
 
     @Query(
             "select count(r) from Reservation r where r.hotel.id = :hotelId and r.createdAt >= :start and r.createdAt < :end")
@@ -106,10 +117,10 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
             left join fetch r.bookedByAppUser
             left join fetch r.room rm
             where r.hotel.id = :hotelId
-            and (:stayStart is null or r.checkOutDate > :stayStart)
-            and (:stayEnd is null or r.checkInDate < :stayEnd)
+            and r.checkOutDate > :stayStart
+            and r.checkInDate < :stayEnd
             and r.status in :statuses
-            and (:q is null or :q = ''
+            and (coalesce(:q, '') = ''
                 or lower(r.confirmationCode) like lower(concat('%', :q, '%'))
                 or lower(r.bookingReference) like lower(concat('%', :q, '%'))
                 or lower(concat(g.firstName, ' ', g.lastName)) like lower(concat('%', :q, '%'))
@@ -124,6 +135,40 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
             @Param("stayEnd") LocalDate stayEnd,
             @Param("statuses") List<ReservationStatus> statuses,
             @Param("q") String q);
+
+    @Query(
+            """
+            select r from Reservation r
+            join fetch r.guest
+            left join fetch r.room rm
+            where r.hotel.id = :hotelId
+              and r.checkInDate = :day
+              and r.status in :statuses
+            order by r.createdAt desc
+            """)
+    List<Reservation> findArrivalsForDashboard(
+            @Param("hotelId") UUID hotelId,
+            @Param("day") LocalDate day,
+            @Param("statuses") List<ReservationStatus> statuses);
+
+    @Query(
+            """
+            select r from Reservation r
+            join fetch r.guest
+            left join fetch r.room rm
+            where r.hotel.id = :hotelId
+              and r.checkOutDate = :day
+              and r.status in :statuses
+            order by r.createdAt desc
+            """)
+    List<Reservation> findDeparturesForDashboard(
+            @Param("hotelId") UUID hotelId,
+            @Param("day") LocalDate day,
+            @Param("statuses") List<ReservationStatus> statuses);
+
+    List<Reservation> findByHotel_IdAndFolioStatus(UUID hotelId, FolioStatus folioStatus);
+
+    List<Reservation> findTop20ByHotel_IdOrderByUpdatedAtDesc(UUID hotelId);
 
     @Query(
             value =

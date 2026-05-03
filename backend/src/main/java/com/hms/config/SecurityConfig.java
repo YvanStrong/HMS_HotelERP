@@ -69,15 +69,8 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/hotels/*/reservations/availability")
                         .permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/public/hotels")
-                        .permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/public/hotels/*/room-types")
-                        .permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/public/hotels/*/rooms/offers")
-                        .permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/public/hotels/*/reservations/book")
-                        .permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/public/hotels/*/reservations/lookup")
+                        /* All public hotel/catalog/self-order APIs — one pattern avoids 401 surprises for new routes. */
+                        .requestMatchers("/api/v1/public/**")
                         .permitAll()
                         .requestMatchers("/api/v1/auth/**")
                         .permitAll()
@@ -94,7 +87,8 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration c = new CorsConfiguration();
-        c.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
+        c.setAllowedOriginPatterns(
+                List.of("http://localhost:*", "http://127.0.0.1:*", "https://localhost:*", "https://127.0.0.1:*"));
         c.setAllowedMethods(List.of("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"));
         c.setAllowedHeaders(List.of("*"));
         c.setExposedHeaders(List.of("Authorization", "X-Impersonate-Token", "X-Hotel-ID"));

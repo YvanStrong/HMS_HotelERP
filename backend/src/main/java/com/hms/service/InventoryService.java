@@ -32,7 +32,6 @@ import java.time.Instant;
 import java.time.Year;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -108,6 +107,14 @@ public class InventoryService {
         List<InventoryItem> raw = inventoryItemRepository.search(hotelId, categoryId, s);
         List<InventoryItem> filtered = new ArrayList<>();
         for (InventoryItem i : raw) {
+            if (s != null) {
+                String needle = s.toLowerCase();
+                String name = i.getName() != null ? i.getName().toLowerCase() : "";
+                String sku = i.getSku() != null ? i.getSku().toLowerCase() : "";
+                if (!name.contains(needle) && !sku.contains(needle)) {
+                    continue;
+                }
+            }
             if (Boolean.TRUE.equals(lowStock) && i.getReorderPoint() != null) {
                 if (i.getCurrentStock().compareTo(i.getReorderPoint()) >= 0) {
                     continue;
@@ -449,6 +456,14 @@ public class InventoryService {
         return new InventoryDtos.CreatedIdResponse(s.getId());
     }
 
+    @Transactional(readOnly = true)
+    public List<InventoryDtos.SupplierSummary> listSuppliers(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        return supplierRepository.findByHotel_IdOrderByNameAsc(hotelId).stream()
+                .map(s -> new InventoryDtos.SupplierSummary(s.getId(), s.getName()))
+                .toList();
+    }
+
     @Transactional
     public InventoryDtos.CreatedIdResponse createCategory(
             UUID hotelId, String hotelHeader, InventoryDtos.CategoryCreateRequest req) {
@@ -463,6 +478,14 @@ public class InventoryService {
         c.setCode(code.toUpperCase());
         c = inventoryCategoryRepository.save(c);
         return new InventoryDtos.CreatedIdResponse(c.getId());
+    }
+
+    @Transactional(readOnly = true)
+    public List<InventoryDtos.CategorySummary> listCategories(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        return inventoryCategoryRepository.findByHotel_IdOrderByNameAsc(hotelId).stream()
+                .map(c -> new InventoryDtos.CategorySummary(c.getId(), c.getName(), c.getCode()))
+                .toList();
     }
 
     @Transactional

@@ -9,8 +9,8 @@ import { postLoginRedirectPath, saveAuthSession } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("hoteladmin");
-  const [password, setPassword] = useState("ChangeMe!Strong2");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 

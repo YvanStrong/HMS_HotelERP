@@ -16,6 +16,9 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
 
     boolean existsByReservation_Id(UUID reservationId);
 
+    Optional<Invoice> findTopByReservation_IdAndHotel_IdOrderByCreatedAtDesc(
+            UUID reservationId, UUID hotelId);
+
     @Query(
             "select coalesce(sum(i.totalAmount), 0) from Invoice i where i.hotel.id = :hotelId and i.createdAt >= :start and i.createdAt < :end")
     BigDecimal sumTotalAmountByHotelAndCreatedAtRange(
@@ -44,6 +47,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
             join fetch i.reservation r
             join fetch r.guest
             left join fetch r.room rm
+            left join fetch rm.roomType
             where i.hotel.id = :hotelId
             order by i.createdAt desc
             """)
@@ -51,13 +55,14 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
 
     @Query(
             """
-            select i from Invoice i
+            select distinct i from Invoice i
+            join fetch i.hotel
             join fetch i.reservation r
             join fetch r.guest
             left join fetch r.room rm
-            left join fetch i.lineItems li
+            left join fetch rm.roomType
+            left join fetch i.lineItems
             where i.id = :invoiceId and i.hotel.id = :hotelId
-            order by li.lineOrder asc
             """)
     Optional<Invoice> findDetailedByIdAndHotelId(@Param("invoiceId") UUID invoiceId, @Param("hotelId") UUID hotelId);
 }
