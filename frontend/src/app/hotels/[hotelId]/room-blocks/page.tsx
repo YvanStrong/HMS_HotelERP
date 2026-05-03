@@ -165,84 +165,123 @@ export default function RoomBlocksPage() {
     }
   }
 
+  const typeTone = (type: string) => {
+    if (type === "MAINTENANCE") return "bg-rose-100 text-rose-800";
+    if (type === "COURTESY_HOLD") return "bg-sky-100 text-sky-800";
+    if (type === "VIP_PRE_ASSIGN") return "bg-violet-100 text-violet-800";
+    if (type === "CORPORATE_BLOCK") return "bg-amber-100 text-amber-900";
+    return "bg-slate-100 text-slate-800";
+  };
+
   return (
-    <>
-      <h1>Room blocks &amp; holds</h1>
-      <p style={{ color: "var(--muted)" }}>
-        API: <code>GET/POST …/rooms/blocks</code>, <code>POST …/blocks/{"{id}"}/release</code>. Types: COURTESY_HOLD,
-        MAINTENANCE, VIP_PRE_ASSIGN, CORPORATE_BLOCK. Dates use reservation convention (end exclusive).
-      </p>
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+        <h1 className="text-3xl font-bold tracking-tight">Room blocks &amp; holds</h1>
+        <p style={{ color: "var(--muted)", marginTop: "0.35rem" }}>
+          Temporarily prevent room assignment for maintenance, pre-assignment, courtesy, or corporate allocations.
+        </p>
+      </div>
+
       {error && <div className="error panel">{error}</div>}
       {roomsErr && <div className="error panel">{roomsErr}</div>}
       {msg && <div className="panel">{msg}</div>}
-      <div className="panel book-register-form" style={{ maxWidth: 560 }}>
-        <h2 style={{ marginTop: 0, fontSize: "1rem" }}>Create block</h2>
-        <form noValidate onSubmit={createBlock}>
-          <label htmlFor="rb-room-filter">Search rooms (optional)</label>
-          <input
-            id="rb-room-filter"
-            type="search"
-            placeholder="Room number or type…"
-            value={roomFilter}
-            onChange={(e) => setRoomFilter(e.target.value)}
-            autoComplete="off"
-          />
-          <label htmlFor="rb-room-select" style={{ marginTop: "0.75rem" }}>
-            Room
-          </label>
-          <select
-            id="rb-room-select"
-            value={roomId}
-            onChange={(e) => {
-              setRoomId(e.target.value);
-              setManualRoomId("");
-            }}
-            className="book-register-hotel-select"
-          >
-            <option value="">Choose a room…</option>
-            {roomSelectOptions.map((r) => (
-              <option key={r.id} value={r.id}>
-                #{r.roomNumber} · {r.roomType.name}
-              </option>
-            ))}
-          </select>
-          {filteredRooms.length === 0 && rooms.length > 0 && (
-            <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "0.45rem" }}>
-              No matches — clear search to see all loaded rooms.
-            </p>
-          )}
-          <details className="book-register-advanced" style={{ marginTop: "0.85rem" }}>
-            <summary>Room not in the list?</summary>
-            <label htmlFor="rb-manual-room" style={{ marginTop: "0.5rem" }}>
-              Room id (uuid)
-            </label>
+
+      <div className="grid lg:grid-cols-[1.1fr_1fr] gap-4">
+        <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+          <h2 style={{ marginTop: 0, fontSize: "1rem" }}>Create block</h2>
+          <form noValidate onSubmit={createBlock}>
+            <label htmlFor="rb-room-filter">Search rooms (optional)</label>
             <input
-              id="rb-manual-room"
-              value={manualRoomId}
-              onChange={(e) => setManualRoomId(e.target.value)}
-              placeholder="from API or deep link"
+              id="rb-room-filter"
+              type="search"
+              placeholder="Room number or type…"
+              value={roomFilter}
+              onChange={(e) => setRoomFilter(e.target.value)}
               autoComplete="off"
-              spellCheck={false}
-              style={{ fontFamily: "ui-monospace, monospace", fontSize: "0.88rem" }}
             />
-          </details>
-          <label style={{ marginTop: "0.75rem" }}>Type</label>
-          <select value={blockType} onChange={(e) => setBlockType(e.target.value)}>
-            <option value="MAINTENANCE">MAINTENANCE</option>
-            <option value="COURTESY_HOLD">COURTESY_HOLD</option>
-            <option value="VIP_PRE_ASSIGN">VIP_PRE_ASSIGN</option>
-            <option value="CORPORATE_BLOCK">CORPORATE_BLOCK</option>
-          </select>
-          <label style={{ marginTop: "0.75rem" }}>Start (inclusive)</label>
-          <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          <label style={{ marginTop: "0.75rem" }}>End (exclusive)</label>
-          <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-          <div style={{ marginTop: "1rem" }}>
-            <button type="submit">Create</button>
+            <label htmlFor="rb-room-select" style={{ marginTop: "0.75rem" }}>
+              Room
+            </label>
+            <select
+              id="rb-room-select"
+              value={roomId}
+              onChange={(e) => {
+                setRoomId(e.target.value);
+                setManualRoomId("");
+              }}
+              className="book-register-hotel-select"
+            >
+              <option value="">Choose a room…</option>
+              {roomSelectOptions.map((r) => (
+                <option key={r.id} value={r.id}>
+                  #{r.roomNumber} · {r.roomType.name}
+                </option>
+              ))}
+            </select>
+            {filteredRooms.length === 0 && rooms.length > 0 && (
+              <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "0.45rem" }}>
+                No matches — clear search to see all loaded rooms.
+              </p>
+            )}
+            <details className="book-register-advanced" style={{ marginTop: "0.85rem" }}>
+              <summary>Room not in the list?</summary>
+              <label htmlFor="rb-manual-room" style={{ marginTop: "0.5rem" }}>
+                Room id (uuid)
+              </label>
+              <input
+                id="rb-manual-room"
+                value={manualRoomId}
+                onChange={(e) => setManualRoomId(e.target.value)}
+                placeholder="from API or deep link"
+                autoComplete="off"
+                spellCheck={false}
+                style={{ fontFamily: "ui-monospace, monospace", fontSize: "0.88rem" }}
+              />
+            </details>
+            <label style={{ marginTop: "0.75rem" }}>Type</label>
+            <select value={blockType} onChange={(e) => setBlockType(e.target.value)}>
+              <option value="MAINTENANCE">MAINTENANCE</option>
+              <option value="COURTESY_HOLD">COURTESY_HOLD</option>
+              <option value="VIP_PRE_ASSIGN">VIP_PRE_ASSIGN</option>
+              <option value="CORPORATE_BLOCK">CORPORATE_BLOCK</option>
+            </select>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label style={{ marginTop: "0.75rem" }}>Start (inclusive)</label>
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              </div>
+              <div>
+                <label style={{ marginTop: "0.75rem" }}>End (exclusive)</label>
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              </div>
+            </div>
+            <div style={{ marginTop: "1rem", display: "flex", justifyContent: "flex-end" }}>
+              <button type="submit">Create block</button>
+            </div>
+          </form>
+        </div>
+
+        <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+          <h2 style={{ marginTop: 0, fontSize: "1rem" }}>Summary</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-border/60 bg-background px-3 py-2">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Active blocks</p>
+              <p className="text-2xl font-bold mt-1">{blocks.length}</p>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-background px-3 py-2">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Loaded rooms</p>
+              <p className="text-2xl font-bold mt-1">{rooms.length}</p>
+            </div>
           </div>
-        </form>
+          <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+            <p>Use <strong>MAINTENANCE</strong> for repairs/out-of-order windows.</p>
+            <p>Use <strong>VIP_PRE_ASSIGN</strong> to reserve premium inventory in advance.</p>
+            <p>Use <strong>COURTESY_HOLD</strong> or <strong>CORPORATE_BLOCK</strong> for commercial holds.</p>
+          </div>
+        </div>
       </div>
-      <div className="panel">
+
+      <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
         <h2 style={{ marginTop: 0, fontSize: "1rem" }}>Active in range</h2>
         <table>
           <thead>
@@ -260,7 +299,11 @@ export default function RoomBlocksPage() {
                 <td>
                   {b.roomNumber} <code style={{ fontSize: "0.75rem" }}>{b.roomId.slice(0, 8)}…</code>
                 </td>
-                <td>{b.blockType}</td>
+                <td>
+                  <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${typeTone(b.blockType)}`}>
+                    {b.blockType}
+                  </span>
+                </td>
                 <td>{b.startDate}</td>
                 <td>{b.endDate}</td>
                 <td>
@@ -285,6 +328,6 @@ export default function RoomBlocksPage() {
           onPageChange={setPage}
         />
       </div>
-    </>
+    </div>
   );
 }

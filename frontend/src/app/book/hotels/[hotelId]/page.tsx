@@ -739,13 +739,13 @@ function BookHotelStayPageInner() {
                 required
               >
                 {COUNTRY_OPTIONS.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
+                  <option key={c.iso2} value={c.name}>
+                    {c.name}
                   </option>
                 ))}
-                {!COUNTRY_OPTIONS.includes(guestCountry as (typeof COUNTRY_OPTIONS)[number]) && (
+                {!COUNTRY_OPTIONS.some((c) => c.name === guestCountry) && guestCountry ? (
                   <option value={guestCountry}>{guestCountry}</option>
-                )}
+                ) : null}
               </select>
             </div>
             <div>

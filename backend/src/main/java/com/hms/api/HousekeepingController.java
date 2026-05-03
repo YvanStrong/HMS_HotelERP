@@ -62,18 +62,18 @@ public class HousekeepingController {
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
             @Valid @RequestBody ApiDtos.HousekeepingTaskCreateRequest body) {
         HousekeepingTask t = housekeepingTaskService.createTaskFromRequest(hotelId, hotelHeader, body);
-        return housekeepingTaskService.toBoardTaskDto(t);
+        return housekeepingTaskService.toBoardTaskDto(hotelId, t.getId());
     }
 
     @PatchMapping("/tasks/{taskId}/assign")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_HOUSEKEEPING_SUPERVISOR')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_HOUSEKEEPING_SUPERVISOR')")
     public ApiDtos.HousekeepingBoardTask assign(
             @PathVariable UUID hotelId,
             @PathVariable UUID taskId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
             @Valid @RequestBody ApiDtos.HousekeepingAssignRequest body) {
         HousekeepingTask t = housekeepingTaskService.assignTask(hotelId, hotelHeader, taskId, body.assignedTo());
-        return housekeepingTaskService.toBoardTaskDto(t);
+        return housekeepingTaskService.toBoardTaskDto(hotelId, t.getId());
     }
 
     @PatchMapping("/tasks/{taskId}/start")
@@ -84,7 +84,7 @@ public class HousekeepingController {
             @PathVariable UUID taskId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         HousekeepingTask t = housekeepingTaskService.startTask(hotelId, hotelHeader, taskId);
-        return housekeepingTaskService.toBoardTaskDto(t);
+        return housekeepingTaskService.toBoardTaskDto(hotelId, t.getId());
     }
 
     @PatchMapping("/tasks/{taskId}/complete")
@@ -104,7 +104,7 @@ public class HousekeepingController {
                 b.notes(),
                 b.photoUrl(),
                 Boolean.TRUE.equals(b.checklistCompleted()));
-        return housekeepingTaskService.toBoardTaskDto(t);
+        return housekeepingTaskService.toBoardTaskDto(hotelId, t.getId());
     }
 
     @PatchMapping("/tasks/{taskId}/inspect")
@@ -115,7 +115,7 @@ public class HousekeepingController {
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
             @Valid @RequestBody ApiDtos.HousekeepingInspectRequest body) {
         HousekeepingTask t = housekeepingTaskService.inspectTask(hotelId, hotelHeader, taskId, body.score());
-        return housekeepingTaskService.toBoardTaskDto(t);
+        return housekeepingTaskService.toBoardTaskDto(hotelId, t.getId());
     }
 
     @PatchMapping("/tasks/{taskId}/skip-dnd")
@@ -126,6 +126,6 @@ public class HousekeepingController {
             @PathVariable UUID taskId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         HousekeepingTask t = housekeepingTaskService.skipDndTask(hotelId, hotelHeader, taskId);
-        return housekeepingTaskService.toBoardTaskDto(t);
+        return housekeepingTaskService.toBoardTaskDto(hotelId, t.getId());
     }
 }

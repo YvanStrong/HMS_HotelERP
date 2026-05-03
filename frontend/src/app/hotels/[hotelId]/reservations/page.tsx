@@ -66,9 +66,21 @@ export default function ReservationsOperationsPage() {
   const [checkIn, setCheckIn] = useState("2026-06-01");
   const [checkOut, setCheckOut] = useState("2026-06-04");
   const [page, setPage] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [confirmNoShowId, setConfirmNoShowId] = useState<string | null>(null);
+  const [isNoShowSubmitting, setIsNoShowSubmitting] = useState(false);
   const PAGE_SIZE = 12;
+  const STATUS_OPTIONS = [
+    { key: "CONFIRMED", label: "Confirmed" },
+    { key: "CHECKED_IN", label: "Checked in" },
+    { key: "CHECKED_OUT", label: "Checked out" },
+    { key: "CANCELLED", label: "Cancelled" },
+    { key: "NO_SHOW", label: "No show" },
+    { key: "PENDING", label: "Pending" },
+  ] as const;
 
   async function loadList() {
+    setIsLoading(true);
     setError(null);
     setPage(1);
     if (!getToken()) {
@@ -95,6 +107,8 @@ export default function ReservationsOperationsPage() {
       setRows(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load reservations");
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -107,6 +121,15 @@ export default function ReservationsOperationsPage() {
     () => paginateSlice(rows, page, PAGE_SIZE),
     [rows, page],
   );
+  const stats = useMemo(() => {
+    const by = (s: string) => rows.filter((r) => r.status === s).length;
+    return {
+      total: rows.length,
+      confirmed: by("CONFIRMED"),
+      inHouse: by("CHECKED_IN"),
+      arrivalsToday: rows.filter((r) => r.checkInDate === localYmd() && r.status === "CONFIRMED").length,
+    };
+  }, [rows]);
 
   async function loadSampleAvailability() {
     setAvailError(null);
@@ -125,24 +148,24 @@ export default function ReservationsOperationsPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "PENDING":
-        return <span className="badge bg-gray-100 text-gray-800 border-gray-200">Pending</span>;
+        return <span className="badge badge-default bg-gray-200 text-gray-800 border-0">Pending</span>;
       case "CONFIRMED":
-        return <span className="badge bg-blue-100 text-blue-900 border-blue-200">Confirmed</span>;
+        return <span className="badge badge-default bg-blue-100 text-blue-800 border-0">Confirmed</span>;
       case "CHECKED_IN":
-        return <span className="badge badge-success">Checked in</span>;
+        return <span className="badge badge-default bg-green-100 text-green-800 border-0">Checked in</span>;
       case "CHECKED_OUT":
-        return <span className="badge bg-teal-100 text-teal-900 border-teal-200">Checked out</span>;
+        return <span className="badge badge-default bg-teal-100 text-teal-900 border-0">Checked out</span>;
       case "CANCELLED":
         return <span className="badge badge-destructive">Cancelled</span>;
       case "NO_SHOW":
-        return <span className="badge badge-warning">No show</span>;
+        return <span className="badge badge-default bg-orange-100 text-orange-900 border-0">No show</span>;
       default:
         return <span className="badge badge-default">{status}</span>;
     }
   };
 
   async function markNoShow(reservationId: string) {
-    if (!confirm("Mark this reservation as no-show?")) return;
+    setIsNoShowSubmitting(true);
     setError(null);
     try {
       await apiFetch(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/no-show`, {
@@ -150,9 +173,12 @@ export default function ReservationsOperationsPage() {
         body: JSON.stringify({}),
         quiet: true,
       });
+      setConfirmNoShowId(null);
       await loadList();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No-show failed");
+    } finally {
+      setIsNoShowSubmitting(false);
     }
   }
 
@@ -188,28 +214,101 @@ export default function ReservationsOperationsPage() {
     }
   }
 
+  function applyPreset(preset: "arrivals" | "inhouse" | "departures" | "all") {
+    const today = localYmd();
+    const tomorrow = localYmd(new Date(new Date(today + "T12:00:00").getTime() + 24 * 60 * 60 * 1000));
+    if (preset === "arrivals") {
+      setStayStart(today);
+      setStayEnd(today);
+      setStatuses({
+        CONFIRMED: true,
+        CHECKED_IN: false,
+        CHECKED_OUT: false,
+        CANCELLED: false,
+        NO_SHOW: false,
+        PENDING: false,
+      });
+      return;
+    }
+    if (preset === "inhouse") {
+      setStayStart("");
+      setStayEnd("");
+      setStatuses({
+        CONFIRMED: false,
+        CHECKED_IN: true,
+        CHECKED_OUT: false,
+        CANCELLED: false,
+        NO_SHOW: false,
+        PENDING: false,
+      });
+      return;
+    }
+    if (preset === "departures") {
+      setStayStart(today);
+      setStayEnd(tomorrow);
+      setStatuses({
+        CONFIRMED: false,
+        CHECKED_IN: true,
+        CHECKED_OUT: false,
+        CANCELLED: false,
+        NO_SHOW: false,
+        PENDING: false,
+      });
+      return;
+    }
+    setStayStart("");
+    setStayEnd("");
+    setStatuses({
+      CONFIRMED: true,
+      CHECKED_IN: true,
+      CHECKED_OUT: true,
+      CANCELLED: false,
+      NO_SHOW: false,
+      PENDING: false,
+    });
+  }
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Reservations</h1>
-          <p className="text-muted-foreground mt-1">
-            In-house board: filter by stay window, status, or search confirmation / guest
-          </p>
-          <p className="text-xs text-muted-foreground mt-2 max-w-3xl">
-            <strong>No-show</strong> means the guest did not arrive for a confirmed booking. The stay is closed as
-            no-show, the room is released, and a default no-show fee may be posted (see hotel fee policy). Use it for
-            arrivals on or before today — not for future check-in dates.
-          </p>
+      <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Reservations</h1>
+            <p className="text-muted-foreground mt-1">
+              In-house board: filter by stay window, status, or search confirmation / guest
+            </p>
+            <p className="text-xs text-muted-foreground mt-2 max-w-3xl">
+              <strong>No-show</strong> means the guest did not arrive for a confirmed booking. The stay is closed as
+              no-show, the room is released, and a default no-show fee may be posted (see hotel fee policy). Use it for
+              arrivals on or before today — not for future check-in dates.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link href={staffAppPath("reservations", "new")} className="hms-btn-solid text-sm">
+              New reservation
+            </Link>
+            <Link href={`${staffAppPath("reservations", "new")}?type=walkin`} className="hms-btn-outline text-sm">
+              Walk-in
+            </Link>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link href={staffAppPath("reservations", "new")} className="hms-btn-solid hms-btn-sm hms-btn-icon">
-            New reservation
-          </Link>
-          <Link href={`${staffAppPath("reservations", "new")}?type=walkin`} className="hms-btn-outline hms-btn-sm hms-btn-icon">
-            Walk-in
-          </Link>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Total</p>
+          <p className="mt-1 text-2xl font-bold">{stats.total}</p>
+        </div>
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Confirmed</p>
+          <p className="mt-1 text-2xl font-bold">{stats.confirmed}</p>
+        </div>
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Checked in</p>
+          <p className="mt-1 text-2xl font-bold">{stats.inHouse}</p>
+        </div>
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Arrivals today</p>
+          <p className="mt-1 text-2xl font-bold">{stats.arrivalsToday}</p>
         </div>
       </div>
 
@@ -221,10 +320,29 @@ export default function ReservationsOperationsPage() {
       {error && <div className="error">{error}</div>}
 
       {/* Filters */}
-      <section className="hms-section-card">
-        <div className="hms-section-head">
-          <h2 className="hms-section-title">Filters</h2>
-          <p className="hms-section-sub">Narrow by stay window, status, and guest identifiers.</p>
+      <div className="bg-card rounded-2xl border border-border/60 p-5 shadow-soft">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-4">
+          <div>
+            <h2 className="text-lg font-semibold">Filters</h2>
+            <p className="text-xs text-muted-foreground">Refine by stay window, booking status, and guest/reference search</p>
+          </div>
+          <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            {rows.length} result{rows.length === 1 ? "" : "s"}
+          </span>
+        </div>
+        <div className="mb-4 flex flex-wrap gap-2">
+          <button type="button" className="hms-btn-outline text-xs" onClick={() => applyPreset("arrivals")}>
+            Arrivals today
+          </button>
+          <button type="button" className="hms-btn-outline text-xs" onClick={() => applyPreset("inhouse")}>
+            In-house
+          </button>
+          <button type="button" className="hms-btn-outline text-xs" onClick={() => applyPreset("departures")}>
+            Departures
+          </button>
+          <button type="button" className="hms-btn-outline text-xs" onClick={() => applyPreset("all")}>
+            All active
+          </button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
@@ -237,20 +355,28 @@ export default function ReservationsOperationsPage() {
           </div>
           <div className="sm:col-span-2">
             <label className="mb-2 block">Status (multi)</label>
-            <div className="flex flex-wrap gap-3 text-sm">
-              {["CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "CANCELLED", "NO_SHOW", "PENDING"].map((s) => (
-                <label key={s} className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(statuses[s])}
-                    onChange={(e) => setStatuses((prev) => ({ ...prev, [s]: e.target.checked }))}
-                  />
-                  {s.replace("_", " ")}
+            <div className="flex flex-wrap gap-2 text-sm">
+              {STATUS_OPTIONS.map((s) => (
+                <label
+                  key={s.key}
+                  onClick={() =>
+                    setStatuses((prev) => ({
+                      ...prev,
+                      [s.key]: !prev[s.key],
+                    }))
+                  }
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 cursor-pointer transition-all ${
+                    statuses[s.key]
+                      ? "border-primary bg-primary text-white shadow-sm"
+                      : "border-border/70 bg-background text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                  }`}
+                >
+                  {s.label}
                 </label>
               ))}
             </div>
           </div>
-          <div>
+          <div className="lg:col-span-4">
             <label>Search</label>
             <input 
               value={q} 
@@ -260,11 +386,11 @@ export default function ReservationsOperationsPage() {
             />
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button type="button" onClick={() => loadList()} className="hms-btn-solid hms-btn-sm">
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border/60 pt-4">
+          <button type="button" onClick={() => loadList()} className="hms-btn-solid">
             Apply Filters
           </button>
-          <button type="button" onClick={() => void loadTodaysArrivals()} className="hms-btn-outline hms-btn-sm">
+          <button type="button" onClick={() => void loadTodaysArrivals()} className="hms-btn-outline">
             Today&apos;s arrivals (CONFIRMED)
           </button>
           <button 
@@ -283,17 +409,17 @@ export default function ReservationsOperationsPage() {
               setQ("");
               loadList();
             }}
-            className="hms-btn-outline hms-btn-sm"
+            className="hms-btn-outline"
           >
             Clear
           </button>
         </div>
-      </section>
+      </div>
 
       {/* Availability Preview */}
-      <section className="hms-section-card">
-        <h2 className="hms-section-title mb-2">Availability Preview</h2>
-        <p className="hms-section-sub mb-4">
+      <div className="bg-card rounded-2xl border border-border/60 p-5 shadow-soft">
+        <h2 className="text-lg font-semibold mb-2">Availability Preview</h2>
+        <p className="text-muted-foreground text-sm mb-4">
           Same engine guests use. Adjust dates to check inventory.
         </p>
         <div className="flex flex-wrap items-end gap-3">
@@ -308,14 +434,14 @@ export default function ReservationsOperationsPage() {
           <button 
             type="button" 
             onClick={() => loadSampleAvailability()}
-            className="hms-btn-outline hms-btn-sm"
+            className="hms-btn-outline"
           >
             Preview
           </button>
         </div>
         {availError && <p className="error mt-3">{availError}</p>}
         {avail && (
-          <div className="mt-4 p-3 bg-muted/50 rounded-lg" role="status" aria-live="polite">
+          <div className="mt-4 p-3 bg-muted/50 rounded-lg">
             <p className="font-medium">
               {avail.available ? (
                 <span className="text-green-600">✓ Rooms available</span>
@@ -329,19 +455,18 @@ export default function ReservationsOperationsPage() {
             </p>
           </div>
         )}
-      </section>
+      </div>
 
       {/* Reservations List */}
-      <section className="hms-section-card">
-        <div className="hms-section-head">
-          <h2 className="hms-section-title">Reservations ({rows.length})</h2>
-          <p className="hms-section-sub">Sorted and paginated for desk operations.</p>
+      <div className="bg-card rounded-2xl border border-border/60 p-5 shadow-soft">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Reservations ({rows.length})</h2>
         </div>
-
-        <div className="hms-table-wrap">
-          <table className="hms-table">
+        
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
             <thead>
-              <tr>
+              <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th>Booking ref</th>
                 <th>Guest</th>
                 <th>Stay</th>
@@ -354,15 +479,29 @@ export default function ReservationsOperationsPage() {
               </tr>
             </thead>
             <tbody>
+              {isLoading &&
+                Array.from({ length: 6 }).map((_, idx) => (
+                  <tr key={`skeleton-${idx}`} className="border-t border-border/50 animate-pulse">
+                    <td className="py-3"><div className="h-4 w-24 rounded bg-muted" /></td>
+                    <td><div className="h-4 w-32 rounded bg-muted" /></td>
+                    <td><div className="h-4 w-28 rounded bg-muted" /></td>
+                    <td><div className="h-4 w-20 rounded bg-muted" /></td>
+                    <td><div className="h-4 w-16 rounded bg-muted" /></td>
+                    <td><div className="h-4 w-20 rounded bg-muted" /></td>
+                    <td><div className="h-4 w-20 rounded bg-muted" /></td>
+                    <td><div className="h-4 w-16 rounded bg-muted" /></td>
+                    <td><div className="h-4 w-12 rounded bg-muted" /></td>
+                  </tr>
+                ))}
               {pageRows.map((r) => (
-                <tr key={r.id}>
-                  <td className="min-w-[180px]">
+                <tr key={r.id} className="border-t border-border/50 hover:bg-muted/20 transition-colors">
+                  <td>
                     <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded block">
                       {r.booking_reference || "—"}
                     </code>
                     <code className="text-[10px] text-muted-foreground font-mono">{r.confirmationCode}</code>
                   </td>
-                  <td className="min-w-[220px]">
+                  <td>
                     <p className="font-medium">{r.guestName}</p>
                     <p className="text-xs text-muted-foreground font-mono">
                       {r.guest_national_id_masked ?? "—"}
@@ -394,7 +533,7 @@ export default function ReservationsOperationsPage() {
                   <td className="font-medium">
                     {r.totalAmount} {r.currency}
                   </td>
-                  <td className="whitespace-nowrap">
+                  <td>
                     <div className="flex flex-col gap-1 items-start">
                       <Link
                         href={staffAppPath("reservations", r.id)}
@@ -407,7 +546,7 @@ export default function ReservationsOperationsPage() {
                         <button
                           type="button"
                           className="text-xs text-orange-700 underline"
-                          onClick={() => void markNoShow(r.id)}
+                          onClick={() => setConfirmNoShowId(r.id)}
                         >
                           Mark no-show
                         </button>
@@ -416,13 +555,10 @@ export default function ReservationsOperationsPage() {
                   </td>
                 </tr>
               ))}
-              {pageRows.length === 0 && (
-                <tr>
-                  <td colSpan={9}>
-                    <div className="hms-empty-state my-2">
-                      <p className="hms-empty-title">No reservations match these filters</p>
-                      <p className="hms-empty-copy">Adjust dates/status, or clear filters to broaden results.</p>
-                    </div>
+              {!isLoading && pageRows.length === 0 && (
+                <tr className="border-t border-border/50">
+                  <td colSpan={9} className="py-10 text-center text-muted-foreground">
+                    No reservations found for the current filters.
                   </td>
                 </tr>
               )}
@@ -438,7 +574,35 @@ export default function ReservationsOperationsPage() {
           noun="reservations"
           onPageChange={setPage}
         />
-      </section>
+      </div>
+      {confirmNoShowId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border/60 bg-card p-5 shadow-lg">
+            <h3 className="text-lg font-semibold">Mark as no-show?</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              This reservation will be updated to no-show status. Continue?
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="hms-btn-outline"
+                disabled={isNoShowSubmitting}
+                onClick={() => setConfirmNoShowId(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="hms-btn-solid"
+                disabled={isNoShowSubmitting}
+                onClick={() => void markNoShow(confirmNoShowId)}
+              >
+                {isNoShowSubmitting ? "Updating..." : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

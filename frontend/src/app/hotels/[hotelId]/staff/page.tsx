@@ -1,41 +1,21 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { apiFetch } from "@/lib/api";
+import { PaginationBar } from "@/components/PaginationBar";
+import { apiFetch, getToken } from "@/lib/api";
+import { paginateSlice } from "@/lib/pagination";
 
-type AssignableStaff = {
+type StaffUser = {
   id: string;
   username: string;
+  email: string | null;
   role: string;
+  isActive: boolean;
+  createdAt: string;
 };
 
-type StaffStatus = "Active" | "On leave";
-
-type StaffMember = {
-  id: string;
-  name: string;
-  role: string;
-  department: string;
-  status: StaffStatus;
-  since: string;
-  source: "backend" | "local";
-};
-
-type Draft = {
-  name: string;
-  username: string;
-  password: string;
-  email: string;
-  role: string;
-  department: string;
-  since: string;
-  status: StaffStatus;
-};
-
-const LOCAL_STAFF_KEY_PREFIX = "hms:hotel:staff:";
 const ROLE_OPTIONS = [
-  "HOTEL_ADMIN",
   "MANAGER",
   "RECEPTIONIST",
   "HOUSEKEEPING",
@@ -44,302 +24,380 @@ const ROLE_OPTIONS = [
   "FNB_STAFF",
   "FINANCE",
 ] as const;
+const PAGE_SIZE = 10;
 
-function keyForHotel(hotelId: string): string {
-  return `${LOCAL_STAFF_KEY_PREFIX}${hotelId}`;
-}
-
-function initialsOf(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "ST";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-}
-
-function deptFromRole(role: string): string {
-  const value = role.toUpperCase();
-  if (value.includes("HOUSEKEEPING")) return "Rooms";
-  if (value.includes("RECEPTION") || value.includes("FRONT")) return "Reception";
-  if (value.includes("FNB") || value.includes("CHEF") || value.includes("KITCHEN")) return "F&B";
-  if (value.includes("FINANCE")) return "Finance";
-  return "Administration";
-}
-
-function monthYear(dateStr: string): string {
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
-}
-
-export default function StaffPage() {
+export default function StaffManagementPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
 
-  const [members, setMembers] = useState<StaffMember[]>([]);
+  const [rows, setRows] = useState<StaffUser[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [draft, setDraft] = useState<Draft>({
-    name: "",
-    username: "",
-    password: "",
-    email: "",
-    role: "",
-    department: "",
-    since: new Date().toISOString().slice(0, 10),
-    status: "Active",
-  });
+  const [msg, setMsg] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("ALL");
+  const [activeFilter, setActiveFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
+  const [showRoleModal, setShowRoleModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<StaffUser | null>(null);
+  const [nextRole, setNextRole] = useState<(typeof ROLE_OPTIONS)[number]>("HOUSEKEEPING");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmDeactivate, setConfirmDeactivate] = useState<StaffUser | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<(typeof ROLE_OPTIONS)[number]>("HOUSEKEEPING");
 
-    const load = async () => {
-      setError(null);
-      const fromBackend: StaffMember[] = [];
+  const counts = {
+    total: rows.length,
+    active: rows.filter((r) => r.isActive).length,
+    hk: rows.filter((r) => r.role === "HOUSEKEEPING" || r.role === "HOUSEKEEPING_SUPERVISOR").length,
+    supervisors: rows.filter((r) => r.role === "HOUSEKEEPING_SUPERVISOR").length,
+  };
 
-      try {
-        const rows = await apiFetch<AssignableStaff[]>(`/api/v1/hotels/${hotelId}/housekeeping/assignable-staff`);
-        for (const row of rows) {
-          fromBackend.push({
-            id: row.id,
-            name: row.username,
-            role: row.role,
-            department: deptFromRole(row.role),
-            status: "Active",
-            since: new Date().toISOString().slice(0, 10),
-            source: "backend",
-          });
-        }
-      } catch (e) {
-        if (!cancelled) {
-          const message = e instanceof Error ? e.message : "Could not load backend staff list";
-          setError(message);
-        }
-      }
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (roleFilter !== "ALL" && r.role !== roleFilter) return false;
+      if (activeFilter === "ACTIVE" && !r.isActive) return false;
+      if (activeFilter === "INACTIVE" && r.isActive) return false;
+      if (!q) return true;
+      return r.username.toLowerCase().includes(q) || (r.email ?? "").toLowerCase().includes(q) || r.role.toLowerCase().includes(q);
+    });
+  }, [rows, search, roleFilter, activeFilter]);
+  const paged = useMemo(() => paginateSlice(filtered, page, PAGE_SIZE), [filtered, page]);
 
-      let localRows: StaffMember[] = [];
-      try {
-        const raw = localStorage.getItem(keyForHotel(hotelId));
-        if (raw) {
-          localRows = JSON.parse(raw) as StaffMember[];
-        }
-      } catch {
-        localRows = [];
-      }
-
-      if (cancelled) return;
-      setMembers([...fromBackend, ...localRows]);
-    };
-
-    load();
-    return () => {
-      cancelled = true;
-    };
+  const load = useCallback(async () => {
+    setError(null);
+    if (!getToken()) {
+      setError("Not signed in.");
+      return;
+    }
+    try {
+      const data = await apiFetch<StaffUser[]>(`/api/v1/hotels/${hotelId}/staff-users`);
+      setRows(data);
+      setPage(1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load staff");
+    }
   }, [hotelId]);
 
-  function saveLocally(next: StaffMember[]) {
-    setMembers(next);
-    const localOnly = next.filter((m) => m.source === "local");
-    localStorage.setItem(keyForHotel(hotelId), JSON.stringify(localOnly));
-  }
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  async function onAddStaff(e: FormEvent) {
+  async function createUser(e: React.FormEvent) {
     e.preventDefault();
-    if (!draft.name.trim() || !draft.role.trim() || !draft.username.trim() || !draft.password.trim()) return;
-
-    setSaving(true);
+    setMsg(null);
     setError(null);
-
-    const entry: StaffMember = {
-      id: `local-${Date.now()}`,
-      name: draft.name.trim(),
-      role: draft.role.trim(),
-      department: draft.department.trim() || deptFromRole(draft.role),
-      status: draft.status,
-      since: draft.since,
-      source: "local",
-    };
-
+    if (!username.trim() || !password.trim()) {
+      setError("Username and password are required.");
+      return;
+    }
+    setLoading(true);
     try {
-      const created = await apiFetch<{ id?: string; username: string; role: string }>(
-        `/api/v1/hotels/${hotelId}/staff/users`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            username: draft.username.trim(),
-            password: draft.password,
-            email: draft.email.trim() || null,
-            role: draft.role.trim(),
-          }),
-        },
-      );
-
-      const createdEntry: StaffMember = {
-        ...entry,
-        id: created.id || `backend-${Date.now()}`,
-        name: draft.name.trim() || created.username,
-        role: created.role || draft.role.trim(),
-        source: "backend",
-      };
-      setMembers([createdEntry, ...members.filter((m) => m.id !== createdEntry.id)]);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not create staff user";
-      setError(`${message}. Saved locally only.`);
-      saveLocally([entry, ...members]);
-    } finally {
-      setDraft({
-        name: "",
-        username: "",
-        password: "",
-        email: "",
-        role: "",
-        department: "",
-        since: new Date().toISOString().slice(0, 10),
-        status: "Active",
+      await apiFetch<StaffUser>(`/api/v1/hotels/${hotelId}/staff-users`, {
+        method: "POST",
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+          email: email.trim() || null,
+          role,
+        }),
       });
-      setSaving(false);
+      setUsername("");
+      setPassword("");
+      setEmail("");
+      setRole("HOUSEKEEPING");
+      setMsg("Staff user created.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Create failed");
+    } finally {
+      setLoading(false);
     }
   }
 
-  const activeCount = useMemo(
-    () => members.filter((m) => m.status === "Active").length,
-    [members],
-  );
+  async function saveRoleChange() {
+    if (!selectedUser) return;
+    setActionLoadingId(selectedUser.id);
+    setError(null);
+    setMsg(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/staff-users/${selectedUser.id}/role`, {
+        method: "PATCH",
+        body: JSON.stringify({ role: nextRole }),
+      });
+      setMsg("Staff role updated.");
+      setShowRoleModal(false);
+      setSelectedUser(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Role update failed");
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
 
-  const rolesCount = useMemo(() => new Set(members.map((m) => m.role)).size, [members]);
+  async function savePasswordReset() {
+    if (!selectedUser) return;
+    if (newPassword.length < 8) {
+      setError("New password must be at least 8 characters.");
+      return;
+    }
+    setActionLoadingId(selectedUser.id);
+    setError(null);
+    setMsg(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/staff-users/${selectedUser.id}/reset-password`, {
+        method: "POST",
+        body: JSON.stringify({ newPassword }),
+      });
+      setMsg("Password reset completed.");
+      setShowPasswordModal(false);
+      setSelectedUser(null);
+      setNewPassword("");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Password reset failed");
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function toggleActive(user: StaffUser, activate: boolean) {
+    setActionLoadingId(user.id);
+    setError(null);
+    setMsg(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/staff-users/${user.id}/${activate ? "reactivate" : "deactivate"}`, {
+        method: "POST",
+      });
+      setMsg(activate ? "Staff reactivated." : "Staff deactivated.");
+      setConfirmDeactivate(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Status change failed");
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
 
   return (
-    <div className="space-y-6">
-      <section className="hms-section-card bg-white text-foreground border-[hsl(var(--primary))/0.25]">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground mb-1">Staff Management</h1>
-            <p className="text-muted-foreground text-base">
-              {`${activeCount} active staff \u00b7 ${rolesCount} roles`}
-            </p>
-          </div>
-          <span className="inline-flex h-11 items-center px-5 rounded-xl border border-[hsl(var(--primary))/0.35] bg-[hsl(var(--accent))] text-[hsl(var(--primary-hover))] font-semibold">
-            + Add Staff
-          </span>
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+        <h1 className="text-3xl font-bold tracking-tight">Staff</h1>
+        <p className="text-muted-foreground mt-1">
+          Create hotel staff users and assign department roles. Housekeeping roles appear in HK assignment dropdowns.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Total staff users</p>
+          <p className="mt-1 text-2xl font-bold">{counts.total}</p>
+        </div>
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Active users</p>
+          <p className="mt-1 text-2xl font-bold">{counts.active}</p>
+        </div>
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Housekeeping users</p>
+          <p className="mt-1 text-2xl font-bold">{counts.hk}</p>
+        </div>
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">HK supervisors</p>
+          <p className="mt-1 text-2xl font-bold">{counts.supervisors}</p>
+        </div>
+      </div>
+
+      {error && <div className="error panel">{error}</div>}
+      {msg && <div className="panel">{msg}</div>}
+
+      <div className="grid lg:grid-cols-[1fr_1.35fr] gap-4">
+        <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+          <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>Create staff user</h2>
+          <form noValidate onSubmit={createUser}>
+            <label>Username</label>
+            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" />
+
+            <label style={{ marginTop: "0.75rem" }}>Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
+            />
+
+            <label style={{ marginTop: "0.75rem" }}>Email (optional)</label>
+            <input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
+
+            <label style={{ marginTop: "0.75rem" }}>Role</label>
+            <select value={role} onChange={(e) => setRole(e.target.value as (typeof ROLE_OPTIONS)[number])}>
+              {ROLE_OPTIONS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+
+            <div style={{ marginTop: "1rem", display: "flex", justifyContent: "flex-end" }}>
+              <button type="submit" disabled={loading}>
+                {loading ? "Creating..." : "Create user"}
+              </button>
+            </div>
+          </form>
         </div>
 
-        <form onSubmit={onAddStaff} className="mt-5 grid gap-3 md:grid-cols-6">
-          <input
-            type="text"
-            value={draft.name}
-            onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-            placeholder="Display name"
-            className="md:col-span-1 bg-background"
-          />
-          <input
-            type="text"
-            value={draft.username}
-            onChange={(e) => setDraft((d) => ({ ...d, username: e.target.value }))}
-            placeholder="Username"
-            className="md:col-span-1 bg-background"
-          />
-          <input
-            type="password"
-            value={draft.password}
-            onChange={(e) => setDraft((d) => ({ ...d, password: e.target.value }))}
-            placeholder="Password (min 8 chars)"
-            className="md:col-span-1 bg-background"
-          />
-          <input
-            type="email"
-            value={draft.email}
-            onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))}
-            placeholder="Email (optional)"
-            className="md:col-span-1 bg-background"
-          />
-          <select
-            value={draft.role}
-            onChange={(e) =>
-              setDraft((d) => ({
-                ...d,
-                role: e.target.value,
-                department: d.department || deptFromRole(e.target.value),
-              }))
-            }
-            className="md:col-span-1 bg-background"
-          >
-            <option value="">Select role</option>
-            {ROLE_OPTIONS.map((role) => (
-              <option key={role} value={role}>
-                {role}
-              </option>
-            ))}
-          </select>
-          <input
-            type="text"
-            value={draft.department}
-            onChange={(e) => setDraft((d) => ({ ...d, department: e.target.value }))}
-            placeholder="Department"
-            className="md:col-span-1 bg-background"
-          />
-          <input
-            type="date"
-            value={draft.since}
-            onChange={(e) => setDraft((d) => ({ ...d, since: e.target.value }))}
-            className="md:col-span-1 bg-background"
-          />
-          <button
-            type="submit"
-            disabled={saving}
-            className="hms-btn-solid md:col-span-1 h-full rounded-xl disabled:opacity-60"
-          >
-            {saving ? "Saving..." : "Save Staff"}
-          </button>
-        </form>
-
-        {error && <p className="text-destructive text-sm mt-3">{error}</p>}
-      </section>
-
-      <section className="hms-section-card bg-white border-[hsl(var(--primary))/0.2]">
-        <div className="overflow-x-auto">
-          <table className="w-full text-base">
+        <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+          <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>Hotel staff users</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+            <input placeholder="Search username/email/role" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+            <select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}>
+              <option value="ALL">All roles</option>
+              {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+            <select value={activeFilter} onChange={(e) => { setActiveFilter(e.target.value as "ALL" | "ACTIVE" | "INACTIVE"); setPage(1); }}>
+              <option value="ALL">All statuses</option>
+              <option value="ACTIVE">Active</option>
+              <option value="INACTIVE">Inactive</option>
+            </select>
+          </div>
+          <table>
             <thead>
-              <tr className="text-muted-foreground uppercase tracking-wide text-sm border-b border-border">
-                <th className="py-3 text-left">Name</th>
-                <th className="py-3 text-left">Role</th>
-                <th className="py-3 text-left">Department</th>
-                <th className="py-3 text-left">Status</th>
-                <th className="py-3 text-left">Since</th>
+              <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Email</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {members.map((member) => (
-                <tr key={member.id} className="border-b border-border/70">
-                  <td className="py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-[hsl(var(--accent))] text-[hsl(var(--primary-hover))] flex items-center justify-center font-semibold">
-                        {initialsOf(member.name)}
-                      </div>
-                      <div className="font-semibold text-foreground">{member.name}</div>
-                    </div>
-                  </td>
-                  <td className="py-4 font-semibold text-foreground">{member.role}</td>
-                  <td className="py-4 font-semibold text-foreground">{member.department}</td>
-                  <td className="py-4">
-                    <span className="inline-flex items-center gap-2 font-semibold text-foreground">
-                      <span
-                        className={`inline-block h-2.5 w-2.5 rounded-full ${
-                          member.status === "Active" ? "bg-lime-500" : "bg-amber-500"
-                        }`}
-                      />
-                      {member.status}
+              {paged.slice.map((u) => (
+                <tr key={u.id}>
+                  <td>{u.username}</td>
+                  <td>
+                    <span className="inline-block rounded-full px-2.5 py-1 text-xs font-semibold bg-slate-100 text-slate-800">
+                      {u.role}
                     </span>
                   </td>
-                  <td className="py-4 font-semibold text-foreground">{monthYear(member.since)}</td>
+                  <td>{u.email ?? "—"}</td>
+                  <td>{u.isActive ? "ACTIVE" : "INACTIVE"}</td>
+                  <td>{u.createdAt ? new Date(u.createdAt).toLocaleString() : "—"}</td>
+                  <td>
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        className="hms-btn-outline text-xs"
+                        disabled={actionLoadingId === u.id}
+                        onClick={() => {
+                          setSelectedUser(u);
+                          setNextRole((ROLE_OPTIONS.includes(u.role as (typeof ROLE_OPTIONS)[number]) ? (u.role as (typeof ROLE_OPTIONS)[number]) : "HOUSEKEEPING"));
+                          setShowRoleModal(true);
+                        }}
+                      >
+                        Role
+                      </button>
+                      <button
+                        type="button"
+                        className="hms-btn-outline text-xs"
+                        disabled={actionLoadingId === u.id}
+                        onClick={() => {
+                          setSelectedUser(u);
+                          setNewPassword("");
+                          setShowPasswordModal(true);
+                        }}
+                      >
+                        Reset password
+                      </button>
+                      {u.isActive ? (
+                        <button type="button" className="hms-btn-outline text-xs" disabled={actionLoadingId === u.id} onClick={() => setConfirmDeactivate(u)}>
+                          Deactivate
+                        </button>
+                      ) : (
+                        <button type="button" className="hms-btn-outline text-xs" disabled={actionLoadingId === u.id} onClick={() => void toggleActive(u, true)}>
+                          Reactivate
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-
-          {members.length === 0 && (
-            <p className="text-muted-foreground text-center py-8">No staff yet. Add your first team member above.</p>
+          {filtered.length === 0 && (
+            <p style={{ color: "var(--muted)", marginTop: "0.8rem" }}>
+              No staff users yet for this hotel.
+            </p>
           )}
+          <PaginationBar
+            page={page}
+            totalPages={paged.totalPages}
+            totalItems={paged.total}
+            pageSize={PAGE_SIZE}
+            noun="staff users"
+            onPageChange={setPage}
+          />
         </div>
-      </section>
+      </div>
+
+      {showRoleModal && selectedUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl">
+            <h3 className="text-lg font-semibold">Update role: {selectedUser.username}</h3>
+            <div className="mt-3">
+              <label>Role</label>
+              <select value={nextRole} onChange={(e) => setNextRole(e.target.value as (typeof ROLE_OPTIONS)[number])}>
+                {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="hms-btn-outline" onClick={() => setShowRoleModal(false)}>Cancel</button>
+              <button type="button" className="hms-btn-solid" disabled={actionLoadingId === selectedUser.id} onClick={() => void saveRoleChange()}>
+                {actionLoadingId === selectedUser.id ? "Saving..." : "Save role"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPasswordModal && selectedUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl">
+            <h3 className="text-lg font-semibold">Reset password: {selectedUser.username}</h3>
+            <div className="mt-3">
+              <label>New password</label>
+              <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="hms-btn-outline" onClick={() => setShowPasswordModal(false)}>Cancel</button>
+              <button type="button" className="hms-btn-solid" disabled={actionLoadingId === selectedUser.id} onClick={() => void savePasswordReset()}>
+                {actionLoadingId === selectedUser.id ? "Saving..." : "Reset password"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeactivate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl">
+            <h3 className="text-lg font-semibold">Deactivate {confirmDeactivate.username}?</h3>
+            <p className="mt-2 text-sm text-muted-foreground">This user will no longer be able to sign in until reactivated.</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="hms-btn-outline" onClick={() => setConfirmDeactivate(null)}>Cancel</button>
+              <button type="button" className="hms-btn-solid" disabled={actionLoadingId === confirmDeactivate.id} onClick={() => void toggleActive(confirmDeactivate, false)}>
+                {actionLoadingId === confirmDeactivate.id ? "Working..." : "Confirm deactivate"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

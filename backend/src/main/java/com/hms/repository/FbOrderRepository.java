@@ -13,4 +13,6 @@ public interface FbOrderRepository extends JpaRepository<FbOrder, UUID> {
 
     @Query("select count(o) from FbOrder o where o.outlet.hotel.id = :hotelId")
     long countByHotelId(@Param("hotelId") UUID hotelId);
+
+    boolean existsByOrderNumber(String orderNumber);
 }

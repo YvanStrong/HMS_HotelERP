@@ -1,8 +1,14 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import {
+  buildTaxInvoiceHtml,
+  guessPaymentMethodFromItems,
+  openTaxInvoicePrintWindow,
+  summarizeFromLineItems,
+} from "@/lib/taxInvoiceHtml";
 
 type InvoiceListItem = {
   id: string;
@@ -37,6 +43,13 @@ type InvoiceDetail = {
   totalAmount: number;
   pdfUrl?: string | null;
   items: InvoiceLine[];
+  bookingReference?: string;
+  confirmationCode?: string;
+  guestName?: string;
+  roomNumber?: string | null;
+  roomTypeName?: string | null;
+  currency?: string;
+  createdAt?: string;
 };
 
 type ProformaDetail = {
@@ -109,6 +122,52 @@ export default function InvoicesPage() {
     () => invoices.reduce((sum, i) => sum + Number(i.totalAmount || 0), 0),
     [invoices],
   );
+
+  function printSelectedTaxInvoice() {
+    if (!invoiceDetail) return;
+    setError(null);
+    try {
+      const d = invoiceDetail;
+      const items = (d.items ?? []).map((it) => ({
+        description: it.description,
+        amount: Number(it.amount),
+      }));
+      const balanceAfter = Number(d.totalAmount ?? 0);
+      const sums = summarizeFromLineItems(items, balanceAfter);
+      const pm = guessPaymentMethodFromItems(items);
+      const bookingRef =
+        d.bookingReference && d.bookingReference !== "-"
+          ? d.bookingReference
+          : d.confirmationCode && d.confirmationCode !== "-"
+            ? d.confirmationCode
+            : "—";
+      const guestNm = d.guestName ?? "Guest";
+      const roomLabel = `${d.roomNumber ?? "—"} (${d.roomTypeName ?? "—"})`;
+      const currency = d.currency ?? "USD";
+      const whenLabel = d.createdAt ? new Date(d.createdAt).toLocaleString() : new Date().toLocaleString();
+      const html = buildTaxInvoiceHtml({
+        invoiceNumber: d.invoiceNumber,
+        items,
+        bookingRef,
+        guestName: guestNm,
+        roomLabel,
+        whenLabel,
+        currency,
+        totalCharges: sums.totalCharges,
+        depositPaid: sums.depositPaid,
+        remainingBeforePayment: sums.remainingBeforePayment,
+        paidAtCheckout: sums.paidAtCheckout,
+        paymentMethodLabel: pm,
+        paymentTypesUsed: pm,
+        balanceAfter: sums.balanceAfter,
+      });
+      if (!openTaxInvoicePrintWindow(html)) {
+        setError("Pop-up blocked — allow pop-ups to print the invoice.");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not open invoice");
+    }
+  }
 
   async function selectInvoice(row: InvoiceListItem) {
     if (selectedInvoiceId === row.id) {
@@ -282,15 +341,14 @@ export default function InvoicesPage() {
             <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
                 <h2 className="text-lg font-semibold text-foreground">Selected invoice</h2>
-                {invoiceDetail?.pdfUrl && (
-                  <a
-                    href={invoiceDetail.pdfUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                {invoiceDetail && (
+                  <button
+                    type="button"
                     className="hms-btn-outline hms-btn-sm w-fit"
+                    onClick={() => printSelectedTaxInvoice()}
                   >
-                    Open PDF link
-                  </a>
+                    Print invoice
+                  </button>
                 )}
               </div>
               {detailLoading && <p className="text-sm text-muted-foreground">Loading line items...</p>}

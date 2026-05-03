@@ -15,6 +15,7 @@ import com.hms.entity.Guest;
 import com.hms.entity.Hotel;
 import com.hms.entity.Invoice;
 import com.hms.entity.InvoiceLineItem;
+import com.hms.entity.Payment;
 import com.hms.entity.Reservation;
 import com.hms.entity.Room;
 import com.hms.entity.RoomCharge;
@@ -25,12 +26,14 @@ import com.hms.repository.AppUserRepository;
 import com.hms.repository.GuestRepository;
 import com.hms.repository.HotelRepository;
 import com.hms.repository.InvoiceRepository;
+import com.hms.repository.PaymentRepository;
 import com.hms.repository.ReservationRepository;
 import com.hms.repository.RoomBlockRepository;
 import com.hms.repository.RoomChargeRepository;
 import com.hms.repository.RoomRepository;
 import com.hms.repository.RoomTypeNightlyRateRepository;
 import com.hms.repository.RoomTypeRepository;
+import com.hms.config.HmsPublicUrlProperties;
 import com.hms.security.TenantAccessService;
 import com.hms.security.UserPrincipal;
 import com.hms.web.ApiException;
@@ -79,6 +82,10 @@ public class ReservationService {
     private final HousekeepingTaskService housekeepingTaskService;
     private final NotificationService notificationService;
     private final BookingDateNormalizer bookingDateNormalizer;
+    private final PaymentRepository paymentRepository;
+    private final InvoicePdfService invoicePdfService;
+    private final InvoiceService invoiceService;
+    private final HmsPublicUrlProperties publicUrlProperties;
 
     public ReservationService(
             HotelRepository hotelRepository,
@@ -98,7 +105,11 @@ public class ReservationService {
             ChargeService chargeService,
             HousekeepingTaskService housekeepingTaskService,
             NotificationService notificationService,
-            BookingDateNormalizer bookingDateNormalizer) {
+            BookingDateNormalizer bookingDateNormalizer,
+            PaymentRepository paymentRepository,
+            InvoicePdfService invoicePdfService,
+            InvoiceService invoiceService,
+            HmsPublicUrlProperties publicUrlProperties) {
         this.hotelRepository = hotelRepository;
         this.roomRepository = roomRepository;
         this.roomTypeRepository = roomTypeRepository;
@@ -117,6 +128,10 @@ public class ReservationService {
         this.housekeepingTaskService = housekeepingTaskService;
         this.notificationService = notificationService;
         this.bookingDateNormalizer = bookingDateNormalizer;
+        this.paymentRepository = paymentRepository;
+        this.invoicePdfService = invoicePdfService;
+        this.invoiceService = invoiceService;
+        this.publicUrlProperties = publicUrlProperties;
     }
 
     @Transactional(readOnly = true)
@@ -451,9 +466,11 @@ public class ReservationService {
                 .findById(hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Hotel not found"));
         List<ReservationStatus> statuses = parseReservationStatusFilter(statusCsv);
-        String search = q != null && !q.isBlank() ? q.trim() : null;
+        String search = q != null && !q.isBlank() ? q.trim() : "";
+        LocalDate from = stayStart != null ? stayStart : LocalDate.of(1900, 1, 1);
+        LocalDate to = stayEnd != null ? stayEnd : LocalDate.of(2999, 12, 31);
         List<Reservation> rows =
-                reservationRepository.searchForHotelStaff(hotelId, stayStart, stayEnd, statuses, search);
+                reservationRepository.searchForHotelStaff(hotelId, from, to, statuses, search);
         String currency = hotel.getCurrency();
         return rows.stream().map(r -> toReservationListItem(r, currency)).toList();
     }
@@ -475,7 +492,8 @@ public class ReservationService {
             throw new ApiException(HttpStatus.NOT_FOUND, "Reservation not found");
         }
         List<RoomCharge> charges = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId());
-        ApiDtos.FolioSummary summary = computeFolioSummary(r, charges);
+        List<Payment> paymentsDb = paymentRepository.findByReservation_IdOrderByProcessedAtDesc(r.getId());
+        ApiDtos.FolioSummary summary = computeFolioSummary(r, charges, paymentsDb);
         String roomTypeName = "";
         if (r.getRoom() != null && r.getRoom().getRoomType() != null) {
             roomTypeName = r.getRoom().getRoomType().getName();
@@ -847,6 +865,9 @@ public class ReservationService {
         Hotel hotel = r.getHotel();
         Room room = r.getRoom();
         if (req.assignedRoomId() != null) {
+            if (room != null && room.getId().equals(req.assignedRoomId())) {
+                // Already assigned; skip re-assignment validation path.
+            } else {
             Room nr = roomRepository
                     .findByIdAndHotel_Id(req.assignedRoomId(), hotelId)
                     .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Assigned room not found"));
@@ -875,6 +896,7 @@ public class ReservationService {
             }
             room = nr;
             r.setRoom(room);
+            }
         }
         if (room == null) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "NO_ROOM_ASSIGNED", "Assign a room before check-in");
@@ -942,7 +964,10 @@ public class ReservationService {
         ApiDtos.CheckInPaymentInfo paymentInfo = null;
         if (req.paymentMethod() != null) {
             ApiDtos.PaymentMethodInput pm = req.paymentMethod();
-            BigDecimal preAuth = computeFolioSummary(r, roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId()))
+            BigDecimal preAuth = computeFolioSummary(
+                            r,
+                            roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId()),
+                            paymentRepository.findByReservation_IdOrderByProcessedAtDesc(r.getId()))
                     .balanceDue();
             paymentInfo = new ApiDtos.CheckInPaymentInfo(
                     pm.type(),
@@ -952,8 +977,10 @@ public class ReservationService {
                     preAuth);
         }
 
-        ApiDtos.FolioSummary opening =
-                computeFolioSummary(r, roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId()));
+        ApiDtos.FolioSummary opening = computeFolioSummary(
+                r,
+                roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId()),
+                paymentRepository.findByReservation_IdOrderByProcessedAtDesc(r.getId()));
         ApiDtos.FolioOpenedInfo folioOpened = new ApiDtos.FolioOpenedInfo(
                 r.getId().toString(),
                 "/api/v1/hotels/" + hotelId + "/reservations/" + r.getId() + "/folio",
@@ -1009,7 +1036,8 @@ public class ReservationService {
             throw new ApiException(HttpStatus.CONFLICT, "Invoice already generated for this reservation");
         }
         List<RoomCharge> chargesPreview = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId());
-        ApiDtos.FolioSummary folioBefore = computeFolioSummary(r, chargesPreview);
+        ApiDtos.FolioSummary folioBefore = computeFolioSummary(
+                r, chargesPreview, paymentRepository.findByReservation_IdOrderByProcessedAtDesc(r.getId()));
         BigDecimal due = folioBefore.balanceDue();
         BigDecimal paymentAmount =
                 b.finalPayment() != null && b.finalPayment().amount() != null
@@ -1085,6 +1113,8 @@ public class ReservationService {
         List<RoomCharge> charges = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId());
         Invoice inv = buildInvoice(hotelId, r, charges, b.finalPayment());
         invoiceRepository.save(inv);
+        inv.setPdfUrl(publicUrlProperties.invoicePdfUrl(hotelId, inv.getId()));
+        invoiceRepository.save(inv);
 
         notificationService.schedulePostStayEmail(r);
 
@@ -1113,12 +1143,7 @@ public class ReservationService {
                 r.getStatus().name(),
                 new ApiDtos.RoomStatusDto(
                         room.getId(), room.getRoomNumber(), room.getStatus().name(), room.getCleanliness().name()),
-                new ApiDtos.InvoiceDto(
-                        inv.getId(),
-                        inv.getInvoiceNumber(),
-                        inv.getTotalAmount(),
-                        inv.getPdfUrl(),
-                        lines),
+                invoiceService.toInvoiceDto(hotelId, inv, lines),
                 breakdown,
                 feedbackEcho,
                 postCheckoutEcho,
@@ -1229,7 +1254,6 @@ public class ReservationService {
         inv.setHotel(hotelRepository.getReferenceById(hotelId));
         inv.setReservation(r);
         inv.setInvoiceNumber(nextInvoiceNumber());
-        inv.setPdfUrl("https://minio.local/invoices/" + inv.getInvoiceNumber() + ".pdf");
 
         List<InvoiceLineItem> items = new ArrayList<>();
         int order = 0;
@@ -1571,7 +1595,9 @@ public class ReservationService {
                         true,
                         c.getProductSku()))
                 .toList();
-        ApiDtos.FolioSummary summary = computeFolioSummary(r, charges);
+        List<Payment> paymentsDb = paymentRepository.findByReservation_IdOrderByProcessedAtDesc(reservationId);
+        ApiDtos.FolioSummary summary =
+                computeFolioSummary(r, charges, paymentsDb);
         Guest g = r.getGuest();
         ApiDtos.FolioGuestBlock guestBlock =
                 new ApiDtos.FolioGuestBlock(g.getId(), g.getFirstName() + " " + g.getLastName(), g.getEmail());
@@ -1605,11 +1631,26 @@ public class ReservationService {
                     null,
                     r.getDepositAmount(),
                     "DEPOSIT",
-                    "CAPTURED"));
+                    "COMPLETED",
+                    null,
+                    "Deposit captured at reservation"));
         }
+        payments.addAll(paymentsDb.stream()
+                .map(p -> new ApiDtos.FolioPaymentLine(
+                        p.getId(),
+                        p.getProcessedAt(),
+                        p.getMethod(),
+                        null,
+                        p.getAmount(),
+                        p.getPaymentType(),
+                        p.getStatus(),
+                        p.getReference(),
+                        p.getNotes()))
+                .toList());
 
         List<String> actions = List.of(
-                "POST /api/v1/hotels/{hotelId}/rooms/{roomId}/charges — post consumption to this folio",
+                "POST /api/v1/hotels/{hotelId}/reservations/{reservationId}/charges — post consumption to this folio",
+                "POST /api/v1/hotels/{hotelId}/reservations/{reservationId}/payments — record payment",
                 "POST /api/v1/hotels/{hotelId}/reservations/{reservationId}/check-out — settle on departure");
         ApiDtos.FolioRealtimeHint realtime = new ApiDtos.FolioRealtimeHint(
                 "ws://realtime.example/hotels/" + hotelId + "/folios/" + reservationId,
@@ -1632,21 +1673,128 @@ public class ReservationService {
                 realtime);
     }
 
-    private ApiDtos.FolioSummary computeFolioSummary(Reservation r, List<RoomCharge> charges) {
+    private ApiDtos.FolioSummary computeFolioSummary(Reservation r, List<RoomCharge> charges, List<Payment> payments) {
         BigDecimal roomTotal = r.getTotalAmount();
-        BigDecimal consumption =
+        BigDecimal otherCharges =
                 charges.stream().map(RoomCharge::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal sub = roomTotal.add(consumption);
-        BigDecimal tax = sub.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal fees = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-        BigDecimal depositPaid =
-                r.isDepositPaid() && r.getDepositAmount() != null ? r.getDepositAmount() : BigDecimal.ZERO;
-        BigDecimal totalPayments = depositPaid;
-        BigDecimal totalCharges = sub.add(tax).add(fees).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal balanceDue = totalCharges.subtract(depositPaid).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal gross = roomTotal.add(otherCharges);
+        BigDecimal tax = gross.multiply(new BigDecimal("0.18")).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal discount = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal grand = gross.add(tax).subtract(discount).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal depositPaid = r.isDepositPaid() && r.getDepositAmount() != null ? r.getDepositAmount() : BigDecimal.ZERO;
+        BigDecimal paymentRows = payments.stream()
+                .filter(p -> "COMPLETED".equalsIgnoreCase(p.getStatus()))
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal paymentsTotal = paymentRows.add(depositPaid).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal balanceDue = grand.subtract(paymentsTotal).setScale(2, RoundingMode.HALF_UP);
         String currency = r.getHotel() != null ? r.getHotel().getCurrency() : "USD";
         return new ApiDtos.FolioSummary(
-                roomTotal, consumption, sub, tax, fees, depositPaid, totalPayments, totalCharges, balanceDue, currency);
+                r.getId(), roomTotal, otherCharges, gross, tax, discount, grand, paymentsTotal, balanceDue, currency);
+    }
+
+    @Transactional
+    public ApiDtos.FolioResponse postReservationCharge(
+            UUID hotelId, String hotelHeader, UUID reservationId, ApiDtos.ReservationChargePostRequest body) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Reservation r = reservationRepository
+                .findDetailedByIdAndHotel_Id(reservationId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
+        if (r.getStatus() != ReservationStatus.CHECKED_IN) {
+            throw new ApiException(HttpStatus.CONFLICT, "Reservation must be CHECKED_IN to post charge");
+        }
+        ChargeType type = ChargeType.valueOf(body.chargeType().trim().toUpperCase());
+        chargeService.postFolioCharge(
+                hotelId,
+                r,
+                body.amount(),
+                body.description(),
+                type,
+                tenantAccessService.currentUser().getUsername(),
+                null);
+        return getFolio(hotelId, hotelHeader, reservationId);
+    }
+
+    @Transactional
+    public ApiDtos.FolioResponse addPayment(
+            UUID hotelId, String hotelHeader, UUID reservationId, ApiDtos.PaymentCreateRequest body) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Reservation r = reservationRepository
+                .findDetailedByIdAndHotel_Id(reservationId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
+        Payment p = new Payment();
+        p.setHotel(r.getHotel());
+        p.setReservation(r);
+        p.setPaymentType(body.paymentType().trim().toUpperCase());
+        p.setMethod(body.method().trim().toUpperCase());
+        p.setAmount(body.amount().setScale(2, RoundingMode.HALF_UP));
+        p.setCurrency(body.currency().trim().toUpperCase());
+        p.setReference(body.reference());
+        p.setNotes(body.notes());
+        p.setStatus("COMPLETED");
+        p.setDeposit("DEPOSIT".equalsIgnoreCase(p.getPaymentType()));
+        UserPrincipal up = tenantAccessService.currentUser();
+        p.setProcessedBy(appUserRepository.findById(up.getId()).orElse(null));
+        paymentRepository.save(p);
+        return getFolio(hotelId, hotelHeader, reservationId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ApiDtos.FolioPaymentLine> listPayments(UUID hotelId, String hotelHeader, UUID reservationId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        reservationRepository
+                .findByIdAndHotel_Id(reservationId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
+        return paymentRepository.findByReservation_IdOrderByProcessedAtDesc(reservationId).stream()
+                .map(p -> new ApiDtos.FolioPaymentLine(
+                        p.getId(),
+                        p.getProcessedAt(),
+                        p.getMethod(),
+                        null,
+                        p.getAmount(),
+                        p.getPaymentType(),
+                        p.getStatus(),
+                        p.getReference(),
+                        p.getNotes()))
+                .toList();
+    }
+
+    @Transactional
+    public ApiDtos.FolioResponse voidPayment(
+            UUID hotelId, String hotelHeader, UUID reservationId, UUID paymentId, ApiDtos.PaymentVoidRequest body) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Payment p = paymentRepository
+                .findById(paymentId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Payment not found"));
+        if (!p.getReservation().getId().equals(reservationId) || !p.getHotel().getId().equals(hotelId)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Payment not found for reservation");
+        }
+        p.setStatus("VOIDED");
+        p.setVoidReason(body.reason());
+        p.setVoidedAt(Instant.now());
+        paymentRepository.save(p);
+        return getFolio(hotelId, hotelHeader, reservationId);
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] generateInvoicePdf(UUID hotelId, String hotelHeader, UUID reservationId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Reservation r = reservationRepository
+                .findDetailedByIdAndHotel_Id(reservationId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
+        List<RoomCharge> charges = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(reservationId);
+        List<Payment> payments = paymentRepository.findByReservation_IdOrderByProcessedAtDesc(reservationId);
+        ApiDtos.FolioSummary s = computeFolioSummary(r, charges, payments);
+        return invoicePdfService.renderInvoicePdf(
+                r,
+                charges,
+                payments,
+                s.grossTotal(),
+                s.taxTotal(),
+                s.discountTotal(),
+                s.grandTotal(),
+                s.paymentsTotal(),
+                s.balanceDue());
     }
 
     private void validateDates(LocalDate checkIn, LocalDate checkOut) {

@@ -15,6 +15,8 @@ type BoardTask = {
   assignedToName: string | null;
   createdAt: string;
   notes: string | null;
+  room_dnd?: boolean | null;
+  room_dnd_until?: string | null;
 };
 
 type Board = {
@@ -25,6 +27,7 @@ type Board = {
 };
 
 type StaffOption = { id: string; username: string; role: string };
+type RoomOption = { id: string; roomNumber: string; status: string };
 
 function roleCanSupervise(role: string | undefined) {
   return (
@@ -120,6 +123,11 @@ function TaskCard({
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${taskTypePillClass(task.taskType)}`}>
           {task.taskType.replace(/_/g, " ")}
         </span>
+        {task.room_dnd && (
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-full border border-red-200 bg-red-100 text-red-800">
+            DND ACTIVE
+          </span>
+        )}
       </div>
       <p className="text-xs text-muted-foreground">
         {task.assignedToName ? (
@@ -207,6 +215,18 @@ export default function HousekeepingKanbanPage() {
   const user = useMemo(() => (typeof window !== "undefined" ? loadAuthUser() : null), []);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [mineOnly, setMineOnly] = useState(true);
+  const [completeTaskId, setCompleteTaskId] = useState<string | null>(null);
+  const [completeNotes, setCompleteNotes] = useState("");
+  const [inspectTaskId, setInspectTaskId] = useState<string | null>(null);
+  const [inspectScore, setInspectScore] = useState("8");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createRoomId, setCreateRoomId] = useState("");
+  const [createTaskType, setCreateTaskType] = useState("DEPARTURE_CLEAN");
+  const [createPriority, setCreatePriority] = useState("NORMAL");
+  const [createNotes, setCreateNotes] = useState("");
+  const [createAssignTo, setCreateAssignTo] = useState("");
+  const [createBookingId, setCreateBookingId] = useState("");
 
   const boardQ = useQuery({
     queryKey: ["hk-board", hotelId],
@@ -219,6 +239,12 @@ export default function HousekeepingKanbanPage() {
     queryKey: ["hk-staff", hotelId],
     enabled: !!getToken() && roleCanSupervise(user?.role),
     queryFn: () => apiFetch<StaffOption[]>(`/api/v1/hotels/${hotelId}/housekeeping/assignable-staff`),
+  });
+
+  const roomsQ = useQuery({
+    queryKey: ["hk-room-options", hotelId],
+    enabled: !!getToken() && roleCanSupervise(user?.role),
+    queryFn: () => apiFetch<{ data: RoomOption[] }>(`/api/v1/hotels/${hotelId}/rooms?page=1&size=500`),
   });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["hk-board", hotelId] });
@@ -248,11 +274,135 @@ export default function HousekeepingKanbanPage() {
     { key: "inspected", title: "INSPECTED" },
   ];
 
+  const filteredBoard: Board = {
+    pending: (boardQ.data?.pending ?? []).filter((t) => !mineOnly || t.assignedTo === user?.id),
+    inProgress: (boardQ.data?.inProgress ?? []).filter((t) => !mineOnly || t.assignedTo === user?.id),
+    completed: (boardQ.data?.completed ?? []).filter((t) => !mineOnly || t.assignedTo === user?.id),
+    inspected: (boardQ.data?.inspected ?? []).filter((t) => !mineOnly || t.assignedTo === user?.id),
+  };
+
+  const totals = useMemo(() => {
+    const pending = filteredBoard.pending.length;
+    const inProgress = filteredBoard.inProgress.length;
+    const completed = filteredBoard.completed.length;
+    const inspected = filteredBoard.inspected.length;
+    const urgent = [
+      ...filteredBoard.pending,
+      ...filteredBoard.inProgress,
+      ...filteredBoard.completed,
+    ].filter((t) => t.priority === "URGENT").length;
+    const dndBlocked = [
+      ...filteredBoard.pending,
+      ...filteredBoard.inProgress,
+      ...filteredBoard.completed,
+    ].filter((t) => t.room_dnd).length;
+    return { pending, inProgress, completed, inspected, urgent, dndBlocked };
+  }, [filteredBoard]);
+
+  async function submitCreateTask(e: React.FormEvent) {
+    e.preventDefault();
+    if (!createRoomId) {
+      setMsg("Choose a room for the task.");
+      return;
+    }
+    setBusyId("create-task");
+    setMsg(null);
+    try {
+      const created = await apiFetch<BoardTask>(`/api/v1/hotels/${hotelId}/housekeeping/tasks`, {
+        method: "POST",
+        body: JSON.stringify({
+          room_id: createRoomId,
+          booking_id: createBookingId.trim() ? createBookingId.trim() : null,
+          task_type: createTaskType,
+          priority: createPriority,
+          notes: createNotes.trim() || null,
+        }),
+      });
+      if (createAssignTo) {
+        await apiFetch(`/api/v1/hotels/${hotelId}/housekeeping/tasks/${created.id}/assign`, {
+          method: "PATCH",
+          body: JSON.stringify({ assigned_to: createAssignTo }),
+        });
+      }
+      await invalidate();
+      setCreateOpen(false);
+      setCreateRoomId("");
+      setCreateNotes("");
+      setCreateBookingId("");
+      setCreateAssignTo("");
+      setMsg("Task created.");
+    } catch (e2) {
+      setMsg(e2 instanceof Error ? e2.message : "Could not create task");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function submitCompleteTask(e: React.FormEvent) {
+    e.preventDefault();
+    if (!completeTaskId) return;
+    await exec(completeTaskId, "Completed", () =>
+      apiFetch(`/api/v1/hotels/${hotelId}/housekeeping/tasks/${completeTaskId}/complete`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          notes: completeNotes.trim() || "",
+          photo_url: null,
+          checklist_completed: true,
+        }),
+      }),
+    );
+    setCompleteTaskId(null);
+    setCompleteNotes("");
+  }
+
+  async function submitInspectTask(e: React.FormEvent) {
+    e.preventDefault();
+    if (!inspectTaskId) return;
+    const score = Number(inspectScore);
+    if (Number.isNaN(score) || score < 1 || score > 10) {
+      setMsg("Inspection score must be between 1 and 10.");
+      return;
+    }
+    await exec(inspectTaskId, "Inspected", () =>
+      apiFetch(`/api/v1/hotels/${hotelId}/housekeeping/tasks/${inspectTaskId}/inspect`, {
+        method: "PATCH",
+        body: JSON.stringify({ score }),
+      }),
+    );
+    setInspectTaskId(null);
+  }
+
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Housekeeping</h1>
-        <p className="text-muted-foreground text-sm mt-1">Kanban board · auto-refreshes every 60s</p>
+      <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Housekeeping</h1>
+            <p className="text-muted-foreground text-sm mt-1">Task board, assignment, completion checklist, and supervisor inspection</p>
+          </div>
+          {roleCanSupervise(user?.role) && (
+            <button type="button" className="hms-btn-solid text-sm" onClick={() => setCreateOpen(true)}>
+              Create task
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+        <div className="rounded-xl border border-border/60 bg-card p-3"><p className="text-xs text-muted-foreground">Pending</p><p className="text-xl font-bold">{totals.pending}</p></div>
+        <div className="rounded-xl border border-border/60 bg-card p-3"><p className="text-xs text-muted-foreground">In progress</p><p className="text-xl font-bold">{totals.inProgress}</p></div>
+        <div className="rounded-xl border border-border/60 bg-card p-3"><p className="text-xs text-muted-foreground">Completed</p><p className="text-xl font-bold">{totals.completed}</p></div>
+        <div className="rounded-xl border border-border/60 bg-card p-3"><p className="text-xs text-muted-foreground">Inspected</p><p className="text-xl font-bold">{totals.inspected}</p></div>
+        <div className="rounded-xl border border-border/60 bg-card p-3"><p className="text-xs text-muted-foreground">Urgent</p><p className="text-xl font-bold text-red-600">{totals.urgent}</p></div>
+        <div className="rounded-xl border border-border/60 bg-card p-3"><p className="text-xs text-muted-foreground">DND blocked</p><p className="text-xl font-bold text-amber-700">{totals.dndBlocked}</p></div>
+      </div>
+
+      <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-sm flex items-center justify-between gap-2">
+        <span className="text-muted-foreground">Visibility</span>
+        <label className="inline-flex items-center gap-2 font-medium">
+          <input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} />
+          Show only tasks assigned to me
+        </label>
       </div>
       {boardQ.isError && <div className="error text-sm">{(boardQ.error as Error).message}</div>}
       {msg && (
@@ -265,11 +415,10 @@ export default function HousekeepingKanbanPage() {
         {columns.map((col) => (
           <div key={col.key} className="rounded-xl border border-border/60 bg-muted/20 p-3 min-h-[200px]">
             <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
-              {col.title}{" "}
-              <span className="text-foreground">({(boardQ.data?.[col.key] ?? []).length})</span>
+              {col.title} <span className="text-foreground">({filteredBoard[col.key].length})</span>
             </h2>
             <div className="space-y-2">
-              {(boardQ.data?.[col.key] ?? []).map((t) => (
+              {filteredBoard[col.key].map((t) => (
                 <TaskCard
                   key={t.id}
                   task={t}
@@ -294,29 +443,9 @@ export default function HousekeepingKanbanPage() {
                     )
                   }
                   onComplete={(taskId) =>
-                    exec(taskId, "Completed", () =>
-                      apiFetch(`/api/v1/hotels/${hotelId}/housekeeping/tasks/${taskId}/complete`, {
-                        method: "PATCH",
-                        body: JSON.stringify({
-                          notes: "",
-                          photo_url: null,
-                          checklist_completed: true,
-                        }),
-                      }),
-                    )
+                    setCompleteTaskId(taskId)
                   }
-                  onInspect={(taskId) => {
-                    const scoreStr = window.prompt("Inspection score (1–10)?", "8");
-                    if (!scoreStr) return;
-                    const score = Number(scoreStr);
-                    if (Number.isNaN(score)) return;
-                    void exec(taskId, "Inspected", () =>
-                      apiFetch(`/api/v1/hotels/${hotelId}/housekeeping/tasks/${taskId}/inspect`, {
-                        method: "PATCH",
-                        body: JSON.stringify({ score }),
-                      }),
-                    );
-                  }}
+                  onInspect={(taskId) => setInspectTaskId(taskId)}
                   onSkipDnd={(taskId) =>
                     exec(taskId, "Skipped DND", () =>
                       apiFetch(`/api/v1/hotels/${hotelId}/housekeeping/tasks/${taskId}/skip-dnd`, {
@@ -331,6 +460,100 @@ export default function HousekeepingKanbanPage() {
           </div>
         ))}
       </div>
+
+      {completeTaskId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border/60 bg-card p-5 shadow-lg">
+            <h3 className="text-lg font-semibold">Complete task</h3>
+            <p className="text-sm text-muted-foreground mt-1">Confirm checklist completion and add optional notes.</p>
+            <form onSubmit={submitCompleteTask} className="mt-4">
+              <label>Completion notes (optional)</label>
+              <textarea value={completeNotes} onChange={(e) => setCompleteNotes(e.target.value)} />
+              <div className="mt-4 flex justify-end gap-2">
+                <button type="button" className="hms-btn-outline" onClick={() => setCompleteTaskId(null)}>Cancel</button>
+                <button type="submit" className="hms-btn-solid">Confirm complete</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {inspectTaskId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border/60 bg-card p-5 shadow-lg">
+            <h3 className="text-lg font-semibold">Supervisor inspection</h3>
+            <p className="text-sm text-muted-foreground mt-1">Score this task from 1 (poor) to 10 (excellent).</p>
+            <form onSubmit={submitInspectTask} className="mt-4">
+              <label>Inspection score</label>
+              <input type="number" min="1" max="10" value={inspectScore} onChange={(e) => setInspectScore(e.target.value)} />
+              <div className="mt-4 flex justify-end gap-2">
+                <button type="button" className="hms-btn-outline" onClick={() => setInspectTaskId(null)}>Cancel</button>
+                <button type="submit" className="hms-btn-solid">Submit inspection</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {createOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-border/60 bg-card p-5 shadow-lg">
+            <h3 className="text-lg font-semibold">Create housekeeping task</h3>
+            <form onSubmit={submitCreateTask} className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="md:col-span-2">
+                Room
+                <select value={createRoomId} onChange={(e) => setCreateRoomId(e.target.value)}>
+                  <option value="">Choose room...</option>
+                  {(roomsQ.data?.data ?? []).map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.roomNumber} ({r.status.replaceAll("_", " ")})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Task type
+                <select value={createTaskType} onChange={(e) => setCreateTaskType(e.target.value)}>
+                  {["DEPARTURE_CLEAN", "STAYOVER_CLEAN", "INSPECTION", "DEEP_CLEAN", "MINIBAR_RESTOCK", "TURNDOWN"].map((t) => (
+                    <option key={t} value={t}>{t.replaceAll("_", " ")}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Priority
+                <select value={createPriority} onChange={(e) => setCreatePriority(e.target.value)}>
+                  {["LOW", "NORMAL", "HIGH", "URGENT"].map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Assign to (optional)
+                <select value={createAssignTo} onChange={(e) => setCreateAssignTo(e.target.value)}>
+                  <option value="">Unassigned</option>
+                  {(staffQ.data ?? []).map((s) => (
+                    <option key={s.id} value={s.id}>{s.username} ({s.role})</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Booking ID (optional)
+                <input value={createBookingId} onChange={(e) => setCreateBookingId(e.target.value)} placeholder="Reservation UUID" />
+              </label>
+              <label className="md:col-span-2">
+                Notes (optional)
+                <textarea value={createNotes} onChange={(e) => setCreateNotes(e.target.value)} />
+              </label>
+              <div className="md:col-span-2 flex justify-end gap-2 mt-1">
+                <button type="button" className="hms-btn-outline" onClick={() => setCreateOpen(false)}>Cancel</button>
+                <button type="submit" className="hms-btn-solid" disabled={busyId === "create-task"}>
+                  {busyId === "create-task" ? "Creating..." : "Create task"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

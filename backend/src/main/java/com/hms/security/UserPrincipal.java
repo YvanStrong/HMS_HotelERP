@@ -19,24 +19,26 @@ public class UserPrincipal implements UserDetails, Principal {
     private final String passwordHash;
     private final Role role;
     private final UUID hotelId;
+    private final boolean active;
     private final Collection<? extends GrantedAuthority> authorities;
 
-    public UserPrincipal(UUID id, String username, String passwordHash, Role role, UUID hotelId) {
+    public UserPrincipal(UUID id, String username, String passwordHash, Role role, UUID hotelId, boolean active) {
         this.id = id;
         this.username = username;
         this.passwordHash = passwordHash;
         this.role = role;
         this.hotelId = hotelId;
+        this.active = active;
         this.authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
     }
 
     public static UserPrincipal fromEntity(AppUser user) {
         UUID hid = user.getHotel() != null ? user.getHotel().getId() : null;
-        return new UserPrincipal(user.getId(), user.getUsername(), user.getPasswordHash(), user.getRole(), hid);
+        return new UserPrincipal(user.getId(), user.getUsername(), user.getPasswordHash(), user.getRole(), hid, user.isActive());
     }
 
     public static UserPrincipal authenticated(UUID id, String username, Role role, UUID hotelId) {
-        return new UserPrincipal(id, username, null, role, hotelId);
+        return new UserPrincipal(id, username, null, role, hotelId, true);
     }
 
     @Override
@@ -71,6 +73,6 @@ public class UserPrincipal implements UserDetails, Principal {
 
     @Override
     public boolean isEnabled() {
-        return true;
+        return active;
     }
 }

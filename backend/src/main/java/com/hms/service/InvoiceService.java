@@ -1,10 +1,15 @@
 package com.hms.service;
 
 import com.hms.api.dto.ApiDtos;
+import com.hms.config.HmsPublicUrlProperties;
 import com.hms.domain.ReservationStatus;
+import com.hms.entity.Hotel;
 import com.hms.entity.Invoice;
+import com.hms.entity.InvoiceLineItem;
 import com.hms.entity.Reservation;
+import com.hms.entity.Room;
 import com.hms.entity.RoomCharge;
+import com.hms.entity.RoomType;
 import com.hms.repository.InvoiceRepository;
 import com.hms.repository.ReservationRepository;
 import com.hms.repository.RoomChargeRepository;
@@ -18,6 +23,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -32,16 +38,22 @@ public class InvoiceService {
     private final InvoiceRepository invoiceRepository;
     private final ReservationRepository reservationRepository;
     private final RoomChargeRepository roomChargeRepository;
+    private final HmsPublicUrlProperties publicUrlProperties;
+    private final InvoicePdfService invoicePdfService;
 
     public InvoiceService(
             TenantAccessService tenantAccessService,
             InvoiceRepository invoiceRepository,
             ReservationRepository reservationRepository,
-            RoomChargeRepository roomChargeRepository) {
+            RoomChargeRepository roomChargeRepository,
+            HmsPublicUrlProperties publicUrlProperties,
+            InvoicePdfService invoicePdfService) {
         this.tenantAccessService = tenantAccessService;
         this.invoiceRepository = invoiceRepository;
         this.reservationRepository = reservationRepository;
         this.roomChargeRepository = roomChargeRepository;
+        this.publicUrlProperties = publicUrlProperties;
+        this.invoicePdfService = invoicePdfService;
     }
 
     @Transactional(readOnly = true)
@@ -61,7 +73,7 @@ public class InvoiceService {
                         i.getTotalAmount(),
                         i.getHotel().getCurrency(),
                         i.getCreatedAt(),
-                        i.getPdfUrl()))
+                        publicUrlProperties.invoicePdfUrl(hotelId, i.getId())))
                 .toList();
     }
 
@@ -71,11 +83,85 @@ public class InvoiceService {
         Invoice inv = invoiceRepository
                 .findDetailedByIdAndHotelId(invoiceId, hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Invoice not found"));
-        List<ApiDtos.InvoiceLine> lines = inv.getLineItems().stream()
+        return toInvoiceDto(hotelId, inv, null);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<ApiDtos.InvoiceDto> finalInvoiceForReservation(
+            UUID hotelId, String hotelHeader, UUID reservationId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (!reservationRepository.findByIdAndHotel_Id(reservationId, hotelId).isPresent()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Reservation not found");
+        }
+        return invoiceRepository
+                .findTopByReservation_IdAndHotel_IdOrderByCreatedAtDesc(reservationId, hotelId)
+                .flatMap(inv -> invoiceRepository.findDetailedByIdAndHotelId(inv.getId(), hotelId))
+                .map(inv -> toInvoiceDto(hotelId, inv, null));
+    }
+
+    /**
+     * Maps a persisted invoice to API DTO. When {@code precomputedLines} is non-null (e.g. checkout response), those
+     * lines are used instead of reading {@link Invoice#getLineItems()}.
+     */
+    public ApiDtos.InvoiceDto toInvoiceDto(UUID hotelId, Invoice inv, List<ApiDtos.InvoiceLine> precomputedLines) {
+        List<ApiDtos.InvoiceLine> lines =
+                precomputedLines != null ? precomputedLines : mapInvoiceLinesFromEntity(inv);
+        Reservation res = inv.getReservation();
+        String roomNumber = null;
+        String roomTypeName = null;
+        if (res != null) {
+            Room rm = res.getRoom();
+            if (rm != null) {
+                roomNumber = rm.getRoomNumber();
+                RoomType rt = rm.getRoomType();
+                if (rt != null) {
+                    roomTypeName = rt.getName();
+                }
+            }
+        }
+        Hotel hotel = inv.getHotel();
+        String bookingRef = res != null ? blankToDash(res.getBookingReference()) : "-";
+        String confCode = res != null ? blankToDash(res.getConfirmationCode()) : "-";
+        String guest = res != null ? guestName(res) : "Guest";
+        String currency = hotel != null && hotel.getCurrency() != null ? hotel.getCurrency() : "USD";
+        Instant createdAt = inv.getCreatedAt() != null ? inv.getCreatedAt() : Instant.now();
+        return new ApiDtos.InvoiceDto(
+                inv.getId(),
+                inv.getInvoiceNumber(),
+                inv.getTotalAmount(),
+                publicUrlProperties.invoicePdfUrl(hotelId, inv.getId()),
+                lines,
+                bookingRef,
+                confCode,
+                guest,
+                roomNumber,
+                roomTypeName,
+                currency,
+                createdAt);
+    }
+
+    private static List<ApiDtos.InvoiceLine> mapInvoiceLinesFromEntity(Invoice inv) {
+        List<InvoiceLineItem> raw = inv.getLineItems();
+        if (raw == null) {
+            return List.of();
+        }
+        return raw.stream()
                 .sorted(Comparator.comparing(li -> li.getLineOrder() != null ? li.getLineOrder() : 0))
                 .map(li -> new ApiDtos.InvoiceLine(li.getDescription(), li.getAmount()))
                 .toList();
-        return new ApiDtos.InvoiceDto(inv.getId(), inv.getInvoiceNumber(), inv.getTotalAmount(), inv.getPdfUrl(), lines);
+    }
+
+    private static String blankToDash(String s) {
+        return s == null || s.isBlank() ? "-" : s;
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] invoicePdfBytes(UUID hotelId, String hotelHeader, UUID invoiceId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Invoice inv = invoiceRepository
+                .findDetailedByIdAndHotelId(invoiceId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Invoice not found"));
+        return invoicePdfService.renderStoredTaxInvoice(inv);
     }
 
     @Transactional(readOnly = true)

@@ -3,9 +3,15 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch, getToken } from "@/lib/api";
+import { API_BASE, apiFetch, getToken } from "@/lib/api";
 import { loadAuthUser } from "@/lib/auth";
 import { staffAppPath } from "@/lib/staffAppRoutes";
+import {
+  buildTaxInvoiceHtml,
+  guessPaymentMethodFromItems,
+  openTaxInvoicePrintWindow,
+  summarizeFromLineItems,
+} from "@/lib/taxInvoiceHtml";
 
 type Folio = {
   reservationId: string;
@@ -27,17 +33,30 @@ type Folio = {
     postedBy: string;
   }[];
   summary: {
-    roomCharges?: number;
-    consumptionCharges?: number;
-    subtotal?: number;
-    taxes?: number;
-    fees?: number;
+    reservation_id?: string;
+    room_charges_total?: number;
+    other_charges_total?: number;
+    gross_total?: number;
+    tax_total?: number;
+    discount_total?: number;
+    grand_total?: number;
+    payments_total?: number;
+    balanceDue?: number;
+    balance_due?: number;
     depositPaid?: number;
-    totalPayments?: number;
     totalCharges?: number;
-    balanceDue: number;
     currency: string;
   };
+  payments: {
+    id: string | null;
+    postedAt: string;
+    method: string;
+    amount: number;
+    type: string;
+    status: string;
+    reference?: string | null;
+    notes?: string | null;
+  }[];
 };
 
 type StaffReservationDetail = {
@@ -110,7 +129,36 @@ type CheckOutResponse = {
     totalAmount: number;
     pdfUrl?: string | null;
     items: { description: string; amount: number }[];
+    bookingReference?: string;
+    confirmationCode?: string;
+    guestName?: string;
+    roomNumber?: string | null;
+    roomTypeName?: string | null;
+    currency?: string;
+    createdAt?: string;
   };
+  invoiceBreakdown?: {
+    roomCharges: number;
+    consumptionCharges: number;
+    subtotalBeforeTax: number;
+    taxes: number;
+    depositCredit: number;
+    grandTotal: number;
+  };
+};
+
+type FinalInvoiceDto = {
+  id: string;
+  invoiceNumber: string;
+  totalAmount: number;
+  items: { description: string; amount: number }[];
+  bookingReference?: string;
+  confirmationCode?: string;
+  guestName?: string;
+  roomNumber?: string | null;
+  roomTypeName?: string | null;
+  currency?: string;
+  createdAt?: string;
 };
 
 function canOverrideBalance(role: string | undefined) {
@@ -137,9 +185,16 @@ export default function StaffReservationDetailPage() {
   const [minibarOk, setMinibarOk] = useState(false);
   const [lateOut, setLateOut] = useState(false);
   const [overrideBal, setOverrideBal] = useState(false);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [chargeOpen, setChargeOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [paymentTypesUsed, setPaymentTypesUsed] = useState("");
+  const [paymentRef, setPaymentRef] = useState("");
+  const [paymentNotes, setPaymentNotes] = useState("");
+  const [chargeAmount, setChargeAmount] = useState("");
+  const [chargeType, setChargeType] = useState("MINIBAR");
+  const [chargeDesc, setChargeDesc] = useState("");
 
   const user = typeof window !== "undefined" ? loadAuthUser() : null;
 
@@ -201,7 +256,9 @@ export default function StaffReservationDetailPage() {
         guest_id_verified: true,
         is_early_checkin: earlyIn,
       };
-      if (selectedRoomId) body.room_id = selectedRoomId;
+      if (selectedRoomId && (!folio?.roomId || selectedRoomId !== folio.roomId)) {
+        body.room_id = selectedRoomId;
+      }
       await apiFetch(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/check-in`, {
         method: "POST",
         body: JSON.stringify(body),
@@ -216,7 +273,8 @@ export default function StaffReservationDetailPage() {
 
   async function openCheckOutModal() {
     setBanner(null);
-    setMinibarOk(false);
+    // Default to checked to reduce friction; staff can turn it off if inspection is not done yet.
+    setMinibarOk(true);
     setLateOut(false);
     setOverrideBal(false);
     setPaymentMethod("CASH");
@@ -241,7 +299,7 @@ export default function StaffReservationDetailPage() {
       const result = await apiFetch<CheckOutResponse>(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/check-out`, {
         method: "POST",
         body: JSON.stringify({
-          minibar_inspected: true,
+          minibar_inspected: minibarOk,
           is_late_checkout: lateOut,
           override_balance_warning: overrideBal,
           finalPayment: {
@@ -256,78 +314,84 @@ export default function StaffReservationDetailPage() {
       printInvoiceDoc(result);
       await load();
     } catch (e) {
-      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Check-out failed" });
+      const msg = e instanceof Error ? e.message : "Check-out failed";
+      const hints: string[] = [];
+      if (msg.includes("RESERVATION_WRONG_STATUS") || msg.includes("CHECKED_IN")) {
+        hints.push("Reservation must be in CHECKED_IN status.");
+      }
+      if (msg.includes("MINIBAR_NOT_INSPECTED") || msg.toLowerCase().includes("minibar")) {
+        hints.push("Enable 'Minibar inspected'.");
+      }
+      if (msg.includes("FOLIO_BALANCE_DUE") || msg.toLowerCase().includes("outstanding balance")) {
+        hints.push("Settle folio balance or enable authorized override.");
+      }
+      if (msg.includes("NO_ROOM_ASSIGNED")) {
+        hints.push("Assign a room before checkout.");
+      }
+      setBanner({
+        kind: "err",
+        text: hints.length ? `${msg} • ${hints.join(" ")}` : msg,
+      });
     }
   }
 
   function printInvoiceDoc(result: CheckOutResponse) {
     if (!folio) return;
-    /** Printed doc is `about:blank` — relative `/images/...` won't load; use absolute URLs from this app origin. */
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const assetUrl = (path: string) =>
-      `${origin}${path.startsWith("/") ? path : `/${path}`}`;
-    const esc = (v: unknown) =>
-      String(v ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;");
-    const depositPaid = folio.summary.depositPaid ?? 0;
-    const totalCharges = folio.summary.totalCharges ?? 0;
-    const remainingBeforePayment = Math.max(0, totalCharges - depositPaid);
+    const bd = result.invoiceBreakdown;
+    let totalCharges: number;
+    let depositPaid: number;
+    let remainingBeforePayment: number;
+    if (bd) {
+      const sub = Number(bd.subtotalBeforeTax ?? 0);
+      const tax = Number(bd.taxes ?? 0);
+      totalCharges = sub + tax;
+      depositPaid = Number(bd.depositCredit ?? 0);
+      remainingBeforePayment = Number(bd.grandTotal ?? 0);
+    } else {
+      const items = result.invoice.items ?? [];
+      let positives = 0;
+      let deposit = 0;
+      for (const it of items) {
+        const a = Number(it.amount);
+        if (a > 0) positives += a;
+        if (String(it.description).toLowerCase().includes("deposit")) deposit = Math.abs(a);
+      }
+      totalCharges = positives;
+      depositPaid = deposit;
+      remainingBeforePayment = Math.max(0, totalCharges - depositPaid);
+    }
     const paid = Number(paymentAmount || "0");
     const dueAfterPayment = Math.max(0, remainingBeforePayment - paid);
     const checkoutAt = new Date().toLocaleString();
-    const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Invoice ${esc(result.invoice.invoiceNumber)}</title>
-    <style>
-    body{font-family:Arial,sans-serif;margin:20px;color:#111}
-    .top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
-    .brand{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-    .logo-img{height:52px;width:auto;object-fit:contain;display:block}
-    .inv{border:1px solid #e2e8f0;border-radius:10px;padding:14px}
-    .row{display:flex;justify-content:space-between;margin:6px 0}
-    .muted{color:#64748b}
-    .strong{font-weight:700}
-    table{width:100%;border-collapse:collapse;margin-top:8px}
-    th,td{border-bottom:1px solid #e2e8f0;padding:8px;text-align:left}
-    tfoot td{font-weight:700}
-    </style></head><body>
-    <div class="top">
-      <div class="brand">
-        <img class="logo-img" src="${esc(assetUrl("/images/RRA_LOGO.png"))}" alt="RRA" />
-        <img class="logo-img" src="${esc(assetUrl("/images/rraLogo2.png"))}" alt="RRA" />
-      </div>
-      <img class="logo-img" style="height:56px" src="${esc(assetUrl("/images/logoubumwe.png"))}" alt="Ubumwe Grand Hotel" />
-    </div>
-    <h2>Tax Invoice</h2>
-    <div class="inv">
-      <div class="row"><span class="muted">Invoice #</span><span class="strong">${esc(result.invoice.invoiceNumber)}</span></div>
-      <div class="row"><span class="muted">Booking reference</span><span>${esc(staffDetail?.booking_reference ?? folio.booking_reference ?? "—")}</span></div>
-      <div class="row"><span class="muted">Guest</span><span>${esc(folio.guest.name)}</span></div>
-      <div class="row"><span class="muted">Room</span><span>${esc(folio.roomNumber || "—")} (${esc(folio.roomTypeName || "—")})</span></div>
-      <div class="row"><span class="muted">Checkout time</span><span>${esc(checkoutAt)}</span></div>
-      <table>
-        <thead><tr><th>Description</th><th>Amount (${esc(folio.summary.currency)})</th></tr></thead>
-        <tbody>
-          ${result.invoice.items
-            .map((it) => `<tr><td>${esc(it.description)}</td><td>${esc(it.amount)}</td></tr>`)
-            .join("")}
-        </tbody>
-      </table>
-      <div class="row"><span class="muted">Total charges</span><span>${esc(totalCharges)} ${esc(folio.summary.currency)}</span></div>
-      <div class="row"><span class="muted">Deposit paid</span><span>- ${esc(depositPaid)} ${esc(folio.summary.currency)}</span></div>
-      <div class="row"><span class="muted">Remaining before checkout payment</span><span>${esc(remainingBeforePayment)} ${esc(folio.summary.currency)}</span></div>
-      <div class="row"><span class="muted">Paid at checkout (${esc(paymentMethod)})</span><span>- ${esc(paid)} ${esc(folio.summary.currency)}</span></div>
-      <div class="row"><span class="muted">Payment types used</span><span>${esc(paymentTypesUsed || paymentMethod)}</span></div>
-      <div class="row strong"><span>Balance after payment</span><span>${esc(dueAfterPayment)} ${esc(folio.summary.currency)}</span></div>
-    </div>
-    </body></html>`;
-    const w = window.open("", "_blank");
-    if (!w) return;
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    w.print();
+    const inv = result.invoice;
+    const roomLabel =
+      inv.roomNumber != null || inv.roomTypeName != null
+        ? `${inv.roomNumber ?? folio.roomNumber ?? "—"} (${inv.roomTypeName ?? folio.roomTypeName ?? "—"})`
+        : `${folio.roomNumber || "—"} (${folio.roomTypeName || "—"})`;
+    const bookingRef =
+      inv.bookingReference && inv.bookingReference !== "-"
+        ? inv.bookingReference
+        : staffDetail?.booking_reference ?? folio.booking_reference ?? "—";
+    const guestNm = inv.guestName ?? folio.guest.name;
+    const curr = inv.currency ?? folio.summary.currency;
+    const whenLbl = inv.createdAt ? new Date(inv.createdAt).toLocaleString() : checkoutAt;
+    const html = buildTaxInvoiceHtml({
+      invoiceNumber: result.invoice.invoiceNumber,
+      items: result.invoice.items ?? [],
+      bookingRef,
+      guestName: guestNm,
+      roomLabel,
+      whenLabel: whenLbl,
+      currency: curr,
+      totalCharges,
+      depositPaid,
+      remainingBeforePayment,
+      paidAtCheckout: paid,
+      paymentMethodLabel: paymentMethod,
+      paymentTypesUsed: paymentTypesUsed || paymentMethod,
+      balanceAfter: dueAfterPayment,
+    });
+    openTaxInvoicePrintWindow(html);
   }
 
   async function doCancel() {
@@ -342,6 +406,158 @@ export default function StaffReservationDetailPage() {
       await load();
     } catch (e) {
       setBanner({ kind: "err", text: e instanceof Error ? e.message : "Cancel failed" });
+    }
+  }
+
+  async function submitPayment() {
+    const amt = Number(paymentAmount);
+    if (!Number.isFinite(amt) || amt <= 0) return;
+    setBanner(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/payments`, {
+        method: "POST",
+        body: JSON.stringify({
+          payment_type: "PARTIAL",
+          method: paymentMethod,
+          amount: amt,
+          currency: folio?.summary.currency ?? "RWF",
+          reference: paymentRef || null,
+          notes: paymentNotes || null,
+        }),
+      });
+      setPaymentOpen(false);
+      setPaymentAmount("");
+      setPaymentRef("");
+      setPaymentNotes("");
+      setBanner({ kind: "ok", text: "Payment recorded." });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Payment failed" });
+    }
+  }
+
+  async function submitCharge() {
+    const amt = Number(chargeAmount);
+    if (!Number.isFinite(amt) || amt <= 0 || !chargeDesc.trim()) return;
+    if (/^\s*payment\s*$/i.test(chargeDesc.trim())) {
+      setBanner({
+        kind: "err",
+        text: "Use '+ Record Payment' for money received. '+ Add Charge' adds to the guest balance.",
+      });
+      return;
+    }
+    setBanner(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/charges`, {
+        method: "POST",
+        body: JSON.stringify({
+          charge_type: chargeType,
+          description: chargeDesc.trim(),
+          amount: amt,
+          currency: folio?.summary.currency ?? "RWF",
+        }),
+      });
+      setChargeOpen(false);
+      setChargeAmount("");
+      setChargeDesc("");
+      setBanner({ kind: "ok", text: "Charge posted." });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Charge failed" });
+    }
+  }
+
+  async function printInvoicePdf() {
+    if (!folio) return;
+    setBanner(null);
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/v1/hotels/${hotelId}/reservations/${reservationId}/final-invoice`,
+        {
+          headers: {
+            Authorization: `Bearer ${getToken() ?? ""}`,
+            "X-Hotel-ID": hotelId,
+          },
+        },
+      );
+      const fallbackRoomLabel = `${folio.roomNumber || "—"} (${folio.roomTypeName || "—"})`;
+      const fallbackBookingRef = staffDetail?.booking_reference ?? folio.booking_reference ?? "—";
+      const fallbackCurrency = folio.summary.currency;
+
+      if (res.ok) {
+        const inv = (await res.json()) as FinalInvoiceDto;
+        const bal = Number(inv.totalAmount ?? 0);
+        const sums = summarizeFromLineItems(inv.items ?? [], bal);
+        const pm = guessPaymentMethodFromItems(inv.items ?? []);
+        const roomLabel =
+          inv.roomNumber != null || inv.roomTypeName != null
+            ? `${inv.roomNumber ?? folio.roomNumber ?? "—"} (${inv.roomTypeName ?? folio.roomTypeName ?? "—"})`
+            : fallbackRoomLabel;
+        const bookingRef =
+          inv.bookingReference && inv.bookingReference !== "-"
+            ? inv.bookingReference
+            : fallbackBookingRef;
+        const guestNm = inv.guestName ?? folio.guest.name;
+        const currency = inv.currency ?? fallbackCurrency;
+        const whenLabel = inv.createdAt ? new Date(inv.createdAt).toLocaleString() : new Date().toLocaleString();
+        const html = buildTaxInvoiceHtml({
+          invoiceNumber: inv.invoiceNumber,
+          items: inv.items ?? [],
+          bookingRef,
+          guestName: guestNm,
+          roomLabel,
+          whenLabel,
+          currency,
+          totalCharges: sums.totalCharges,
+          depositPaid: sums.depositPaid,
+          remainingBeforePayment: sums.remainingBeforePayment,
+          paidAtCheckout: sums.paidAtCheckout,
+          paymentMethodLabel: pm,
+          paymentTypesUsed: pm,
+          balanceAfter: sums.balanceAfter,
+        });
+        openTaxInvoicePrintWindow(html);
+        return;
+      }
+
+      if (res.status !== 404) {
+        throw new Error(await res.text());
+      }
+
+      const items: { description: string; amount: number }[] = [
+        { description: "Subtotal (room & posted charges)", amount: Number(folio.summary.gross_total ?? 0) },
+        { description: "Tax (VAT)", amount: Number(folio.summary.tax_total ?? 0) },
+      ];
+      for (const p of folio.payments.filter((x) => x.status === "COMPLETED")) {
+        const label =
+          String(p.type).toUpperCase() === "DEPOSIT" ? "Deposit Paid" : `Payment received (${p.method})`;
+        items.push({ description: label, amount: -Number(p.amount) });
+      }
+      const bal = Number(folio.summary.balance_due ?? folio.summary.balanceDue ?? 0);
+      const sums = summarizeFromLineItems(items, bal);
+      const lastPay = [...folio.payments]
+        .reverse()
+        .find((p) => p.status === "COMPLETED" && String(p.type).toUpperCase() !== "DEPOSIT");
+      const pm = lastPay?.method ?? "—";
+      const html = buildTaxInvoiceHtml({
+        invoiceNumber: `Estimate · ${folio.booking_reference ?? folio.confirmationCode ?? folio.reservationId}`,
+        items,
+        bookingRef: fallbackBookingRef,
+        guestName: folio.guest.name,
+        roomLabel: fallbackRoomLabel,
+        whenLabel: new Date().toLocaleString(),
+        currency: fallbackCurrency,
+        totalCharges: sums.totalCharges,
+        depositPaid: sums.depositPaid,
+        remainingBeforePayment: sums.remainingBeforePayment,
+        paidAtCheckout: sums.paidAtCheckout,
+        paymentMethodLabel: pm,
+        paymentTypesUsed: pm,
+        balanceAfter: sums.balanceAfter,
+      });
+      openTaxInvoicePrintWindow(html);
+    } catch (e) {
+      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Invoice print failed" });
     }
   }
 
@@ -373,24 +589,43 @@ export default function StaffReservationDetailPage() {
       folio.booking_reference ?? folio.confirmationCode ?? folio.reservationId,
     )}</title>
     <style>
-    body{font-family:Arial,sans-serif;margin:20px;color:#111;position:relative}
-    .watermark{position:fixed;top:45%;left:50%;transform:translate(-50%,-50%) rotate(-28deg);font-size:56px;font-weight:800;letter-spacing:.16em;color:rgba(15,118,110,.09);text-transform:uppercase;white-space:nowrap;pointer-events:none;user-select:none;z-index:0}
+    :root{--ink:#0f172a;--muted:#475569;--line:#d9e2ec;--soft:#f8fafc;--brand:#0f766e}
+    body{font-family:Inter,Segoe UI,Arial,sans-serif;margin:18px;color:var(--ink);position:relative;background:#fff}
+    .watermark{position:fixed;top:47%;left:50%;transform:translate(-50%,-50%) rotate(-25deg);font-size:58px;font-weight:900;letter-spacing:.12em;color:rgba(15,118,110,.08);text-transform:uppercase;white-space:nowrap;pointer-events:none;user-select:none;z-index:0}
     .wrap{position:relative;z-index:1}
-    .card{border:1px solid #ddd;border-radius:8px;padding:14px;max-width:900px;background:#fff}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:900px}
-    .row{margin:6px 0}.label{font-weight:700;display:inline-block;min-width:170px}
-    h1{margin:0 0 8px}.muted{color:#555}
-    .signatures{max-width:900px;margin-top:10px;border:1px solid #ddd;border-radius:8px;padding:10px 12px;display:grid;grid-template-columns:1fr 1fr;gap:14px;background:#fff}
-    .sig-title{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.04em;margin-bottom:14px}
-    .sig-line{border-top:1px solid #9ca3af;padding-top:4px;font-size:12px;color:#374151}
-    @media print{.grid{grid-template-columns:1fr 1fr}}
+    .top{max-width:960px;border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:linear-gradient(180deg,#ffffff 0%,#f7fbfb 100%);margin-bottom:10px}
+    .top h1{margin:0 0 6px;font-size:23px}
+    .top .meta{display:flex;flex-wrap:wrap;gap:8px 18px;color:var(--muted);font-size:12px}
+    .chip{display:inline-block;border:1px solid #99f6e4;color:#115e59;background:#ecfeff;border-radius:999px;padding:3px 10px;font-weight:700}
+    .card{border:1px solid var(--line);border-radius:12px;padding:14px 14px;max-width:960px;background:#fff;box-shadow:0 1px 0 rgba(15,23,42,.03)}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:960px}
+    .card h3{margin:0 0 8px;font-size:14px;color:#0f766e;text-transform:uppercase;letter-spacing:.04em}
+    .row{margin:6px 0}
+    .label{font-weight:700;display:inline-block;min-width:170px;color:#1e293b}
+    .value{color:#0f172a}
+    .muted{color:var(--muted)}
+    .summary{margin-top:10px;background:var(--soft)}
+    .summary .row{font-size:14px}
+    .summary .grand{font-size:16px;font-weight:800}
+    .signatures{max-width:960px;margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:12px 12px;display:grid;grid-template-columns:1fr 1fr;gap:14px;background:#fff}
+    .sig-title{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:16px}
+    .sig-line{border-top:1px solid #94a3b8;padding-top:5px;font-size:12px;color:#334155}
+    @media print{body{margin:10px}.grid{grid-template-columns:1fr 1fr}}
     </style></head><body>
     <div class="watermark">Confidential / Staff Copy</div>
     <div class="wrap">
-    <h1>Reservation Confirmation</h1>
-    <p class="muted">Generated on ${esc(new Date().toLocaleString())}</p>
+    <div class="top">
+      <h1>Reservation Staff Copy</h1>
+      <div class="meta">
+        <span class="chip">Confidential</span>
+        <span><strong>Reference:</strong> ${esc(folio.booking_reference ?? "—")}</span>
+        <span><strong>Status:</strong> ${esc(folio.stay.reservationStatus)}</span>
+        <span><strong>Generated:</strong> ${esc(new Date().toLocaleString())}</span>
+      </div>
+    </div>
     <div class="grid">
     <div class="card">
+    <h3>Booking & Guest</h3>
     <div class="row"><span class="label">Booking reference:</span>${esc(folio.booking_reference ?? "—")}</div>
     <div class="row"><span class="label">Confirmation code:</span>${esc(folio.confirmationCode ?? "—")}</div>
     <div class="row"><span class="label">Booking source:</span>${esc(staffDetail?.booking_source?.replaceAll("_", " ") ?? "—")}</div>
@@ -408,20 +643,21 @@ export default function StaffReservationDetailPage() {
     <div class="row"><span class="label">Check-out:</span>${esc(checkOutWithTime)}</div>
     <div class="row"><span class="label">Stay:</span>${esc(folio.stay.totalNights)} nights</div>
     <div class="row"><span class="label">Status:</span>${esc(folio.stay.reservationStatus)}</div>
-    <div class="row"><span class="label">Deposit paid:</span>${esc(folio.summary.depositPaid ?? 0)} ${esc(
+    <div class="row"><span class="label">Deposit paid:</span>${esc((folio.summary.payments_total ?? 0) - (folio.summary.gross_total ?? 0) > 0 ? "Included" : "—")} ${esc(
       folio.summary.currency,
     )}</div>
-    <div class="row"><span class="label">Total charges:</span>${esc(folio.summary.totalCharges ?? "—")} ${esc(
+    <div class="row"><span class="label">Total charges:</span>${esc(folio.summary.grand_total ?? "—")} ${esc(
       folio.summary.currency,
     )}</div>
-    <div class="row"><span class="label">Total payments:</span>${esc(folio.summary.totalPayments ?? "—")} ${esc(
+    <div class="row"><span class="label">Total payments:</span>${esc(folio.summary.payments_total ?? "—")} ${esc(
       folio.summary.currency,
     )}</div>
-    <div class="row"><span class="label">Balance due:</span>${esc(folio.summary.balanceDue)} ${esc(
+    <div class="row"><span class="label">Balance due:</span>${esc(balance)} ${esc(
       folio.summary.currency,
     )}</div>
     </div>
     <div class="card">
+    <h3>Address & Identity</h3>
     <div class="row"><span class="label">Address:</span>${esc(
       [
         staffDetail?.guest_address.street_number,
@@ -447,8 +683,14 @@ export default function StaffReservationDetailPage() {
     </div>
     </div>
     <div class="card" style="margin-top:10px">
-      <div style="font-weight:700;margin-bottom:6px">Booking Timeline</div>
+      <h3>Booking Timeline</h3>
       ${timelineRows}
+    </div>
+    <div class="card summary">
+      <h3>Folio Snapshot</h3>
+      <div class="row">Total charges: <strong>${esc(folio.summary.grand_total ?? "—")} ${esc(folio.summary.currency)}</strong></div>
+      <div class="row">Total payments: <strong>${esc(folio.summary.payments_total ?? "—")} ${esc(folio.summary.currency)}</strong></div>
+      <div class="row grand">Balance due: <strong>${esc(balance)} ${esc(folio.summary.currency)}</strong></div>
     </div>
     <div class="signatures">
       <div><div class="sig-title">Guest Signature</div><div class="sig-line">Name & Signature</div></div>
@@ -465,10 +707,19 @@ export default function StaffReservationDetailPage() {
   }
 
   const st = folio?.stay.reservationStatus;
-  const balance = folio?.summary.balanceDue ?? 0;
+  const balance =
+    typeof folio?.summary.balanceDue === "number"
+      ? folio.summary.balanceDue
+      : typeof folio?.summary.balance_due === "number"
+        ? folio.summary.balance_due
+        : 0;
+  const canOverride = canOverrideBalance(user?.role);
+  const hasAssignedRoom = Boolean(folio?.roomId);
+  const statusOkForCheckout = st === "CHECKED_IN";
+  const balanceOk = balance <= 0.01 || (canOverride && overrideBal);
   const blockedByBalance =
     balance > 0.01 &&
-    (!canOverrideBalance(user?.role) || (canOverrideBalance(user?.role) && !overrideBal));
+    (!canOverride || (canOverride && !overrideBal));
 
   const statusChip = (status: string) => {
     const base = "text-xs font-semibold px-2 py-0.5 rounded-full";
@@ -491,70 +742,90 @@ export default function StaffReservationDetailPage() {
   };
 
   return (
-    <>
-      <p style={{ marginBottom: "0.5rem" }}>
-        <Link href={staffAppPath("reservations")}>← Reservations</Link>
-      </p>
-      <h1>Reservation</h1>
+    <div className="mx-auto max-w-6xl space-y-4">
+      <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+        <p className="text-sm mb-2">
+          <Link href={staffAppPath("reservations")} className="text-primary">
+            ← Reservations
+          </Link>
+        </p>
+        <h1 className="text-3xl font-bold tracking-tight">Reservation</h1>
+        <p className="text-sm text-muted-foreground mt-1">Front desk reservation overview, actions, and folio.</p>
+      </div>
       {staffDetail && (
-        <div className="panel" style={{ marginBottom: "1rem" }}>
-          <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>Booking</h2>
-          <p style={{ margin: "0.35rem 0" }}>
-            <span style={{ color: "var(--muted)" }}>Reference </span>
-            <code
-              style={{ fontSize: "1.15rem", fontWeight: 700, cursor: "copy" }}
-              title="Click to copy"
-              onClick={() => void navigator.clipboard.writeText(staffDetail.booking_reference)}
-            >
-              {staffDetail.booking_reference}
-            </code>
-          </p>
-          <p style={{ margin: "0.25rem 0", fontSize: "0.9rem", color: "var(--muted)" }}>
-            Confirmation <span className="font-mono">{staffDetail.confirmation_code}</span> · Source{" "}
-            <strong>{staffDetail.booking_source.replace(/_/g, " ")}</strong>
-          </p>
-          <h3 style={{ marginTop: "1rem", fontSize: "1rem" }}>Guest (full profile)</h3>
-          <p style={{ margin: "0.2rem 0" }}>
-            <strong>{staffDetail.guest.full_name}</strong> · National ID {staffDetail.guest.national_id} · DOB{" "}
-            {staffDetail.guest.date_of_birth}
-          </p>
-          <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>
-            {staffDetail.guest.email ?? "—"} · {staffDetail.guest.phone ?? "—"}
-          </p>
-          <h3 style={{ marginTop: "1rem", fontSize: "1rem" }}>Guest Address</h3>
-          <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>
-            {[
-              staffDetail.guest_address.street_number,
-              staffDetail.guest_address.village,
-              staffDetail.guest_address.cell,
-              staffDetail.guest_address.sector,
-              staffDetail.guest_address.district,
-              staffDetail.guest_address.province,
-              staffDetail.guest_address.country,
-            ]
-              .filter(Boolean)
-              .join(", ")}
-          </p>
-          {staffDetail.guest_address.address_notes && (
-            <p style={{ margin: "0.25rem 0", fontSize: "0.85rem", color: "var(--muted)" }}>
-              {staffDetail.guest_address.address_notes}
-            </p>
-          )}
-          {staffDetail.room && (
-            <p style={{ marginTop: "0.75rem" }}>
-              Room <strong>{staffDetail.room.roomNumber}</strong> · status{" "}
-              <strong>{staffDetail.room.room_status ?? "—"}</strong> · cleanliness{" "}
-              <strong>{staffDetail.room.cleanliness}</strong>
-            </p>
-          )}
-          <h3 style={{ marginTop: "1rem", fontSize: "1rem" }}>Timeline</h3>
-          <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.9rem" }}>
-            {staffDetail.timeline.map((t) => (
-              <li key={t.phase + t.at}>
-                <strong>{t.phase}</strong> — {t.at ? t.at.slice(0, 19).replace("T", " ") : "—"}
-              </li>
-            ))}
-          </ul>
+        <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm space-y-4">
+          <h2 className="text-lg font-semibold" style={{ marginTop: 0 }}>Booking</h2>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="rounded-xl border border-border/60 bg-background p-3">
+              <p className="text-xs text-muted-foreground mb-1">Reference</p>
+              <p style={{ margin: 0 }}>
+                <code
+                  style={{ fontSize: "1.05rem", fontWeight: 700, cursor: "copy" }}
+                  title="Click to copy"
+                  onClick={() => void navigator.clipboard.writeText(staffDetail.booking_reference)}
+                >
+                  {staffDetail.booking_reference}
+                </code>
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Confirmation <span className="font-mono">{staffDetail.confirmation_code}</span> · Source{" "}
+                <strong>{staffDetail.booking_source.replace(/_/g, " ")}</strong>
+              </p>
+            </div>
+            <div className="rounded-xl border border-border/60 bg-background p-3">
+              <p className="text-xs text-muted-foreground mb-1">Guest</p>
+              <p style={{ margin: 0, fontWeight: 700 }}>{staffDetail.guest.full_name}</p>
+              <p className="text-sm text-muted-foreground">
+                National ID {staffDetail.guest.national_id} · DOB {staffDetail.guest.date_of_birth}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {staffDetail.guest.email ?? "—"} · {staffDetail.guest.phone ?? "—"}
+              </p>
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="rounded-xl border border-border/60 bg-background p-3">
+              <p className="text-xs text-muted-foreground mb-1">Guest address</p>
+              <p className="text-sm" style={{ margin: 0 }}>
+                {[
+                  staffDetail.guest_address.street_number,
+                  staffDetail.guest_address.village,
+                  staffDetail.guest_address.cell,
+                  staffDetail.guest_address.sector,
+                  staffDetail.guest_address.district,
+                  staffDetail.guest_address.province,
+                  staffDetail.guest_address.country,
+                ]
+                  .filter(Boolean)
+                  .join(", ")}
+              </p>
+              {staffDetail.guest_address.address_notes && (
+                <p className="text-xs text-muted-foreground mt-2">{staffDetail.guest_address.address_notes}</p>
+              )}
+            </div>
+            <div className="rounded-xl border border-border/60 bg-background p-3">
+              <p className="text-xs text-muted-foreground mb-1">Room status</p>
+              {staffDetail.room ? (
+                <p className="text-sm" style={{ margin: 0 }}>
+                  Room <strong>{staffDetail.room.roomNumber}</strong> · status{" "}
+                  <strong>{staffDetail.room.room_status ?? "—"}</strong> · cleanliness{" "}
+                  <strong>{staffDetail.room.cleanliness}</strong>
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground" style={{ margin: 0 }}>No room assigned.</p>
+              )}
+            </div>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-background p-3">
+            <p className="text-xs text-muted-foreground mb-2">Timeline</p>
+            <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.9rem" }}>
+              {staffDetail.timeline.map((t) => (
+                <li key={t.phase + t.at}>
+                  <strong>{t.phase}</strong> — {t.at ? t.at.slice(0, 19).replace("T", " ") : "—"}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
       {error && <div className="error panel">{error}</div>}
@@ -572,7 +843,7 @@ export default function StaffReservationDetailPage() {
       )}
       {folio && (
         <>
-          <div className="panel">
+          <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
             <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>Guest &amp; stay</h2>
             {(folio.booking_reference || folio.confirmationCode) && (
               <p style={{ margin: "0 0 0.5rem", fontSize: "0.9rem" }}>
@@ -592,7 +863,7 @@ export default function StaffReservationDetailPage() {
             <p style={{ margin: "0.75rem 0 0", fontSize: "1.1rem" }}>
               Balance due:{" "}
               <strong>
-                {folio.summary.balanceDue} {folio.summary.currency}
+                {balance} {folio.summary.currency}
               </strong>
             </p>
             <div style={{ marginTop: "1rem", display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
@@ -617,6 +888,15 @@ export default function StaffReservationDetailPage() {
               >
                 Print Staff Copy
               </button>
+              <button type="button" onClick={() => setChargeOpen(true)}>
+                + Add Charge
+              </button>
+              <button type="button" onClick={() => setPaymentOpen(true)}>
+                + Record Payment
+              </button>
+              <button type="button" className="secondary" onClick={() => void printInvoicePdf()}>
+                Print Invoice
+              </button>
               {st === "CONFIRMED" && (
                 <button type="button" onClick={() => void openCheckInModal()}>
                   Check in
@@ -634,8 +914,11 @@ export default function StaffReservationDetailPage() {
               )}
             </div>
           </div>
-          <div className="panel" id="folio-block">
-            <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>Posted charges (folio)</h2>
+          <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm" id="folio-block">
+            <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>
+              FOLIO — {folio.booking_reference ?? folio.confirmationCode ?? folio.reservationId}
+            </h2>
+            <h3 style={{ marginBottom: "0.4rem" }}>Charges</h3>
             {folio.charges.length === 0 ? (
               <p style={{ color: "var(--muted)", margin: 0 }}>No incidental charges yet.</p>
             ) : (
@@ -666,8 +949,120 @@ export default function StaffReservationDetailPage() {
                 </tbody>
               </table>
             )}
+            <div style={{ marginTop: "0.8rem", borderTop: "1px solid var(--border)", paddingTop: "0.6rem" }}>
+              <p style={{ margin: "0.15rem 0" }}>
+                Subtotal: <strong>{folio.summary.gross_total ?? 0}</strong> {folio.summary.currency}
+              </p>
+              <p style={{ margin: "0.15rem 0" }}>
+                VAT (18%): <strong>{folio.summary.tax_total ?? 0}</strong> {folio.summary.currency}
+              </p>
+              <p style={{ margin: "0.15rem 0" }}>
+                Grand Total: <strong>{folio.summary.grand_total ?? 0}</strong> {folio.summary.currency}
+              </p>
+            </div>
+            <h3 style={{ margin: "0.9rem 0 0.35rem" }}>Payments</h3>
+            {folio.payments?.length ? (
+              <table>
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Method</th>
+                    <th>Reference</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {folio.payments.map((p, i) => (
+                    <tr key={p.id ?? `${p.postedAt}-${i}`}>
+                      <td>{p.postedAt?.slice(0, 16).replace("T", " ")}</td>
+                      <td>{p.method}</td>
+                      <td>{p.reference ?? "—"}</td>
+                      <td>
+                        {p.amount} {folio.summary.currency}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p style={{ color: "var(--muted)" }}>No payments recorded yet.</p>
+            )}
+            <p style={{ marginTop: "0.7rem", fontSize: "1.05rem" }}>
+              Balance Due:{" "}
+              <strong>
+                {balance} {folio.summary.currency}
+              </strong>
+            </p>
           </div>
         </>
+      )}
+
+      {paymentOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: "1rem" }}>
+          <div className="panel" style={{ maxWidth: 420, width: "100%" }}>
+            <h3 style={{ marginTop: 0 }}>Record payment</h3>
+            <p style={{ margin: "0 0 0.6rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+              This reduces balance due.
+            </p>
+            <label>Amount</label>
+            <input type="number" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} />
+            <label>Method</label>
+            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+              {["CASH", "CARD", "MOBILE_MONEY", "BANK_TRANSFER"].map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <label>Reference</label>
+            <input value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} />
+            <label>Notes</label>
+            <textarea value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} />
+            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.8rem" }}>
+              <button type="button" className="secondary" onClick={() => setPaymentOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => void submitPayment()}>
+                Submit Payment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {chargeOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: "1rem" }}>
+          <div className="panel" style={{ maxWidth: 420, width: "100%" }}>
+            <h3 style={{ marginTop: 0 }}>Add charge</h3>
+            <p style={{ margin: "0 0 0.6rem", fontSize: "0.85rem", color: "#92400e" }}>
+              This increases balance due. Do not use for guest payments.
+            </p>
+            <label>Description</label>
+            <input
+              value={chargeDesc}
+              placeholder="e.g. minibar, laundry, damage fee"
+              onChange={(e) => setChargeDesc(e.target.value)}
+            />
+            <label>Charge type</label>
+            <select value={chargeType} onChange={(e) => setChargeType(e.target.value)}>
+              {["ROOM_SERVICE", "MINIBAR", "LAUNDRY", "PARKING", "DAMAGE", "OTHER"].map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <label>Amount</label>
+            <input type="number" value={chargeAmount} onChange={(e) => setChargeAmount(e.target.value)} />
+            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.8rem" }}>
+              <button type="button" className="secondary" onClick={() => setChargeOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => void submitCharge()}>
+                Post Charge
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {checkInOpen && (
@@ -683,13 +1078,16 @@ export default function StaffReservationDetailPage() {
             padding: "1rem",
           }}
         >
-          <div className="panel" style={{ maxWidth: 420, width: "100%" }}>
-            <h3 style={{ marginTop: 0 }}>Check in</h3>
-            <label style={{ display: "block", marginBottom: "0.5rem" }}>Room</label>
+          <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm" style={{ maxWidth: 460, width: "100%" }}>
+            <h3 style={{ marginTop: 0, marginBottom: "0.25rem" }}>Check in</h3>
+            <p style={{ margin: "0 0 0.9rem", color: "var(--muted)", fontSize: "0.9rem" }}>
+              Verify guest identity and confirm room assignment.
+            </p>
+            <label style={{ display: "block", marginBottom: "0.45rem", fontWeight: 600 }}>Room</label>
             <select
               value={selectedRoomId}
               onChange={(e) => setSelectedRoomId(e.target.value)}
-              style={{ width: "100%", marginBottom: "1rem", padding: "0.5rem" }}
+              style={{ width: "100%", marginBottom: "1rem", padding: "0.55rem" }}
             >
               <option value="">Keep / assign later…</option>
               {roomChoices.map((r) => (
@@ -698,14 +1096,98 @@ export default function StaffReservationDetailPage() {
                 </option>
               ))}
             </select>
-            <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.75rem" }}>
-              <input type="checkbox" checked={guestIdOk} onChange={(e) => setGuestIdOk(e.target.checked)} />
-              Guest ID verified (required)
-            </label>
-            <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.5rem" }}>
-              <input type="checkbox" checked={earlyIn} onChange={(e) => setEarlyIn(e.target.checked)} />
-              Early check-in?
-            </label>
+            <div
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: "12px",
+                padding: "10px 12px",
+                marginBottom: "0.65rem",
+                background: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "10px",
+              }}
+            >
+              <div>
+                <p style={{ margin: 0, fontWeight: 600 }}>Guest ID verified</p>
+                <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>Required before check-in</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGuestIdOk((v) => !v)}
+                aria-pressed={guestIdOk}
+                style={{
+                  width: "56px",
+                  height: "30px",
+                  borderRadius: "999px",
+                  border: "1px solid var(--border)",
+                  background: guestIdOk ? "#0f766e" : "#e5e7eb",
+                  position: "relative",
+                  cursor: "pointer",
+                }}
+              >
+                <span
+                  style={{
+                    position: "absolute",
+                    top: "3px",
+                    left: guestIdOk ? "29px" : "3px",
+                    width: "22px",
+                    height: "22px",
+                    borderRadius: "999px",
+                    background: "#fff",
+                    transition: "left 120ms ease",
+                  }}
+                />
+              </button>
+            </div>
+            <div
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: "12px",
+                padding: "10px 12px",
+                marginBottom: "0.55rem",
+                background: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "10px",
+              }}
+            >
+              <div>
+                <p style={{ margin: 0, fontWeight: 600 }}>Early check-in</p>
+                <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                  Apply only if guest is arriving before standard time
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEarlyIn((v) => !v)}
+                aria-pressed={earlyIn}
+                style={{
+                  width: "56px",
+                  height: "30px",
+                  borderRadius: "999px",
+                  border: "1px solid var(--border)",
+                  background: earlyIn ? "#0f766e" : "#e5e7eb",
+                  position: "relative",
+                  cursor: "pointer",
+                }}
+              >
+                <span
+                  style={{
+                    position: "absolute",
+                    top: "3px",
+                    left: earlyIn ? "29px" : "3px",
+                    width: "22px",
+                    height: "22px",
+                    borderRadius: "999px",
+                    background: "#fff",
+                    transition: "left 120ms ease",
+                  }}
+                />
+              </button>
+            </div>
             {earlyIn && fees && (
               <p style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: "1rem" }}>
                 Fee: {fees.earlyCheckinFee} {fees.currency}
@@ -740,8 +1222,11 @@ export default function StaffReservationDetailPage() {
             padding: "1rem",
           }}
         >
-          <div className="panel" style={{ maxWidth: 440, width: "100%" }}>
-            <h3 style={{ marginTop: 0 }}>Check out</h3>
+          <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm" style={{ maxWidth: 460, width: "100%" }}>
+            <h3 style={{ marginTop: 0, marginBottom: "0.25rem" }}>Check out</h3>
+            <p style={{ margin: "0 0 0.9rem", color: "var(--muted)", fontSize: "0.9rem" }}>
+              Complete departure checks and finalize folio.
+            </p>
             <p style={{ margin: "0 0 0.75rem" }}>
               <strong>Folio balance due:</strong> {balance} {folio.summary.currency}
             </p>
@@ -751,7 +1236,13 @@ export default function StaffReservationDetailPage() {
               </p>
             )}
             <p style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
-              Deposit paid: <strong>{folio.summary.depositPaid ?? 0}</strong> {folio.summary.currency}
+              Deposit paid:{" "}
+              <strong>
+                {folio.payments
+                  .filter((p) => p.status === "COMPLETED" && String(p.type).toUpperCase() === "DEPOSIT")
+                  .reduce((s, p) => s + Number(p.amount), 0)}
+              </strong>{" "}
+              {folio.summary.currency}
             </p>
             <p style={{ fontSize: "0.9rem", marginBottom: "0.75rem" }}>
               Remaining to collect now: <strong>{Math.max(0, balance)}</strong> {folio.summary.currency}
@@ -790,32 +1281,143 @@ export default function StaffReservationDetailPage() {
                 style={{ width: "100%", marginTop: "0.35rem" }}
               />
             </label>
-            <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.75rem" }}>
-              <input type="checkbox" checked={minibarOk} onChange={(e) => setMinibarOk(e.target.checked)} />
-              Minibar inspected (required)
-            </label>
-            <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.5rem" }}>
-              <input type="checkbox" checked={lateOut} onChange={(e) => setLateOut(e.target.checked)} />
-              Late checkout?
-            </label>
+            <div
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: "12px",
+                padding: "10px 12px",
+                marginBottom: "0.65rem",
+                background: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "10px",
+              }}
+            >
+              <div>
+                <p style={{ margin: 0, fontWeight: 600 }}>Minibar inspected</p>
+                <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                  Required by checkout policy before checkout
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMinibarOk((v) => !v)}
+                aria-pressed={minibarOk}
+                style={{
+                  width: "56px",
+                  height: "30px",
+                  borderRadius: "999px",
+                  border: "1px solid var(--border)",
+                  background: minibarOk ? "#0f766e" : "#e5e7eb",
+                  position: "relative",
+                  cursor: "pointer",
+                }}
+              >
+                <span
+                  style={{
+                    position: "absolute",
+                    top: "3px",
+                    left: minibarOk ? "29px" : "3px",
+                    width: "22px",
+                    height: "22px",
+                    borderRadius: "999px",
+                    background: "#fff",
+                    transition: "left 120ms ease",
+                  }}
+                />
+              </button>
+            </div>
+            <div
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: "12px",
+                padding: "10px 12px",
+                marginBottom: "0.55rem",
+                background: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "10px",
+              }}
+            >
+              <div>
+                <p style={{ margin: 0, fontWeight: 600 }}>Late checkout</p>
+                <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                  Apply if guest departs after standard time
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLateOut((v) => !v)}
+                aria-pressed={lateOut}
+                style={{
+                  width: "56px",
+                  height: "30px",
+                  borderRadius: "999px",
+                  border: "1px solid var(--border)",
+                  background: lateOut ? "#0f766e" : "#e5e7eb",
+                  position: "relative",
+                  cursor: "pointer",
+                }}
+              >
+                <span
+                  style={{
+                    position: "absolute",
+                    top: "3px",
+                    left: lateOut ? "29px" : "3px",
+                    width: "22px",
+                    height: "22px",
+                    borderRadius: "999px",
+                    background: "#fff",
+                    transition: "left 120ms ease",
+                  }}
+                />
+              </button>
+            </div>
             {lateOut && fees && (
               <p style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: "0.75rem" }}>
                 Fee: {fees.lateCheckoutFee} {fees.currency}
               </p>
             )}
-            {balance > 0.01 && canOverrideBalance(user?.role) && (
+            {balance > 0.01 && canOverride && (
               <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "1rem" }}>
                 <input type="checkbox" checked={overrideBal} onChange={(e) => setOverrideBal(e.target.checked)} />
                 Override — proceed anyway (manager / finance)
               </label>
             )}
+            <div
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: "12px",
+                background: "#fff",
+                padding: "10px 12px",
+                marginBottom: "0.9rem",
+              }}
+            >
+              <p style={{ margin: "0 0 6px", fontWeight: 700, fontSize: "0.9rem" }}>Checkout requirements</p>
+              <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.86rem", lineHeight: 1.45 }}>
+                <li style={{ color: statusOkForCheckout ? "#166534" : "#991b1b" }}>
+                  {statusOkForCheckout ? "OK" : "Missing"} — Reservation status must be <strong>CHECKED_IN</strong>.
+                </li>
+                <li style={{ color: minibarOk ? "#166534" : "#991b1b" }}>
+                  {minibarOk ? "OK" : "Missing"} — <strong>Minibar inspected</strong> must be enabled.
+                </li>
+                <li style={{ color: hasAssignedRoom ? "#166534" : "#991b1b" }}>
+                  {hasAssignedRoom ? "OK" : "Missing"} — Reservation must have an <strong>assigned room</strong>.
+                </li>
+                <li style={{ color: balanceOk ? "#166534" : "#991b1b" }}>
+                  {balanceOk ? "OK" : "Missing"} — Folio balance must be settled, or authorized override enabled.
+                </li>
+              </ul>
+            </div>
             <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
               <button type="button" className="secondary" onClick={() => setCheckOutOpen(false)}>
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={!minibarOk || blockedByBalance}
+                disabled={!minibarOk || blockedByBalance || !statusOkForCheckout || !hasAssignedRoom}
                 onClick={() => void submitCheckOut()}
               >
                 Confirm check-out
@@ -824,6 +1426,6 @@ export default function StaffReservationDetailPage() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

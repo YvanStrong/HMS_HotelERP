@@ -1,552 +1,643 @@
-﻿"use client";
+"use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { PaginationBar } from "@/components/PaginationBar";
 import { apiFetch, getToken } from "@/lib/api";
-import { ImageUpload } from "@/components/ImageUpload";
+import { paginateSlice } from "@/lib/pagination";
 
-type DepotRow = { id: string; name: string; code: string; depotType: string; active: boolean };
-type DepotProductRow = {
+type ItemRow = {
   id: string;
-  depotId: string;
-  depotName: string;
-  productNumber: number;
-  productName: string;
-  productCode: string;
-  batchNo: string;
-  expiryDate?: string | null;
-  costPrice: number;
-  sellingPrice: number;
-  stockQty: number;
-  stockType: "STOCK" | "NON_STOCK";
-  photoUrl?: string | null;
-  menuName: string;
-  taxable: boolean;
-  active: boolean;
-};
-type CreateProductResponse = {
-  id: string;
-  autoProductNumber: number;
-  autoProductCode: string;
-  message: string;
-  product: DepotProductRow;
-};
-type PatchProductPayload = {
-  productName?: string;
-  batchNo?: string;
-  expiryDate?: string | null;
-  costPrice?: number;
-  sellingPrice?: number;
-  stockQty?: number;
-  stockType?: "STOCK" | "NON_STOCK";
-  photoUrl?: string | null;
-  menuName?: string;
-  taxable?: boolean;
-  active?: boolean;
+  name: string;
+  sku?: string;
+  currentStock?: number | string;
+  category?: string;
+  reorderPoint?: number | string;
+  unitCost?: number | string;
+  status?: string;
 };
 
-const DEFAULT_DEPOT_TYPES = ["RESTAURANT", "BAR", "CUISINE", "PRINCIPAL", "BARISTA", "PATISSERIE", "OTHER"] as const;
+type ItemsSummary = {
+  totalItems: number;
+  lowStockCount: number;
+  outOfStockCount: number;
+  totalValue: number | string;
+};
+type ItemsPayload = { data?: ItemRow[]; summary?: ItemsSummary };
+type CategoryRow = { id: string; name: string; code: string };
+type SupplierRow = { id: string; name: string };
+type CreatedId = { id: string };
+type PoLineInput = { itemId: string; quantity: number; unitPrice: number; notes?: string | null };
+type PoLineResponse = {
+  lineId: string;
+  itemName: string;
+  sku: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+};
+type CreatePoResponse = {
+  poId: string;
+  poNumber: string;
+  status: string;
+  totalAmount: number;
+  lines: PoLineResponse[];
+  nextSteps: string[];
+  approvalUrl: string;
+};
+type ReceiveResponse = {
+  receiptId: string;
+  purchaseOrder: { poNumber: string; status: string; remainingQuantity: number };
+};
 
-type ProductForm = {
-  depotId: string;
-  productName: string;
-  batchNo: string;
-  expiryDate: string;
-  costPrice: string;
-  sellingPrice: string;
-  stockQty: string;
-  stockType: "STOCK" | "NON_STOCK";
-  photoUrl: string;
-  menuName: string;
-  taxable: boolean;
-};
-type EditProductForm = {
-  productName: string;
-  batchNo: string;
-  expiryDate: string;
-  costPrice: string;
-  sellingPrice: string;
-  stockQty: string;
-  stockType: "STOCK" | "NON_STOCK";
-  photoUrl: string;
-  menuName: string;
-  taxable: boolean;
-};
+const PAGE_SIZE = 12;
 
 export default function InventoryPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
-
+  const [tab, setTab] = useState<"stock" | "po" | "suppliers" | "waste">("stock");
+  const [payload, setPayload] = useState<ItemsPayload>({ data: [] });
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierRow[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [depots, setDepots] = useState<DepotRow[]>([]);
-  const [products, setProducts] = useState<DepotProductRow[]>([]);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
-
-  const [newDepotName, setNewDepotName] = useState("");
-  const [newDepotType, setNewDepotType] = useState<string>("RESTAURANT");
-
-  const [productForm, setProductForm] = useState<ProductForm>({
-    depotId: "",
-    productName: "",
-    batchNo: "NA",
-    expiryDate: "",
-    costPrice: "",
-    sellingPrice: "",
-    stockQty: "0",
-    stockType: "STOCK",
-    photoUrl: "",
-    menuName: "GENERAL",
-    taxable: true,
+  const [search, setSearch] = useState("");
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [savingCategory, setSavingCategory] = useState(false);
+  const [savingItem, setSavingItem] = useState(false);
+  const [consumeId, setConsumeId] = useState<string | null>(null);
+  const [savingSupplier, setSavingSupplier] = useState(false);
+  const [categoryForm, setCategoryForm] = useState({ name: "", code: "" });
+  const [supplierForm, setSupplierForm] = useState({ name: "", contactPerson: "", email: "", phone: "" });
+  const [itemForm, setItemForm] = useState({
+    name: "",
+    sku: "",
+    categoryId: "",
+    currentStock: "",
+    reorderPoint: "",
+    unitCost: "",
+    unitOfMeasure: "piece",
   });
+  const [consume, setConsume] = useState<Record<string, string>>({});
+  const [wasteLog, setWasteLog] = useState<
+    { id: string; itemName: string; sku: string; quantity: number; reason: string; at: string }[]
+  >([]);
 
-  const [createdInfo, setCreatedInfo] = useState<{ number: number; code: string } | null>(null);
-  const [patchingProductId, setPatchingProductId] = useState<string | null>(null);
-  const [editingProduct, setEditingProduct] = useState<DepotProductRow | null>(null);
-  const [editForm, setEditForm] = useState<EditProductForm>({
-    productName: "",
-    batchNo: "NA",
-    expiryDate: "",
-    costPrice: "",
-    sellingPrice: "",
-    stockQty: "0",
-    stockType: "STOCK",
-    photoUrl: "",
-    menuName: "GENERAL",
-    taxable: true,
-  });
+  const [poSupplierId, setPoSupplierId] = useState("");
+  const [poExpectedDelivery, setPoExpectedDelivery] = useState("");
+  const [poPaymentTerms, setPoPaymentTerms] = useState("NET_30");
+  const [poDeliveryInstructions, setPoDeliveryInstructions] = useState("");
+  const [poLineDraft, setPoLineDraft] = useState({ itemId: "", quantity: "", unitPrice: "", notes: "" });
+  const [poLines, setPoLines] = useState<PoLineInput[]>([]);
+  const [savingPo, setSavingPo] = useState(false);
+  const [latestPo, setLatestPo] = useState<CreatePoResponse | null>(null);
+  const [latestPoInputLines, setLatestPoInputLines] = useState<PoLineInput[]>([]);
+  const [receiveLines, setReceiveLines] = useState<Record<string, string>>({});
+  const [receivingItemId, setReceivingItemId] = useState<string | null>(null);
 
-  async function loadAll() {
-    setLoading(true);
-    setError(null);
-    try {
-      const [d, p] = await Promise.all([
-        apiFetch<DepotRow[]>(`/api/v1/hotels/${hotelId}/inventory/depots`),
-        apiFetch<DepotProductRow[]>(`/api/v1/hotels/${hotelId}/inventory/depot-products`),
-      ]);
-      setDepots(d);
-      setProducts(p);
-      if (!productForm.depotId && d.length > 0) {
-        setProductForm((prev) => ({ ...prev, depotId: d[0].id }));
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load inventory");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!getToken()) {
       setError("Not signed in.");
       return;
     }
-    void loadAll();
-  }, [hotelId]);
-
-  async function bootstrapDepots() {
+    setLoading(true);
     setError(null);
     try {
-      await apiFetch<DepotRow[]>(`/api/v1/hotels/${hotelId}/inventory/depots/bootstrap`, { method: "POST" });
-      await loadAll();
+      const p = new URLSearchParams();
+      if (categoryFilter) p.set("category", categoryFilter);
+      p.set("lowStock", String(lowStockOnly));
+      if (search.trim()) p.set("search", search.trim());
+      const [items, cats] = await Promise.all([
+        apiFetch<ItemsPayload>(`/api/v1/hotels/${hotelId}/inventory/items?${p.toString()}`),
+        apiFetch<CategoryRow[]>(`/api/v1/hotels/${hotelId}/inventory/categories`),
+      ]);
+      const s = await apiFetch<SupplierRow[]>(`/api/v1/hotels/${hotelId}/inventory/suppliers`);
+      setPayload(items ?? { data: [] });
+      setCategories(cats ?? []);
+      setSuppliers(s ?? []);
+      setPage(1);
+      if (!itemForm.categoryId && (cats?.length ?? 0) > 0) {
+        setItemForm((f) => ({ ...f, categoryId: cats[0].id }));
+      }
+      if (!poSupplierId && (s?.length ?? 0) > 0) setPoSupplierId(s[0].id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to bootstrap depots");
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setLoading(false);
     }
-  }
+  }, [hotelId, categoryFilter, lowStockOnly, search, itemForm.categoryId, poSupplierId]);
 
-  async function createDepot() {
-    if (!newDepotName.trim()) return;
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const items = payload?.data ?? [];
+  const { slice, total, totalPages } = useMemo(
+    () => paginateSlice(items, page, PAGE_SIZE),
+    [items, page],
+  );
+
+  async function createCategory(e: React.FormEvent) {
+    e.preventDefault();
+    if (!categoryForm.name.trim() || !categoryForm.code.trim()) {
+      setError("Category name and code are required.");
+      return;
+    }
+    setSavingCategory(true);
     setError(null);
+    setMsg(null);
     try {
-      await apiFetch(`/api/v1/hotels/${hotelId}/inventory/depots`, {
+      await apiFetch(`/api/v1/hotels/${hotelId}/inventory/categories`, {
         method: "POST",
-        body: JSON.stringify({ name: newDepotName.trim(), depotType: newDepotType }),
+        body: JSON.stringify({ name: categoryForm.name.trim(), code: categoryForm.code.trim().toUpperCase() }),
       });
-      setNewDepotName("");
-      await loadAll();
+      setMsg("Category created.");
+      setCategoryForm({ name: "", code: "" });
+      await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create depot");
+      setError(e instanceof Error ? e.message : "Create category failed");
+    } finally {
+      setSavingCategory(false);
     }
   }
 
-  async function createProduct() {
-    if (!productForm.depotId || !productForm.productName.trim()) return;
+  async function createItem(e: React.FormEvent) {
+    e.preventDefault();
+    if (!itemForm.name.trim() || !itemForm.sku.trim() || !itemForm.categoryId) {
+      setError("Item name, SKU, and category are required.");
+      return;
+    }
+    setSavingItem(true);
     setError(null);
-    setCreatedInfo(null);
-    const desiredStockType = productForm.stockType;
+    setMsg(null);
     try {
-      const res = await apiFetch<CreateProductResponse>(`/api/v1/hotels/${hotelId}/inventory/depot-products`, {
+      await apiFetch(`/api/v1/hotels/${hotelId}/inventory/items`, {
         method: "POST",
         body: JSON.stringify({
-          depotId: productForm.depotId,
-          productName: productForm.productName.trim(),
-          batchNo: productForm.batchNo.trim() || "NA",
-          expiryDate: productForm.expiryDate || null,
-          costPrice: Number(productForm.costPrice || "0"),
-          sellingPrice: Number(productForm.sellingPrice || "0"),
-          stockQty: productForm.stockType === "NON_STOCK" ? 0 : Number(productForm.stockQty || "0"),
-          stockType: productForm.stockType,
-          photoUrl: productForm.photoUrl || null,
-          menuName: productForm.menuName.trim() || "GENERAL",
-          taxable: productForm.taxable,
+          name: itemForm.name.trim(),
+          sku: itemForm.sku.trim().toUpperCase(),
+          categoryId: itemForm.categoryId,
+          currentStock: itemForm.currentStock ? Number(itemForm.currentStock) : 0,
+          reorderPoint: itemForm.reorderPoint ? Number(itemForm.reorderPoint) : 0,
+          unitCost: itemForm.unitCost ? Number(itemForm.unitCost) : 0,
+          unitOfMeasure: itemForm.unitOfMeasure || "piece",
+          isMinibarItem: false,
         }),
       });
-      // Safety fallback: if backend persisted STOCK unexpectedly, force requested type immediately.
-      if (desiredStockType === "NON_STOCK" && res.product?.stockType !== "NON_STOCK") {
-        await apiFetch<DepotProductRow>(`/api/v1/hotels/${hotelId}/inventory/depot-products/${res.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ stockType: "NON_STOCK" }),
-        });
+      setMsg("Inventory item created.");
+      setItemForm((f) => ({ ...f, name: "", sku: "", currentStock: "", reorderPoint: "", unitCost: "" }));
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Create item failed");
+    } finally {
+      setSavingItem(false);
+    }
+  }
+
+  async function consumeStock(itemId: string) {
+    const raw = consume[itemId];
+    const qty = Number(raw);
+    if (!raw || Number.isNaN(qty) || qty <= 0) {
+      setError("Enter a valid consume quantity.");
+      return;
+    }
+    setConsumeId(itemId);
+    setError(null);
+    setMsg(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/inventory/items/${itemId}/consume`, {
+        method: "POST",
+        body: JSON.stringify({ quantity: qty, type: "CONSUMPTION", autoReorderCheck: true }),
+      });
+      setMsg("Stock consumed.");
+      setConsume((m) => ({ ...m, [itemId]: "" }));
+      const item = items.find((it) => it.id === itemId);
+      if (item) {
+        setWasteLog((w) => [
+          {
+            id: crypto.randomUUID(),
+            itemName: item.name,
+            sku: item.sku ?? "—",
+            quantity: qty,
+            reason: "Consumption/Waste recorded",
+            at: new Date().toISOString(),
+          },
+          ...w,
+        ]);
       }
-      setCreatedInfo({ number: res.autoProductNumber, code: res.autoProductCode });
-      setProductForm((prev) => ({
-        ...prev,
-        productName: "",
-        batchNo: "NA",
-        expiryDate: "",
-        costPrice: "",
-        sellingPrice: "",
-        stockQty: "0",
-        stockType: "STOCK",
-        photoUrl: "",
-        taxable: true,
-      }));
-      await loadAll();
+      await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create product");
-    }
-  }
-
-  async function patchProductStockType(productId: string, stockType: "STOCK" | "NON_STOCK") {
-    setPatchingProductId(productId);
-    setError(null);
-    try {
-      await apiFetch<DepotProductRow>(`/api/v1/hotels/${hotelId}/inventory/depot-products/${productId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ stockType }),
-      });
-      await loadAll();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update product");
+      setError(e instanceof Error ? e.message : "Consume failed");
     } finally {
-      setPatchingProductId(null);
+      setConsumeId(null);
     }
   }
 
-  async function patchProduct(productId: string, payload: PatchProductPayload) {
-    setPatchingProductId(productId);
+  async function createSupplier(e: React.FormEvent) {
+    e.preventDefault();
+    if (!supplierForm.name.trim()) {
+      setError("Supplier name is required.");
+      return;
+    }
+    setSavingSupplier(true);
     setError(null);
+    setMsg(null);
     try {
-      await apiFetch<DepotProductRow>(`/api/v1/hotels/${hotelId}/inventory/depot-products/${productId}`, {
-        method: "PATCH",
-        body: JSON.stringify(payload),
+      await apiFetch<CreatedId>(`/api/v1/hotels/${hotelId}/inventory/suppliers`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: supplierForm.name.trim(),
+          contactPerson: supplierForm.contactPerson.trim() || null,
+          email: supplierForm.email.trim() || null,
+          phone: supplierForm.phone.trim() || null,
+        }),
       });
-      await loadAll();
+      setSupplierForm({ name: "", contactPerson: "", email: "", phone: "" });
+      setMsg("Supplier created.");
+      await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update product");
+      setError(e instanceof Error ? e.message : "Create supplier failed");
     } finally {
-      setPatchingProductId(null);
+      setSavingSupplier(false);
     }
   }
 
-  async function onAddQty(p: DepotProductRow) {
-    if (p.stockType !== "STOCK") {
-      setError("Add Qty works only for STOCK products.");
+  function addPoLine() {
+    const itemId = poLineDraft.itemId;
+    const quantity = Number(poLineDraft.quantity);
+    const unitPrice = Number(poLineDraft.unitPrice);
+    if (!itemId || Number.isNaN(quantity) || quantity <= 0 || Number.isNaN(unitPrice) || unitPrice < 0) {
+      setError("Choose item and valid quantity/unit price for PO line.");
       return;
     }
-    const raw = window.prompt(`Add quantity to ${p.productName}`, "1");
-    if (!raw) return;
-    const inc = Number(raw);
-    if (!Number.isFinite(inc) || inc <= 0) {
-      setError("Quantity must be a positive number.");
-      return;
-    }
-    await patchProduct(p.id, { stockQty: Number((Number(p.stockQty) + inc).toFixed(3)) });
+    setPoLines((l) => [...l, { itemId, quantity, unitPrice, notes: poLineDraft.notes.trim() || null }]);
+    setPoLineDraft({ itemId: "", quantity: "", unitPrice: "", notes: "" });
   }
 
-  async function onEditProduct(p: DepotProductRow) {
-    setEditingProduct(p);
-    setEditForm({
-      productName: p.productName,
-      batchNo: p.batchNo || "NA",
-      expiryDate: p.expiryDate || "",
-      costPrice: String(p.costPrice),
-      sellingPrice: String(p.sellingPrice),
-      stockQty: String(p.stockQty),
-      stockType: p.stockType,
-      photoUrl: p.photoUrl || "",
-      menuName: p.menuName,
-      taxable: p.taxable !== false,
-    });
-  }
-
-  async function onSleepProduct(p: DepotProductRow) {
-    const confirmed = window.confirm(`Sleep product "${p.productName}"? It will become inactive.`);
-    if (!confirmed) return;
-    await patchProduct(p.id, { active: false });
-  }
-
-  async function onActivateProduct(p: DepotProductRow) {
-    const confirmed = window.confirm(`Activate product "${p.productName}"?`);
-    if (!confirmed) return;
-    await patchProduct(p.id, { active: true });
-  }
-
-  async function saveEditProduct() {
-    if (!editingProduct) return;
-    const cost = Number(editForm.costPrice);
-    const selling = Number(editForm.sellingPrice);
-    const stockQty = Number(editForm.stockQty || "0");
-    if (!editForm.productName.trim()) {
-      setError("Product name is required.");
+  async function submitPurchaseOrder() {
+    if (!poSupplierId) {
+      setError("Supplier is required.");
       return;
     }
-    if (!Number.isFinite(cost) || !Number.isFinite(selling)) {
-      setError("Cost and selling price must be valid numbers.");
+    if (poLines.length === 0) {
+      setError("Add at least one PO line.");
       return;
     }
-    if (editForm.stockType === "STOCK" && (!Number.isFinite(stockQty) || stockQty < 0)) {
-      setError("Stock quantity must be a valid number.");
-      return;
+    setSavingPo(true);
+    setError(null);
+    setMsg(null);
+    try {
+      const created = await apiFetch<CreatePoResponse>(`/api/v1/hotels/${hotelId}/inventory/purchase-orders`, {
+        method: "POST",
+        body: JSON.stringify({
+          supplierId: poSupplierId,
+          expectedDelivery: poExpectedDelivery || null,
+          paymentTerms: poPaymentTerms,
+          lines: poLines,
+          approvalWorkflow: { requiresApproval: false, approverRoles: [], thresholdAmount: 0 },
+          deliveryInstructions: poDeliveryInstructions.trim() || null,
+        }),
+      });
+      setLatestPo(created);
+      setLatestPoInputLines(poLines);
+      setPoLines([]);
+      setPoExpectedDelivery("");
+      setPoDeliveryInstructions("");
+      setMsg(`PO created: ${created.poNumber}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Create PO failed");
+    } finally {
+      setSavingPo(false);
     }
-    await patchProduct(editingProduct.id, {
-      productName: editForm.productName.trim(),
-      batchNo: editForm.batchNo.trim() || "NA",
-      expiryDate: editForm.expiryDate || null,
-      costPrice: cost,
-      sellingPrice: selling,
-      stockType: editForm.stockType,
-      ...(editForm.stockType === "STOCK" ? { stockQty } : {}),
-      photoUrl: editForm.photoUrl.trim() || null,
-      menuName: editForm.menuName.trim() || "GENERAL",
-      taxable: editForm.taxable,
-    });
-    setEditingProduct(null);
   }
+
+  async function receiveForLine(lineIdx: number) {
+    if (!latestPo) return;
+    const inLine = latestPoInputLines[lineIdx];
+    const outLine = latestPo.lines[lineIdx];
+    if (!inLine || !outLine) return;
+    const qty = Number(receiveLines[outLine.lineId] ?? "");
+    if (Number.isNaN(qty) || qty <= 0) {
+      setError("Enter valid received quantity.");
+      return;
+    }
+    setReceivingItemId(inLine.itemId);
+    setError(null);
+    setMsg(null);
+    try {
+      const res = await apiFetch<ReceiveResponse>(`/api/v1/hotels/${hotelId}/inventory/items/${inLine.itemId}/receive`, {
+        method: "POST",
+        body: JSON.stringify({
+          purchaseOrderId: latestPo.poId,
+          receivedLines: [
+            {
+              poLineId: outLine.lineId,
+              quantityReceived: qty,
+              qualityCheck: "PASS",
+              notes: null,
+              batchNumber: null,
+              expiryDate: null,
+            },
+          ],
+          deliveryNote: null,
+          receivedBy: null,
+          location: "Main Store",
+        }),
+      });
+      setMsg(`Goods received for ${outLine.itemName}. PO status: ${res.purchaseOrder.status}`);
+      setReceiveLines((m) => ({ ...m, [outLine.lineId]: "" }));
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Receive failed");
+    } finally {
+      setReceivingItemId(null);
+    }
+  }
+
+  const poLinePreview = poLines.map((l) => {
+    const item = items.find((i) => i.id === l.itemId);
+    return {
+      ...l,
+      itemName: item?.name ?? l.itemId,
+      sku: item?.sku ?? "—",
+      total: l.quantity * l.unitPrice,
+    };
+  });
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Inventory Management</h1>
-          <p className="text-muted-foreground text-sm">
-            Manage depots and products. Use Services {'>'} Menu to sell products to client.
-          </p>
-        </div>
-        <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => void loadAll()} disabled={loading}>
-          Refresh
-        </button>
+    <div className="space-y-5">
+      <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+        <h1 className="text-3xl font-bold tracking-tight">Inventory</h1>
+        <p className="text-muted-foreground mt-1">Stock, purchase orders, suppliers, and waste in one workspace</p>
       </div>
 
-      {error && <div className="error">{error}</div>}
-
-      <section className="hms-section-card space-y-4">
-        <div className="hms-section-head">
-          <h2 className="hms-section-title">Depots</h2>
-          <button type="button" className="hms-btn-solid hms-btn-sm" onClick={bootstrapDepots}>
-            Bootstrap default depots
+      <div className="rounded-2xl border border-border/60 bg-card p-3 shadow-sm">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className={tab === "stock" ? "hms-btn-solid text-sm" : "hms-btn-outline text-sm"} onClick={() => setTab("stock")}>
+            Stock Levels
+          </button>
+          <button type="button" className={tab === "po" ? "hms-btn-solid text-sm" : "hms-btn-outline text-sm"} onClick={() => setTab("po")}>
+            Purchase Orders
+          </button>
+          <button type="button" className={tab === "suppliers" ? "hms-btn-solid text-sm" : "hms-btn-outline text-sm"} onClick={() => setTab("suppliers")}>
+            Suppliers
+          </button>
+          <button type="button" className={tab === "waste" ? "hms-btn-solid text-sm" : "hms-btn-outline text-sm"} onClick={() => setTab("waste")}>
+            Waste Log
           </button>
         </div>
+      </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          <input value={newDepotName} onChange={(e) => setNewDepotName(e.target.value)} placeholder="Depot name" />
-          <select value={newDepotType} onChange={(e) => setNewDepotType(e.target.value)}>
-            {DEFAULT_DEPOT_TYPES.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-          <button type="button" className="hms-btn-solid" onClick={createDepot}>Add depot</button>
+      {error && <div className="error panel">{error}</div>}
+      {msg && <div className="panel">{msg}</div>}
+
+      {tab === "stock" && (
+      <>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft"><p className="text-xs text-muted-foreground">Items</p><p className="text-2xl font-bold">{payload.summary?.totalItems ?? 0}</p></div>
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft"><p className="text-xs text-muted-foreground">Low stock</p><p className="text-2xl font-bold text-amber-700">{payload.summary?.lowStockCount ?? 0}</p></div>
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft"><p className="text-xs text-muted-foreground">Out of stock</p><p className="text-2xl font-bold text-red-600">{payload.summary?.outOfStockCount ?? 0}</p></div>
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft"><p className="text-xs text-muted-foreground">Stock value</p><p className="text-2xl font-bold">{String(payload.summary?.totalValue ?? 0)}</p></div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <h2 className="text-lg font-semibold mb-3">Create category</h2>
+          <form onSubmit={createCategory} className="grid grid-cols-2 gap-3">
+            <div><label>Name</label><input value={categoryForm.name} onChange={(e) => setCategoryForm((f) => ({ ...f, name: e.target.value }))} /></div>
+            <div><label>Code</label><input value={categoryForm.code} onChange={(e) => setCategoryForm((f) => ({ ...f, code: e.target.value }))} /></div>
+            <div className="col-span-2"><button type="submit" className="hms-btn-outline text-sm" disabled={savingCategory}>{savingCategory ? "Creating..." : "Create category"}</button></div>
+          </form>
         </div>
 
-        <div className="hms-table-wrap">
-          <table className="hms-table">
-            <thead>
-              <tr><th>Name</th><th>Code</th><th>Type</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-              {depots.map((d) => (
-                <tr key={d.id}><td>{d.name}</td><td>{d.code}</td><td>{d.depotType}</td><td>{d.active ? "Active" : "Inactive"}</td></tr>
-              ))}
-              {depots.length === 0 && <tr><td colSpan={4} className="text-muted-foreground text-center">No depots yet.</td></tr>}
-            </tbody>
-          </table>
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <h2 className="text-lg font-semibold mb-3">Create item</h2>
+          <form onSubmit={createItem} className="grid grid-cols-2 gap-3">
+            <div><label>Name</label><input value={itemForm.name} onChange={(e) => setItemForm((f) => ({ ...f, name: e.target.value }))} /></div>
+            <div><label>SKU</label><input value={itemForm.sku} onChange={(e) => setItemForm((f) => ({ ...f, sku: e.target.value }))} /></div>
+            <div><label>Category</label><select value={itemForm.categoryId} onChange={(e) => setItemForm((f) => ({ ...f, categoryId: e.target.value }))}>{categories.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}</select></div>
+            <div><label>Unit</label><input value={itemForm.unitOfMeasure} onChange={(e) => setItemForm((f) => ({ ...f, unitOfMeasure: e.target.value }))} /></div>
+            <div><label>Opening stock</label><input type="number" value={itemForm.currentStock} onChange={(e) => setItemForm((f) => ({ ...f, currentStock: e.target.value }))} /></div>
+            <div><label>Reorder point</label><input type="number" value={itemForm.reorderPoint} onChange={(e) => setItemForm((f) => ({ ...f, reorderPoint: e.target.value }))} /></div>
+            <div><label>Unit cost</label><input type="number" value={itemForm.unitCost} onChange={(e) => setItemForm((f) => ({ ...f, unitCost: e.target.value }))} /></div>
+            <div className="col-span-2"><button type="submit" className="hms-btn-solid" disabled={savingItem}>{savingItem ? "Creating..." : "Create item"}</button></div>
+          </form>
         </div>
-      </section>
+      </div>
 
-      <section className="hms-section-card space-y-4">
-        <h2 className="hms-section-title">Add Product</h2>
-        <div className="grid gap-3 md:grid-cols-3">
-          <select value={productForm.depotId} onChange={(e) => setProductForm((p) => ({ ...p, depotId: e.target.value }))}>
-            <option value="">Select depot</option>
-            {depots.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-          <input value={productForm.productName} onChange={(e) => setProductForm((p) => ({ ...p, productName: e.target.value }))} placeholder="ProductName e.g. FANTA" />
-          <input value={productForm.menuName} onChange={(e) => setProductForm((p) => ({ ...p, menuName: e.target.value }))} placeholder="Menu e.g. DRINKS" />
-          <input value={productForm.batchNo} onChange={(e) => setProductForm((p) => ({ ...p, batchNo: e.target.value }))} placeholder="BatchNo (NA default)" />
-          <input type="date" value={productForm.expiryDate} onChange={(e) => setProductForm((p) => ({ ...p, expiryDate: e.target.value }))} />
-          <input type="number" step="0.01" value={productForm.costPrice} onChange={(e) => setProductForm((p) => ({ ...p, costPrice: e.target.value }))} placeholder="CostPrice" />
-          <input type="number" step="0.01" value={productForm.sellingPrice} onChange={(e) => setProductForm((p) => ({ ...p, sellingPrice: e.target.value }))} placeholder="SellingPrice" />
-          <select
-            value={productForm.stockType}
-            onChange={(e) =>
-              setProductForm((p) => ({
-                ...p,
-                stockType: e.target.value as "STOCK" | "NON_STOCK",
-                stockQty: e.target.value === "NON_STOCK" ? "0" : p.stockQty,
-              }))
-            }
-          >
-            <option value="STOCK">STOCK</option>
-            <option value="NON_STOCK">NON STOCK</option>
-          </select>
-          {productForm.stockType === "STOCK" ? (
-            <input type="number" step="0.001" value={productForm.stockQty} onChange={(e) => setProductForm((p) => ({ ...p, stockQty: e.target.value }))} placeholder="Initial stock" />
-          ) : (
-            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-              Non stock product: stock field hidden
-            </div>
-          )}
-          <label className="flex cursor-pointer items-center gap-2 text-sm md:col-span-1">
-            <input
-              type="checkbox"
-              checked={productForm.taxable}
-              onChange={(e) => setProductForm((p) => ({ ...p, taxable: e.target.checked }))}
-            />
-            <span>Taxable (18% VAT on receipt)</span>
-          </label>
-          <button type="button" className="hms-btn-solid" onClick={createProduct}>Save product</button>
+      <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="md:col-span-2"><label>Search</label><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name, SKU..." /></div>
+          <div><label>Category</label><select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}><option value="">All</option>{categories.map((c) => <option key={c.id} value={c.code}>{c.name}</option>)}</select></div>
+          <div className="flex items-end gap-2">
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} /> Low stock only</label>
+            <button type="button" className="hms-btn-outline text-sm" onClick={() => void load()}>{loading ? "Refreshing..." : "Refresh"}</button>
+          </div>
         </div>
+      </div>
 
-        <ImageUpload value={productForm.photoUrl} onChange={(url) => setProductForm((p) => ({ ...p, photoUrl: url }))} label="Photo" placeholder="Paste photo URL or upload" />
-
-        {createdInfo && (
-          <p className="text-sm text-green-700">
-            Auto Product Number: <strong>{createdInfo.number}</strong> | Auto Code: <strong>{createdInfo.code}</strong>
-          </p>
-        )}
-      </section>
-
-      <section className="hms-section-card">
-        <h2 className="hms-section-title mb-3">Products</h2>
-        <p className="text-xs text-muted-foreground mb-2">
-          If Menu shows &quot;Stock 0&quot; but the item is prepared to order (no stock count), set Stock type to NON STOCK here so it can be sold.
-        </p>
-        <div className="hms-table-wrap">
-          <table className="hms-table">
+      {payload && (
+        <div className="panel rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <p style={{ color: "var(--muted)", marginTop: 0 }}>{items.length} item(s)</p>
+          <table>
             <thead>
               <tr>
-                <th>Name</th><th>Code</th><th>Depot</th><th>Menu</th><th>Batch</th><th>Expiry</th><th>Cost</th><th>Selling</th><th>VAT</th><th>Stock type</th><th>Stock</th><th>Actions</th>
+                <th>Name</th>
+                <th>SKU</th>
+                <th>Category</th>
+                <th>Qty</th>
+                <th>Consume</th>
               </tr>
             </thead>
             <tbody>
-              {products.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.productName}</td><td>{p.productCode}</td><td>{p.depotName}</td><td>{p.menuName}</td><td>{p.batchNo}</td>
-                  <td>{p.expiryDate || "-"}</td><td>{Number(p.costPrice).toFixed(2)}</td><td>{Number(p.sellingPrice).toFixed(2)}</td>
-                  <td className="text-muted-foreground text-sm">{p.taxable !== false ? "18%" : "0%"}</td>
+              {slice.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.name}</td>
+                  <td>{r.sku ?? "—"}</td>
+                  <td>{r.category ?? "—"}</td>
+                  <td>{r.currentStock ?? "—"}</td>
                   <td>
-                    <select
-                      className="max-w-[140px] bg-background text-sm"
-                      value={p.stockType}
-                      disabled={patchingProductId === p.id}
-                      onChange={(e) => void patchProductStockType(p.id, e.target.value as "STOCK" | "NON_STOCK")}
-                    >
-                      <option value="STOCK">STOCK</option>
-                      <option value="NON_STOCK">NON STOCK</option>
-                    </select>
-                  </td>
-                  <td>{p.stockType === "NON_STOCK" ? "—" : Number(p.stockQty).toFixed(3)}</td>
-                  <td>
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" className="hms-btn-outline hms-btn-sm" disabled={patchingProductId === p.id} onClick={() => void onAddQty(p)}>
-                        Add Qty
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={consume[r.id] ?? ""}
+                        onChange={(e) => setConsume((m) => ({ ...m, [r.id]: e.target.value }))}
+                        style={{ width: 90 }}
+                        placeholder="qty"
+                      />
+                      <button
+                        type="button"
+                        className="hms-btn-outline text-xs"
+                        disabled={consumeId === r.id}
+                        onClick={() => void consumeStock(r.id)}
+                      >
+                        {consumeId === r.id ? "..." : "Consume"}
                       </button>
-                      <button type="button" className="hms-btn-outline hms-btn-sm" disabled={patchingProductId === p.id} onClick={() => void onEditProduct(p)}>
-                        Edit
-                      </button>
-                      {p.active ? (
-                        <button type="button" className="hms-btn-outline hms-btn-sm" disabled={patchingProductId === p.id} onClick={() => void onSleepProduct(p)}>
-                          Sleep
-                        </button>
-                      ) : (
-                        <button type="button" className="hms-btn-outline hms-btn-sm" disabled={patchingProductId === p.id} onClick={() => void onActivateProduct(p)}>
-                          Activate
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>
               ))}
-              {products.length === 0 && <tr><td colSpan={12} className="text-center text-muted-foreground">No products yet.</td></tr>}
             </tbody>
           </table>
+          <PaginationBar
+            page={page}
+            totalPages={totalPages}
+            totalItems={total}
+            pageSize={PAGE_SIZE}
+            noun="items"
+            onPageChange={setPage}
+          />
         </div>
-      </section>
-      {editingProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-          <div className="w-full max-w-3xl rounded-2xl border border-border bg-card p-5 shadow-2xl">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Edit Product</h3>
-              <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => setEditingProduct(null)}>
-                Close
-              </button>
+      )}
+      </>
+      )}
+
+      {tab === "suppliers" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+            <h2 className="text-lg font-semibold mb-3">Create supplier</h2>
+            <form onSubmit={createSupplier} className="grid grid-cols-1 gap-3">
+              <div><label>Name</label><input value={supplierForm.name} onChange={(e) => setSupplierForm((f) => ({ ...f, name: e.target.value }))} /></div>
+              <div><label>Contact person</label><input value={supplierForm.contactPerson} onChange={(e) => setSupplierForm((f) => ({ ...f, contactPerson: e.target.value }))} /></div>
+              <div><label>Email</label><input value={supplierForm.email} onChange={(e) => setSupplierForm((f) => ({ ...f, email: e.target.value }))} /></div>
+              <div><label>Phone</label><input value={supplierForm.phone} onChange={(e) => setSupplierForm((f) => ({ ...f, phone: e.target.value }))} /></div>
+              <div><button type="submit" className="hms-btn-solid" disabled={savingSupplier}>{savingSupplier ? "Creating..." : "Create supplier"}</button></div>
+            </form>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+            <h2 className="text-lg font-semibold mb-3">Supplier directory</h2>
+            {suppliers.length === 0 ? (
+              <p className="text-muted-foreground">No suppliers created yet.</p>
+            ) : (
+              <table>
+                <thead><tr><th>Name</th></tr></thead>
+                <tbody>
+                  {suppliers.map((s) => <tr key={s.id}><td>{s.name}</td></tr>)}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === "po" && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+            <h2 className="text-lg font-semibold mb-3">Create purchase order</h2>
+            <form className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label>Supplier</label>
+                <select value={poSupplierId} onChange={(e) => setPoSupplierId(e.target.value)}>
+                  <option value="">Choose supplier...</option>
+                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div><label>Expected delivery</label><input type="date" value={poExpectedDelivery} onChange={(e) => setPoExpectedDelivery(e.target.value)} /></div>
+              <div>
+                <label>Payment terms</label>
+                <select value={poPaymentTerms} onChange={(e) => setPoPaymentTerms(e.target.value)}>
+                  {["NET_7","NET_15","NET_30","NET_60","COD","PREPAID"].map((t)=><option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="md:col-span-3"><label>Delivery instructions</label><input value={poDeliveryInstructions} onChange={(e) => setPoDeliveryInstructions(e.target.value)} /></div>
+            </form>
+          </div>
+
+          <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+            <h3 className="text-base font-semibold mb-2">PO line items</h3>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div>
+                <label>Item</label>
+                <select value={poLineDraft.itemId} onChange={(e) => setPoLineDraft((d) => ({ ...d, itemId: e.target.value }))}>
+                  <option value="">Choose item...</option>
+                  {items.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.sku ?? "—"})</option>)}
+                </select>
+              </div>
+              <div><label>Quantity</label><input type="number" value={poLineDraft.quantity} onChange={(e) => setPoLineDraft((d) => ({ ...d, quantity: e.target.value }))} /></div>
+              <div><label>Unit price</label><input type="number" value={poLineDraft.unitPrice} onChange={(e) => setPoLineDraft((d) => ({ ...d, unitPrice: e.target.value }))} /></div>
+              <div className="flex items-end"><button type="button" className="hms-btn-outline w-full" onClick={addPoLine}>Add line</button></div>
             </div>
-            <p className="mb-4 text-xs text-muted-foreground">
-              Code: {editingProduct.productCode} | Depot: {editingProduct.depotName}
-            </p>
-            <div className="grid gap-3 md:grid-cols-3">
-              <input value={editForm.productName} onChange={(e) => setEditForm((s) => ({ ...s, productName: e.target.value }))} placeholder="Product name" />
-              <input value={editForm.menuName} onChange={(e) => setEditForm((s) => ({ ...s, menuName: e.target.value }))} placeholder="Menu name" />
-              <input value={editForm.batchNo} onChange={(e) => setEditForm((s) => ({ ...s, batchNo: e.target.value }))} placeholder="Batch no" />
-              <input type="date" value={editForm.expiryDate} onChange={(e) => setEditForm((s) => ({ ...s, expiryDate: e.target.value }))} />
-              <input type="number" step="0.01" value={editForm.costPrice} onChange={(e) => setEditForm((s) => ({ ...s, costPrice: e.target.value }))} placeholder="Cost price" />
-              <input type="number" step="0.01" value={editForm.sellingPrice} onChange={(e) => setEditForm((s) => ({ ...s, sellingPrice: e.target.value }))} placeholder="Selling price" />
-              <select
-                value={editForm.stockType}
-                onChange={(e) =>
-                  setEditForm((s) => ({
-                    ...s,
-                    stockType: e.target.value as "STOCK" | "NON_STOCK",
-                    stockQty: e.target.value === "NON_STOCK" ? "0" : s.stockQty,
-                  }))
-                }
-              >
-                <option value="STOCK">STOCK</option>
-                <option value="NON_STOCK">NON STOCK</option>
-              </select>
-              {editForm.stockType === "STOCK" ? (
-                <input
-                  type="number"
-                  step="0.001"
-                  value={editForm.stockQty}
-                  onChange={(e) => setEditForm((s) => ({ ...s, stockQty: e.target.value }))}
-                  placeholder="Stock qty"
-                />
-              ) : (
-                <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                  Non stock product
-                </div>
-              )}
-              <label className="flex cursor-pointer items-center gap-2 text-sm md:col-span-3">
-                <input
-                  type="checkbox"
-                  checked={editForm.taxable}
-                  onChange={(e) => setEditForm((s) => ({ ...s, taxable: e.target.checked }))}
-                />
-                <span>Taxable (18% VAT on receipt; unchecked = 0%)</span>
-              </label>
-            </div>
-            <div className="mt-4">
-              <ImageUpload value={editForm.photoUrl} onChange={(url) => setEditForm((s) => ({ ...s, photoUrl: url }))} label="Photo" placeholder="Paste photo URL or upload" />
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => setEditingProduct(null)}>
-                Cancel
-              </button>
-              <button type="button" className="hms-btn-solid hms-btn-sm" onClick={() => void saveEditProduct()} disabled={patchingProductId === editingProduct.id}>
-                Save changes
+            {poLinePreview.length > 0 && (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr><th>Item</th><th>SKU</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead>
+                  <tbody>
+                    {poLinePreview.map((l, idx) => (
+                      <tr key={`${l.itemId}-${idx}`} className="border-t border-border/50">
+                        <td>{l.itemName}</td><td>{l.sku}</td><td>{l.quantity}</td><td>{l.unitPrice}</td><td>{l.total.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="mt-3">
+              <button type="button" className="hms-btn-solid" disabled={savingPo || poLines.length === 0 || !poSupplierId} onClick={() => void submitPurchaseOrder()}>
+                {savingPo ? "Creating PO..." : "Create purchase order"}
               </button>
             </div>
           </div>
+
+          {latestPo && (
+            <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+              <h3 className="text-base font-semibold">Latest PO: {latestPo.poNumber}</h3>
+              <p className="text-sm text-muted-foreground">Status: {latestPo.status} · Total: {latestPo.totalAmount}</p>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr><th>Item</th><th>Ordered</th><th>Receive now</th><th /></tr></thead>
+                  <tbody>
+                    {latestPo.lines.map((line, idx) => {
+                      const inLine = latestPoInputLines[idx];
+                      return (
+                        <tr key={line.lineId} className="border-t border-border/50">
+                          <td>{line.itemName} ({line.sku})</td>
+                          <td>{line.quantity}</td>
+                          <td style={{ maxWidth: 160 }}>
+                            <input type="number" value={receiveLines[line.lineId] ?? ""} onChange={(e) => setReceiveLines((m) => ({ ...m, [line.lineId]: e.target.value }))} />
+                          </td>
+                          <td>
+                            <button type="button" className="hms-btn-outline text-xs" disabled={receivingItemId === inLine?.itemId} onClick={() => void receiveForLine(idx)}>
+                              {receivingItemId === inLine?.itemId ? "Receiving..." : "Receive"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "waste" && (
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+          <h2 className="text-lg font-semibold mb-3">Waste / consumption log</h2>
+          <p className="text-sm text-muted-foreground mb-3">
+            Tracks consumptions posted from this workspace session for operational review.
+          </p>
+          {wasteLog.length === 0 ? (
+            <p className="text-muted-foreground">No waste/consumption events recorded yet.</p>
+          ) : (
+            <table>
+              <thead><tr><th>When</th><th>Item</th><th>SKU</th><th>Qty</th><th>Reason</th></tr></thead>
+              <tbody>
+                {wasteLog.map((w) => (
+                  <tr key={w.id}>
+                    <td>{new Date(w.at).toLocaleString()}</td>
+                    <td>{w.itemName}</td>
+                    <td>{w.sku}</td>
+                    <td>{w.quantity}</td>
+                    <td>{w.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
     </div>

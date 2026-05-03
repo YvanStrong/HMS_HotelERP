@@ -15,6 +15,7 @@ export type HotelNavKey =
   | "reservations"
   | "invoices"
   | "guests"
+  | "staff"
   | "housekeeping"
   | "hkMyTasks"
   | "facilities"
@@ -22,7 +23,6 @@ export type HotelNavKey =
   | "selfOrders"
   | "inventory"
   | "fb"
-  | "staff"
   | "settings";
 
 const REALTIME_DASHBOARD_ROLES = [
@@ -78,6 +78,12 @@ function canGuests(user: AuthUser | null): boolean {
   return userHasAnyPermission(user, ["guest:read", "guest:*", "hotel:*"]);
 }
 
+function canStaff(user: AuthUser | null): boolean {
+  if (!user) return false;
+  if (isSuperAdmin(user)) return true;
+  return userHasRole(user, ["HOTEL_ADMIN", "MANAGER"]);
+}
+
 function canHousekeeping(user: AuthUser | null): boolean {
   if (!user) return false;
   if (isSuperAdmin(user)) return true;
@@ -129,12 +135,6 @@ function canFb(user: AuthUser | null): boolean {
   return userHasPermission(user, "fb:*") || userHasRole(user, ["HOTEL_ADMIN", "MANAGER", "FNB_STAFF"]);
 }
 
-function canStaff(user: AuthUser | null): boolean {
-  if (!user) return false;
-  if (isSuperAdmin(user)) return true;
-  return userHasRole(user, ["HOTEL_ADMIN", "MANAGER"]);
-}
-
 function canSettings(user: AuthUser | null): boolean {
   if (!user) return false;
   if (isSuperAdmin(user)) return true;
@@ -178,6 +178,8 @@ export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): bool
       return canInvoices(user);
     case "guests":
       return canGuests(user);
+    case "staff":
+      return canStaff(user);
     case "housekeeping":
       return canHousekeeping(user);
     case "hkMyTasks":
@@ -192,8 +194,6 @@ export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): bool
       return canInventory(user);
     case "fb":
       return canFb(user);
-    case "staff":
-      return canStaff(user);
     case "settings":
       return canSettings(user);
     default:
@@ -211,6 +211,7 @@ export function navHint(key: HotelNavKey): string {
     reservations: "Permission: reservation:* or reservation:self (availability is public).",
     invoices: "Finance and front office invoices: hotel admin, manager, receptionist, finance.",
     guests: "Guest profile and loyalty routes: receptionist read; finance loyalty earn.",
+    staff: "Hotel staff management: hotel admin and manager.",
     housekeeping: "Permission: housekeeping:* or room:status.",
     hkMyTasks: "Housekeeping line staff: tasks assigned to you.",
     facilities: "List facilities: receptionist and reservation-capable roles.",
@@ -218,7 +219,6 @@ export function navHint(key: HotelNavKey): string {
     selfOrders: "Self-service kiosk queue and status updates for guest orders.",
     inventory: "List items: finance, F&B, housekeeping; full write: admin/manager/finance.",
     fb: "Permission: fb:* or F&B staff / manager / admin.",
-    staff: "Staff management: hotel admin or manager.",
     settings: "Hotel settings: hotel admin or manager.",
   };
   return hints[key];

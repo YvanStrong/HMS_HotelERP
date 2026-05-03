@@ -337,7 +337,13 @@ public class FbService {
 
     private String nextOrderNumber(UUID hotelId) {
         long n = fbOrderRepository.countByHotelId(hotelId) + 1;
-        return "FNB-" + Year.now().getValue() + "-" + String.format("%05d", n);
+        String prefix = "FNB-" + Year.now().getValue() + "-";
+        String candidate = prefix + String.format("%05d", n);
+        while (fbOrderRepository.existsByOrderNumber(candidate)) {
+            n++;
+            candidate = prefix + String.format("%05d", n);
+        }
+        return candidate;
     }
 
     @Transactional
