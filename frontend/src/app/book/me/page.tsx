@@ -45,7 +45,7 @@ export default function GuestTripsPage() {
       try {
         const data = await apiFetch<GuestBookingRow[]>(
           `/api/v1/hotels/${hotelId}/guest-portal/bookings`,
-          { hotelId },
+          { hotelId, quiet: true },
         );
         if (!cancelled) setRows(data);
       } catch (e) {

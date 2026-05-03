@@ -35,6 +35,7 @@ type RoomRow = {
   roomNumber: string;
   floor: number | null;
   building?: string | null;
+  photoUrl?: string | null;
   lastUpdated?: string;
   roomType: RoomTypeSummary;
   status: string;
@@ -75,6 +76,7 @@ type RoomDashboard = {
 
 const PAGE_SIZE = 200;
 const POLL_MS = 30_000;
+const DEFAULT_ROOM_IMAGE = "/images/default-room.svg";
 
 export default function RoomsPage() {
   const params = useParams();
@@ -160,6 +162,7 @@ export default function RoomsPage() {
               type="button"
               className={`px-3 py-1.5 ${view === "grid" ? "bg-primary text-primary-foreground" : "bg-card hover:bg-muted"}`}
               onClick={() => setView("grid")}
+              aria-pressed={view === "grid"}
             >
               Grid
             </button>
@@ -167,6 +170,7 @@ export default function RoomsPage() {
               type="button"
               className={`px-3 py-1.5 ${view === "table" ? "bg-primary text-primary-foreground" : "bg-card hover:bg-muted"}`}
               onClick={() => setView("table")}
+              aria-pressed={view === "table"}
             >
               Table
             </button>
@@ -176,7 +180,7 @@ export default function RoomsPage() {
             onClick={() => {
               window.location.href = staffAppPath("rooms", "new");
             }}
-            className="hms-btn-solid text-sm inline-flex items-center gap-2"
+            className="hms-btn-solid hms-btn-sm hms-btn-icon"
           >
             Create room
           </button>
@@ -202,7 +206,7 @@ export default function RoomsPage() {
       )}
 
       {summaryQuery.data && (
-        <div className="flex flex-wrap gap-3 text-sm bg-muted/40 rounded-xl border border-border/60 px-4 py-3">
+        <div className="hms-section-card flex flex-wrap gap-3 text-sm">
           <span>
             <strong className="text-foreground">{summaryQuery.data.total}</strong> total
           </span>
@@ -222,7 +226,12 @@ export default function RoomsPage() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-3 items-end bg-card border border-border/60 rounded-xl p-4">
+      <section className="hms-section-card">
+        <div className="hms-section-head">
+          <h2 className="hms-section-title">Room Filters</h2>
+          <p className="hms-section-sub">Switch between grid and table while keeping filters pinned.</p>
+        </div>
+        <div className="flex flex-wrap gap-3 items-end">
         <label className="text-xs font-medium text-muted-foreground flex flex-col gap-1">
           Status
           <select
@@ -267,18 +276,28 @@ export default function RoomsPage() {
             ))}
           </select>
         </label>
-      </div>
+        </div>
+      </section>
 
       {listQuery.data && view === "grid" && (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
             {listQuery.data.data.map((r) => (
               <button
                 key={r.id}
                 type="button"
                 onClick={() => setDrawerRoomId(r.id)}
-                className="text-left bg-card rounded-xl border border-border/60 p-4 shadow-soft hover:shadow-md hover:border-primary/30 transition-all"
+                className="text-left bg-card rounded-xl border border-border/60 p-4 shadow-soft hover:shadow-float hover:border-primary/30 transition-all"
               >
+                <img
+                  src={r.photoUrl || DEFAULT_ROOM_IMAGE}
+                  alt={`${r.roomType.name} room ${r.roomNumber}`}
+                  className="mb-3 h-24 w-full rounded-lg border border-border/60 object-cover"
+                  loading="lazy"
+                  onError={(e) => {
+                    e.currentTarget.src = DEFAULT_ROOM_IMAGE;
+                  }}
+                />
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <h3 className="text-lg font-semibold text-foreground">Room {r.roomNumber}</h3>
@@ -314,28 +333,40 @@ export default function RoomsPage() {
 
       {listQuery.data && view === "table" && (
         <>
-          <div className="overflow-x-auto rounded-xl border border-border/60">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+          <div className="hms-table-wrap">
+            <table className="hms-table">
+              <thead>
                 <tr>
-                  <th className="px-3 py-2">Room</th>
-                  <th className="px-3 py-2">Floor</th>
-                  <th className="px-3 py-2">Type</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2" />
+                  <th>Image</th>
+                  <th>Room</th>
+                  <th>Floor</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
                 {listQuery.data.data.map((r) => (
-                  <tr key={r.id} className="border-t border-border/50 hover:bg-muted/30">
-                    <td className="px-3 py-2 font-medium">{r.roomNumber}</td>
-                    <td className="px-3 py-2">{r.floor ?? "—"}</td>
-                    <td className="px-3 py-2">{r.roomType.name}</td>
-                    <td className="px-3 py-2">
+                  <tr key={r.id}>
+                    <td>
+                      <img
+                        src={r.photoUrl || DEFAULT_ROOM_IMAGE}
+                        alt={`${r.roomType.name} room ${r.roomNumber}`}
+                        className="h-12 w-20 rounded border border-border/60 object-cover"
+                        loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.src = DEFAULT_ROOM_IMAGE;
+                        }}
+                      />
+                    </td>
+                    <td className="font-medium">{r.roomNumber}</td>
+                    <td>{r.floor ?? "—"}</td>
+                    <td>{r.roomType.name}</td>
+                    <td>
                       <RoomStatusBadge status={r.status} />
                     </td>
-                    <td className="px-3 py-2 text-right space-x-2">
-                      <button type="button" className="text-primary text-xs font-medium" onClick={() => setDrawerRoomId(r.id)}>
+                    <td className="text-right space-x-2 whitespace-nowrap">
+                      <button type="button" className="text-primary text-xs font-semibold hover:underline" onClick={() => setDrawerRoomId(r.id)}>
                         Drawer
                       </button>
                       <Link href={staffAppPath("rooms", r.id)} className="text-muted-foreground text-xs">
@@ -344,6 +375,16 @@ export default function RoomsPage() {
                     </td>
                   </tr>
                 ))}
+                {listQuery.data.data.length === 0 && (
+                  <tr>
+                    <td colSpan={6}>
+                      <div className="hms-empty-state my-2">
+                        <p className="hms-empty-title">No rooms found</p>
+                        <p className="hms-empty-copy">Try clearing filters or create a new room.</p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

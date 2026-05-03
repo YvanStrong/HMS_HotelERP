@@ -1,12 +1,20 @@
 import { API_BASE } from "./api";
 
-/** Unauthenticated API calls (catalog, availability, public book, lookup). */
+/** Unauthenticated API calls (catalog, availability, public book, lookup, self-order). */
 export async function publicFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
+  /* Public routes must not send staff JWT / tenant / impersonation — avoids backend treating the call as an authenticated user and failing authorization. */
+  headers.delete("Authorization");
+  headers.delete("X-Hotel-ID");
+  headers.delete("X-Impersonate-Token");
   if (init.body != null && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers,
+    credentials: "omit",
+  });
   if (!res.ok) {
     let msg = res.statusText;
     try {

@@ -72,6 +72,8 @@ type CreateRes = {
   message: string;
 };
 
+const GENDER_OPTIONS = ["MALE", "FEMALE", "OTHER", "PREFER_NOT_TO_SAY"] as const;
+
 const REGION_NAMES = new Intl.DisplayNames(["en"], { type: "region" });
 const COUNTRY_OPTIONS = getCountries()
   .map((iso2) => ({
@@ -287,7 +289,7 @@ export default function NewStaffReservationPage() {
     setVillage(a.village ?? "");
     setStreetNumber(a.street_number ?? "");
     setAddressNotes(a.address_notes ?? "");
-    setNationality(g.nationality ?? "");
+    setNationality(g.nationality ?? a.country ?? "");
     setGender(g.gender ?? "");
     setIdType(g.id_type ?? "NATIONAL_ID");
     setIdDocNumber(g.id_document_number ?? g.national_id);
@@ -648,6 +650,10 @@ export default function NewStaffReservationPage() {
 
   function printOrDownloadConfirmation() {
     if (!done) return;
+    const standardCheckInTime = "15:00:00";
+    const standardCheckOutTime = "11:00:00";
+    const checkInWithTime = `${done.stay.checkIn} ${standardCheckInTime}`;
+    const checkOutWithTime = `${done.stay.checkOut} ${standardCheckOutTime}`;
     const esc = (v: unknown) =>
       String(v ?? "")
         .replaceAll("&", "&amp;")
@@ -852,8 +858,8 @@ export default function NewStaffReservationPage() {
           <div class="row"><div class="label">Room type</div><div class="value">${esc(selectedAvail?.name ?? "—")}</div></div>
           <div class="row"><div class="label">Room</div><div class="value">${esc(done.room.roomNumber)}</div></div>
           <div class="row"><div class="label">Preferred room</div><div class="value">${esc(preferredRoomId || "Auto-assign")}</div></div>
-          <div class="row"><div class="label">Check-in</div><div class="value">${esc(done.stay.checkIn)}</div></div>
-          <div class="row"><div class="label">Check-out</div><div class="value">${esc(done.stay.checkOut)}</div></div>
+          <div class="row"><div class="label">Check-in</div><div class="value">${esc(checkInWithTime)}</div></div>
+          <div class="row"><div class="label">Check-out</div><div class="value">${esc(checkOutWithTime)}</div></div>
           <div class="row"><div class="label">Nights</div><div class="value">${esc(done.stay.nights)}</div></div>
           <div class="row"><div class="label">Adults</div><div class="value">${esc(adults)}</div></div>
           <div class="row"><div class="label">Early check-in</div><div class="value">${earlyCheckIn ? "Yes" : "No"}</div></div>
@@ -1176,9 +1182,14 @@ export default function NewStaffReservationPage() {
                     }}
                   >
                     <option value="">Select gender</option>
-                    <option value="MALE">Male</option>
-                    <option value="FEMALE">Female</option>
-                    <option value="OTHER">Other</option>
+                    {GENDER_OPTIONS.map((g) => (
+                      <option key={g} value={g}>
+                        {g.replaceAll("_", " ")}
+                      </option>
+                    ))}
+                    {gender && !GENDER_OPTIONS.includes(gender as (typeof GENDER_OPTIONS)[number]) && (
+                      <option value={gender}>{gender}</option>
+                    )}
                   </select>
                 </label>
                 <label className="sm:col-span-2">
@@ -1187,7 +1198,9 @@ export default function NewStaffReservationPage() {
                     value={country}
                     onChange={(e) => {
                       markGuestEdited();
-                      setCountry(e.target.value);
+                      const selectedCountry = e.target.value;
+                      setCountry(selectedCountry);
+                      setNationality(selectedCountry);
                     }}
                     required
                   >
@@ -1196,6 +1209,9 @@ export default function NewStaffReservationPage() {
                         {c.name}
                       </option>
                     ))}
+                    {!COUNTRY_OPTIONS.some((c) => c.name === country) && country ? (
+                      <option value={country}>{country}</option>
+                    ) : null}
                   </select>
                 </label>
                 <label>

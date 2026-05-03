@@ -45,6 +45,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: "Guests & Bookings",
     items: [
       { key: "reservations", segment: "reservations", label: "Reservations", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" },
+      { key: "invoices", segment: "invoices", label: "Invoices", icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
       { key: "guests", segment: "guests", label: "Guests", icon: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" },
       { key: "staff", segment: "staff", label: "Staff", icon: "M17 20h5V4H2v16h5m10 0v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5m10 0H7m8-12h.01M9 8h.01" },
       { key: "housekeeping", segment: "housekeeping", label: "Housekeeping", icon: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" },
@@ -60,9 +61,23 @@ const NAV_SECTIONS: NavSection[] = [
     title: "Services",
     items: [
       { key: "facilities", segment: "facilities", label: "Facilities", icon: "M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" },
+      { key: "menu", segment: "menu", label: "Menu", icon: "M4 6h16M4 12h16M4 18h10m4 0h2M9 6v12" },
+      {
+        key: "selfOrders",
+        segment: "self-orders",
+        label: "Self orders",
+        icon: "M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",
+      },
       { key: "inventory", segment: "inventory", label: "Inventory", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
       { key: "fb", segment: "fb", label: "F&B", icon: "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" },
     ]
+  },
+  {
+    title: "Administration",
+    items: [
+      { key: "staff", segment: "staff", label: "Staff", icon: "M17 20h5V9H2v11h5m10 0v-7.5A2.5 2.5 0 0014.5 10h-5A2.5 2.5 0 007 12.5V20m10 0H7m6-13a3 3 0 110-6 3 3 0 010 6z" },
+      { key: "settings", segment: "settings", label: "Settings", icon: "M10.325 4.317a1 1 0 011.35-.936l1.07.425a1 1 0 001.07-.188l.829-.83a1 1 0 011.414 0l1.414 1.414a1 1 0 010 1.414l-.83.829a1 1 0 00-.188 1.07l.425 1.07a1 1 0 01-.936 1.35h-1.173a1 1 0 00-.948.684l-.363 1.09a1 1 0 01-.95.684h-2a1 1 0 01-.95-.684l-.363-1.09a1 1 0 00-.948-.684H6.055a1 1 0 01-.936-1.35l.425-1.07a1 1 0 00-.188-1.07l-.83-.829a1 1 0 010-1.414L5.94 2.788a1 1 0 011.414 0l.829.83a1 1 0 001.07.188l1.07-.425zM12 15a3 3 0 100-6 3 3 0 000 6z" },
+    ],
   },
 ];
 
@@ -78,7 +93,13 @@ export function HotelStaffShell({
   const [user, setUser] = useState<AuthUser | null>(null);
   const [hotelName, setHotelName] = useState<string>("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [expandedSections, setExpandedSections] = useState<string[]>(["Overview", "Rooms", "Guests & Bookings", "Services"]);
+  const [expandedSections, setExpandedSections] = useState<string[]>([
+    "Overview",
+    "Rooms",
+    "Guests & Bookings",
+    "Services",
+    "Administration",
+  ]);
 
   useEffect(() => {
     setUser(loadAuthUser());
@@ -115,7 +136,7 @@ export function HotelStaffShell({
 
   return (
     <QueryProvider>
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-gradient-to-br from-[hsl(40,33%,97%)] to-[hsl(31,24%,93%)] flex">
       {/* Mobile sidebar overlay */}
       {isSidebarOpen && (
         <div
@@ -126,7 +147,7 @@ export function HotelStaffShell({
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-border transform transition-transform duration-200 ease-in-out ${
+        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white/95 backdrop-blur-sm border-r border-border transform transition-transform duration-200 ease-in-out ${
           isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
@@ -271,7 +292,7 @@ export function HotelStaffShell({
 
         {/* Page content */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-          <div className="max-w-7xl mx-auto">
+          <div className="max-w-7xl mx-auto animate-fade-in">
             {children}
           </div>
         </main>

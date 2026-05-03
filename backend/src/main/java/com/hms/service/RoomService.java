@@ -190,6 +190,7 @@ public class RoomService {
                 r.getRoomNumber(),
                 r.getFloor(),
                 r.getBuilding(),
+                r.getPhotoUrl(),
                 rts,
                 r.getStatus().name(),
                 r.getCleanliness().name(),
@@ -335,6 +336,7 @@ public class RoomService {
                 r.getRoomNumber(),
                 r.getFloor(),
                 r.getBuilding(),
+                r.getPhotoUrl(),
                 rts,
                 r.getStatus().name(),
                 r.getCleanliness().name(),
@@ -376,6 +378,9 @@ public class RoomService {
         room.setRoomNumber(req.roomNumber().trim());
         room.setFloor(req.floor());
         room.setBuilding(req.building());
+        if (req.imageUrl() != null) {
+            room.setPhotoUrl(req.imageUrl().trim().isEmpty() ? null : req.imageUrl().trim());
+        }
         RoomStatus initial = RoomStatus.VACANT_CLEAN;
         if (req.initialStatus() != null && !req.initialStatus().isBlank()) {
             initial = RoomStatus.valueOf(req.initialStatus().trim().toUpperCase());
@@ -392,6 +397,7 @@ public class RoomService {
                 room.getRoomNumber(),
                 room.getFloor(),
                 room.getBuilding(),
+                room.getPhotoUrl(),
                 roomTypeSummary(room.getRoomType()),
                 room.getStatus().name(),
                 room.getCleanliness().name(),
@@ -435,6 +441,9 @@ public class RoomService {
         }
         if (req.floor() != null) {
             room.setFloor(req.floor());
+        }
+        if (req.imageUrl() != null) {
+            room.setPhotoUrl(req.imageUrl().trim().isEmpty() ? null : req.imageUrl().trim());
         }
         if (room.getStatus() == RoomStatus.OUT_OF_ORDER) {
             room.setOutOfOrder(true);

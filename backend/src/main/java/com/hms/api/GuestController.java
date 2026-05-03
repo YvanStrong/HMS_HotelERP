@@ -30,12 +30,21 @@ public class GuestController {
 
     @GetMapping("/search")
     @PreAuthorize(
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE','ROLE_FNB_STAFF')")
     public List<GuestDtos.GuestSearchHit> searchGuests(
             @PathVariable UUID hotelId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
             @RequestParam String q) {
         return guestService.searchGuests(hotelId, hotelHeader, q);
+    }
+
+    @GetMapping
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE','ROLE_FNB_STAFF')")
+    public List<GuestDtos.GuestSearchHit> listGuests(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return guestService.listGuests(hotelId, hotelHeader);
     }
 
     @PostMapping

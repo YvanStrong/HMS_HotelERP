@@ -33,7 +33,7 @@ export function PlatformStaffShell({ children }: { children: React.ReactNode }) 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-gradient-to-br from-[hsl(40,33%,97%)] to-[hsl(31,24%,93%)]">
       {/* Mobile Overlay */}
       {isSidebarOpen && (
         <div 
@@ -43,7 +43,7 @@ export function PlatformStaffShell({ children }: { children: React.ReactNode }) 
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed lg:sticky top-0 left-0 z-50 h-screen w-64 bg-white border-r border-border flex flex-col transition-transform duration-200 ${
+      <aside className={`fixed lg:sticky top-0 left-0 z-50 h-screen w-64 bg-white/95 backdrop-blur-sm border-r border-border flex flex-col transition-transform duration-200 ${
         isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
       }`}>
         {/* Brand */}
@@ -148,7 +148,7 @@ export function PlatformStaffShell({ children }: { children: React.ReactNode }) 
         </div>
 
         {/* Page Content */}
-        <div className="p-4 lg:p-6">
+        <div className="p-4 lg:p-6 animate-fade-in">
           {children}
         </div>
       </main>

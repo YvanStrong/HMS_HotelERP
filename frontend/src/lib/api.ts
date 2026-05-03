@@ -1,6 +1,14 @@
 import { clearSessionCookies } from "./sessionCookies";
+import { showErrorPopup } from "./errorPopup";
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+/** Empty env string would otherwise make fetch hit the Next origin instead of the Java API. */
+function resolveApiBase(): string {
+  const raw = process.env.NEXT_PUBLIC_API_URL;
+  if (raw == null || String(raw).trim() === "") return "http://localhost:8080";
+  return String(raw).trim().replace(/\/$/, "");
+}
+
+export const API_BASE = resolveApiBase();
 
 const HOTEL_UUID_IN_API_PATH =
   /^\/api\/v1\/hotels\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\//;
@@ -36,9 +44,9 @@ function resolveXHotelId(path: string, explicit?: string): string | undefined {
 
 export async function apiFetch<T>(
   path: string,
-  options: RequestInit & { hotelId?: string } = {},
+  options: RequestInit & { hotelId?: string; /** When true, failed requests do not open the global error popup. */ quiet?: boolean } = {},
 ): Promise<T> {
-  const { hotelId, headers: initHeaders, ...rest } = options;
+  const { hotelId, quiet, headers: initHeaders, ...rest } = options;
   const headers = new Headers(initHeaders);
   headers.set("Content-Type", "application/json");
   const token = getToken();
@@ -57,6 +65,9 @@ export async function apiFetch<T>(
       else if (code) msg = code;
     } catch {
       /* ignore */
+    }
+    if (!quiet) {
+      showErrorPopup({ message: msg, title: `Request failed (${res.status})` });
     }
     throw new Error(msg);
   }

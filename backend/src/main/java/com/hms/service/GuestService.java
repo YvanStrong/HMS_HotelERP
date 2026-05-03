@@ -21,7 +21,6 @@ import com.hms.security.UserPrincipal;
 import com.hms.web.ApiException;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -72,6 +71,14 @@ public class GuestService {
         }
         return guestRepository.searchGuestsForHotel(hotelId, q.trim()).stream()
                 .limit(30)
+                .map(GuestService::toSearchHit)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<GuestDtos.GuestSearchHit> listGuests(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        return guestRepository.findByHotel_Id(hotelId).stream()
                 .map(GuestService::toSearchHit)
                 .toList();
     }
