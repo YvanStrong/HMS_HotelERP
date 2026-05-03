@@ -80,6 +80,7 @@ public class GuestPortalService {
         return new ApiDtos.GuestBookingRow(
                 r.getId(),
                 r.getConfirmationCode(),
+                r.getBookingReference(),
                 r.getHotel().getName(),
                 r.getStatus().name(),
                 r.getCheckInDate(),

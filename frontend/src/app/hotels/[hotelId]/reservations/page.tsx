@@ -40,6 +40,11 @@ function localYmd(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
+/** Compare ISO date or datetime strings as YYYY-MM-DD (hotel list uses dates; API may add time). */
+function ymdOnly(s: string) {
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
 export default function ReservationsOperationsPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
@@ -143,6 +148,7 @@ export default function ReservationsOperationsPage() {
       await apiFetch(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/no-show`, {
         method: "POST",
         body: JSON.stringify({}),
+        quiet: true,
       });
       await loadList();
     } catch (e) {
@@ -190,6 +196,11 @@ export default function ReservationsOperationsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Reservations</h1>
           <p className="text-muted-foreground mt-1">
             In-house board: filter by stay window, status, or search confirmation / guest
+          </p>
+          <p className="text-xs text-muted-foreground mt-2 max-w-3xl">
+            <strong>No-show</strong> means the guest did not arrive for a confirmed booking. The stay is closed as
+            no-show, the room is released, and a default no-show fee may be posted (see hotel fee policy). Use it for
+            arrivals on or before today — not for future check-in dates.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -391,7 +402,8 @@ export default function ReservationsOperationsPage() {
                       >
                         Open →
                       </Link>
-                      {r.status === "CONFIRMED" && r.checkInDate === localYmd() && (
+                      {String(r.status || "").toUpperCase() === "CONFIRMED" &&
+                        ymdOnly(r.checkInDate) <= localYmd() && (
                         <button
                           type="button"
                           className="text-xs text-orange-700 underline"

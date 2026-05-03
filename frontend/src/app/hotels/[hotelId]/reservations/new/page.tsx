@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, getToken } from "@/lib/api";
+import { COUNTRY_OPTIONS, GENDER_OPTIONS } from "@/lib/guestFormConstants";
+import { printReservationDocument } from "@/lib/printReservationDocument";
 import { staffAppPath } from "@/lib/staffAppRoutes";
 
 type GuestSearchHit = {
@@ -70,39 +72,6 @@ type CreateRes = {
   stay: { checkIn: string; checkOut: string; nights: number };
   message: string;
 };
-
-const GENDER_OPTIONS = ["MALE", "FEMALE", "OTHER", "PREFER_NOT_TO_SAY"] as const;
-
-const COUNTRY_OPTIONS = [
-  "Rwanda",
-  "Uganda",
-  "Kenya",
-  "Tanzania",
-  "Burundi",
-  "South Sudan",
-  "Democratic Republic of the Congo",
-  "Ethiopia",
-  "Nigeria",
-  "Ghana",
-  "South Africa",
-  "Morocco",
-  "Egypt",
-  "India",
-  "China",
-  "Japan",
-  "United Arab Emirates",
-  "United Kingdom",
-  "France",
-  "Germany",
-  "Belgium",
-  "Netherlands",
-  "Italy",
-  "Spain",
-  "Canada",
-  "United States",
-  "Brazil",
-  "Australia",
-] as const;
 
 function localYmd(d = new Date()) {
   const y = d.getFullYear();
@@ -383,295 +352,67 @@ export default function NewStaffReservationPage() {
 
   function printOrDownloadConfirmation() {
     if (!done) return;
-    const standardCheckInTime = "15:00:00";
-    const standardCheckOutTime = "11:00:00";
-    const checkInWithTime = `${done.stay.checkIn} ${standardCheckInTime}`;
-    const checkOutWithTime = `${done.stay.checkOut} ${standardCheckOutTime}`;
-    const esc = (v: unknown) =>
-      String(v ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
-    const docTitle = `Reservation-${done.booking_reference ?? done.id}`;
-    const html = `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${docTitle}</title>
-  <style>
-    :root {
-      --ink: #0f172a;
-      --muted: #475569;
-      --line: #dbe1ea;
-      --brand: #0f766e;
-      --soft: #f8fafc;
-    }
-    * { box-sizing: border-box; }
-    body {
-      font-family: "Inter", "Segoe UI", Arial, sans-serif;
-      margin: 0;
-      color: var(--ink);
-      background: white;
-      padding: 28px;
-    }
-    .sheet {
-      max-width: 860px;
-      margin: 0 auto;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      overflow: hidden;
-    }
-    .header {
-      background: linear-gradient(130deg, #0f766e 0%, #115e59 60%, #134e4a 100%);
-      color: #fff;
-      padding: 24px;
-      display: flex;
-      justify-content: space-between;
-      gap: 20px;
-    }
-    .brand {
-      font-size: 12px;
-      letter-spacing: .16em;
-      text-transform: uppercase;
-      opacity: .92;
-      margin-bottom: 8px;
-    }
-    .hotel {
-      font-size: 24px;
-      font-weight: 700;
-      line-height: 1.2;
-    }
-    .title {
-      font-size: 14px;
-      opacity: .95;
-      margin-top: 8px;
-    }
-    .ref-wrap {
-      text-align: right;
-      min-width: 240px;
-    }
-    .ref-label { font-size: 12px; opacity: .9; text-transform: uppercase; letter-spacing: .08em; }
-    .ref {
-      margin-top: 6px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 24px;
-      font-weight: 700;
-      letter-spacing: .03em;
-    }
-    .body { padding: 22px; background: var(--soft); }
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-    }
-    .card {
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 14px 15px;
-    }
-    .card h3 {
-      margin: 0 0 10px;
-      font-size: 13px;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-    .row {
-      display: grid;
-      grid-template-columns: 130px 1fr;
-      gap: 8px;
-      margin: 6px 0;
-      font-size: 14px;
-    }
-    .label { color: var(--muted); }
-    .value { font-weight: 600; }
-    .message {
-      margin-top: 14px;
-      background: #ecfeff;
-      border: 1px solid #99f6e4;
-      color: #115e59;
-      padding: 12px 14px;
-      border-radius: 10px;
-      font-size: 13px;
-      line-height: 1.4;
-    }
-    .footer {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: center;
-      border-top: 1px solid var(--line);
-      padding: 12px 22px;
-      background: #fff;
-      color: var(--muted);
-      font-size: 12px;
-    }
-    .watermark {
-      position: fixed;
-      top: 44%;
-      left: 50%;
-      transform: translate(-50%, -50%) rotate(-28deg);
-      font-size: 56px;
-      font-weight: 800;
-      letter-spacing: .18em;
-      color: rgba(15, 118, 110, 0.09);
-      text-transform: uppercase;
-      pointer-events: none;
-      user-select: none;
-      white-space: nowrap;
-      z-index: 0;
-    }
-    .sheet, .header, .body, .footer { position: relative; z-index: 1; }
-    .signatures {
-      margin-top: 14px;
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 10px 14px;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-    }
-    .sig-title {
-      font-size: 11px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: .05em;
-      margin-bottom: 14px;
-    }
-    .sig-line {
-      border-top: 1px solid #94a3b8;
-      padding-top: 4px;
-      font-size: 12px;
-      color: #334155;
-    }
-    @media print {
-      body { padding: 0; }
-      .sheet { border: none; border-radius: 0; }
-      .footer { color: #666; }
-    }
-  </style>
-</head>
-<body>
-  <div class="watermark">Confidential / Staff Copy</div>
-  <div class="sheet">
-    <div class="header">
-      <div>
-        <div class="brand">HMS • Reservation</div>
-        <div class="hotel">${esc(hotelName)}</div>
-        <div class="title">Reservation Confirmation Document</div>
-      </div>
-      <div class="ref-wrap">
-        <div class="ref-label">Booking Reference</div>
-        <div class="ref">${esc(done.booking_reference ?? "—")}</div>
-      </div>
-    </div>
-    <div class="body">
-      <div class="grid">
-        <div class="card">
-          <h3>Guest</h3>
-          <div class="row"><div class="label">Name</div><div class="value">${esc(done.guest.name)}</div></div>
-          <div class="row"><div class="label">Email</div><div class="value">${esc(done.guest.email ?? "—")}</div></div>
-          <div class="row"><div class="label">Phone</div><div class="value">${esc(phone || "—")}</div></div>
-          <div class="row"><div class="label">Phone code</div><div class="value">${esc(phoneCc || "—")}</div></div>
-          <div class="row"><div class="label">National ID</div><div class="value">${esc(nationalId || "—")}</div></div>
-          <div class="row"><div class="label">Date of birth</div><div class="value">${esc(dob || "—")}</div></div>
-          <div class="row"><div class="label">Nationality</div><div class="value">${esc(nationality || "—")}</div></div>
-          <div class="row"><div class="label">Gender</div><div class="value">${esc(gender || "—")}</div></div>
-          <div class="row"><div class="label">Reservation ID</div><div class="value">${esc(done.id)}</div></div>
-          <div class="row"><div class="label">Status</div><div class="value">${esc(done.status)}</div></div>
-        </div>
-        <div class="card">
-          <h3>Stay</h3>
-          <div class="row"><div class="label">Source</div><div class="value">${esc(bookingSource)}</div></div>
-          <div class="row"><div class="label">Room type</div><div class="value">${esc(selectedAvail?.name ?? "—")}</div></div>
-          <div class="row"><div class="label">Room</div><div class="value">${esc(done.room.roomNumber)}</div></div>
-          <div class="row"><div class="label">Preferred room</div><div class="value">${esc(preferredRoomId || "Auto-assign")}</div></div>
-          <div class="row"><div class="label">Check-in</div><div class="value">${esc(checkInWithTime)}</div></div>
-          <div class="row"><div class="label">Check-out</div><div class="value">${esc(checkOutWithTime)}</div></div>
-          <div class="row"><div class="label">Nights</div><div class="value">${esc(done.stay.nights)}</div></div>
-          <div class="row"><div class="label">Adults</div><div class="value">${esc(adults)}</div></div>
-          <div class="row"><div class="label">Early check-in</div><div class="value">${earlyCheckIn ? "Yes" : "No"}</div></div>
-          <div class="row"><div class="label">Special requests</div><div class="value">${esc(specialRequests || "—")}</div></div>
-          <div class="row"><div class="label">Nightly avg</div><div class="value">${esc(
-            selectedAvail ? `${(selectedAvail.total_price / Math.max(1, selectedAvail.nights)).toFixed(2)} ${selectedAvail.currency}` : "—",
-          )}</div></div>
-          <div class="row"><div class="label">Stay total</div><div class="value">${esc(
-            selectedAvail ? `${selectedAvail.total_price} ${selectedAvail.currency}` : "—",
-          )}</div></div>
-        </div>
-      </div>
-      <div class="grid" style="margin-top: 14px;">
-        <div class="card">
-          <h3>Guest Address</h3>
-          <div class="row"><div class="label">Country</div><div class="value">${esc(country || "—")}</div></div>
-          <div class="row"><div class="label">Province</div><div class="value">${esc(province || "—")}</div></div>
-          <div class="row"><div class="label">District</div><div class="value">${esc(district || "—")}</div></div>
-          <div class="row"><div class="label">Sector</div><div class="value">${esc(sector || "—")}</div></div>
-          <div class="row"><div class="label">Cell</div><div class="value">${esc(cell || "—")}</div></div>
-          <div class="row"><div class="label">Village</div><div class="value">${esc(village || "—")}</div></div>
-          <div class="row"><div class="label">Street No.</div><div class="value">${esc(streetNumber || "—")}</div></div>
-          <div class="row"><div class="label">Address notes</div><div class="value">${esc(addressNotes || "—")}</div></div>
-        </div>
-        <div class="card">
-          <h3>ID & Payment</h3>
-          <div class="row"><div class="label">ID type</div><div class="value">${esc(idType || "—")}</div></div>
-          <div class="row"><div class="label">ID number</div><div class="value">${esc(idDocNumber || nationalId || "—")}</div></div>
-          <div class="row"><div class="label">ID expiry</div><div class="value">${esc(idExpiry || "—")}</div></div>
-          <div class="row"><div class="label">VIP level</div><div class="value">${esc(vipLevel || "NONE")}</div></div>
-          <div class="row"><div class="label">Marketing consent</div><div class="value">${marketingConsent ? "Yes" : "No"}</div></div>
-          <div class="row"><div class="label">Notes</div><div class="value">${esc(notes || "—")}</div></div>
-          <div class="row"><div class="label">Deposit</div><div class="value">${esc(
-            deposit.trim() ? `${deposit} ${selectedAvail?.currency ?? "RWF"}` : "0",
-          )}</div></div>
-          <div class="row"><div class="label">Payment method</div><div class="value">${esc(
-            deposit.trim() ? paymentMethod : "N/A",
-          )}</div></div>
-        </div>
-      </div>
-      <div class="message">${esc(done.message)}</div>
-      <div class="signatures">
-        <div>
-          <div class="sig-title">Guest Signature</div>
-          <div class="sig-line">Name & Signature</div>
-        </div>
-        <div>
-          <div class="sig-title">Receptionist Signature</div>
-          <div class="sig-line">Name, Signature & Date</div>
-        </div>
-      </div>
-    </div>
-    <div class="footer">
-      <span>Generated on ${esc(new Date().toLocaleString())}</span>
-      <span>${esc(hotelName)} • HMS</span>
-    </div>
-  </div>
-</body>
-</html>`;
-
-    const w = window.open("", "_blank");
-    if (w) {
-      w.document.open();
-      w.document.write(html);
-      w.document.close();
-      w.focus();
-      w.print();
-      return;
-    }
-
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${docTitle}.html`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    const roomTypeLabel = selectedAvail?.name ?? "—";
+    const nightlyAvg =
+      selectedAvail != null
+        ? `${(selectedAvail.total_price / Math.max(1, selectedAvail.nights)).toFixed(2)} ${selectedAvail.currency}`
+        : "—";
+    const stayTotal =
+      selectedAvail != null ? `${selectedAvail.total_price} ${selectedAvail.currency}` : "—";
+    printReservationDocument({
+      variant: "staff",
+      hotelName,
+      sourceLabel: bookingSource,
+      guest: {
+        name: done.guest.name,
+        email: done.guest.email,
+        phone: phone || null,
+        phoneCc: phoneCc || null,
+        nationalId: nationalId || null,
+        dob: dob || null,
+        nationality: nationality || null,
+        gender: gender || null,
+        country,
+        province,
+        district,
+        sector,
+        cell,
+        village,
+        streetNumber,
+        addressNotes,
+        idType,
+        idNumber: idDocNumber || nationalId,
+        idExpiry: idExpiry || null,
+        vipLevel,
+        marketingConsent,
+        notes,
+      },
+      stay: {
+        reservationId: done.id,
+        confirmationCode: done.confirmationCode,
+        bookingReference: done.booking_reference ?? done.confirmationCode,
+        status: done.status,
+        roomTypeName: roomTypeLabel,
+        roomNumber: done.room.roomNumber,
+        checkIn: done.stay.checkIn,
+        checkOut: done.stay.checkOut,
+        nights: done.stay.nights,
+        adults,
+        children: 0,
+        specialRequests: specialRequests || null,
+        message: done.message,
+        pricingLines: [
+          { label: "Nightly avg", value: nightlyAvg },
+          { label: "Stay total", value: stayTotal },
+        ],
+      },
+      staffExtras: {
+        earlyCheckIn,
+        preferredRoomLabel: preferredRoomId || "Auto-assign",
+        depositLabel: deposit.trim() ? `${deposit} ${selectedAvail?.currency ?? "RWF"}` : "0",
+        paymentMethodLabel: deposit.trim() ? paymentMethod : "N/A",
+      },
+    });
   }
 
   return (

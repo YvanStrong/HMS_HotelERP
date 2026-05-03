@@ -120,7 +120,8 @@ public class ReservationController {
     }
 
     @PostMapping("/{reservationId}/no-show")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST')")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
     public ApiDtos.NoShowResponse markNoShow(
             @PathVariable UUID hotelId,
             @PathVariable UUID reservationId,

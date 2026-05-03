@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { isGuestPortalUser, loadAuthUser, type AuthUser } from "@/lib/auth";
+import { printReservationDocument } from "@/lib/printReservationDocument";
 
 type GuestBookingRow = {
   reservationId: string;
   confirmationCode: string;
+  booking_reference?: string;
   hotelName: string;
   status: string;
   checkInDate: string;
@@ -22,6 +24,13 @@ type GuestBookingRow = {
   totalAmount: number;
   currency: string;
 };
+
+function nightsBetweenYmd(checkIn: string, checkOut: string): number {
+  const d1 = new Date(`${checkIn}T12:00:00`);
+  const d2 = new Date(`${checkOut}T12:00:00`);
+  const n = Math.round((d2.getTime() - d1.getTime()) / 86400000);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
 
 export default function GuestTripsPage() {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -84,6 +93,56 @@ export default function GuestTripsPage() {
     );
   }
 
+  function printTripDocument(r: GuestBookingRow) {
+    const ref = r.booking_reference ?? r.confirmationCode;
+    printReservationDocument({
+      variant: "guest",
+      hotelName: r.hotelName,
+      sourceLabel: "Guest portal — My trips",
+      guest: {
+        name: user?.email ?? "Guest",
+        email: user?.email ?? null,
+        phone: null,
+        phoneCc: null,
+        nationalId: null,
+        dob: null,
+        nationality: null,
+        gender: null,
+        country: null,
+        province: null,
+        district: null,
+        sector: null,
+        cell: null,
+        village: null,
+        streetNumber: null,
+        addressNotes: null,
+        idType: null,
+        idNumber: null,
+        idExpiry: null,
+        vipLevel: null,
+        marketingConsent: undefined,
+        notes: null,
+      },
+      stay: {
+        reservationId: r.reservationId,
+        confirmationCode: r.confirmationCode,
+        bookingReference: ref,
+        status: r.status,
+        roomTypeName: r.roomTypeName,
+        roomNumber: r.roomNumber || "—",
+        checkIn: r.checkInDate,
+        checkOut: r.checkOutDate,
+        nights: nightsBetweenYmd(r.checkInDate, r.checkOutDate),
+        adults: 1,
+        children: 0,
+        specialRequests: r.specialRequests || null,
+        message: r.standardArrivalMessage || null,
+        pricingLines: [{ label: "Total", value: `${r.totalAmount} ${r.currency}` }],
+      },
+      staffExtras: null,
+    });
+  }
+
   return (
     <div className="container-page py-8">
       <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
@@ -119,7 +178,16 @@ export default function GuestTripsPage() {
             <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
               <div>
                 <h2 className="text-lg font-semibold text-foreground">{r.hotelName}</h2>
-                <code className="text-xs bg-muted px-2 py-0.5 rounded-md text-muted-foreground font-mono">{r.confirmationCode}</code>
+                <div className="flex flex-wrap items-center gap-2 mt-1">
+                  <code className="text-xs bg-muted px-2 py-0.5 rounded-md text-muted-foreground font-mono">
+                    {r.confirmationCode}
+                  </code>
+                  {r.booking_reference && r.booking_reference !== r.confirmationCode && (
+                    <code className="text-xs bg-muted px-2 py-0.5 rounded-md text-muted-foreground font-mono">
+                      Ref {r.booking_reference}
+                    </code>
+                  )}
+                </div>
               </div>
               <span className={`badge ${r.status === "confirmed" ? "badge-success" : r.status === "cancelled" ? "badge-destructive" : "badge-default"}`}>
                 {r.status}
@@ -164,6 +232,12 @@ export default function GuestTripsPage() {
                 {r.specialRequests && <p>Requests: {r.specialRequests}</p>}
               </div>
             )}
+
+            <div className="mt-4 pt-3 border-t">
+              <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => printTripDocument(r)}>
+                Print reservation
+              </button>
+            </div>
           </article>
         ))}
       </div>

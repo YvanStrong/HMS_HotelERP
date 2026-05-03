@@ -67,7 +67,7 @@ public class SelfOrderService {
                 .filter(InventoryDepot::isActive)
                 .map(d -> new SelfOrderDtos.PublicDepotBrief(d.getId(), d.getName()))
                 .toList();
-        List<DepotProduct> products = depotProductRepository.search(hotelId, null, null, true);
+        List<DepotProduct> products = depotProductRepository.search(hotelId, null, true);
         List<SelfOrderDtos.PublicMenuItem> items = products.stream()
                 .filter(DepotProduct::isActive)
                 .sorted(Comparator.comparing(DepotProduct::getProductName, String.CASE_INSENSITIVE_ORDER))

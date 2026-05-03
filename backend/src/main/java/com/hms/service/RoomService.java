@@ -57,6 +57,7 @@ public class RoomService {
     private final RoomStatusAuditService roomStatusAuditService;
     private final HousekeepingTaskService housekeepingTaskService;
     private final RoomTypeNightlyRateRepository roomTypeNightlyRateRepository;
+    private final BookingDateNormalizer bookingDateNormalizer;
 
     public RoomService(
             RoomRepository roomRepository,
@@ -68,7 +69,8 @@ public class RoomService {
             ApplicationEventPublisher eventPublisher,
             RoomStatusAuditService roomStatusAuditService,
             HousekeepingTaskService housekeepingTaskService,
-            RoomTypeNightlyRateRepository roomTypeNightlyRateRepository) {
+            RoomTypeNightlyRateRepository roomTypeNightlyRateRepository,
+            BookingDateNormalizer bookingDateNormalizer) {
         this.roomRepository = roomRepository;
         this.roomTypeRepository = roomTypeRepository;
         this.hotelRepository = hotelRepository;
@@ -79,6 +81,7 @@ public class RoomService {
         this.roomStatusAuditService = roomStatusAuditService;
         this.housekeepingTaskService = housekeepingTaskService;
         this.roomTypeNightlyRateRepository = roomTypeNightlyRateRepository;
+        this.bookingDateNormalizer = bookingDateNormalizer;
     }
 
     @Transactional(readOnly = true)
@@ -621,12 +624,13 @@ public class RoomService {
             int adults) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         ensureHotel(hotelId);
-        if (!checkIn.isBefore(checkOut)) {
+        LocalDate exclusiveCheckOut = bookingDateNormalizer.toStorageCheckOutExclusive(checkIn, checkOut);
+        if (!checkIn.isBefore(exclusiveCheckOut)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "check_in must be before check_out");
         }
         Hotel hotel = hotelRepository.findById(hotelId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Hotel not found"));
         String currency = hotel.getCurrency();
-        int nights = (int) ChronoUnit.DAYS.between(checkIn, checkOut);
+        int nights = (int) ChronoUnit.DAYS.between(checkIn, exclusiveCheckOut);
         List<RoomType> types =
                 roomTypeId != null
                         ? roomTypeRepository
@@ -636,13 +640,13 @@ public class RoomService {
                         : roomTypeRepository.findByHotel_Id(hotelId);
         List<ApiDtos.RoomTypeAvailabilityItem> out = new ArrayList<>();
         for (RoomType rt : types) {
-            int available = countSellableRoomsForStay(hotelId, rt.getId(), checkIn, checkOut, adults);
+            int available = countSellableRoomsForStay(hotelId, rt.getId(), checkIn, exclusiveCheckOut, adults);
             if (available == 0) {
                 continue;
             }
             BigDecimal base = rt.getBaseRate();
             BigDecimal sumNights = BigDecimal.ZERO;
-            for (LocalDate d = checkIn; d.isBefore(checkOut); d = d.plusDays(1)) {
+            for (LocalDate d = checkIn; d.isBefore(exclusiveCheckOut); d = d.plusDays(1)) {
                 BigDecimal night = roomTypeNightlyRateRepository
                         .findByRoomType_IdAndRateDate(rt.getId(), d)
                         .map(RoomTypeNightlyRate::getNightlyRate)

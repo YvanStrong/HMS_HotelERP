@@ -78,6 +78,7 @@ public class ReservationService {
     private final ChargeService chargeService;
     private final HousekeepingTaskService housekeepingTaskService;
     private final NotificationService notificationService;
+    private final BookingDateNormalizer bookingDateNormalizer;
 
     public ReservationService(
             HotelRepository hotelRepository,
@@ -96,7 +97,8 @@ public class ReservationService {
             AppUserRepository appUserRepository,
             ChargeService chargeService,
             HousekeepingTaskService housekeepingTaskService,
-            NotificationService notificationService) {
+            NotificationService notificationService,
+            BookingDateNormalizer bookingDateNormalizer) {
         this.hotelRepository = hotelRepository;
         this.roomRepository = roomRepository;
         this.roomTypeRepository = roomTypeRepository;
@@ -114,6 +116,7 @@ public class ReservationService {
         this.chargeService = chargeService;
         this.housekeepingTaskService = housekeepingTaskService;
         this.notificationService = notificationService;
+        this.bookingDateNormalizer = bookingDateNormalizer;
     }
 
     @Transactional(readOnly = true)
@@ -122,17 +125,18 @@ public class ReservationService {
         if (!hotelRepository.existsById(hotelId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Hotel not found");
         }
-        validateDates(checkIn, checkOut);
+        LocalDate exclusiveCheckOut = bookingDateNormalizer.toStorageCheckOutExclusive(checkIn, checkOut);
+        validateDates(checkIn, exclusiveCheckOut);
         int guests = adults + children;
-        List<Room> candidates = findAssignableRooms(hotelId, roomTypeId, guests, checkIn, checkOut);
+        List<Room> candidates = findAssignableRooms(hotelId, roomTypeId, guests, checkIn, exclusiveCheckOut);
         List<ApiDtos.AvailabilityRoom> available = new ArrayList<>();
         for (Room room : candidates) {
-            if (reservationRepository.countOverlapping(room.getId(), checkIn, checkOut, null) == 0) {
+            if (reservationRepository.countOverlapping(room.getId(), checkIn, exclusiveCheckOut, null) == 0) {
                 BigDecimal avgNightly = averageNightlyForStay(
                         hotelId,
                         room.getRoomType().getId(),
                         checkIn,
-                        checkOut,
+                        exclusiveCheckOut,
                         room.getRoomType().getBaseRate());
                 available.add(new ApiDtos.AvailabilityRoom(
                         room.getId(), room.getRoomNumber(), room.getFloor(), avgNightly));
@@ -142,7 +146,7 @@ public class ReservationService {
         BigDecimal baseRate = available.isEmpty()
                 ? resolveBaseRate(hotelId, roomTypeId)
                 : available.get(0).rate();
-        long nights = ChronoUnit.DAYS.between(checkIn, checkOut);
+        long nights = ChronoUnit.DAYS.between(checkIn, exclusiveCheckOut);
         BigDecimal taxes = baseRate.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
         BigDecimal fees = FEE_PER_NIGHT.multiply(BigDecimal.valueOf(nights)).setScale(2, RoundingMode.HALF_UP);
         BigDecimal totalPerNight =
@@ -242,15 +246,15 @@ public class ReservationService {
      */
     @Transactional
     public ApiDtos.CreateReservationResponse createReservationForPublic(
-            UUID hotelId, ApiDtos.CreateReservationRequest req, Authentication authentication) {
+            UUID hotelId, ApiDtos.CreateReservationRequest body, Authentication authentication) {
         if (!hotelRepository.existsById(hotelId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Hotel not found");
         }
-        if (req.guest() != null) {
-            if (req.guest().nationalId() == null || req.guest().nationalId().isBlank()) {
+        if (body.guest() != null) {
+            if (body.guest().nationalId() == null || body.guest().nationalId().isBlank()) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "national_id is required");
             }
-            if (req.guest().dateOfBirth() == null) {
+            if (body.guest().dateOfBirth() == null) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "date_of_birth is required");
             }
         }
@@ -267,7 +271,8 @@ public class ReservationService {
             }
         }
         String actor = portal.map(UserPrincipal::getUsername).orElse("guest-web");
-        return createReservationWithActor(hotelId, req, actor, true, portal);
+        ApiDtos.CreateReservationRequest sanitized = sanitizePublicBookingRequest(body);
+        return createReservationWithActor(hotelId, sanitized, actor, true, portal);
     }
 
     public ApiDtos.CreateReservationRequest sanitizePublicBookingRequest(ApiDtos.CreateReservationRequest body) {
@@ -294,12 +299,37 @@ public class ReservationService {
                 null);
     }
 
+    private static ApiDtos.CreateReservationRequest withExclusiveCheckOut(
+            ApiDtos.CreateReservationRequest req, LocalDate exclusiveCheckOut) {
+        if (exclusiveCheckOut.equals(req.checkOutDate())) {
+            return req;
+        }
+        return new ApiDtos.CreateReservationRequest(
+                req.guestId(),
+                req.guest(),
+                req.roomTypeId(),
+                req.roomTypeCode(),
+                req.preferredRoomId(),
+                req.checkInDate(),
+                exclusiveCheckOut,
+                req.adults(),
+                req.children(),
+                req.specialRequests(),
+                req.source(),
+                req.ratePlan(),
+                req.payment());
+    }
+
     private ApiDtos.CreateReservationResponse createReservationWithActor(
             UUID hotelId,
             ApiDtos.CreateReservationRequest req,
             String actor,
             boolean serverAuthoritativePricing,
             Optional<UserPrincipal> portalBooker) {
+        req =
+                withExclusiveCheckOut(
+                        req,
+                        bookingDateNormalizer.toStorageCheckOutExclusive(req.checkInDate(), req.checkOutDate()));
         Hotel hotel = hotelRepository
                 .findById(hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Hotel not found"));
@@ -546,8 +576,16 @@ public class ReservationService {
                     && !linked.getEmail().equalsIgnoreCase(req.guest().email().trim())) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "Email must match your registered guest profile");
             }
-            if (req.guest() != null && req.guest().phone() != null && !req.guest().phone().isBlank()) {
-                linked.setPhone(req.guest().phone().trim());
+            if (req.guest() != null) {
+                String preserveEmail = linked.getEmail();
+                GuestInputApplier.mergeGuestFromInput(hotel.getId(), linked, req.guest(), guestRepository);
+                if (preserveEmail != null && !preserveEmail.isBlank()) {
+                    boolean formOmittedEmail =
+                            req.guest().email() == null || req.guest().email().isBlank();
+                    if (formOmittedEmail) {
+                        linked.setEmail(preserveEmail);
+                    }
+                }
                 guestRepository.save(linked);
             }
             return linked;

@@ -780,6 +780,7 @@ public final class ApiDtos {
     public record GuestBookingRow(
             UUID reservationId,
             String confirmationCode,
+            @JsonProperty("booking_reference") String bookingReference,
             String hotelName,
             String status,
             LocalDate checkInDate,

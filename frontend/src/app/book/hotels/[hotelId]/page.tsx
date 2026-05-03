@@ -5,6 +5,8 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { getToken } from "@/lib/api";
 import { isGuestPortalUser, loadAuthUser } from "@/lib/auth";
+import { COUNTRY_OPTIONS, GENDER_OPTIONS } from "@/lib/guestFormConstants";
+import { printReservationDocument } from "@/lib/printReservationDocument";
 import { publicBook, publicFetch } from "@/lib/publicApi";
 
 type RoomTypeRow = {
@@ -135,6 +137,12 @@ function BookHotelStayPageInner() {
   const [nationality, setNationality] = useState("");
   const [gender, setGender] = useState("");
   const [phoneCc, setPhoneCc] = useState("+250");
+  const [legalFullName, setLegalFullName] = useState("");
+  const [idType, setIdType] = useState("NATIONAL_ID");
+  const [idDocNumber, setIdDocNumber] = useState("");
+  const [idExpiry, setIdExpiry] = useState("");
+  const [vipLevel, setVipLevel] = useState("NONE");
+  const [notes, setNotes] = useState("");
   const [marketingConsent, setMarketingConsent] = useState(false);
   const [special, setSpecial] = useState("");
   const [bookMsg, setBookMsg] = useState<string | null>(null);
@@ -248,20 +256,29 @@ function BookHotelStayPageInner() {
       setBookMsg("National ID and date of birth are required.");
       return;
     }
-    if (!province.trim() || !district.trim() || !sector.trim() || !cell.trim() || !village.trim()) {
-      setBookMsg("Please complete province, district, sector, cell, and village.");
+    const fn0 = firstName.trim();
+    const ln0 = lastName.trim();
+    if (!legalFullName.trim() && (!fn0 || !ln0)) {
+      setBookMsg("Enter your legal full name as on ID, or complete first and last name.");
       return;
     }
     try {
       const token = portalSameHotel ? getToken() : null;
-      const fn = firstName.trim();
-      const ln = lastName.trim();
+      let fn = fn0 || "Guest";
+      let ln = ln0 || "Guest";
+      let fullNm = `${fn} ${ln}`.trim();
+      if (legalFullName.trim()) {
+        const parts = legalFullName.trim().split(/\s+/, 2);
+        fn = parts[0] || "Guest";
+        ln = parts.length > 1 ? parts[1] : "Guest";
+        fullNm = legalFullName.trim();
+      }
       const body = {
         guestId: null,
         guest: {
-          firstName: fn || "Guest",
-          lastName: ln || "Guest",
-          fullName: `${fn} ${ln}`.trim() || "Guest Guest",
+          firstName: fn,
+          lastName: ln,
+          fullName: fullNm,
           email: email.trim() || null,
           phone: phone.trim() || null,
           phone_country_code: phoneCc.trim() || null,
@@ -270,19 +287,22 @@ function BookHotelStayPageInner() {
           nationality: nationality.trim() || null,
           gender: gender.trim() || null,
           country: guestCountry.trim() || "Rwanda",
-          province: province.trim(),
-          district: district.trim(),
-          sector: sector.trim(),
-          cell: cell.trim(),
-          village: village.trim(),
+          province: province.trim() || null,
+          district: district.trim() || null,
+          sector: sector.trim() || null,
+          cell: cell.trim() || null,
+          village: village.trim() || null,
           street_number: streetNumber.trim() || null,
           address_notes: addressNotes.trim() || null,
-          id_type: "NATIONAL_ID",
-          id_expiry_date: null,
-          idDocument: { type: "NATIONAL_ID", number: nationalId.trim() },
-          vip_level: "NONE",
+          id_type: idType,
+          id_expiry_date: idExpiry || null,
+          idDocument: {
+            type: idType,
+            number: (idDocNumber.trim() || nationalId.trim()) || null,
+          },
+          vip_level: vipLevel,
           marketing_consent: marketingConsent,
-          notes: null,
+          notes: notes.trim() || null,
           is_blacklisted: false,
           blacklist_reason: null,
         },
@@ -307,6 +327,65 @@ function BookHotelStayPageInner() {
   }
 
   const offersForSelectedType = offers.filter((o) => o.roomTypeId === roomTypeId);
+
+  function printBookingConfirmation() {
+    if (!confirmed) return;
+    const roomTypeLabel = types.find((t) => t.id === roomTypeId)?.name ?? "—";
+    const displayName =
+      legalFullName.trim() || `${firstName.trim()} ${lastName.trim()}`.trim() || confirmed.guest.name;
+    printReservationDocument({
+      variant: "guest",
+      hotelName: hotelName || "Hotel",
+      sourceLabel: portalSameHotel ? "Guest portal (signed in)" : "Web booking",
+      guest: {
+        name: displayName,
+        email: confirmed.guest.email ?? email,
+        phone: phone || null,
+        phoneCc,
+        nationalId,
+        dob,
+        nationality,
+        gender,
+        country: guestCountry,
+        province,
+        district,
+        sector,
+        cell,
+        village,
+        streetNumber,
+        addressNotes,
+        idType,
+        idNumber: idDocNumber || nationalId,
+        idExpiry,
+        vipLevel,
+        marketingConsent,
+        notes,
+      },
+      stay: {
+        reservationId: confirmed.id,
+        confirmationCode: confirmed.confirmationCode,
+        bookingReference: confirmed.booking_reference ?? confirmed.confirmationCode,
+        status: confirmed.status,
+        roomTypeName: roomTypeLabel,
+        roomNumber: confirmed.room.roomNumber,
+        checkIn: confirmed.stay.checkIn,
+        checkOut: confirmed.stay.checkOut,
+        nights: confirmed.stay.nights,
+        adults,
+        children,
+        specialRequests: special || null,
+        message: confirmed.message,
+        pricingLines: [
+          { label: "Nightly rate (avg.)", value: `${confirmed.pricing.nightlyRate} ${currency}` },
+          { label: "Room subtotal", value: `${confirmed.pricing.roomSubtotal} ${currency}` },
+          { label: "Estimated taxes", value: `${confirmed.pricing.estimatedTaxes} ${currency}` },
+          { label: "Estimated fees", value: `${confirmed.pricing.estimatedFees} ${currency}` },
+          { label: "Balance due", value: `${confirmed.pricing.balanceDue} ${currency}` },
+        ],
+      },
+      staffExtras: null,
+    });
+  }
 
   return (
     <div className="container-page py-8">
@@ -584,13 +663,26 @@ function BookHotelStayPageInner() {
         <div className="bg-card rounded-xl border border-border/60 p-6 shadow-soft mt-4">
           <h2 className="text-lg font-semibold mb-4">Guest details &amp; confirm</h2>
           <form onSubmit={submitBooking} className="grid sm:grid-cols-2 gap-4">
+            <p className="text-sm text-muted-foreground sm:col-span-2">
+              Same profile fields as front desk: legal name as on ID, document type, and address. Enter{" "}
+              <strong>full name as on ID</strong> or both first and last name.
+            </p>
+            <div className="sm:col-span-2">
+              <label>Full name (as on ID)</label>
+              <input
+                value={legalFullName}
+                onChange={(e) => setLegalFullName(e.target.value)}
+                placeholder="e.g. Jane Mary Doe"
+                autoComplete="name"
+              />
+            </div>
             <div>
               <label>First name</label>
-              <input value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+              <input value={firstName} onChange={(e) => setFirstName(e.target.value)} autoComplete="given-name" />
             </div>
             <div>
               <label>Last name</label>
-              <input value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+              <input value={lastName} onChange={(e) => setLastName(e.target.value)} autoComplete="family-name" />
             </div>
             <div className="sm:col-span-2">
               <label>Email</label>
@@ -623,31 +715,58 @@ function BookHotelStayPageInner() {
             </div>
             <div>
               <label>Gender</label>
-              <input value={gender} onChange={(e) => setGender(e.target.value)} />
+              <select value={gender} onChange={(e) => setGender(e.target.value)}>
+                <option value="">Select…</option>
+                {GENDER_OPTIONS.map((g) => (
+                  <option key={g} value={g}>
+                    {g.replaceAll("_", " ")}
+                  </option>
+                ))}
+                {gender && !GENDER_OPTIONS.includes(gender as (typeof GENDER_OPTIONS)[number]) && (
+                  <option value={gender}>{gender}</option>
+                )}
+              </select>
             </div>
             <div>
               <label>Country *</label>
-              <input value={guestCountry} onChange={(e) => setGuestCountry(e.target.value)} required />
+              <select
+                value={guestCountry}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setGuestCountry(v);
+                  if (!nationality.trim()) setNationality(v);
+                }}
+                required
+              >
+                {COUNTRY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+                {!COUNTRY_OPTIONS.includes(guestCountry as (typeof COUNTRY_OPTIONS)[number]) && (
+                  <option value={guestCountry}>{guestCountry}</option>
+                )}
+              </select>
             </div>
             <div>
-              <label>Province *</label>
-              <input value={province} onChange={(e) => setProvince(e.target.value)} required />
+              <label>Province</label>
+              <input value={province} onChange={(e) => setProvince(e.target.value)} />
             </div>
             <div>
-              <label>District *</label>
-              <input value={district} onChange={(e) => setDistrict(e.target.value)} required />
+              <label>District</label>
+              <input value={district} onChange={(e) => setDistrict(e.target.value)} />
             </div>
             <div>
-              <label>Sector *</label>
-              <input value={sector} onChange={(e) => setSector(e.target.value)} required />
+              <label>Sector</label>
+              <input value={sector} onChange={(e) => setSector(e.target.value)} />
             </div>
             <div>
-              <label>Cell *</label>
-              <input value={cell} onChange={(e) => setCell(e.target.value)} required />
+              <label>Cell</label>
+              <input value={cell} onChange={(e) => setCell(e.target.value)} />
             </div>
             <div>
-              <label>Village *</label>
-              <input value={village} onChange={(e) => setVillage(e.target.value)} required />
+              <label>Village</label>
+              <input value={village} onChange={(e) => setVillage(e.target.value)} />
             </div>
             <div>
               <label>Street number</label>
@@ -656,6 +775,35 @@ function BookHotelStayPageInner() {
             <div className="sm:col-span-2">
               <label>Address notes</label>
               <textarea value={addressNotes} onChange={(e) => setAddressNotes(e.target.value)} rows={2} />
+            </div>
+            <div>
+              <label>ID type</label>
+              <select value={idType} onChange={(e) => setIdType(e.target.value)}>
+                <option value="NATIONAL_ID">National ID</option>
+                <option value="PASSPORT">Passport</option>
+                <option value="REFUGEE_ID">Refugee ID</option>
+                <option value="DRIVERS_LICENSE">Driver&apos;s license</option>
+              </select>
+            </div>
+            <div>
+              <label>ID document number</label>
+              <input
+                value={idDocNumber}
+                onChange={(e) => setIdDocNumber(e.target.value)}
+                placeholder="If different from national ID"
+              />
+            </div>
+            <div>
+              <label>ID expiry</label>
+              <input type="date" value={idExpiry} onChange={(e) => setIdExpiry(e.target.value)} />
+            </div>
+            <div>
+              <label>VIP level</label>
+              <select value={vipLevel} onChange={(e) => setVipLevel(e.target.value)}>
+                <option value="NONE">None</option>
+                <option value="SILVER">Silver</option>
+                <option value="GOLD">Gold</option>
+              </select>
             </div>
             <label className="sm:col-span-2 flex items-center gap-2">
               <input
@@ -666,7 +814,11 @@ function BookHotelStayPageInner() {
               I agree to receive marketing communications (optional)
             </label>
             <div className="sm:col-span-2">
-              <label>Special requests</label>
+              <label>Guest / profile notes</label>
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full" />
+            </div>
+            <div className="sm:col-span-2">
+              <label>Special requests (stay)</label>
               <textarea
                 value={special}
                 onChange={(e) => setSpecial(e.target.value)}
@@ -711,12 +863,19 @@ function BookHotelStayPageInner() {
             Room {confirmed.room.roomNumber} · {confirmed.stay.nights} nights · Balance due{" "}
             <strong>{confirmed.pricing.balanceDue} {currency}</strong>
           </p>
-          <div className="flex items-center gap-4 mt-4 text-sm">
-            <Link href={`/book/lookup?hotelId=${hotelId}`} className="font-medium">Find reservation</Link>
+          <div className="flex flex-wrap items-center gap-3 mt-4 text-sm">
+            <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => printBookingConfirmation()}>
+              Print reservation
+            </button>
+            <Link href={`/book/lookup?hotelId=${hotelId}`} className="font-medium">
+              Find reservation
+            </Link>
             {portalSameHotel && (
               <>
                 <span className="text-muted-foreground">·</span>
-                <Link href="/book/me" className="font-medium">My trips</Link>
+                <Link href="/book/me" className="font-medium">
+                  My trips
+                </Link>
               </>
             )}
           </div>
