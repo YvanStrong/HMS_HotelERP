@@ -200,9 +200,6 @@ export default function HotelDashboardPage() {
             <Link href={staffAppPath("room-blocks")} className="hms-btn-outline hms-btn-sm hms-btn-icon">
               Blocks
             </Link>
-            <Link href={staffAppPath("reservations")} className="hms-btn-outline hms-btn-sm hms-btn-icon">
-              Reservations
-            </Link>
             <Link href={staffAppPath("reservations", "new")} className="hms-btn-solid text-sm">
               New reservation
             </Link>
@@ -386,9 +383,9 @@ export default function HotelDashboardPage() {
       )}
 
       <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-        <h2 className="text-lg font-semibold">Room operations</h2>
+        <h2 className="text-lg font-semibold">Rooms and occupancy</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Live status buckets, occupancy grid, and realtime KPIs (from YVAN_ERP operations APIs).
+          Room counts by status, day-by-day occupancy, and live KPIs for the selected hotel.
         </p>
       </div>
 

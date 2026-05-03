@@ -33,6 +33,7 @@ import com.hms.repository.RoomChargeRepository;
 import com.hms.repository.RoomRepository;
 import com.hms.repository.RoomTypeNightlyRateRepository;
 import com.hms.repository.RoomTypeRepository;
+import com.hms.config.HmsPublicUrlProperties;
 import com.hms.security.TenantAccessService;
 import com.hms.security.UserPrincipal;
 import com.hms.web.ApiException;
@@ -82,6 +83,8 @@ public class ReservationService {
     private final NotificationService notificationService;
     private final PaymentRepository paymentRepository;
     private final InvoicePdfService invoicePdfService;
+    private final InvoiceService invoiceService;
+    private final HmsPublicUrlProperties publicUrlProperties;
 
     public ReservationService(
             HotelRepository hotelRepository,
@@ -102,7 +105,9 @@ public class ReservationService {
             HousekeepingTaskService housekeepingTaskService,
             NotificationService notificationService,
             PaymentRepository paymentRepository,
-            InvoicePdfService invoicePdfService) {
+            InvoicePdfService invoicePdfService,
+            InvoiceService invoiceService,
+            HmsPublicUrlProperties publicUrlProperties) {
         this.hotelRepository = hotelRepository;
         this.roomRepository = roomRepository;
         this.roomTypeRepository = roomTypeRepository;
@@ -122,6 +127,8 @@ public class ReservationService {
         this.notificationService = notificationService;
         this.paymentRepository = paymentRepository;
         this.invoicePdfService = invoicePdfService;
+        this.invoiceService = invoiceService;
+        this.publicUrlProperties = publicUrlProperties;
     }
 
     @Transactional(readOnly = true)
@@ -429,7 +436,7 @@ public class ReservationService {
                 .findById(hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Hotel not found"));
         List<ReservationStatus> statuses = parseReservationStatusFilter(statusCsv);
-        String search = q != null && !q.isBlank() ? q.trim() : null;
+        String search = q != null && !q.isBlank() ? q.trim() : "";
         LocalDate from = stayStart != null ? stayStart : LocalDate.of(1900, 1, 1);
         LocalDate to = stayEnd != null ? stayEnd : LocalDate.of(2999, 12, 31);
         List<Reservation> rows =
@@ -1068,6 +1075,8 @@ public class ReservationService {
         List<RoomCharge> charges = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId());
         Invoice inv = buildInvoice(hotelId, r, charges, b.finalPayment());
         invoiceRepository.save(inv);
+        inv.setPdfUrl(publicUrlProperties.invoicePdfUrl(hotelId, inv.getId()));
+        invoiceRepository.save(inv);
 
         notificationService.schedulePostStayEmail(r);
 
@@ -1096,12 +1105,7 @@ public class ReservationService {
                 r.getStatus().name(),
                 new ApiDtos.RoomStatusDto(
                         room.getId(), room.getRoomNumber(), room.getStatus().name(), room.getCleanliness().name()),
-                new ApiDtos.InvoiceDto(
-                        inv.getId(),
-                        inv.getInvoiceNumber(),
-                        inv.getTotalAmount(),
-                        inv.getPdfUrl(),
-                        lines),
+                invoiceService.toInvoiceDto(hotelId, inv, lines),
                 breakdown,
                 feedbackEcho,
                 postCheckoutEcho,
@@ -1212,7 +1216,6 @@ public class ReservationService {
         inv.setHotel(hotelRepository.getReferenceById(hotelId));
         inv.setReservation(r);
         inv.setInvoiceNumber(nextInvoiceNumber());
-        inv.setPdfUrl("https://minio.local/invoices/" + inv.getInvoiceNumber() + ".pdf");
 
         List<InvoiceLineItem> items = new ArrayList<>();
         int order = 0;

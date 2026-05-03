@@ -315,7 +315,18 @@ public final class ApiDtos {
     public record InvoiceLine(String description, BigDecimal amount) {}
 
     public record InvoiceDto(
-            UUID id, String invoiceNumber, BigDecimal totalAmount, String pdfUrl, List<InvoiceLine> items) {}
+            UUID id,
+            String invoiceNumber,
+            BigDecimal totalAmount,
+            String pdfUrl,
+            List<InvoiceLine> items,
+            String bookingReference,
+            String confirmationCode,
+            String guestName,
+            String roomNumber,
+            String roomTypeName,
+            String currency,
+            Instant createdAt) {}
 
     public record InvoiceListItem(
             UUID id,

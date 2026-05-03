@@ -2,6 +2,7 @@ package com.hms.api;
 
 import com.hms.api.dto.ApiDtos;
 import com.hms.api.dto.GuestDtos;
+import com.hms.service.InvoiceService;
 import com.hms.service.ReservationService;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
@@ -27,9 +28,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class ReservationController {
 
     private final ReservationService reservationService;
+    private final InvoiceService invoiceService;
 
-    public ReservationController(ReservationService reservationService) {
+    public ReservationController(ReservationService reservationService, InvoiceService invoiceService) {
         this.reservationService = reservationService;
+        this.invoiceService = invoiceService;
     }
 
     @GetMapping("/availability")
@@ -202,6 +205,19 @@ public class ReservationController {
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
             @Valid @RequestBody ApiDtos.PaymentVoidRequest body) {
         return reservationService.voidPayment(hotelId, hotelHeader, reservationId, paymentId, body);
+    }
+
+    @GetMapping("/{reservationId}/final-invoice")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
+    public ResponseEntity<ApiDtos.InvoiceDto> finalInvoiceForReservation(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID reservationId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invoiceService
+                .finalInvoiceForReservation(hotelId, hotelHeader, reservationId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PostMapping("/{reservationId}/invoice")

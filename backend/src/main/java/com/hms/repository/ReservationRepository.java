@@ -117,10 +117,10 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
             left join fetch r.bookedByAppUser
             left join fetch r.room rm
             where r.hotel.id = :hotelId
-            and (:stayStart is null or r.checkOutDate > :stayStart)
-            and (:stayEnd is null or r.checkInDate < :stayEnd)
+            and r.checkOutDate > :stayStart
+            and r.checkInDate < :stayEnd
             and r.status in :statuses
-            and (:q is null or :q = ''
+            and (coalesce(:q, '') = ''
                 or lower(r.confirmationCode) like lower(concat('%', :q, '%'))
                 or lower(r.bookingReference) like lower(concat('%', :q, '%'))
                 or lower(concat(g.firstName, ' ', g.lastName)) like lower(concat('%', :q, '%'))

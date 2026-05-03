@@ -6,6 +6,12 @@ import { useCallback, useEffect, useState } from "react";
 import { API_BASE, apiFetch, getToken } from "@/lib/api";
 import { loadAuthUser } from "@/lib/auth";
 import { staffAppPath } from "@/lib/staffAppRoutes";
+import {
+  buildTaxInvoiceHtml,
+  guessPaymentMethodFromItems,
+  openTaxInvoicePrintWindow,
+  summarizeFromLineItems,
+} from "@/lib/taxInvoiceHtml";
 
 type Folio = {
   reservationId: string;
@@ -123,7 +129,36 @@ type CheckOutResponse = {
     totalAmount: number;
     pdfUrl?: string | null;
     items: { description: string; amount: number }[];
+    bookingReference?: string;
+    confirmationCode?: string;
+    guestName?: string;
+    roomNumber?: string | null;
+    roomTypeName?: string | null;
+    currency?: string;
+    createdAt?: string;
   };
+  invoiceBreakdown?: {
+    roomCharges: number;
+    consumptionCharges: number;
+    subtotalBeforeTax: number;
+    taxes: number;
+    depositCredit: number;
+    grandTotal: number;
+  };
+};
+
+type FinalInvoiceDto = {
+  id: string;
+  invoiceNumber: string;
+  totalAmount: number;
+  items: { description: string; amount: number }[];
+  bookingReference?: string;
+  confirmationCode?: string;
+  guestName?: string;
+  roomNumber?: string | null;
+  roomTypeName?: string | null;
+  currency?: string;
+  createdAt?: string;
 };
 
 function canOverrideBalance(role: string | undefined) {
@@ -302,72 +337,61 @@ export default function StaffReservationDetailPage() {
 
   function printInvoiceDoc(result: CheckOutResponse) {
     if (!folio) return;
-    /** Printed doc is `about:blank` — relative `/images/...` won't load; use absolute URLs from this app origin. */
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const assetUrl = (path: string) =>
-      `${origin}${path.startsWith("/") ? path : `/${path}`}`;
-    const esc = (v: unknown) =>
-      String(v ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;");
-    const depositPaid = folio.summary.depositPaid ?? 0;
-    const totalCharges = folio.summary.totalCharges ?? 0;
-    const remainingBeforePayment = Math.max(0, totalCharges - depositPaid);
+    const bd = result.invoiceBreakdown;
+    let totalCharges: number;
+    let depositPaid: number;
+    let remainingBeforePayment: number;
+    if (bd) {
+      const sub = Number(bd.subtotalBeforeTax ?? 0);
+      const tax = Number(bd.taxes ?? 0);
+      totalCharges = sub + tax;
+      depositPaid = Number(bd.depositCredit ?? 0);
+      remainingBeforePayment = Number(bd.grandTotal ?? 0);
+    } else {
+      const items = result.invoice.items ?? [];
+      let positives = 0;
+      let deposit = 0;
+      for (const it of items) {
+        const a = Number(it.amount);
+        if (a > 0) positives += a;
+        if (String(it.description).toLowerCase().includes("deposit")) deposit = Math.abs(a);
+      }
+      totalCharges = positives;
+      depositPaid = deposit;
+      remainingBeforePayment = Math.max(0, totalCharges - depositPaid);
+    }
     const paid = Number(paymentAmount || "0");
     const dueAfterPayment = Math.max(0, remainingBeforePayment - paid);
     const checkoutAt = new Date().toLocaleString();
-    const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Invoice ${esc(result.invoice.invoiceNumber)}</title>
-    <style>
-    body{font-family:Arial,sans-serif;margin:20px;color:#111}
-    .top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
-    .brand{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-    .logo-img{height:52px;width:auto;object-fit:contain;display:block}
-    .inv{border:1px solid #e2e8f0;border-radius:10px;padding:14px}
-    .row{display:flex;justify-content:space-between;margin:6px 0}
-    .muted{color:#64748b}
-    .strong{font-weight:700}
-    table{width:100%;border-collapse:collapse;margin-top:8px}
-    th,td{border-bottom:1px solid #e2e8f0;padding:8px;text-align:left}
-    tfoot td{font-weight:700}
-    </style></head><body>
-    <div class="top">
-      <div class="brand">
-        <img class="logo-img" src="${esc(assetUrl("/images/RRA_LOGO.png"))}" alt="RRA" />
-        <img class="logo-img" src="${esc(assetUrl("/images/rraLogo2.png"))}" alt="RRA" />
-      </div>
-      <img class="logo-img" style="height:56px" src="${esc(assetUrl("/images/logoubumwe.png"))}" alt="Ubumwe Grand Hotel" />
-    </div>
-    <h2>Tax Invoice</h2>
-    <div class="inv">
-      <div class="row"><span class="muted">Invoice #</span><span class="strong">${esc(result.invoice.invoiceNumber)}</span></div>
-      <div class="row"><span class="muted">Booking reference</span><span>${esc(staffDetail?.booking_reference ?? folio.booking_reference ?? "—")}</span></div>
-      <div class="row"><span class="muted">Guest</span><span>${esc(folio.guest.name)}</span></div>
-      <div class="row"><span class="muted">Room</span><span>${esc(folio.roomNumber || "—")} (${esc(folio.roomTypeName || "—")})</span></div>
-      <div class="row"><span class="muted">Checkout time</span><span>${esc(checkoutAt)}</span></div>
-      <table>
-        <thead><tr><th>Description</th><th>Amount (${esc(folio.summary.currency)})</th></tr></thead>
-        <tbody>
-          ${result.invoice.items
-            .map((it) => `<tr><td>${esc(it.description)}</td><td>${esc(it.amount)}</td></tr>`)
-            .join("")}
-        </tbody>
-      </table>
-      <div class="row"><span class="muted">Total charges</span><span>${esc(totalCharges)} ${esc(folio.summary.currency)}</span></div>
-      <div class="row"><span class="muted">Deposit paid</span><span>- ${esc(depositPaid)} ${esc(folio.summary.currency)}</span></div>
-      <div class="row"><span class="muted">Remaining before checkout payment</span><span>${esc(remainingBeforePayment)} ${esc(folio.summary.currency)}</span></div>
-      <div class="row"><span class="muted">Paid at checkout (${esc(paymentMethod)})</span><span>- ${esc(paid)} ${esc(folio.summary.currency)}</span></div>
-      <div class="row"><span class="muted">Payment types used</span><span>${esc(paymentTypesUsed || paymentMethod)}</span></div>
-      <div class="row strong"><span>Balance after payment</span><span>${esc(dueAfterPayment)} ${esc(folio.summary.currency)}</span></div>
-    </div>
-    </body></html>`;
-    const w = window.open("", "_blank");
-    if (!w) return;
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    w.print();
+    const inv = result.invoice;
+    const roomLabel =
+      inv.roomNumber != null || inv.roomTypeName != null
+        ? `${inv.roomNumber ?? folio.roomNumber ?? "—"} (${inv.roomTypeName ?? folio.roomTypeName ?? "—"})`
+        : `${folio.roomNumber || "—"} (${folio.roomTypeName || "—"})`;
+    const bookingRef =
+      inv.bookingReference && inv.bookingReference !== "-"
+        ? inv.bookingReference
+        : staffDetail?.booking_reference ?? folio.booking_reference ?? "—";
+    const guestNm = inv.guestName ?? folio.guest.name;
+    const curr = inv.currency ?? folio.summary.currency;
+    const whenLbl = inv.createdAt ? new Date(inv.createdAt).toLocaleString() : checkoutAt;
+    const html = buildTaxInvoiceHtml({
+      invoiceNumber: result.invoice.invoiceNumber,
+      items: result.invoice.items ?? [],
+      bookingRef,
+      guestName: guestNm,
+      roomLabel,
+      whenLabel: whenLbl,
+      currency: curr,
+      totalCharges,
+      depositPaid,
+      remainingBeforePayment,
+      paidAtCheckout: paid,
+      paymentMethodLabel: paymentMethod,
+      paymentTypesUsed: paymentTypesUsed || paymentMethod,
+      balanceAfter: dueAfterPayment,
+    });
+    openTaxInvoicePrintWindow(html);
   }
 
   async function doCancel() {
@@ -444,23 +468,96 @@ export default function StaffReservationDetailPage() {
   }
 
   async function printInvoicePdf() {
+    if (!folio) return;
+    setBanner(null);
     try {
-      const resp = await fetch(`${API_BASE}/api/v1/hotels/${hotelId}/reservations/${reservationId}/invoice`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${getToken() ?? ""}`,
-          "X-Hotel-ID": hotelId,
+      const res = await fetch(
+        `${API_BASE}/api/v1/hotels/${hotelId}/reservations/${reservationId}/final-invoice`,
+        {
+          headers: {
+            Authorization: `Bearer ${getToken() ?? ""}`,
+            "X-Hotel-ID": hotelId,
+          },
         },
-      });
-      if (!resp.ok) {
-        throw new Error(await resp.text());
+      );
+      const fallbackRoomLabel = `${folio.roomNumber || "—"} (${folio.roomTypeName || "—"})`;
+      const fallbackBookingRef = staffDetail?.booking_reference ?? folio.booking_reference ?? "—";
+      const fallbackCurrency = folio.summary.currency;
+
+      if (res.ok) {
+        const inv = (await res.json()) as FinalInvoiceDto;
+        const bal = Number(inv.totalAmount ?? 0);
+        const sums = summarizeFromLineItems(inv.items ?? [], bal);
+        const pm = guessPaymentMethodFromItems(inv.items ?? []);
+        const roomLabel =
+          inv.roomNumber != null || inv.roomTypeName != null
+            ? `${inv.roomNumber ?? folio.roomNumber ?? "—"} (${inv.roomTypeName ?? folio.roomTypeName ?? "—"})`
+            : fallbackRoomLabel;
+        const bookingRef =
+          inv.bookingReference && inv.bookingReference !== "-"
+            ? inv.bookingReference
+            : fallbackBookingRef;
+        const guestNm = inv.guestName ?? folio.guest.name;
+        const currency = inv.currency ?? fallbackCurrency;
+        const whenLabel = inv.createdAt ? new Date(inv.createdAt).toLocaleString() : new Date().toLocaleString();
+        const html = buildTaxInvoiceHtml({
+          invoiceNumber: inv.invoiceNumber,
+          items: inv.items ?? [],
+          bookingRef,
+          guestName: guestNm,
+          roomLabel,
+          whenLabel,
+          currency,
+          totalCharges: sums.totalCharges,
+          depositPaid: sums.depositPaid,
+          remainingBeforePayment: sums.remainingBeforePayment,
+          paidAtCheckout: sums.paidAtCheckout,
+          paymentMethodLabel: pm,
+          paymentTypesUsed: pm,
+          balanceAfter: sums.balanceAfter,
+        });
+        openTaxInvoicePrintWindow(html);
+        return;
       }
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+
+      if (res.status !== 404) {
+        throw new Error(await res.text());
+      }
+
+      const items: { description: string; amount: number }[] = [
+        { description: "Subtotal (room & posted charges)", amount: Number(folio.summary.gross_total ?? 0) },
+        { description: "Tax (VAT)", amount: Number(folio.summary.tax_total ?? 0) },
+      ];
+      for (const p of folio.payments.filter((x) => x.status === "COMPLETED")) {
+        const label =
+          String(p.type).toUpperCase() === "DEPOSIT" ? "Deposit Paid" : `Payment received (${p.method})`;
+        items.push({ description: label, amount: -Number(p.amount) });
+      }
+      const bal = Number(folio.summary.balance_due ?? folio.summary.balanceDue ?? 0);
+      const sums = summarizeFromLineItems(items, bal);
+      const lastPay = [...folio.payments]
+        .reverse()
+        .find((p) => p.status === "COMPLETED" && String(p.type).toUpperCase() !== "DEPOSIT");
+      const pm = lastPay?.method ?? "—";
+      const html = buildTaxInvoiceHtml({
+        invoiceNumber: `Estimate · ${folio.booking_reference ?? folio.confirmationCode ?? folio.reservationId}`,
+        items,
+        bookingRef: fallbackBookingRef,
+        guestName: folio.guest.name,
+        roomLabel: fallbackRoomLabel,
+        whenLabel: new Date().toLocaleString(),
+        currency: fallbackCurrency,
+        totalCharges: sums.totalCharges,
+        depositPaid: sums.depositPaid,
+        remainingBeforePayment: sums.remainingBeforePayment,
+        paidAtCheckout: sums.paidAtCheckout,
+        paymentMethodLabel: pm,
+        paymentTypesUsed: pm,
+        balanceAfter: sums.balanceAfter,
+      });
+      openTaxInvoicePrintWindow(html);
     } catch (e) {
-      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Invoice generation failed" });
+      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Invoice print failed" });
     }
   }
 
@@ -1139,7 +1236,13 @@ export default function StaffReservationDetailPage() {
               </p>
             )}
             <p style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
-              Deposit paid: <strong>{folio.summary.depositPaid ?? 0}</strong> {folio.summary.currency}
+              Deposit paid:{" "}
+              <strong>
+                {folio.payments
+                  .filter((p) => p.status === "COMPLETED" && String(p.type).toUpperCase() === "DEPOSIT")
+                  .reduce((s, p) => s + Number(p.amount), 0)}
+              </strong>{" "}
+              {folio.summary.currency}
             </p>
             <p style={{ fontSize: "0.9rem", marginBottom: "0.75rem" }}>
               Remaining to collect now: <strong>{Math.max(0, balance)}</strong> {folio.summary.currency}
