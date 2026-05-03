@@ -65,6 +65,13 @@ public class Hotel {
     @Column(name = "no_show_default_fee", precision = 12, scale = 2)
     private BigDecimal noShowDefaultFee = new BigDecimal("50.00");
 
+    /**
+     * When set, the public kitchen board requires query {@code ?key=<this value>} (constant-time compare).
+     * Stored as plain text; treat like a password — only put on trusted displays.
+     */
+    @Column(name = "order_board_secret", length = 128)
+    private String orderBoardSecret;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

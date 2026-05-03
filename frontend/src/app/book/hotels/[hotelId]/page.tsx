@@ -336,7 +336,10 @@ function BookHotelStayPageInner() {
               Prices in {currency}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <Link href={`/book/order/${encodeURIComponent(hotelId)}`} className="hms-btn-solid text-sm">
+              Order food (self-serve)
+            </Link>
             {!portalSameHotel && (
               <Link 
                 href={`/book/register?hotelId=${encodeURIComponent(hotelId)}`}

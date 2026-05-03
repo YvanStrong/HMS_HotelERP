@@ -18,6 +18,8 @@ export type HotelNavKey =
   | "housekeeping"
   | "hkMyTasks"
   | "facilities"
+  | "menu"
+  | "selfOrders"
   | "inventory"
   | "fb"
   | "staff"
@@ -114,6 +116,13 @@ function canInventory(user: AuthUser | null): boolean {
   ]);
 }
 
+function canMenu(user: AuthUser | null): boolean {
+  if (!user) return false;
+  if (isSuperAdmin(user)) return true;
+  if (userHasRole(user, ["HOTEL_ADMIN", "MANAGER", "FINANCE", "FNB_STAFF", "RECEPTIONIST"])) return true;
+  return userHasAnyPermission(user, ["hotel:*", "fb:*", "inventory:*"]);
+}
+
 function canFb(user: AuthUser | null): boolean {
   if (!user) return false;
   if (isSuperAdmin(user)) return true;
@@ -175,6 +184,10 @@ export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): bool
       return canHkMyTasksNav(user);
     case "facilities":
       return canFacilities(user);
+    case "menu":
+      return canMenu(user);
+    case "selfOrders":
+      return canMenu(user);
     case "inventory":
       return canInventory(user);
     case "fb":
@@ -201,6 +214,8 @@ export function navHint(key: HotelNavKey): string {
     housekeeping: "Permission: housekeeping:* or room:status.",
     hkMyTasks: "Housekeeping line staff: tasks assigned to you.",
     facilities: "List facilities: receptionist and reservation-capable roles.",
+    menu: "Depot menu sale screen for restaurant/bar/barista products.",
+    selfOrders: "Self-service kiosk queue and status updates for guest orders.",
     inventory: "List items: finance, F&B, housekeeping; full write: admin/manager/finance.",
     fb: "Permission: fb:* or F&B staff / manager / admin.",
     staff: "Staff management: hotel admin or manager.",
