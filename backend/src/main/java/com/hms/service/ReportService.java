@@ -35,14 +35,18 @@ import java.util.stream.Stream;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
-import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ReportService {
+
+    private static final PDFont PDF_FONT_BOLD = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
+    private static final PDFont PDF_FONT_REGULAR = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
 
     private final RoomRepository roomRepository;
     private final ReservationRepository reservationRepository;
@@ -170,10 +174,10 @@ public class ReportService {
             doc.addPage(page);
             try (PDPageContentStream content = new PDPageContentStream(doc, page)) {
                 content.beginText();
-                content.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 14);
+                content.setFont(PDF_FONT_BOLD, 14);
                 content.newLineAtOffset(50, 760);
                 content.showText("Occupancy Report");
-                content.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 10);
+                content.setFont(PDF_FONT_REGULAR, 10);
                 content.newLineAtOffset(0, -18);
                 content.showText("Period: " + start + " to " + end + " | Group: " + groupBy);
                 content.newLineAtOffset(0, -20);
@@ -292,10 +296,10 @@ public class ReportService {
             doc.addPage(page);
             try (PDPageContentStream content = new PDPageContentStream(doc, page)) {
                 content.beginText();
-                content.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 14);
+                content.setFont(PDF_FONT_BOLD, 14);
                 content.newLineAtOffset(50, 760);
                 content.showText("Guest Analytics Report");
-                content.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 10);
+                content.setFont(PDF_FONT_REGULAR, 10);
                 content.newLineAtOffset(0, -18);
                 content.showText("Filters: segment=" + val(segment) + ", tier=" + val(tier) + ", minSpend=" + val(minSpend));
                 content.newLineAtOffset(0, -20);

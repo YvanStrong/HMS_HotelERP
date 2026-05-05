@@ -3,7 +3,7 @@ import { publicFetch } from "./publicApi";
 
 export type SelfOrderServiceType = "DINE_IN" | "TAKE_AWAY";
 
-export type SelfOrderPaymentMode = "SIMULATED" | "PAY_AT_COUNTER";
+export type SelfOrderPaymentMode = "SIMULATED" | "PAY_AT_COUNTER" | "CHARGE_ROOM";
 
 export type PublicDepotBrief = { id: string; name: string };
 
@@ -26,6 +26,21 @@ export type PublicMenuResponse = {
   orderBoardKeyConfigured: boolean;
   depots: PublicDepotBrief[];
   items: PublicMenuItem[];
+  /** Hotel display name for guest-facing headers (QR / kiosk). */
+  hotelName?: string | null;
+};
+
+export type PublicActiveOrderBrief = {
+  displayCode: string;
+  status: string;
+  lineSummary: string;
+};
+
+export type PublicPortalSummary = {
+  todayOrderCount: number;
+  todayRevenueTotal: number | string;
+  avgFulfillmentMinutes: number | null;
+  activeOrders: PublicActiveOrderBrief[];
 };
 
 export type CreatePublicOrderResponse = {
@@ -47,6 +62,8 @@ export type TrackLineRow = {
   productCode: string;
   quantity: number | string;
   lineTotal: number | string;
+  modifiersNote?: string | null;
+  photoUrl?: string | null;
 };
 
 export type TrackOrderResponse = {
@@ -72,7 +89,12 @@ export type BoardOrderCard = {
   status: string;
   depotName: string;
   createdAt: string;
-  lines: { productName: string; quantity: number | string }[];
+  lines: {
+    productName: string;
+    quantity: number | string;
+    modifiersNote?: string | null;
+    photoUrl?: string | null;
+  }[];
 };
 
 export type BoardResponse = { orders: BoardOrderCard[] };
@@ -106,9 +128,10 @@ export function placeSelfOrder(
   body: {
     serviceType: SelfOrderServiceType;
     depotId: string;
-    lines: { productId: string; quantity: number }[];
+    lines: { productId: string; quantity: number; modifiersNote?: string | null }[];
     customerNote?: string | null;
     paymentMode: SelfOrderPaymentMode;
+    room_charge?: { roomNumber: string; bookingCode: string };
   },
 ): Promise<CreatePublicOrderResponse> {
   return publicFetch(`/api/v1/public/hotels/${hotelId}/self-order`, {
@@ -127,6 +150,10 @@ export function fetchSelfOrderBoard(hotelId: string, boardKey?: string | null): 
   if (boardKey) q.set("key", boardKey);
   const suffix = q.toString() ? `?${q.toString()}` : "";
   return publicFetch(`/api/v1/public/hotels/${hotelId}/self-order/board${suffix}`);
+}
+
+export function fetchSelfOrderPortalSummary(hotelId: string): Promise<PublicPortalSummary> {
+  return publicFetch(`/api/v1/public/hotels/${hotelId}/self-order/portal-summary`);
 }
 
 export function fetchStaffSelfOrderSettings(hotelId: string): Promise<StaffSelfOrderSettings> {

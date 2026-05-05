@@ -5,10 +5,19 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SelfOrderQrBlock } from "@/components/SelfOrderQrBlock";
 import { apiFetch } from "@/lib/api";
+import { staffAppPath } from "@/lib/staffAppRoutes";
+import {
+  adminStatusLabel,
+  formatMoney,
+  formatRevenueShort,
+} from "@/components/self-order/selfOrderGuestUtils";
 import {
   confirmSelfOrderPayment,
+  fetchSelfOrderMenu,
+  fetchSelfOrderPortalSummary,
   fetchStaffSelfOrderSettings,
   putStaffSelfOrderSettings,
+  type PublicPortalSummary,
   type StaffOrderRow,
 } from "@/lib/selfOrderApi";
 
@@ -27,6 +36,9 @@ function randomBoardKey(): string {
   return s;
 }
 
+const ORDERS_PAGE_SIZE = 12;
+const ACTIVE_SNAPSHOT_PAGE_SIZE = 8;
+
 export default function StaffSelfOrdersPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
@@ -38,6 +50,11 @@ export default function StaffSelfOrdersPage() {
   const [boardKeyEcho, setBoardKeyEcho] = useState<string | null>(null);
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null);
   const [origin, setOrigin] = useState("");
+  const [portal, setPortal] = useState<PublicPortalSummary | null>(null);
+  const [portalError, setPortalError] = useState<string | null>(null);
+  const [currency, setCurrency] = useState("USD");
+  const [ordersPage, setOrdersPage] = useState(0);
+  const [activeSnapPage, setActiveSnapPage] = useState(0);
 
   useEffect(() => {
     setOrigin(typeof window !== "undefined" ? window.location.origin : "");
@@ -60,6 +77,18 @@ export default function StaffSelfOrdersPage() {
     }
   }, [hotelId]);
 
+  const loadPortalSnapshot = useCallback(async () => {
+    try {
+      const [p, m] = await Promise.all([fetchSelfOrderPortalSummary(hotelId), fetchSelfOrderMenu(hotelId)]);
+      setPortal(p);
+      setCurrency(m.currency || "USD");
+      setPortalError(null);
+      setActiveSnapPage(0);
+    } catch (e) {
+      setPortalError(e instanceof Error ? e.message : "Could not load today’s snapshot");
+    }
+  }, [hotelId]);
+
   const load = useCallback(async () => {
     setError(null);
     try {
@@ -67,6 +96,7 @@ export default function StaffSelfOrdersPage() {
         quiet: true,
       });
       setRows(Array.isArray(list) ? list : []);
+      setOrdersPage(0);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load orders");
     }
@@ -82,6 +112,17 @@ export default function StaffSelfOrdersPage() {
     return () => window.clearInterval(id);
   }, [load]);
 
+  useEffect(() => {
+    void loadPortalSnapshot();
+    const id = window.setInterval(() => void loadPortalSnapshot(), 15000);
+    return () => window.clearInterval(id);
+  }, [loadPortalSnapshot]);
+
+  useEffect(() => {
+    const maxPage = Math.max(0, Math.ceil(rows.length / ORDERS_PAGE_SIZE) - 1);
+    setOrdersPage((p) => Math.min(p, maxPage));
+  }, [rows.length]);
+
   async function advance(orderId: string, status: string) {
     setBusy(orderId);
     setError(null);
@@ -92,6 +133,7 @@ export default function StaffSelfOrdersPage() {
         quiet: true,
       });
       await load();
+      await loadPortalSnapshot();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Update failed");
     } finally {
@@ -124,6 +166,7 @@ export default function StaffSelfOrdersPage() {
     try {
       await confirmSelfOrderPayment(hotelId, orderId, method);
       await load();
+      await loadPortalSnapshot();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Confirm failed");
     } finally {
@@ -137,23 +180,122 @@ export default function StaffSelfOrdersPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Self-service orders</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Confirm pay-at-counter orders before kitchen steps. Configure a board secret so the live TV URL is not
-            guessable from the hotel id alone.
+            Orders from the public kiosk. Sellable items are{" "}
+            <Link href={staffAppPath("menu")} className="underline font-medium text-foreground">
+              Menu
+            </Link>{" "}
+            /{" "}
+            <Link href={staffAppPath("inventory")} className="underline font-medium text-foreground">
+              Inventory
+            </Link>{" "}
+            depot products. Guests order via the kiosk URL below — not here.
           </p>
         </div>
-        <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => void load()}>
+        <button
+          type="button"
+          className="hms-btn-outline hms-btn-sm"
+          onClick={() => {
+            void load();
+            void loadPortalSnapshot();
+          }}
+        >
           Refresh
         </button>
       </div>
+
+      {portalError && <div className="error">{portalError}</div>}
+      {portal && (
+        <section className="hms-section-card space-y-4">
+          <h2 className="hms-section-title">Today (self-order snapshot)</h2>
+          <p className="text-xs text-muted-foreground">
+            Same aggregates as the public guest hub — refreshed automatically. Revenue counts paid self-orders only.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-border bg-muted/30 p-4">
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Orders</p>
+              <p className="text-2xl font-bold tabular-nums mt-1">{portal.todayOrderCount}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-muted/30 p-4">
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Revenue (paid)</p>
+              <p className="text-2xl font-bold tabular-nums mt-1">
+                {Number(portal.todayRevenueTotal) >= 1000
+                  ? `${formatRevenueShort(currency, Number(portal.todayRevenueTotal))} ${currency}`
+                  : formatMoney(currency, Number(portal.todayRevenueTotal))}
+              </p>
+            </div>
+            <div className="rounded-xl border border-border bg-muted/30 p-4">
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Avg fulfilment</p>
+              <p className="text-2xl font-bold mt-1">
+                {portal.avgFulfillmentMinutes != null ? `${portal.avgFulfillmentMinutes} min` : "—"}
+              </p>
+            </div>
+          </div>
+          {portal.activeOrders.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2">Active tickets (public board)</h3>
+              <ul className="space-y-2">
+                {portal.activeOrders
+                  .slice(
+                    activeSnapPage * ACTIVE_SNAPSHOT_PAGE_SIZE,
+                    activeSnapPage * ACTIVE_SNAPSHOT_PAGE_SIZE + ACTIVE_SNAPSHOT_PAGE_SIZE,
+                  )
+                  .map((o, i) => (
+                    <li
+                      key={`${o.displayCode}-${o.status}-${activeSnapPage}-${i}`}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm"
+                    >
+                      <span>
+                        <span className="font-mono text-muted-foreground">#{o.displayCode}</span> · {o.lineSummary || "—"}
+                      </span>
+                      <span
+                        className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                          o.status === "READY"
+                            ? "bg-emerald-600 text-white"
+                            : o.status === "IN_PROGRESS"
+                              ? "bg-amber-400 text-zinc-900"
+                              : "bg-red-600/90 text-white"
+                        }`}
+                      >
+                        {adminStatusLabel(o.status)}
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+              {portal.activeOrders.length > ACTIVE_SNAPSHOT_PAGE_SIZE && (
+                <div className="flex items-center justify-center gap-3 mt-3">
+                  <button
+                    type="button"
+                    className="hms-btn-outline hms-btn-sm"
+                    disabled={activeSnapPage <= 0}
+                    onClick={() => setActiveSnapPage((p) => Math.max(0, p - 1))}
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {activeSnapPage + 1} / {Math.ceil(portal.activeOrders.length / ACTIVE_SNAPSHOT_PAGE_SIZE)}
+                  </span>
+                  <button
+                    type="button"
+                    className="hms-btn-outline hms-btn-sm"
+                    disabled={(activeSnapPage + 1) * ACTIVE_SNAPSHOT_PAGE_SIZE >= portal.activeOrders.length}
+                    onClick={() => setActiveSnapPage((p) => p + 1)}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       {error && <div className="error">{error}</div>}
       {settingsMsg && <p className="text-sm text-emerald-700 dark:text-emerald-300">{settingsMsg}</p>}
 
       <section className="hms-section-card space-y-4">
         <h2 className="hms-section-title">Kiosk &amp; TV QR codes</h2>
-        <p className="text-sm text-muted-foreground">
-          Guests open the kiosk from this link. The kitchen TV should use the screen URL including the secret query
-          once you set it below.
+        <p className="text-xs text-muted-foreground">
+          Kiosk = guest ordering. TV screen = kitchen board (optional secret below).
         </p>
         <div className="flex flex-wrap gap-8 justify-start">
           {kioskUrl ? <SelfOrderQrBlock value={kioskUrl} caption="Scan to open self-order (kiosk)" /> : null}
@@ -175,13 +317,9 @@ export default function StaffSelfOrdersPage() {
 
       <section className="hms-section-card space-y-3">
         <h2 className="hms-section-title">Kitchen board secret</h2>
-        <p className="text-sm text-muted-foreground">
-          When set, <code className="text-xs bg-muted px-1 rounded">GET …/self-order/board</code> requires matching{" "}
-          <code className="text-xs bg-muted px-1 rounded">?key=…</code>. Leave empty and save to allow open access
-          again.
-        </p>
         <p className="text-xs text-muted-foreground">
-          Status: {boardKeyConfigured ? "secret is configured on the server" : "no secret — board is open by URL"}
+          Optional: TV board URL then needs <code className="bg-muted px-1 rounded">?key=…</code>.{" "}
+          {boardKeyConfigured ? "Secret is set." : "No secret — board URL is open."}
         </p>
         <div className="flex flex-wrap gap-2 items-end max-w-xl">
           <div className="flex-1 min-w-[200px]">
@@ -208,6 +346,37 @@ export default function StaffSelfOrdersPage() {
       </section>
 
       <section className="hms-section-card p-0 overflow-hidden">
+        <div className="px-4 py-2 border-b border-border flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+          <span>
+            {rows.length} order{rows.length === 1 ? "" : "s"}
+            {rows.length > ORDERS_PAGE_SIZE
+              ? ` · showing ${ordersPage * ORDERS_PAGE_SIZE + 1}–${Math.min((ordersPage + 1) * ORDERS_PAGE_SIZE, rows.length)}`
+              : ""}
+          </span>
+          {rows.length > ORDERS_PAGE_SIZE && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="hms-btn-outline hms-btn-sm"
+                disabled={ordersPage <= 0}
+                onClick={() => setOrdersPage((p) => Math.max(0, p - 1))}
+              >
+                Previous
+              </button>
+              <span className="tabular-nums text-xs">
+                Page {ordersPage + 1} / {Math.max(1, Math.ceil(rows.length / ORDERS_PAGE_SIZE))}
+              </span>
+              <button
+                type="button"
+                className="hms-btn-outline hms-btn-sm"
+                disabled={(ordersPage + 1) * ORDERS_PAGE_SIZE >= rows.length}
+                onClick={() => setOrdersPage((p) => p + 1)}
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
         <div className="hms-table-wrap bg-card">
           <table className="hms-table">
             <thead>
@@ -224,7 +393,7 @@ export default function StaffSelfOrdersPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {rows.slice(ordersPage * ORDERS_PAGE_SIZE, ordersPage * ORDERS_PAGE_SIZE + ORDERS_PAGE_SIZE).map((r) => {
                 const next = NEXT[r.status];
                 const canCancel = r.status === "PLACED" || r.status === "IN_PROGRESS";
                 const unpaid = r.paymentStatus === "UNPAID";

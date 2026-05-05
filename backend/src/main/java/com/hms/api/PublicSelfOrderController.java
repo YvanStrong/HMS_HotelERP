@@ -46,4 +46,10 @@ public class PublicSelfOrderController {
             @PathVariable UUID hotelId, @RequestParam(required = false) String key) {
         return selfOrderService.boardOrders(hotelId, key);
     }
+
+    /** Today’s self-order KPIs and active tickets for the public “operations” tab (QR / kiosk demo). */
+    @GetMapping("/portal-summary")
+    public SelfOrderDtos.PublicPortalSummary portalSummary(@PathVariable UUID hotelId) {
+        return selfOrderService.publicPortalSummary(hotelId);
+    }
 }

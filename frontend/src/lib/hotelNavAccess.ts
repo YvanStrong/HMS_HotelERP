@@ -21,6 +21,8 @@ export type HotelNavKey =
   | "facilities"
   | "menu"
   | "selfOrders"
+  | "guestSelfOrder"
+  | "guestKitchenScreen"
   | "inventory"
   | "fb"
   | "settings";
@@ -190,6 +192,10 @@ export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): bool
       return canMenu(user);
     case "selfOrders":
       return canMenu(user);
+    case "guestSelfOrder":
+      return canMenu(user);
+    case "guestKitchenScreen":
+      return canMenu(user);
     case "inventory":
       return canInventory(user);
     case "fb":
@@ -217,6 +223,8 @@ export function navHint(key: HotelNavKey): string {
     facilities: "List facilities: receptionist and reservation-capable roles.",
     menu: "Depot menu sale screen for restaurant/bar/barista products.",
     selfOrders: "Self-service kiosk queue and status updates for guest orders.",
+    guestSelfOrder: "Public guest ordering hub (opens in a new tab) — share QR or in-room tablet link.",
+    guestKitchenScreen: "Full-screen kitchen display for this hotel (opens in a new tab); add ?key= if board secret is set.",
     inventory: "List items: finance, F&B, housekeeping; full write: admin/manager/finance.",
     fb: "Permission: fb:* or F&B staff / manager / admin.",
     settings: "Hotel settings: hotel admin or manager.",

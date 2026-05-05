@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { PaginationBar } from "@/components/PaginationBar";
 import { apiFetch } from "@/lib/api";
+import { useHotelContext } from "@/lib/useHotelContext";
 import {
   buildTaxInvoiceHtml,
   guessPaymentMethodFromItems,
@@ -35,6 +37,19 @@ type ProformaListItem = {
   generatedAt: string;
 };
 
+type InvoiceListPageResponse = {
+  data: InvoiceListItem[];
+  pagination: {
+    page: number;
+    size: number;
+    total: number;
+    totalPages: number;
+    hasNext?: boolean;
+    hasPrevious?: boolean;
+  };
+  totalInvoicedSumAll: number;
+};
+
 type InvoiceLine = { description: string; amount: number };
 
 type InvoiceDetail = {
@@ -51,6 +66,8 @@ type InvoiceDetail = {
   currency?: string;
   createdAt?: string;
 };
+
+const INVOICE_PAGE_SIZE = 20;
 
 type ProformaDetail = {
   reservationId: string;
@@ -74,11 +91,16 @@ type ProformaDetail = {
 export default function InvoicesPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
+  const { hotel } = useHotelContext(hotelId);
 
   const [tab, setTab] = useState<"invoices" | "proforma">("invoices");
   const [loading, setLoading] = useState(false);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<InvoiceListItem[]>([]);
+  const [invoicePage, setInvoicePage] = useState(1);
+  const [invoicePagination, setInvoicePagination] = useState<InvoiceListPageResponse["pagination"] | null>(null);
+  const [totalInvoicedSumAll, setTotalInvoicedSumAll] = useState<number | null>(null);
   const [proformas, setProformas] = useState<ProformaListItem[]>([]);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(null);
@@ -90,14 +112,8 @@ export default function InvoicesPage() {
       setLoading(true);
       setError(null);
       try {
-        const [inv, pf] = await Promise.all([
-          apiFetch<InvoiceListItem[]>(`/api/v1/hotels/${hotelId}/invoices`),
-          apiFetch<ProformaListItem[]>(`/api/v1/hotels/${hotelId}/invoices/proformas`),
-        ]);
-        if (!cancelled) {
-          setInvoices(inv);
-          setProformas(pf);
-        }
+        const pf = await apiFetch<ProformaListItem[]>(`/api/v1/hotels/${hotelId}/invoices/proformas`);
+        if (!cancelled) setProformas(pf);
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Failed to load invoices");
@@ -112,15 +128,59 @@ export default function InvoicesPage() {
   }, [hotelId]);
 
   useEffect(() => {
+    setInvoicePage(1);
+  }, [hotelId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setInvoicesLoading(true);
+      setError(null);
+      try {
+        const sp = new URLSearchParams();
+        sp.set("page", String(invoicePage));
+        sp.set("size", String(INVOICE_PAGE_SIZE));
+        const inv = await apiFetch<InvoiceListPageResponse>(
+          `/api/v1/hotels/${hotelId}/invoices?${sp.toString()}`,
+        );
+        if (!cancelled) {
+          setInvoices(inv.data);
+          setInvoicePagination(inv.pagination);
+          setTotalInvoicedSumAll(Number(inv.totalInvoicedSumAll ?? 0));
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load invoices");
+          setInvoices([]);
+          setInvoicePagination(null);
+        }
+      } finally {
+        if (!cancelled) setInvoicesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hotelId, invoicePage]);
+
+  useEffect(() => {
     if (tab !== "invoices") {
       setSelectedInvoiceId(null);
       setInvoiceDetail(null);
     }
   }, [tab]);
 
-  const totalInvoiced = useMemo(
-    () => invoices.reduce((sum, i) => sum + Number(i.totalAmount || 0), 0),
-    [invoices],
+  useEffect(() => {
+    setSelectedInvoiceId(null);
+    setInvoiceDetail(null);
+  }, [invoicePage]);
+
+  const totalInvoiced = totalInvoicedSumAll ?? 0;
+  const invoiceTotalCount = invoicePagination?.total ?? 0;
+  const invoiceTotalPages = Math.max(
+    1,
+    invoicePagination?.totalPages ??
+      Math.ceil(invoiceTotalCount / (invoicePagination?.size ?? INVOICE_PAGE_SIZE)),
   );
 
   function printSelectedTaxInvoice() {
@@ -160,6 +220,8 @@ export default function InvoicesPage() {
         paymentMethodLabel: pm,
         paymentTypesUsed: pm,
         balanceAfter: sums.balanceAfter,
+        hotelLogoUrl: hotel.logoUrl,
+        hotelName: hotel.name,
       });
       if (!openTaxInvoicePrintWindow(html)) {
         setError("Pop-up blocked — allow pop-ups to print the invoice.");
@@ -254,7 +316,7 @@ export default function InvoicesPage() {
             className={tab === "invoices" ? "hms-btn-solid hms-btn-sm" : "hms-btn-outline hms-btn-sm"}
             onClick={() => setTab("invoices")}
           >
-            Final Invoices ({invoices.length})
+            Final Invoices ({invoiceTotalCount})
           </button>
           <button
             type="button"
@@ -267,10 +329,15 @@ export default function InvoicesPage() {
       </section>
 
       {error && <p className="error">{error}</p>}
-      {loading && <div className="hms-section-card">Loading invoices...</div>}
+      {loading && <div className="hms-section-card">Loading…</div>}
 
       {!loading && tab === "invoices" && (
         <section className="hms-section-card space-y-4">
+          {invoicesLoading && (
+            <p className="text-sm text-muted-foreground" aria-live="polite">
+              Loading invoices…
+            </p>
+          )}
           <p className="text-sm text-muted-foreground">
             Click a row to select an invoice and view its line items below.
           </p>
@@ -336,6 +403,17 @@ export default function InvoicesPage() {
               </tbody>
             </table>
           </div>
+
+          {invoicePagination && invoiceTotalCount > 0 && (
+            <PaginationBar
+              page={invoicePage}
+              totalPages={invoiceTotalPages}
+              totalItems={invoiceTotalCount}
+              pageSize={invoicePagination.size}
+              noun="invoices"
+              onPageChange={(next) => setInvoicePage(next)}
+            />
+          )}
 
           {selectedInvoiceId && (
             <div className="rounded-xl border border-border/60 bg-muted/20 p-4">

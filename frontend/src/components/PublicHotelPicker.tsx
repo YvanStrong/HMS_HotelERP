@@ -45,6 +45,7 @@ export function PublicHotelPicker({
   const [hotels, setHotels] = useState<PublicHotelCatalogRow[] | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [debouncedFilter, setDebouncedFilter] = useState("");
 
   async function load() {
     setCatalogError(null);
@@ -74,9 +75,16 @@ export function PublicHotelPicker({
     }
   }, [hotels, presetHotelId, value, onChange]);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedFilter(filter.trim().toLowerCase());
+    }, 260);
+    return () => clearTimeout(timer);
+  }, [filter]);
+
   const filtered = useMemo(() => {
     if (!hotels?.length) return [];
-    const q = filter.trim().toLowerCase();
+    const q = debouncedFilter;
     if (!q) return hotels;
     return hotels.filter(
       (h) =>
@@ -85,7 +93,7 @@ export function PublicHotelPicker({
         h.currency.toLowerCase().includes(q) ||
         (h.timezone && h.timezone.toLowerCase().includes(q)),
     );
-  }, [hotels, filter]);
+  }, [hotels, debouncedFilter]);
 
   const selected = useMemo(() => hotels?.find((h) => h.id === value) ?? null, [hotels, value]);
 
@@ -97,6 +105,13 @@ export function PublicHotelPicker({
     const cur = hotels.find((h) => h.id === value);
     return cur ? [cur, ...filtered] : filtered;
   }, [hotels, value, filtered]);
+
+  useEffect(() => {
+    if (!debouncedFilter || !filtered.length) return;
+    if (filtered.length === 1 && value !== filtered[0].id) {
+      onChange(filtered[0].id);
+    }
+  }, [debouncedFilter, filtered, value, onChange]);
 
   const ready = hotels !== null;
   const hasList = ready && hotels.length > 0;
@@ -128,7 +143,7 @@ export function PublicHotelPicker({
             autoComplete="off"
           />
           <p className="book-register-muted" style={{ margin: "0.35rem 0 0", fontSize: "0.82rem" }}>
-            Choose your hotel from the drop-down (opens when clicked).
+            Results update as you type. Select from the drop-down.
           </p>
           <label htmlFor={`${idPrefix}-select`} style={{ marginTop: "0.75rem" }}>
             Property

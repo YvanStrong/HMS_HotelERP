@@ -1,6 +1,7 @@
 package com.hms.api.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -29,22 +30,48 @@ public final class SelfOrderDtos {
             BigDecimal stockQty,
             boolean active) {}
 
-    /** {@code orderBoardKeyConfigured} means the TV board URL must include {@code ?key=…}. */
+    /**
+     * {@code orderBoardKeyConfigured} means the TV board URL must include {@code ?key=…}. {@code hotelName} is used
+     * for guest-facing branding (e.g. table QR menus).
+     */
     public record PublicMenuResponse(
-            String currency, boolean orderBoardKeyConfigured, List<PublicDepotBrief> depots, List<PublicMenuItem> items) {}
+            String currency,
+            boolean orderBoardKeyConfigured,
+            List<PublicDepotBrief> depots,
+            List<PublicMenuItem> items,
+            String hotelName) {}
 
-    public record CreateLineInput(@NotNull UUID productId, @NotNull BigDecimal quantity) {}
+    /** Aggregates for the public self-order “operations” tab (kiosk / QR demo). */
+    public record PublicActiveOrderBrief(String displayCode, String status, String lineSummary) {}
+
+    public record PublicPortalSummary(
+            long todayOrderCount,
+            BigDecimal todayRevenueTotal,
+            Integer avgFulfillmentMinutes,
+            List<PublicActiveOrderBrief> activeOrders) {}
+
+    public record CreateLineInput(
+            @NotNull UUID productId,
+            @NotNull BigDecimal quantity,
+            /** Optional per-line note: modifiers, allergens, prep instructions. */
+            String modifiersNote) {}
+
+    public record RoomChargeVerification(
+            @NotBlank String roomNumber,
+            /** Confirmation code or booking reference (e.g. HMS-2026-…), case-insensitive. */
+            @NotBlank String bookingCode) {}
 
     /**
-     * {@code paymentMode}: {@code SIMULATED} (default) — paid immediately for kiosk/demo; {@code PAY_AT_COUNTER} —
-     * staff confirms payment before kitchen board and stock deduction.
+     * {@code paymentMode}: {@code SIMULATED} (default) — paid immediately; {@code PAY_AT_COUNTER} — staff confirms;
+     * {@code CHARGE_ROOM} — post total to checked-in guest folio (requires {@code roomCharge}).
      */
     public record CreatePublicOrderRequest(
             @NotNull String serviceType,
             @NotNull UUID depotId,
             @NotEmpty List<CreateLineInput> lines,
             String customerNote,
-            String paymentMode) {}
+            String paymentMode,
+            @JsonProperty("room_charge") RoomChargeVerification roomCharge) {}
 
     public record CreatePublicOrderResponse(
             UUID orderId,
@@ -59,7 +86,13 @@ public final class SelfOrderDtos {
             Instant createdAt,
             String message) {}
 
-    public record TrackLineRow(String productName, String productCode, BigDecimal quantity, BigDecimal lineTotal) {}
+    public record TrackLineRow(
+            String productName,
+            String productCode,
+            BigDecimal quantity,
+            BigDecimal lineTotal,
+            String modifiersNote,
+            String photoUrl) {}
 
     public record TrackOrderResponse(
             UUID orderId,
@@ -76,7 +109,7 @@ public final class SelfOrderDtos {
             String customerNote,
             List<TrackLineRow> lines) {}
 
-    public record BoardLineBrief(String productName, BigDecimal quantity) {}
+    public record BoardLineBrief(String productName, BigDecimal quantity, String modifiersNote, String photoUrl) {}
 
     public record BoardOrderCard(
             UUID orderId,

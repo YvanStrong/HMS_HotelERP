@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { clearToken } from "@/lib/api";
 import { apiFetch } from "@/lib/api";
 import { isGuestPortalUser, loadAuthUser, type AuthUser } from "@/lib/auth";
 
@@ -24,13 +26,16 @@ type GuestBookingRow = {
 };
 
 export default function GuestTripsPage() {
+  const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
   const [rows, setRows] = useState<GuestBookingRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const u = loadAuthUser();
     setUser(u);
+    setSessionChecked(true);
   }, []);
 
   useEffect(() => {
@@ -57,24 +62,37 @@ export default function GuestTripsPage() {
     };
   }, [user]);
 
-  if (user === null) {
+  if (!sessionChecked) {
     return (
       <div className="container-page py-8">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 w-48 bg-muted rounded-lg" />
-          <div className="h-32 bg-muted rounded-xl" />
+        <div className="bg-card rounded-xl border border-border/60 p-6 shadow-soft">
+          <p className="text-sm text-muted-foreground mb-4">Checking your session...</p>
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 w-48 bg-muted rounded-lg" />
+            <div className="h-32 bg-muted rounded-xl" />
+          </div>
         </div>
       </div>
     );
   }
 
-  if (!isGuestPortalUser(user) || !user.hotelId) {
+  if (!user || !isGuestPortalUser(user) || !user.hotelId) {
+    const staffLoggedIn = Boolean(user && !isGuestPortalUser(user));
     return (
       <div className="container-page py-8">
-        <h1 className="text-2xl font-bold tracking-tight mb-6">My trips</h1>
+        <div className="bg-card rounded-xl border border-border/60 p-4 sm:p-5 shadow-soft mb-6">
+          <p className="text-xs uppercase tracking-[0.18em] font-semibold text-muted-foreground mb-1">Guest area</p>
+          <h1 className="text-2xl font-bold tracking-tight">My trips</h1>
+          <p className="text-sm text-muted-foreground mt-1">Track your bookings, status, and stay details.</p>
+        </div>
         <div className="bg-card rounded-xl border border-border/60 p-6 shadow-soft">
-          <p className="text-foreground mb-4">Sign in with a guest account to see your bookings for that hotel.</p>
+          <p className="text-foreground mb-4">
+            {staffLoggedIn
+              ? "This page is for guest accounts. You're signed in as staff."
+              : "Sign in with a guest account to see your bookings for that hotel."}
+          </p>
           <div className="flex flex-wrap gap-3">
+            {staffLoggedIn && <Link href="/app" className="hms-btn-solid">Go to dashboard</Link>}
             <Link href="/book/register" className="hms-btn-solid">Create guest account</Link>
             <Link href="/login" className="hms-btn-outline">Sign in</Link>
             <Link href="/book/hotels" className="hms-btn-outline">Browse hotels</Link>
@@ -84,18 +102,32 @@ export default function GuestTripsPage() {
     );
   }
 
+  const guestUser = user as AuthUser & { hotelId: string };
+
+  function logout() {
+    clearToken();
+    setUser(null);
+    router.push("/book/hotels");
+    router.refresh();
+  }
+
   return (
     <div className="container-page py-8">
       <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">My trips</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {user.email} · {rows.length} reservation{rows.length === 1 ? "" : "s"}
+            {guestUser.email} · {rows.length} reservation{rows.length === 1 ? "" : "s"}
           </p>
         </div>
-        <Link href={`/book/hotels/${user.hotelId}`} className="hms-btn-solid">
-          Book a stay
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/book/hotels" className="hms-btn-solid">
+            Book a stay
+          </Link>
+          <button type="button" onClick={logout} className="hms-btn-outline">
+            Log out
+          </button>
+        </div>
       </div>
 
       {error && <div className="error panel mb-4">{error}</div>}
@@ -109,7 +141,7 @@ export default function GuestTripsPage() {
           </div>
           <p className="text-foreground font-medium mb-2">No reservations yet</p>
           <p className="text-muted-foreground text-sm mb-4">Start by booking a stay at your hotel.</p>
-          <Link href={`/book/hotels/${user.hotelId}`} className="hms-btn-solid">Book now</Link>
+          <Link href="/book/hotels" className="hms-btn-solid">Book now</Link>
         </div>
       )}
 

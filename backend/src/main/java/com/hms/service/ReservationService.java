@@ -34,6 +34,7 @@ import com.hms.repository.RoomRepository;
 import com.hms.repository.RoomTypeNightlyRateRepository;
 import com.hms.repository.RoomTypeRepository;
 import com.hms.config.HmsPublicUrlProperties;
+import com.hms.security.SecurityAuditService;
 import com.hms.security.TenantAccessService;
 import com.hms.security.UserPrincipal;
 import com.hms.web.ApiException;
@@ -85,6 +86,7 @@ public class ReservationService {
     private final InvoicePdfService invoicePdfService;
     private final InvoiceService invoiceService;
     private final HmsPublicUrlProperties publicUrlProperties;
+    private final SecurityAuditService securityAuditService;
 
     public ReservationService(
             HotelRepository hotelRepository,
@@ -107,7 +109,8 @@ public class ReservationService {
             PaymentRepository paymentRepository,
             InvoicePdfService invoicePdfService,
             InvoiceService invoiceService,
-            HmsPublicUrlProperties publicUrlProperties) {
+            HmsPublicUrlProperties publicUrlProperties,
+            SecurityAuditService securityAuditService) {
         this.hotelRepository = hotelRepository;
         this.roomRepository = roomRepository;
         this.roomTypeRepository = roomTypeRepository;
@@ -129,6 +132,7 @@ public class ReservationService {
         this.invoicePdfService = invoicePdfService;
         this.invoiceService = invoiceService;
         this.publicUrlProperties = publicUrlProperties;
+        this.securityAuditService = securityAuditService;
     }
 
     @Transactional(readOnly = true)
@@ -348,8 +352,8 @@ public class ReservationService {
         r.setHotel(hotel);
         r.setRoom(room);
         r.setGuest(guest);
-        r.setConfirmationCode(generateConfirmationCode());
-        r.setBookingReference(nextBookingReference());
+        r.setConfirmationCode(generateConfirmationCode(hotel));
+        r.setBookingReference(nextBookingReference(hotel));
         r.setBookingSource(resolveBookingSource(req, portalBooker));
         r.setCheckInDate(req.checkInDate());
         r.setCheckOutDate(req.checkOutDate());
@@ -747,15 +751,25 @@ public class ReservationService {
         return scored;
     }
 
-    private String generateConfirmationCode() {
-        return "HMS-" + Year.now().getValue() + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+    private String generateConfirmationCode(Hotel hotel) {
+        String prefix = resolveHotelPrefix(hotel);
+        return prefix + "-" + Year.now().getValue() + "-"
+                + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
     }
 
-    private String nextBookingReference() {
+    private String nextBookingReference(Hotel hotel) {
         int y = Year.now(ZoneOffset.UTC).getValue();
-        String prefixPattern = "HMS-" + y + "-%";
+        String prefix = resolveHotelPrefix(hotel);
+        String prefixPattern = prefix + "-" + y + "-%";
         int max = reservationRepository.maxBookingReferenceSuffixForYear(prefixPattern);
-        return String.format("HMS-%d-%06d", y, max + 1);
+        return String.format("%s-%d-%06d", prefix, y, max + 1);
+    }
+
+    private static String resolveHotelPrefix(Hotel hotel) {
+        if (hotel == null || hotel.getInvoicePrefix() == null || hotel.getInvoicePrefix().isBlank()) {
+            return "HMS";
+        }
+        return hotel.getInvoicePrefix().trim().toUpperCase();
     }
 
     private static String resolveBookingSource(
@@ -982,7 +996,7 @@ public class ReservationService {
         ApiDtos.CheckOutRequest b =
                 req != null
                         ? req
-                        : new ApiDtos.CheckOutRequest(null, null, null, null, null, null, null);
+                        : new ApiDtos.CheckOutRequest(null, null, null, null, null, null, null, null);
         Reservation r = reservationRepository
                 .findDetailedByIdAndHotel_Id(reservationId, hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
@@ -1009,7 +1023,9 @@ public class ReservationService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Final payment amount cannot be negative");
         }
         BigDecimal dueAfterPayment = due.subtract(paymentAmount).setScale(2, RoundingMode.HALF_UP);
-        if (dueAfterPayment.abs().compareTo(new BigDecimal("0.01")) > 0) {
+        // Only block when the guest still *owes* after declared checkout collection. Negative balanceDue
+        // means credit/overpayment; subtracting more "collected" deepens the credit and must not trigger FOLIO_BALANCE_DUE.
+        if (dueAfterPayment.compareTo(new BigDecimal("0.01")) > 0) {
             boolean override = Boolean.TRUE.equals(b.overrideBalanceWarning());
             boolean allowed =
                     staff.getRole() == Role.MANAGER
@@ -1022,6 +1038,23 @@ public class ReservationService {
                         "FOLIO_BALANCE_DUE",
                         "Outstanding balance: " + dueAfterPayment + " " + folioBefore.currency());
             }
+            String overrideReason =
+                    b.overrideBalanceReason() != null ? b.overrideBalanceReason().trim() : "";
+            if (overrideReason.length() < 10) {
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        "OVERRIDE_REASON_REQUIRED",
+                        "When checking out with an outstanding balance, override_balance_reason is required (at least 10 characters).");
+            }
+            securityAuditService.logEvent(
+                    "CHECKOUT_BALANCE_OVERRIDE",
+                    staff.getId(),
+                    hotelId,
+                    Map.of(
+                            "reservationId", reservationId,
+                            "balanceDueAfterPayment", dueAfterPayment,
+                            "currency", folioBefore.currency(),
+                            "reason", overrideReason));
         }
         Hotel hotel = r.getHotel();
         if (Boolean.TRUE.equals(b.isLateCheckout())
@@ -1544,6 +1577,13 @@ public class ReservationService {
         Reservation r = reservationRepository
                 .findDetailedByIdAndHotel_Id(reservationId, hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
+        UserPrincipal viewer = tenantAccessService.currentUser();
+        if (viewer.getRole() == Role.GUEST) {
+            Guest rg = r.getGuest();
+            if (rg.getPortalAccount() == null || !rg.getPortalAccount().getId().equals(viewer.getId())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "FOLIO_ACCESS_DENIED", "Not authorized to view this folio");
+            }
+        }
         List<RoomCharge> charges = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(reservationId);
         List<ApiDtos.FolioCharge> fc = charges.stream()
                 .map(c -> new ApiDtos.FolioCharge(
@@ -1698,6 +1738,17 @@ public class ReservationService {
         UserPrincipal up = tenantAccessService.currentUser();
         p.setProcessedBy(appUserRepository.findById(up.getId()).orElse(null));
         paymentRepository.save(p);
+        securityAuditService.logEvent(
+                "FOLIO_PAYMENT_ADDED",
+                up.getId(),
+                hotelId,
+                Map.of(
+                        "reservationId", reservationId,
+                        "paymentId", p.getId(),
+                        "amount", p.getAmount(),
+                        "currency", p.getCurrency(),
+                        "paymentType", p.getPaymentType(),
+                        "method", p.getMethod()));
         return getFolio(hotelId, hotelHeader, reservationId);
     }
 
@@ -1735,6 +1786,16 @@ public class ReservationService {
         p.setVoidReason(body.reason());
         p.setVoidedAt(Instant.now());
         paymentRepository.save(p);
+        UserPrincipal actor = tenantAccessService.currentUser();
+        securityAuditService.logEvent(
+                "FOLIO_PAYMENT_VOIDED",
+                actor.getId(),
+                hotelId,
+                Map.of(
+                        "reservationId", reservationId,
+                        "paymentId", p.getId(),
+                        "amount", p.getAmount(),
+                        "reason", body.reason()));
         return getFolio(hotelId, hotelHeader, reservationId);
     }
 

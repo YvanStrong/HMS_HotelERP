@@ -121,7 +121,7 @@ public class ReservationController {
         ApiDtos.CheckOutRequest body =
                 request != null
                         ? request
-                        : new ApiDtos.CheckOutRequest(null, null, null, null, null, null, null);
+                        : new ApiDtos.CheckOutRequest(null, null, null, null, null, null, null, null);
         return reservationService.checkOut(hotelId, hotelHeader, reservationId, body);
     }
 

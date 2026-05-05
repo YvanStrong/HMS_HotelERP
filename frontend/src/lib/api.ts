@@ -4,7 +4,12 @@ import { showErrorPopup } from "./errorPopup";
 /** Empty env string would otherwise make fetch hit the Next origin instead of the Java API. */
 function resolveApiBase(): string {
   const raw = process.env.NEXT_PUBLIC_API_URL;
-  if (raw == null || String(raw).trim() === "") return "http://localhost:8080";
+  if (raw == null || String(raw).trim() === "") {
+    if (typeof window !== "undefined") {
+      return `${window.location.protocol}//${window.location.hostname}:8080`;
+    }
+    return "http://127.0.0.1:8080";
+  }
   return String(raw).trim().replace(/\/$/, "");
 }
 

@@ -88,7 +88,7 @@ public class GuestPortalRegistrationService {
             if (req.phone() != null && !req.phone().isBlank()) {
                 g.setPhone(req.phone().trim());
             }
-            GuestProfileDefaults.ensureRequiredForPersistence(g);
+            GuestProfileDefaults.ensureRequiredForPersistence(g, hotel);
             guestRepository.save(g);
         } else {
             Guest g = new Guest();
@@ -101,7 +101,7 @@ public class GuestPortalRegistrationService {
             g.setEmail(email);
             g.setPhone(req.phone() != null && !req.phone().isBlank() ? req.phone().trim() : null);
             g.setPortalAccount(u);
-            GuestProfileDefaults.ensureRequiredForPersistence(g);
+            GuestProfileDefaults.ensureRequiredForPersistence(g, hotel);
             guestRepository.save(g);
         }
 

@@ -58,8 +58,7 @@ public class Guest {
     private String phoneCountryCode;
 
     @Column(name = "country", nullable = false, length = 100)
-    @ColumnDefault("'Rwanda'")
-    private String country = "Rwanda";
+    private String country;
 
     @Column(length = 100)
     private String province;

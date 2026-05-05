@@ -36,6 +36,15 @@ public final class ApiDtos {
 
     public record RefreshTokenRequest(@NotBlank String refreshToken) {}
 
+    public record ForgotPasswordRequest(@NotBlank String usernameOrEmail) {}
+
+    /** {@code debugResetUrl} is non-null only when {@code hms.auth.password-reset.expose-reset-link-in-json=true}. */
+    public record ForgotPasswordResponse(String message, String debugResetUrl) {}
+
+    public record ResetPasswordWithTokenRequest(@NotBlank String token, @NotBlank String newPassword) {}
+
+    public record MessageResponse(String message) {}
+
     public record AuthUserInfo(
             UUID id, String email, String username, String role, UUID hotelId, List<String> permissions) {}
 
@@ -310,7 +319,9 @@ public final class ApiDtos {
             PostCheckoutInput postCheckout,
             @JsonProperty("minibar_inspected") Boolean minibarInspected,
             @JsonProperty("is_late_checkout") Boolean isLateCheckout,
-            @JsonProperty("override_balance_warning") Boolean overrideBalanceWarning) {}
+            @JsonProperty("override_balance_warning") Boolean overrideBalanceWarning,
+            /** Required when override is used while an outstanding folio balance remains after finalPayment. */
+            @JsonProperty("override_balance_reason") String overrideBalanceReason) {}
 
     public record InvoiceLine(String description, BigDecimal amount) {}
 
@@ -339,6 +350,10 @@ public final class ApiDtos {
             String currency,
             Instant createdAt,
             String pdfUrl) {}
+
+    /** Paged final invoices; {@code totalInvoicedSumAll} sums {@code totalAmount} over every invoice for the hotel. */
+    public record InvoiceListPageResponse(
+            List<InvoiceListItem> data, Pagination pagination, BigDecimal totalInvoicedSumAll) {}
 
     public record InvoiceBreakdown(
             BigDecimal roomCharges,

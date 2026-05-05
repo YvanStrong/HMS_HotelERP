@@ -60,17 +60,20 @@ export default function BookLookupPage() {
 
   return (
     <div className="container-page py-8">
+      <div className="bg-card rounded-xl border border-border/60 p-5 sm:p-6 shadow-soft mb-6">
+        <p className="text-xs uppercase tracking-[0.18em] font-semibold text-muted-foreground mb-1">Reservation tools</p>
+        <h1 className="text-2xl font-bold tracking-tight mb-1">Find your reservation</h1>
+        <p className="text-muted-foreground text-sm leading-relaxed">
+          Choose your hotel and confirm with the same email used during booking.
+        </p>
+      </div>
+
       <Link href="/book/hotels" className="text-sm text-muted-foreground hover:text-primary inline-flex items-center gap-1 mb-6">
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
         </svg>
         All hotels
       </Link>
-
-      <h1 className="text-2xl font-bold tracking-tight mb-2">Find your reservation</h1>
-      <p className="text-muted-foreground max-w-xl mb-6 leading-relaxed">
-        Choose the hotel you booked, then enter the confirmation code and the email used when booking.
-      </p>
 
       <form className="bg-card rounded-xl border border-border/60 p-6 shadow-soft max-w-2xl" noValidate onSubmit={lookup}>
         <h2 className="text-lg font-semibold mb-4">Hotel</h2>

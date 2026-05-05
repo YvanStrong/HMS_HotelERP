@@ -6,6 +6,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -52,6 +55,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
             order by i.createdAt desc
             """)
     List<Invoice> findDetailedByHotelIdOrderByCreatedAtDesc(@Param("hotelId") UUID hotelId);
+
+    @EntityGraph(attributePaths = {"hotel", "reservation", "reservation.guest", "reservation.room"})
+    Page<Invoice> findByHotel_IdOrderByCreatedAtDesc(UUID hotelId, Pageable pageable);
+
+    @Query("select coalesce(sum(i.totalAmount), 0) from Invoice i where i.hotel.id = :hotelId")
+    BigDecimal sumTotalAmountByHotelId(@Param("hotelId") UUID hotelId);
 
     @Query(
             """

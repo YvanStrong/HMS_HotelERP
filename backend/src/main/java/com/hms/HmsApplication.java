@@ -3,6 +3,7 @@ package com.hms;
 import com.hms.config.HmsMultitenancyProperties;
 import com.hms.config.HmsPublicUrlProperties;
 import com.hms.config.HmsStripeProperties;
+import com.hms.config.FrontendUrlProperties;
 import com.hms.config.JwtProperties;
 import com.hms.config.SetupProperties;
 import org.springframework.boot.SpringApplication;
@@ -17,6 +18,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableConfigurationProperties({
     JwtProperties.class,
     SetupProperties.class,
+    FrontendUrlProperties.class,
     HmsMultitenancyProperties.class,
     HmsStripeProperties.class,
     HmsPublicUrlProperties.class

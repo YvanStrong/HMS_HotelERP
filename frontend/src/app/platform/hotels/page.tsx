@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { apiFetch, getToken } from "@/lib/api";
+import { isSuperAdmin, loadAuthUser } from "@/lib/auth";
 import { publicFetch } from "@/lib/publicApi";
 import { PaginationBar } from "@/components/PaginationBar";
 import { paginateSlice } from "@/lib/pagination";
@@ -32,6 +33,19 @@ export default function PlatformHotelsPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState("");
+  const [busyDeleteId, setBusyDeleteId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Hotel | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [selectedHotelIds, setSelectedHotelIds] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState("");
+  const [singleDeletePurge, setSingleDeletePurge] = useState(false);
+  const [bulkDeletePurge, setBulkDeletePurge] = useState(false);
+  const [platformSuperAdmin, setPlatformSuperAdmin] = useState(false);
+
+  useEffect(() => {
+    setPlatformSuperAdmin(isSuperAdmin(loadAuthUser()));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,45 +92,69 @@ export default function PlatformHotelsPage() {
     setPage(1);
   }, [query]);
 
+  useEffect(() => {
+    setSelectedHotelIds((prev) => prev.filter((id) => filtered.some((h) => h.id === id)));
+  }, [filtered]);
+
   const { slice, total, totalPages } = useMemo(
     () => paginateSlice(filtered, page, PAGE_SIZE),
     [filtered, page]
   );
 
-  async function deleteHotel(hotelId: string, hotelName: string) {
-    if (!confirm(`Are you sure you want to delete "${hotelName}"? This action cannot be undone.`)) {
-      return;
-    }
+  const totalHotels = hotels?.length ?? 0;
+  const activeHotels = hotels?.filter((h) => h.isActive).length ?? 0;
+  const inactiveHotels = totalHotels - activeHotels;
+  const uniqueCurrencies = useMemo(
+    () => new Set((hotels ?? []).map((h) => h.currency).filter(Boolean)).size,
+    [hotels],
+  );
+
+  async function deleteHotel(hotelId: string, hotelName: string, purge = false): Promise<boolean> {
+    setBusyDeleteId(hotelId);
     try {
-      await apiFetch(`/api/v1/platform/hotels/${hotelId}?purge=false`, {
+      await apiFetch(`/api/v1/platform/hotels/${hotelId}?purge=${purge}`, {
         method: "DELETE",
       });
       setHotels((prev) => prev?.filter((h) => h.id !== hotelId) ?? null);
+      setPendingDelete(null);
+      setDeleteConfirmName("");
+      return true;
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to delete hotel";
       if (message.includes("404") || message.includes("Not Found")) {
-        alert("Delete API not implemented on backend. Please use the database or API directly to delete hotels.");
-        return;
+        setError("Delete API is not implemented on backend. Use platform API/database operations for deletion.");
+        return false;
       }
-      if (
-        message.startsWith("Cannot delete this hotel") &&
-        !message.includes("If you used purge=true") &&
-        confirm(
-          `${message}\n\nChoose OK to PERMANENTLY DELETE all data for this hotel (reservations, guests, rooms, invoices, inventory, etc.) and remove the property. This cannot be undone.`,
-        )
-      ) {
-        try {
-          await apiFetch(`/api/v1/platform/hotels/${hotelId}?purge=true`, {
-            method: "DELETE",
-          });
-          setHotels((prev) => prev?.filter((h) => h.id !== hotelId) ?? null);
-        } catch (e2) {
-          alert(e2 instanceof Error ? e2.message : "Purge delete failed");
-        }
-      } else if (!message.startsWith("Cannot delete this hotel")) {
-        alert(message);
+      if (message.startsWith("Cannot delete this hotel")) {
+        setError(
+          `${hotelName}: ${message} Use "Force purge dependent data" for irreversible deletion.`,
+        );
+        return false;
       }
+      setError(message);
+      return false;
+    } finally {
+      setBusyDeleteId((current) => (current === hotelId ? null : current));
     }
+  }
+
+  async function bulkDeleteSelected() {
+    if (selectedHotelIds.length === 0) return;
+    const failed: string[] = [];
+    for (const hotelId of selectedHotelIds) {
+      const hotel = hotels?.find((h) => h.id === hotelId);
+      if (!hotel) continue;
+      const ok = await deleteHotel(hotel.id, hotel.name, bulkDeletePurge);
+      if (!ok) failed.push(hotel.name);
+    }
+    if (failed.length === 0) {
+      setSelectedHotelIds([]);
+      setBulkDeleteOpen(false);
+      setBulkDeleteConfirm("");
+      setBulkDeletePurge(false);
+      return;
+    }
+    setError(`Failed to delete ${failed.length} hotel(s): ${failed.join(", ")}`);
   }
 
   return (
@@ -147,11 +185,61 @@ export default function PlatformHotelsPage() {
       )}
 
       {/* Search */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-card rounded-xl border border-border/60 p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Total properties</p>
+          <p className="mt-2 text-2xl font-semibold">{totalHotels}</p>
+        </div>
+        <div className="bg-card rounded-xl border border-border/60 p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Active</p>
+          <p className="mt-2 text-2xl font-semibold text-green-700">{activeHotels}</p>
+        </div>
+        <div className="bg-card rounded-xl border border-border/60 p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Inactive</p>
+          <p className="mt-2 text-2xl font-semibold text-amber-700">{inactiveHotels}</p>
+        </div>
+        <div className="bg-card rounded-xl border border-border/60 p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Currencies in use</p>
+          <p className="mt-2 text-2xl font-semibold">{uniqueCurrencies}</p>
+        </div>
+      </div>
+
       <section className="hms-section-card">
         <div className="hms-section-head">
           <h2 className="hms-section-title">Search Hotels</h2>
           <p className="hms-section-sub">Find by property name, code, currency, or address.</p>
         </div>
+        {platformSuperAdmin && (
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="hms-btn-outline hms-btn-sm"
+              onClick={() =>
+                setSelectedHotelIds((prev) => {
+                  const allVisible = slice.map((h) => h.id);
+                  const everySelected = allVisible.every((id) => prev.includes(id));
+                  return everySelected
+                    ? prev.filter((id) => !allVisible.includes(id))
+                    : Array.from(new Set([...prev, ...allVisible]));
+                })
+              }
+            >
+              {slice.every((h) => selectedHotelIds.includes(h.id)) ? "Clear page selection" : "Select page"}
+            </button>
+            <button
+              type="button"
+              className="hms-btn-outline hms-btn-sm text-red-700 border-red-300 hover:bg-red-50"
+              disabled={selectedHotelIds.length === 0}
+              onClick={() => {
+                setBulkDeleteOpen(true);
+                setBulkDeleteConfirm("");
+                setBulkDeletePurge(false);
+              }}
+            >
+              Delete selected ({selectedHotelIds.length})
+            </button>
+          </div>
+        )}
         <div className="max-w-md">
         <div className="relative">
           <svg
@@ -220,6 +308,24 @@ export default function PlatformHotelsPage() {
                   key={hotel.id}
                   className="bg-card rounded-xl border border-border/60 overflow-hidden shadow-soft hover:shadow-float hover:border-primary/30 transition-all group"
                 >
+                  {platformSuperAdmin && (
+                    <div className="px-4 pt-4">
+                      <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={selectedHotelIds.includes(hotel.id)}
+                          onChange={(e) =>
+                            setSelectedHotelIds((prev) =>
+                              e.target.checked
+                                ? Array.from(new Set([...prev, hotel.id]))
+                                : prev.filter((id) => id !== hotel.id),
+                            )
+                          }
+                        />
+                        Select property
+                      </label>
+                    </div>
+                  )}
                   {/* Image */}
                   <div className="relative h-48 bg-muted">
                     {hotel.imageUrl ? (
@@ -354,17 +460,25 @@ export default function PlatformHotelsPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                       </Link>
-                      <button
-                        type="button"
-                        onClick={() => deleteHotel(hotel.id, hotel.name)}
-                        className="inline-flex items-center justify-center p-2 rounded-lg text-sm font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
-                        title="Delete"
-                        aria-label={`Delete ${hotel.name}`}
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
+                      {platformSuperAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingDelete(hotel);
+                            setDeleteConfirmName("");
+                            setSingleDeletePurge(false);
+                            setError(null);
+                          }}
+                          disabled={busyDeleteId === hotel.id}
+                          className="inline-flex items-center justify-center p-2 rounded-lg text-sm font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                          title="Delete"
+                          aria-label={`Delete ${hotel.name}`}
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -381,6 +495,102 @@ export default function PlatformHotelsPage() {
             onPageChange={setPage}
           />
         </>
+      )}
+      {pendingDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-float">
+            <h3 className="text-lg font-semibold">Delete property</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              This action removes <strong className="text-foreground">{pendingDelete.name}</strong>. Type the hotel name to confirm.
+            </p>
+            <div className="mt-4">
+              <input
+                type="text"
+                value={deleteConfirmName}
+                onChange={(e) => setDeleteConfirmName(e.target.value)}
+                placeholder={pendingDelete.name}
+              />
+            </div>
+            <label className="mt-3 inline-flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={singleDeletePurge}
+                onChange={(e) => setSingleDeletePurge(e.target.checked)}
+              />
+              Force purge dependent hotel data (irreversible)
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="hms-btn-outline"
+                onClick={() => {
+                  if (busyDeleteId) return;
+                  setPendingDelete(null);
+                  setDeleteConfirmName("");
+                  setSingleDeletePurge(false);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="hms-btn-solid bg-red-600 hover:bg-red-700"
+                disabled={deleteConfirmName.trim() !== pendingDelete.name || busyDeleteId === pendingDelete.id}
+                onClick={() => deleteHotel(pendingDelete.id, pendingDelete.name, singleDeletePurge)}
+              >
+                {busyDeleteId === pendingDelete.id ? "Deleting..." : "Delete hotel"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {bulkDeleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-float">
+            <h3 className="text-lg font-semibold">Bulk delete properties</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              You are deleting <strong className="text-foreground">{selectedHotelIds.length}</strong> selected properties. Type{" "}
+              <strong className="text-foreground">DELETE</strong> to continue.
+            </p>
+            <div className="mt-4">
+              <input
+                type="text"
+                value={bulkDeleteConfirm}
+                onChange={(e) => setBulkDeleteConfirm(e.target.value)}
+                placeholder="Type DELETE"
+              />
+            </div>
+            <label className="mt-3 inline-flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={bulkDeletePurge}
+                onChange={(e) => setBulkDeletePurge(e.target.checked)}
+              />
+              Force purge dependent data for each selected hotel (irreversible)
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="hms-btn-outline"
+                onClick={() => {
+                  setBulkDeleteOpen(false);
+                  setBulkDeleteConfirm("");
+                  setBulkDeletePurge(false);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="hms-btn-solid bg-red-600 hover:bg-red-700"
+                disabled={bulkDeleteConfirm.trim() !== "DELETE" || !!busyDeleteId}
+                onClick={bulkDeleteSelected}
+              >
+                {busyDeleteId ? "Deleting..." : "Delete selected"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

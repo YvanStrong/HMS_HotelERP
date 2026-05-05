@@ -1,17 +1,21 @@
 package com.hms.service;
 
 import com.hms.api.dto.SelfOrderDtos;
+import com.hms.domain.ChargeType;
+import com.hms.domain.ReservationStatus;
 import com.hms.domain.SelfOrderPaymentStatus;
 import com.hms.domain.SelfOrderServiceType;
 import com.hms.domain.SelfOrderStatus;
 import com.hms.entity.DepotProduct;
 import com.hms.entity.Hotel;
 import com.hms.entity.InventoryDepot;
+import com.hms.entity.Reservation;
 import com.hms.entity.SelfServiceOrder;
 import com.hms.entity.SelfServiceOrderLine;
 import com.hms.repository.DepotProductRepository;
 import com.hms.repository.HotelRepository;
 import com.hms.repository.InventoryDepotRepository;
+import com.hms.repository.ReservationRepository;
 import com.hms.repository.SelfServiceOrderRepository;
 import com.hms.security.TenantAccessService;
 import com.hms.web.ApiException;
@@ -20,13 +24,17 @@ import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.Year;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -43,18 +51,24 @@ public class SelfOrderService {
     private final DepotProductRepository depotProductRepository;
     private final SelfServiceOrderRepository selfServiceOrderRepository;
     private final TenantAccessService tenantAccessService;
+    private final ChargeService chargeService;
+    private final ReservationRepository reservationRepository;
 
     public SelfOrderService(
             HotelRepository hotelRepository,
             InventoryDepotRepository inventoryDepotRepository,
             DepotProductRepository depotProductRepository,
             SelfServiceOrderRepository selfServiceOrderRepository,
-            TenantAccessService tenantAccessService) {
+            TenantAccessService tenantAccessService,
+            ChargeService chargeService,
+            ReservationRepository reservationRepository) {
         this.hotelRepository = hotelRepository;
         this.inventoryDepotRepository = inventoryDepotRepository;
         this.depotProductRepository = depotProductRepository;
         this.selfServiceOrderRepository = selfServiceOrderRepository;
         this.tenantAccessService = tenantAccessService;
+        this.chargeService = chargeService;
+        this.reservationRepository = reservationRepository;
     }
 
     @Transactional(readOnly = true)
@@ -84,7 +98,96 @@ public class SelfOrderService {
                         p.getStockQty(),
                         p.isActive()))
                 .toList();
-        return new SelfOrderDtos.PublicMenuResponse(hotel.getCurrency(), boardKey, depotRows, items);
+        return new SelfOrderDtos.PublicMenuResponse(
+                hotel.getCurrency(), boardKey, depotRows, items, hotel.getName());
+    }
+
+    @Transactional(readOnly = true)
+    public SelfOrderDtos.PublicPortalSummary publicPortalSummary(UUID hotelId) {
+        assertHotelExists(hotelId);
+        Hotel hotel = hotelRepository.findById(hotelId).orElseThrow(() -> notFound("Hotel"));
+        String tz = hotel.getTimezone();
+        ZoneId zone = ZoneId.of(tz != null && !tz.isBlank() ? tz : "UTC");
+        ZonedDateTime startZ = ZonedDateTime.now(zone).toLocalDate().atStartOfDay(zone);
+        Instant from = startZ.toInstant();
+        Instant to = startZ.plusDays(1).toInstant();
+
+        long todayCount =
+                selfServiceOrderRepository.countByHotel_IdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                        hotelId, from, to);
+        BigDecimal revenue = selfServiceOrderRepository.sumPaidTotalBetween(
+                hotelId, from, to, SelfOrderPaymentStatus.PAID);
+        if (revenue == null) {
+            revenue = BigDecimal.ZERO;
+        }
+        revenue = revenue.setScale(2, RoundingMode.HALF_UP);
+
+        List<SelfServiceOrder> completed =
+                selfServiceOrderRepository.findByHotel_IdAndStatusAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                        hotelId, SelfOrderStatus.COMPLETED, from, to);
+        Integer avgMin = null;
+        if (!completed.isEmpty()) {
+            long totalSec = 0;
+            int n = 0;
+            for (SelfServiceOrder o : completed) {
+                Instant c = o.getCreatedAt();
+                Instant u = o.getUpdatedAt();
+                if (c != null && u != null) {
+                    long sec = Duration.between(c, u).getSeconds();
+                    if (sec >= 0 && sec < 48L * 3600) {
+                        totalSec += sec;
+                        n++;
+                    }
+                }
+            }
+            if (n > 0) {
+                avgMin = (int) Math.round((totalSec / (double) n) / 60.0);
+            }
+        }
+
+        List<SelfServiceOrder> active = selfServiceOrderRepository.findActiveOrdersWithLines(
+                hotelId,
+                List.of(SelfOrderStatus.PLACED, SelfOrderStatus.IN_PROGRESS, SelfOrderStatus.READY),
+                PageRequest.of(0, 40));
+        List<SelfOrderDtos.PublicActiveOrderBrief> briefs = new ArrayList<>();
+        for (SelfServiceOrder o : active) {
+            briefs.add(new SelfOrderDtos.PublicActiveOrderBrief(
+                    o.getDisplayCode(),
+                    o.getStatus().name(),
+                    shortenSummary(activeLineSummary(o), 160)));
+        }
+        return new SelfOrderDtos.PublicPortalSummary(todayCount, revenue, avgMin, briefs);
+    }
+
+    private static String activeLineSummary(SelfServiceOrder o) {
+        if (o.getLines() == null || o.getLines().isEmpty()) {
+            return "";
+        }
+        return o.getLines().stream()
+                .sorted(Comparator.comparing(SelfServiceOrderLine::getLineOrder))
+                .limit(5)
+                .map(SelfOrderService::formatActiveLineBit)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.joining(", "));
+    }
+
+    private static String formatActiveLineBit(SelfServiceOrderLine l) {
+        String nm = l.getProduct() != null ? l.getProduct().getProductName() : "?";
+        BigDecimal q = l.getQuantity();
+        if (q != null && q.compareTo(BigDecimal.ONE) > 0) {
+            return nm + " ×" + q.stripTrailingZeros().toPlainString();
+        }
+        return nm;
+    }
+
+    private static String shortenSummary(String s, int max) {
+        if (s == null) {
+            return "";
+        }
+        if (s.length() <= max) {
+            return s;
+        }
+        return s.substring(0, max - 1) + "…";
     }
 
     @Transactional
@@ -93,6 +196,12 @@ public class SelfOrderService {
         Hotel hotel = hotelRepository.findById(hotelId).orElseThrow(() -> notFound("Hotel"));
         SelfOrderServiceType serviceType = parseServiceType(req.serviceType());
         PaymentMode mode = parsePaymentMode(req.paymentMode());
+        if (mode == PaymentMode.CHARGE_ROOM && (req.roomCharge() == null)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "ROOM_CHARGE_REQUIRED",
+                    "room_charge with roomNumber and bookingCode is required when paymentMode is CHARGE_ROOM");
+        }
         InventoryDepot depot = inventoryDepotRepository
                 .findByIdAndHotel_Id(req.depotId(), hotelId)
                 .orElseThrow(() -> notFound("Depot"));
@@ -111,6 +220,9 @@ public class SelfOrderService {
         if (mode == PaymentMode.PAY_AT_COUNTER) {
             order.setPaymentStatus(SelfOrderPaymentStatus.UNPAID);
             order.setPaymentMethod("PAY_AT_COUNTER");
+        } else if (mode == PaymentMode.CHARGE_ROOM) {
+            order.setPaymentStatus(SelfOrderPaymentStatus.PAID);
+            order.setPaymentMethod("ROOM_FOLIO");
         } else {
             order.setPaymentStatus(SelfOrderPaymentStatus.PAID);
             order.setPaymentMethod("SIMULATED");
@@ -151,19 +263,50 @@ public class SelfOrderService {
             sl.setQuantity(line.quantity().setScale(3, RoundingMode.HALF_UP));
             sl.setUnitPrice(unitPrice);
             sl.setLineTotal(lineTotal);
+            sl.setModifiersNote(trimModifiersNote(line.modifiersNote()));
             order.getLines().add(sl);
 
-            if (mode == PaymentMode.SIMULATED && managedStock) {
+            if ((mode == PaymentMode.SIMULATED || mode == PaymentMode.CHARGE_ROOM) && managedStock) {
                 p.setStockQty(p.getStockQty().subtract(line.quantity()).setScale(3, RoundingMode.HALF_UP));
                 depotProductRepository.save(p);
             }
         }
         order.setTotalAmount(scale2(total));
+        if (mode == PaymentMode.CHARGE_ROOM) {
+            SelfOrderDtos.RoomChargeVerification rc = req.roomCharge();
+            Reservation res = reservationRepository
+                    .findCheckedInByRoomNumberAndBookingOrConfirmation(
+                            hotelId, ReservationStatus.CHECKED_IN, rc.roomNumber(), rc.bookingCode())
+                    .orElseThrow(() -> new ApiException(
+                            HttpStatus.NOT_FOUND,
+                            "ROOM_CHARGE_NOT_FOUND",
+                            "No checked-in reservation matches this room and booking/confirmation code."));
+            String desc =
+                    "Self-order "
+                            + order.getDisplayCode()
+                            + " ("
+                            + order.getOrderNumber()
+                            + ", "
+                            + depot.getName()
+                            + ")";
+            chargeService.postFolioCharge(
+                    hotelId,
+                    res,
+                    order.getTotalAmount(),
+                    desc,
+                    ChargeType.FNB,
+                    "SELF_ORDER_KIOSK",
+                    null,
+                    null);
+        }
         order = selfServiceOrderRepository.save(order);
 
-        String msg = mode == PaymentMode.PAY_AT_COUNTER
-                ? "Order placed — pay at counter; staff will confirm payment before the kitchen sees it."
-                : "Order placed";
+        String msg =
+                switch (mode) {
+                    case PAY_AT_COUNTER -> "Order placed — pay at counter; staff will confirm payment before the kitchen sees it.";
+                    case CHARGE_ROOM -> "Order placed — charged to your room folio.";
+                    case SIMULATED -> "Order placed";
+                };
         return new SelfOrderDtos.CreatePublicOrderResponse(
                 order.getId(),
                 order.getOrderNumber(),
@@ -198,7 +341,11 @@ public class SelfOrderService {
         for (SelfServiceOrder o : rows) {
             List<SelfOrderDtos.BoardLineBrief> lineBriefs = o.getLines().stream()
                     .sorted(Comparator.comparing(SelfServiceOrderLine::getLineOrder))
-                    .map(l -> new SelfOrderDtos.BoardLineBrief(l.getProduct().getProductName(), l.getQuantity()))
+                    .map(l -> new SelfOrderDtos.BoardLineBrief(
+                            l.getProduct().getProductName(),
+                            l.getQuantity(),
+                            l.getModifiersNote(),
+                            l.getProduct().getPhotoUrl()))
                     .toList();
             cards.add(new SelfOrderDtos.BoardOrderCard(
                     o.getId(),
@@ -401,8 +548,17 @@ public class SelfOrderService {
                         l.getProduct().getProductName(),
                         l.getProduct().getProductCode(),
                         l.getQuantity(),
-                        l.getLineTotal()))
+                        l.getLineTotal(),
+                        l.getModifiersNote(),
+                        l.getProduct().getPhotoUrl()))
                 .toList();
+    }
+
+    private static String trimModifiersNote(String raw) {
+        if (raw == null) return null;
+        String t = raw.trim();
+        if (t.isEmpty()) return null;
+        return t.length() > 280 ? t.substring(0, 280) : t;
     }
 
     private void assertHotelExists(UUID hotelId) {
@@ -436,7 +592,8 @@ public class SelfOrderService {
 
     private enum PaymentMode {
         SIMULATED,
-        PAY_AT_COUNTER
+        PAY_AT_COUNTER,
+        CHARGE_ROOM
     }
 
     private static PaymentMode parsePaymentMode(String raw) {
@@ -447,10 +604,18 @@ public class SelfOrderService {
         if ("PAY_AT_COUNTER".equals(v)) {
             return PaymentMode.PAY_AT_COUNTER;
         }
+        if ("CHARGE_ROOM".equals(v)
+                || "ROOM_CHARGE".equals(v)
+                || "CHARGE_TO_ROOM".equals(v)
+                || "ROOM".equals(v)) {
+            return PaymentMode.CHARGE_ROOM;
+        }
         if ("SIMULATED".equals(v) || "SIMULATE".equals(v)) {
             return PaymentMode.SIMULATED;
         }
-        throw new ApiException(HttpStatus.BAD_REQUEST, "paymentMode must be SIMULATED or PAY_AT_COUNTER");
+        throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "paymentMode must be SIMULATED, PAY_AT_COUNTER, or CHARGE_ROOM (charge to checked-in guest folio)");
     }
 
     private static SelfOrderServiceType parseServiceType(String raw) {

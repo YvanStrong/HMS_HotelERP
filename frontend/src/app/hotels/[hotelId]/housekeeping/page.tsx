@@ -263,10 +263,6 @@ export default function HousekeepingKanbanPage() {
     }
   };
 
-  if (!getToken()) {
-    return <p className="text-muted-foreground">Sign in to view housekeeping.</p>;
-  }
-
   const columns: { key: keyof Board; title: string }[] = [
     { key: "pending", title: "PENDING" },
     { key: "inProgress", title: "IN PROGRESS" },
@@ -274,12 +270,14 @@ export default function HousekeepingKanbanPage() {
     { key: "inspected", title: "INSPECTED" },
   ];
 
-  const filteredBoard: Board = {
-    pending: (boardQ.data?.pending ?? []).filter((t) => !mineOnly || t.assignedTo === user?.id),
-    inProgress: (boardQ.data?.inProgress ?? []).filter((t) => !mineOnly || t.assignedTo === user?.id),
-    completed: (boardQ.data?.completed ?? []).filter((t) => !mineOnly || t.assignedTo === user?.id),
-    inspected: (boardQ.data?.inspected ?? []).filter((t) => !mineOnly || t.assignedTo === user?.id),
-  };
+  const filteredBoard = useMemo((): Board => {
+    return {
+      pending: (boardQ.data?.pending ?? []).filter((t) => !mineOnly || t.assignedTo === user?.id),
+      inProgress: (boardQ.data?.inProgress ?? []).filter((t) => !mineOnly || t.assignedTo === user?.id),
+      completed: (boardQ.data?.completed ?? []).filter((t) => !mineOnly || t.assignedTo === user?.id),
+      inspected: (boardQ.data?.inspected ?? []).filter((t) => !mineOnly || t.assignedTo === user?.id),
+    };
+  }, [boardQ.data, mineOnly, user?.id]);
 
   const totals = useMemo(() => {
     const pending = filteredBoard.pending.length;
@@ -298,6 +296,10 @@ export default function HousekeepingKanbanPage() {
     ].filter((t) => t.room_dnd).length;
     return { pending, inProgress, completed, inspected, urgent, dndBlocked };
   }, [filteredBoard]);
+
+  if (!getToken()) {
+    return <p className="text-muted-foreground">Sign in to view housekeeping.</p>;
+  }
 
   async function submitCreateTask(e: React.FormEvent) {
     e.preventDefault();

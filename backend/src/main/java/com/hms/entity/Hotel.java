@@ -30,6 +30,27 @@ public class Hotel {
     @Column(nullable = false, length = 8)
     private String currency = "USD";
 
+    @Column(name = "default_country", length = 100)
+    private String defaultCountry;
+
+    @Column(name = "default_id_type", length = 30)
+    private String defaultIdType;
+
+    @Column(name = "phone_country_code", length = 5)
+    private String phoneCountryCode;
+
+    @Column(name = "invoice_prefix", length = 20)
+    private String invoicePrefix;
+
+    @Column(name = "check_in_time", length = 5)
+    private String checkInTime;
+
+    @Column(name = "check_out_time", length = 5)
+    private String checkOutTime;
+
+    @Column(name = "tax_rate", precision = 5, scale = 2)
+    private BigDecimal taxRate;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "subscription_status", nullable = false, length = 32)
     private SubscriptionStatus subscriptionStatus;

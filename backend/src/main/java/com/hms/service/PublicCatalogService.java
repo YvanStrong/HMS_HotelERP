@@ -42,6 +42,14 @@ public class PublicCatalogService {
     }
 
     @Transactional(readOnly = true)
+    public ApiDtos.PublicHotelCatalogItem getHotel(UUID hotelId) {
+        Hotel hotel = hotelRepository
+                .findById(hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Hotel not found"));
+        return toPublicHotel(hotel);
+    }
+
+    @Transactional(readOnly = true)
     public List<ApiDtos.PublicRoomTypeCatalogItem> listRoomTypes(UUID hotelId) {
         if (!hotelRepository.existsById(hotelId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Hotel not found");

@@ -1,8 +1,8 @@
 package com.hms.repository;
 
-import com.hms.entity.Reservation;
 import com.hms.domain.FolioStatus;
 import com.hms.domain.ReservationStatus;
+import com.hms.entity.Reservation;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -22,7 +22,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
     Optional<Reservation> findByIdAndHotel_Id(UUID id, UUID hotelId);
 
     @Query(
-            "select r from Reservation r join fetch r.guest join fetch r.room join fetch r.room.roomType join fetch r.hotel where r.id = :id and r.hotel.id = :hotelId")
+            "select r from Reservation r join fetch r.guest g left join fetch g.portalAccount join fetch r.room join fetch r.room.roomType join fetch r.hotel where r.id = :id and r.hotel.id = :hotelId")
     Optional<Reservation> findDetailedByIdAndHotel_Id(@Param("id") UUID id, @Param("hotelId") UUID hotelId);
 
     @Query(
@@ -188,4 +188,24 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
             order by r.checkInDate desc
             """)
     List<Reservation> findByGuest_IdOrderByCheckInDateDesc(@Param("guestId") UUID guestId);
+
+    @Query(
+            """
+            select r from Reservation r
+            join fetch r.room rm
+            join fetch r.guest
+            join fetch r.hotel
+            where r.hotel.id = :hotelId
+            and r.status = :status
+            and upper(trim(rm.roomNumber)) = upper(trim(:roomNumber))
+            and (
+                upper(trim(r.confirmationCode)) = upper(trim(:bookingCode))
+                or upper(trim(r.bookingReference)) = upper(trim(:bookingCode))
+            )
+            """)
+    Optional<Reservation> findCheckedInByRoomNumberAndBookingOrConfirmation(
+            @Param("hotelId") UUID hotelId,
+            @Param("status") ReservationStatus status,
+            @Param("roomNumber") String roomNumber,
+            @Param("bookingCode") String bookingCode);
 }

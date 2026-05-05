@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { AuthCookieSync } from "@/components/AuthCookieSync";
 import { ErrorPopupHost } from "@/components/ErrorPopupHost";
+import { QueryProvider } from "@/components/QueryProvider";
 import "./globals.css";
 
 const inter = Inter({
@@ -38,9 +39,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={inter.variable}>
       <body className={`${inter.className} hms-body`}>
-        <AuthCookieSync />
-        <ErrorPopupHost />
-        <div className="hms-canvas">{children}</div>
+        <QueryProvider>
+          <AuthCookieSync />
+          <ErrorPopupHost />
+          <div className="hms-canvas">{children}</div>
+        </QueryProvider>
       </body>
     </html>
   );

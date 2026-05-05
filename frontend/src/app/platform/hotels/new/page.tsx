@@ -227,7 +227,7 @@ export default function CreateHotelPage() {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g., Grand Hotel"
+                placeholder="e.g., Hotel Name"
                 required
               />
             </div>

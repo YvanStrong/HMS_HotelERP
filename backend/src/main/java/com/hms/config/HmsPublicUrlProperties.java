@@ -10,14 +10,14 @@ public class HmsPublicUrlProperties {
      * Public origin used in stored invoice PDF links (no trailing slash). Override in prod, e.g.
      * {@code https://api.yourdomain.com}.
      */
-    private String publicBaseUrl = "http://localhost:8080";
+    private String publicBaseUrl = "";
 
     public String getPublicBaseUrl() {
         return publicBaseUrl;
     }
 
     public void setPublicBaseUrl(String publicBaseUrl) {
-        this.publicBaseUrl = publicBaseUrl == null ? "http://localhost:8080" : publicBaseUrl.trim();
+        this.publicBaseUrl = publicBaseUrl == null ? "" : publicBaseUrl.trim();
     }
 
     /** Base URL without trailing slash. */
@@ -26,7 +26,7 @@ public class HmsPublicUrlProperties {
         while (s.endsWith("/")) {
             s = s.substring(0, s.length() - 1);
         }
-        return s.isEmpty() ? "http://localhost:8080" : s;
+        return s;
     }
 
     public String invoicePdfUrl(UUID hotelId, UUID invoiceId) {

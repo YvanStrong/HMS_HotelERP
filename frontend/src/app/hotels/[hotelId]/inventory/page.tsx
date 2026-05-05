@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { PaginationBar } from "@/components/PaginationBar";
 import { apiFetch, getToken } from "@/lib/api";
 import { paginateSlice } from "@/lib/pagination";
+import { staffAppPath } from "@/lib/staffAppRoutes";
 
 type ItemRow = {
   id: string;
@@ -372,6 +374,16 @@ export default function InventoryPage() {
       <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
         <h1 className="text-3xl font-bold tracking-tight">Inventory</h1>
         <p className="text-muted-foreground mt-1">Stock, purchase orders, suppliers, and waste in one workspace</p>
+        <p className="text-xs text-muted-foreground mt-3 leading-relaxed border-t border-border/60 pt-3">
+          <strong>Items</strong> here are internal stock records (SKU, categories, POs, consume).{" "}
+          <strong>Guest self-order</strong> and the staff <strong>Menu / POS</strong> catalogue use separate{" "}
+          <strong>depots</strong> and <strong>depot products</strong> — create those on{" "}
+          <Link href={staffAppPath("menu")} className="underline font-medium text-foreground">
+            Menu
+          </Link>{" "}
+          (section &quot;Self-order &amp; kiosk catalogue&quot;). You can optionally link a depot product to an inventory
+          item when creating it on Menu so both stay related.
+        </p>
       </div>
 
       <div className="rounded-2xl border border-border/60 bg-card p-3 shadow-sm">

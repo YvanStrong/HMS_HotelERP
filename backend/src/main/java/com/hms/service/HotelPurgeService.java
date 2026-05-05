@@ -31,6 +31,13 @@ public class HotelPurgeService {
                 "DELETE FROM fb_order_lines WHERE order_id IN (SELECT id FROM fb_orders WHERE outlet_id IN (SELECT id FROM fb_outlets WHERE hotel_id = ?))",
                 id);
         jdbc.update("DELETE FROM fb_orders WHERE outlet_id IN (SELECT id FROM fb_outlets WHERE hotel_id = ?)", id);
+        // Element-collection tables for MenuItem are not cascade-deleted at DB level in all environments.
+        jdbc.update(
+                "DELETE FROM menu_item_categories WHERE menu_item_id IN (SELECT id FROM menu_items WHERE outlet_id IN (SELECT id FROM fb_outlets WHERE hotel_id = ?))",
+                id);
+        jdbc.update(
+                "DELETE FROM menu_item_allergens WHERE menu_item_id IN (SELECT id FROM menu_items WHERE outlet_id IN (SELECT id FROM fb_outlets WHERE hotel_id = ?))",
+                id);
         jdbc.update("DELETE FROM menu_items WHERE outlet_id IN (SELECT id FROM fb_outlets WHERE hotel_id = ?)", id);
         jdbc.update("DELETE FROM fb_outlets WHERE hotel_id = ?", id);
 
@@ -54,7 +61,11 @@ public class HotelPurgeService {
 
         jdbc.update("DELETE FROM housekeeping_tasks WHERE hotel_id = ?", id);
         jdbc.update("DELETE FROM notifications WHERE hotel_id = ?", id);
+        jdbc.update("DELETE FROM night_audit_runs WHERE hotel_id = ?", id);
 
+        // Payments reference reservations (payments.reservation_id FK), so remove them before reservations.
+        jdbc.update("DELETE FROM payments WHERE reservation_id IN (SELECT id FROM reservations WHERE hotel_id = ?)", id);
+        jdbc.update("DELETE FROM payments WHERE hotel_id = ?", id);
         jdbc.update(
                 "DELETE FROM room_charges WHERE reservation_id IN (SELECT id FROM reservations WHERE hotel_id = ?)", id);
         jdbc.update("DELETE FROM reservations WHERE hotel_id = ?", id);
@@ -67,6 +78,17 @@ public class HotelPurgeService {
 
         jdbc.update("DELETE FROM housekeeping_restock_tasks WHERE hotel_id = ?", id);
         jdbc.update("DELETE FROM room_minibar_stock WHERE room_id IN (SELECT id FROM rooms WHERE hotel_id = ?)", id);
+        // Depot / self-order domain can keep direct hotel FKs outside core reservation/invoice flows.
+        jdbc.update(
+                "DELETE FROM self_service_order_lines WHERE order_id IN (SELECT id FROM self_service_orders WHERE hotel_id = ?)",
+                id);
+        jdbc.update("DELETE FROM self_service_orders WHERE hotel_id = ?", id);
+        jdbc.update(
+                "DELETE FROM depot_sale_lines WHERE sale_id IN (SELECT id FROM depot_sales WHERE hotel_id = ?)",
+                id);
+        jdbc.update("DELETE FROM depot_sales WHERE hotel_id = ?", id);
+        jdbc.update("DELETE FROM depot_products WHERE hotel_id = ?", id);
+        jdbc.update("DELETE FROM inventory_depots WHERE hotel_id = ?", id);
 
         jdbc.update("DELETE FROM room_blocks WHERE hotel_id = ?", id);
         jdbc.update("DELETE FROM room_status_logs WHERE hotel_id = ?", id);
