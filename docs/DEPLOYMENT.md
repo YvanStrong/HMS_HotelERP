@@ -223,7 +223,56 @@ server {
 - [ ] Firewall allows **443** (and **80** → redirect to HTTPS); **not** exposing **5432** publicly unless you use a managed DB with SSL by design  
 - [ ] Backend reachable on localhost **8080**  
 - [ ] Frontend `npm run start` on **3000** (or change `proxy_pass`)  
-- [ ] `NEXT_PUBLIC_API_URL` was **`https://hotel.example.com`** at **build** time  
+- [ ] `NEXT_PUBLIC_API_URL` was **`https://hotel.example.com`** at **build** time (or see **API under a path** below)
+
+---
+
+## API under a path (example: `https://hotelerp.rw/Hotel`)
+
+Renaming the JAR to **`Hotel.jar`** only changes the **file** on disk. The browser URL **`/Hotel`** comes from configuration, not from the JAR name.
+
+**1. Spring Boot — context path**
+
+In production config (or `application.properties`), set:
+
+```properties
+server.servlet.context-path=/Hotel
+```
+
+Then the API lives at `http://localhost:8080/Hotel/api/v1/...` on the machine, and Swagger at `http://localhost:8080/Hotel/swagger-ui/index.html`.
+
+**2. Frontend — tell Next.js the public base**
+
+At **build** time, set the full public URL (no trailing slash):
+
+```bash
+export NEXT_PUBLIC_API_URL=https://hotelerp.rw/Hotel
+npm run build
+```
+
+Alternatively, if the site and API share the same origin and you only want to configure the path: set **`NEXT_PUBLIC_API_BASE_PATH=/Hotel`** and leave `NEXT_PUBLIC_API_URL` empty (browser uses `https://hotelerp.rw` + `/Hotel`). For server-side rendering edge cases, prefer the full **`NEXT_PUBLIC_API_URL`**.
+
+**3. Production env — public API URL must include the path**
+
+Set **`HMS_PUBLIC_BASE_URL`** (see `application-prod.properties`) to the same base the world uses, e.g. **`https://hotelerp.rw/Hotel`**, so links and callbacks stay correct.
+
+**4. Nginx — proxy the prefix to Java**
+
+If Tomcat/Spring listens on `127.0.0.1:8080` with context path `/Hotel`:
+
+```nginx
+location /Hotel/ {
+    proxy_pass http://127.0.0.1:8080/Hotel/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Keep your **`location /`** block for Next.js on paths that are **not** under `/Hotel/` (or order `location` blocks so the more specific `/Hotel/` wins).
+
+**CORS:** allow origin **`https://hotelerp.rw`** in `HMS_CORS_ALLOWED_ORIGINS` if the browser loads pages from that host.
 
 ---
 
@@ -274,7 +323,8 @@ Most beginners find **Option 1 (JAR + Nginx)** simpler than maintaining Tomcat +
 
 | Variable | Meaning |
 |----------|---------|
-| `NEXT_PUBLIC_API_URL` | Full base URL of the API, **no** trailing slash (e.g. `https://hotel.example.com` or `https://api.hotel.example.com`). Set **before** `npm run build`. |
+| `NEXT_PUBLIC_API_URL` | Full base URL of the API, **no** trailing slash (e.g. `https://hotelerp.rw/Hotel` or `https://api.hotel.example.com`). Set **before** `npm run build`. Overrides `NEXT_PUBLIC_API_BASE_PATH` when set. |
+| `NEXT_PUBLIC_API_BASE_PATH` | Optional same-origin path only, e.g. `/Hotel`. Used when `NEXT_PUBLIC_API_URL` is empty: browser uses `origin + path`. Prefer full `NEXT_PUBLIC_API_URL` for production builds if you use SSR. |
 | `NEXT_PUBLIC_DEFAULT_HOTEL_ID` | Optional UUID for shortcuts on the home page (see `frontend/.env.local.example`). |
 
 ---
@@ -291,7 +341,7 @@ Set these on the **server** (systemd `Environment=`, Docker `environment`, hosti
 | `SPRING_DATASOURCE_PASSWORD` | That user’s password. |
 | `HMS_SETUP_TOKEN` | Required in prod (see app startup validation). |
 | `HMS_JWT_SECRET` | Strong secret for signing JWTs. |
-| `HMS_PUBLIC_BASE_URL` | Public URL of the **API** as the world sees it (used in links emails, webhooks, etc. — align with your Nginx/domain). |
+| `HMS_PUBLIC_BASE_URL` | Public URL of the **API** as the world sees it (include a path prefix if you use one, e.g. `https://hotelerp.rw/Hotel`). Used in links, emails, webhooks — align with Nginx and `server.servlet.context-path`. |
 | `HMS_FRONTEND_BASE_URL` | Public URL of the **Next.js** site (password reset links, etc.). |
 | `HMS_CORS_ALLOWED_ORIGINS` | Comma-separated browser origins allowed to call the API, e.g. `https://hotel.example.com`. |
 
