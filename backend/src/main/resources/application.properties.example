@@ -18,3 +18,11 @@ hms.setup.token=${SETUP_TOKEN}
 
 # Optional: defaults to 8080 in application.properties when unset
 # SERVER_PORT=8082
+
+# Guest self-order READY alerts (optional). VAPID = browser push; Twilio = SMS if guest left a phone on the order.
+# hms.self-order.notify.vapid-public-key=
+# hms.self-order.notify.vapid-private-key=
+# hms.self-order.notify.vapid-subject=mailto:ops@example.com
+# hms.self-order.notify.twilio-account-sid=
+# hms.self-order.notify.twilio-auth-token=
+# hms.self-order.notify.twilio-from-number=

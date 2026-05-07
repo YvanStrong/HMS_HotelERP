@@ -33,6 +33,17 @@ export function OrderStatusTimeline({ data }: { data: TrackOrderResponse }) {
   const step4Done = st === "COMPLETED";
   const step4Pending = paid && !step4Done && st === "READY";
 
+  const who = (data.pickupDisplayName ?? "").trim();
+  const loc = (data.pickupLocation ?? "").trim();
+  const step3Sub =
+    dine && loc
+      ? `Deliver / find table ${loc}. Listen for ${who || "your"} order — code ${data.displayCode}.`
+      : dine
+        ? `Listen for ${who || "guest"} — code ${data.displayCode}.`
+        : who
+          ? `Listen for ${who} — order ${data.displayCode}.`
+          : `Pick up when code ${data.displayCode} is called.`;
+
   const steps: { title: string; sub: string; done: boolean; pending: boolean }[] = [
     {
       title: "Order placed",
@@ -48,7 +59,7 @@ export function OrderStatusTimeline({ data }: { data: TrackOrderResponse }) {
     },
     {
       title: "Ready for pickup",
-      sub: dine ? "Waiter will bring to table." : "Pick up at the counter when your code is called.",
+      sub: step3Sub,
       done: step3Done,
       pending: step3Pending,
     },
@@ -61,11 +72,11 @@ export function OrderStatusTimeline({ data }: { data: TrackOrderResponse }) {
   ];
 
   return (
-    <ol className="relative pl-8 space-y-8 border-l border-zinc-800 ml-3 text-left">
+    <ol className="relative pl-6 sm:pl-8 space-y-5 sm:space-y-8 border-l border-zinc-800 ml-2 sm:ml-3 text-left">
       {steps.map((s, i) => (
         <li key={i} className="relative">
           <span
-            className={`absolute -left-[25px] top-0 flex h-6 w-6 items-center justify-center rounded-full border-2 text-xs ${
+            className={`absolute -left-[21px] sm:-left-[25px] top-0 flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded-full border-2 text-[10px] sm:text-xs ${
               s.done
                 ? "border-emerald-500 bg-emerald-500/20 text-emerald-400"
                 : s.pending

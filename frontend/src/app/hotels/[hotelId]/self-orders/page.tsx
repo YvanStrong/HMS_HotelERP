@@ -15,9 +15,11 @@ import {
   confirmSelfOrderPayment,
   fetchSelfOrderMenu,
   fetchSelfOrderPortalSummary,
+  fetchStaffSelfOrderHealth,
   fetchStaffSelfOrderSettings,
   putStaffSelfOrderSettings,
   type PublicPortalSummary,
+  type SelfOrderHealthSnapshot,
   type StaffOrderRow,
 } from "@/lib/selfOrderApi";
 
@@ -36,6 +38,50 @@ function randomBoardKey(): string {
   return s;
 }
 
+/** Title + helper copy with an iOS-style switch (tenant / settings rows). */
+function StaffSettingsSwitchRow({
+  title,
+  description,
+  checked,
+  disabled,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-b border-border/50 px-4 py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between sm:gap-8 sm:px-5 sm:py-4">
+      <div className="min-w-0 flex-1 space-y-1">
+        <p className="text-sm font-semibold tracking-tight text-foreground">{title}</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={
+          "flex h-9 w-[3.5rem] shrink-0 cursor-pointer items-center rounded-full border p-[3px] shadow-inner transition-colors duration-200 " +
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card " +
+          "disabled:pointer-events-none disabled:opacity-45 " +
+          (checked
+            ? "justify-end border-primary/40 bg-primary text-primary-foreground"
+            : "justify-start border-border/80 bg-muted/50 hover:border-border hover:bg-muted/80")
+        }
+      >
+        <span
+          aria-hidden
+          className="pointer-events-none block h-6 w-6 rounded-full bg-white shadow-md ring-1 ring-black/[0.07]"
+        />
+      </button>
+    </div>
+  );
+}
+
 const ORDERS_PAGE_SIZE = 12;
 const ACTIVE_SNAPSHOT_PAGE_SIZE = 8;
 
@@ -48,7 +94,14 @@ export default function StaffSelfOrdersPage() {
   const [boardSecretDraft, setBoardSecretDraft] = useState("");
   const [boardKeyConfigured, setBoardKeyConfigured] = useState(false);
   const [boardKeyEcho, setBoardKeyEcho] = useState<string | null>(null);
+  const [pickupBoardHideGuestNames, setPickupBoardHideGuestNames] = useState(false);
+  const [pickupPrivacySaving, setPickupPrivacySaving] = useState(false);
+  const [selfOrderSmsEnabled, setSelfOrderSmsEnabled] = useState(true);
+  const [selfOrderPushEnabled, setSelfOrderPushEnabled] = useState(true);
+  const [notifyTogglesSaving, setNotifyTogglesSaving] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null);
+  const [health, setHealth] = useState<SelfOrderHealthSnapshot | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
   const [origin, setOrigin] = useState("");
   const [portal, setPortal] = useState<PublicPortalSummary | null>(null);
   const [portalError, setPortalError] = useState<string | null>(null);
@@ -67,13 +120,34 @@ export default function StaffSelfOrdersPage() {
     return `${origin}/book/order/${hotelId}/screen?key=${encodeURIComponent(key)}`;
   }, [origin, hotelId, boardKeyEcho, boardSecretDraft]);
 
+  const pickupBoardUrlForQr = useMemo(() => {
+    if (!origin) return "";
+    const key = (boardKeyEcho ?? boardSecretDraft).trim();
+    const base = `${origin}/book/order/${hotelId}/pickup`;
+    return key ? `${base}?key=${encodeURIComponent(key)}` : base;
+  }, [origin, hotelId, boardKeyEcho, boardSecretDraft]);
+
   const loadSettings = useCallback(async () => {
     try {
       const s = await fetchStaffSelfOrderSettings(hotelId);
       setBoardKeyConfigured(s.orderBoardKeyConfigured);
       if (s.orderBoardSecretEcho) setBoardKeyEcho(s.orderBoardSecretEcho);
+      setPickupBoardHideGuestNames(Boolean(s.pickupBoardHideGuestNames));
+      setSelfOrderSmsEnabled(Boolean(s.selfOrderSmsEnabled));
+      setSelfOrderPushEnabled(Boolean(s.selfOrderPushEnabled));
     } catch {
       /* ignore — may lack permission */
+    }
+  }, [hotelId]);
+
+  const loadHealth = useCallback(async () => {
+    try {
+      const h = await fetchStaffSelfOrderHealth(hotelId);
+      setHealth(h);
+      setHealthError(null);
+    } catch {
+      setHealth(null);
+      setHealthError("Could not load self-order health (check permissions).");
     }
   }, [hotelId]);
 
@@ -105,6 +179,12 @@ export default function StaffSelfOrdersPage() {
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
+
+  useEffect(() => {
+    void loadHealth();
+    const id = window.setInterval(() => void loadHealth(), 25000);
+    return () => window.clearInterval(id);
+  }, [loadHealth]);
 
   useEffect(() => {
     void load();
@@ -149,6 +229,9 @@ export default function StaffSelfOrdersPage() {
       const s = await putStaffSelfOrderSettings(hotelId, body);
       setBoardKeyConfigured(s.orderBoardKeyConfigured);
       setBoardKeyEcho(s.orderBoardSecretEcho ?? null);
+      setPickupBoardHideGuestNames(Boolean(s.pickupBoardHideGuestNames));
+      setSelfOrderSmsEnabled(Boolean(s.selfOrderSmsEnabled));
+      setSelfOrderPushEnabled(Boolean(s.selfOrderPushEnabled));
       if (clear) {
         setBoardSecretDraft("");
         setBoardKeyEcho(null);
@@ -156,6 +239,46 @@ export default function StaffSelfOrdersPage() {
       setSettingsMsg(clear ? "Board secret cleared." : "Board secret saved. Use the QR or URL on the TV browser.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save board secret");
+    }
+  }
+
+  async function saveNotifyChannelToggles(nextSms: boolean, nextPush: boolean) {
+    setSettingsMsg(null);
+    setError(null);
+    setNotifyTogglesSaving(true);
+    try {
+      const s = await putStaffSelfOrderSettings(hotelId, {
+        selfOrderSmsEnabled: nextSms,
+        selfOrderPushEnabled: nextPush,
+      });
+      setSelfOrderSmsEnabled(Boolean(s.selfOrderSmsEnabled));
+      setSelfOrderPushEnabled(Boolean(s.selfOrderPushEnabled));
+      setSettingsMsg("Guest SMS / push toggles saved.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save notification toggles");
+    } finally {
+      setNotifyTogglesSaving(false);
+    }
+  }
+
+  async function savePickupBoardPrivacy(hide: boolean) {
+    setSettingsMsg(null);
+    setError(null);
+    setPickupPrivacySaving(true);
+    try {
+      const s = await putStaffSelfOrderSettings(hotelId, { pickupBoardHideGuestNames: hide });
+      setPickupBoardHideGuestNames(Boolean(s.pickupBoardHideGuestNames));
+      setSelfOrderSmsEnabled(Boolean(s.selfOrderSmsEnabled));
+      setSelfOrderPushEnabled(Boolean(s.selfOrderPushEnabled));
+      setSettingsMsg(
+        hide
+          ? "Pickup board will show codes and table/location only (no guest names)."
+          : "Pickup board will show guest names again.",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save pickup board privacy");
+    } finally {
+      setPickupPrivacySaving(false);
     }
   }
 
@@ -197,6 +320,7 @@ export default function StaffSelfOrdersPage() {
           onClick={() => {
             void load();
             void loadPortalSnapshot();
+            void loadHealth();
           }}
         >
           Refresh
@@ -204,6 +328,48 @@ export default function StaffSelfOrdersPage() {
       </div>
 
       {portalError && <div className="error">{portalError}</div>}
+      {healthError && <div className="error">{healthError}</div>}
+      {health && (
+        <section className="hms-section-card space-y-3">
+          <h2 className="hms-section-title">Self-order health (today, hotel timezone)</h2>
+          <p className="text-xs text-muted-foreground">
+            From append-only events since{" "}
+            <span className="font-mono text-foreground">
+              {(() => {
+                try {
+                  const d = new Date(health.windowStartUtc);
+                  return Number.isNaN(d.getTime()) ? health.windowStartUtc : d.toLocaleString();
+                } catch {
+                  return health.windowStartUtc;
+                }
+              })()}
+            </span>
+            . Use for ops triage; retention is defined in your DB policy.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+            <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+              <p className="text-[10px] uppercase text-muted-foreground">Orders placed</p>
+              <p className="text-lg font-semibold tabular-nums">{health.ordersPlaced}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+              <p className="text-[10px] uppercase text-muted-foreground">SMS OK / fail</p>
+              <p className="text-lg font-semibold tabular-nums">
+                {health.notifySmsOk} / {health.notifySmsFail}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+              <p className="text-[10px] uppercase text-muted-foreground">Push OK / fail</p>
+              <p className="text-lg font-semibold tabular-nums">
+                {health.notifyPushOk} / {health.notifyPushFail}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+              <p className="text-[10px] uppercase text-muted-foreground">Event rows</p>
+              <p className="text-lg font-semibold tabular-nums">{health.totalEvents}</p>
+            </div>
+          </div>
+        </section>
+      )}
       {portal && (
         <section className="hms-section-card space-y-4">
           <h2 className="hms-section-title">Today (self-order snapshot)</h2>
@@ -245,7 +411,11 @@ export default function StaffSelfOrdersPage() {
                       className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm"
                     >
                       <span>
-                        <span className="font-mono text-muted-foreground">#{o.displayCode}</span> · {o.lineSummary || "—"}
+                        <span className="font-mono text-muted-foreground">#{o.displayCode}</span>
+                        {(o.pickupDisplayName ?? "").trim() ? (
+                          <span className="font-medium text-foreground"> · {(o.pickupDisplayName ?? "").trim()}</span>
+                        ) : null}
+                        <span className="text-muted-foreground"> · {o.lineSummary || "—"}</span>
                       </span>
                       <span
                         className={`text-xs font-medium px-2 py-0.5 rounded-full ${
@@ -300,18 +470,23 @@ export default function StaffSelfOrdersPage() {
         <div className="flex flex-wrap gap-8 justify-start">
           {kioskUrl ? <SelfOrderQrBlock value={kioskUrl} caption="Scan to open self-order (kiosk)" /> : null}
           {screenUrlForQr ? (
-            <SelfOrderQrBlock value={screenUrlForQr} caption="Scan on the TV device (includes board key)" />
+            <SelfOrderQrBlock value={screenUrlForQr} caption="Kitchen TV (includes board key)" />
           ) : (
             <p className="text-sm text-muted-foreground self-center max-w-xs">
-              Set or generate a board secret below to enable the TV QR code.
+              Set or generate a board secret below to enable the kitchen TV QR code.
             </p>
           )}
+          {pickupBoardUrlForQr ? (
+            <SelfOrderQrBlock value={pickupBoardUrlForQr} caption="Pickup board (READY orders; same key as kitchen)" />
+          ) : null}
         </div>
         <div className="grid gap-2 text-sm max-w-2xl">
           <label className="font-medium">Kiosk URL</label>
           <input readOnly value={kioskUrl} className="font-mono text-xs" onFocus={(e) => e.target.select()} />
           <label className="font-medium mt-2">TV screen URL (with key)</label>
           <input readOnly value={screenUrlForQr || "(set board secret)"} className="font-mono text-xs" onFocus={(e) => e.target.select()} />
+          <label className="font-medium mt-2">Pickup board URL</label>
+          <input readOnly value={pickupBoardUrlForQr} className="font-mono text-xs" onFocus={(e) => e.target.select()} />
         </div>
       </section>
 
@@ -342,6 +517,56 @@ export default function StaffSelfOrdersPage() {
           <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => void saveBoardSecret(true)}>
             Clear secret
           </button>
+        </div>
+      </section>
+
+      <section className="hms-section-card space-y-4">
+        <div>
+          <h2 className="hms-section-title">Guest notifications (tenant)</h2>
+          <p className="mt-1 text-xs text-muted-foreground max-w-2xl leading-relaxed">
+            Turn channels off for this hotel when you do not want guests to opt in on the kiosk. Global Twilio / VAPID
+            must still be configured server-wide for sends to work.
+          </p>
+        </div>
+        <div
+          className={`max-w-2xl overflow-hidden rounded-xl border border-border/70 bg-muted/15 shadow-inner ${notifyTogglesSaving ? "pointer-events-none opacity-60" : ""}`}
+        >
+          <StaffSettingsSwitchRow
+            title="SMS when ready"
+            description="Guests can enter a mobile number on checkout and confirm consent. One transactional text is sent when the kitchen marks the order ready."
+            checked={selfOrderSmsEnabled}
+            disabled={notifyTogglesSaving}
+            onChange={(next) => void saveNotifyChannelToggles(next, selfOrderPushEnabled)}
+          />
+          <StaffSettingsSwitchRow
+            title="Web push on status page"
+            description="Guests can opt in on the order tracker to get a browser notification when the ticket is ready (this device)."
+            checked={selfOrderPushEnabled}
+            disabled={notifyTogglesSaving}
+            onChange={(next) => void saveNotifyChannelToggles(selfOrderSmsEnabled, next)}
+          />
+        </div>
+      </section>
+
+      <section className="hms-section-card space-y-4">
+        <div>
+          <h2 className="hms-section-title">Pickup board privacy</h2>
+          <p className="mt-1 text-xs text-muted-foreground max-w-2xl leading-relaxed">
+            The lobby <strong className="text-foreground">pickup board</strong> URL is public once someone has the link
+            or QR. Turn this on to hide guest call-out names there only — the kitchen display and staff console still
+            show full names.
+          </p>
+        </div>
+        <div
+          className={`max-w-2xl overflow-hidden rounded-xl border border-border/70 bg-muted/15 shadow-inner ${pickupPrivacySaving ? "pointer-events-none opacity-60" : ""}`}
+        >
+          <StaffSettingsSwitchRow
+            title="Hide names on pickup board"
+            description="Public pickup screen shows order code, table or area, and items — not the guest call-out name. Kitchen and staff views are unchanged."
+            checked={pickupBoardHideGuestNames}
+            disabled={pickupPrivacySaving}
+            onChange={(next) => void savePickupBoardPrivacy(next)}
+          />
         </div>
       </section>
 
@@ -385,6 +610,8 @@ export default function StaffSelfOrdersPage() {
                 <th>Order #</th>
                 <th>Pay</th>
                 <th>Type</th>
+                <th>Pickup</th>
+                <th>Last notify</th>
                 <th>Status</th>
                 <th>Depot</th>
                 <th>Total</th>
@@ -409,6 +636,45 @@ export default function StaffSelfOrdersPage() {
                       )}
                     </td>
                     <td>{r.serviceType === "DINE_IN" ? "Dine in" : "Take away"}</td>
+                    <td className="text-sm max-w-[160px]">
+                      <div
+                        className="font-medium truncate"
+                        title={(r.pickupDisplayName ?? "").trim() || undefined}
+                      >
+                        {(r.pickupDisplayName ?? "").trim() || "—"}
+                      </div>
+                      {(r.pickupLocation ?? "").trim() ? (
+                        <div className="text-xs text-muted-foreground truncate" title={(r.pickupLocation ?? "").trim()}>
+                          {(r.pickupLocation ?? "").trim()}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="text-xs max-w-[140px]">
+                      {r.lastNotifyAt ? (
+                        <>
+                          <div className="text-muted-foreground tabular-nums">
+                            {(() => {
+                              try {
+                                const d = new Date(r.lastNotifyAt);
+                                return Number.isNaN(d.getTime()) ? r.lastNotifyAt : d.toLocaleString();
+                              } catch {
+                                return r.lastNotifyAt;
+                              }
+                            })()}
+                          </div>
+                          <div className="font-medium truncate" title={r.lastNotifyStatus ?? ""}>
+                            {r.lastNotifyStatus ?? "—"}
+                          </div>
+                          {(r.lastNotifyDetail ?? "").trim() ? (
+                            <div className="text-muted-foreground truncate" title={(r.lastNotifyDetail ?? "").trim()}>
+                              {(r.lastNotifyDetail ?? "").trim()}
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
                     <td>{r.status.replace("_", " ")}</td>
                     <td>{r.depotName}</td>
                     <td className="tabular-nums">{Number(r.totalAmount).toFixed(2)}</td>
@@ -452,7 +718,7 @@ export default function StaffSelfOrdersPage() {
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center text-muted-foreground py-8">
+                  <td colSpan={11} className="text-center text-muted-foreground py-8">
                     No self-service orders yet.
                   </td>
                 </tr>
@@ -463,7 +729,7 @@ export default function StaffSelfOrdersPage() {
         <p className="text-xs text-muted-foreground px-4 pb-4">
           Open the live board:{" "}
           <Link href={`/book/order/${hotelId}/screen`} target="_blank" rel="noopener noreferrer" className="underline">
-            without key
+            kitchen (no key)
           </Link>
           {boardKeyEcho || boardSecretDraft.trim() ? (
             <>
@@ -475,8 +741,27 @@ export default function StaffSelfOrdersPage() {
                 rel="noopener noreferrer"
                 className="underline"
               >
-                with current key
+                kitchen (with key)
               </Link>
+            </>
+          ) : null}
+          {" · "}
+          <Link href={`/book/order/${hotelId}/pickup`} target="_blank" rel="noopener noreferrer" className="underline">
+            pickup board
+          </Link>
+          {boardKeyEcho || boardSecretDraft.trim() ? (
+            <>
+              {" "}
+              (
+              <Link
+                href={`/book/order/${hotelId}/pickup?key=${encodeURIComponent((boardKeyEcho ?? boardSecretDraft).trim())}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                with key
+              </Link>
+              )
             </>
           ) : null}
         </p>

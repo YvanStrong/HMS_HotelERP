@@ -62,6 +62,33 @@ public class SelfServiceOrder {
     @Column(name = "customer_note", length = 280)
     private String customerNote;
 
+    /** First name / call-out label for counter and KDS (optional). */
+    @Column(name = "pickup_display_name", length = 64)
+    private String pickupDisplayName;
+
+    /** Table, seat, or area label (optional; e.g. from QR ?table=). */
+    @Column(name = "pickup_location", length = 48)
+    private String pickupLocation;
+
+    /** E.164-ish phone for SMS when order becomes READY (optional). */
+    @Column(name = "sms_notify_phone", length = 24)
+    private String smsNotifyPhone;
+
+    @Column(name = "sms_consent_version", length = 16)
+    private String smsConsentVersion;
+
+    @Column(name = "sms_consent_at")
+    private Instant smsConsentAt;
+
+    @Column(name = "last_notify_at")
+    private Instant lastNotifyAt;
+
+    @Column(name = "last_notify_status", length = 32)
+    private String lastNotifyStatus;
+
+    @Column(name = "last_notify_detail", length = 512)
+    private String lastNotifyDetail;
+
     @Column(name = "total_amount", nullable = false, precision = 14, scale = 2)
     private BigDecimal totalAmount = BigDecimal.ZERO;
 

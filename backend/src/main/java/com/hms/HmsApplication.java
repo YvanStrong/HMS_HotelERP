@@ -6,6 +6,7 @@ import com.hms.config.HmsStripeProperties;
 import com.hms.config.FrontendUrlProperties;
 import com.hms.config.JwtProperties;
 import com.hms.config.SetupProperties;
+import com.hms.config.SelfOrderNotifyProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -21,7 +22,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
     FrontendUrlProperties.class,
     HmsMultitenancyProperties.class,
     HmsStripeProperties.class,
-    HmsPublicUrlProperties.class
+    HmsPublicUrlProperties.class,
+    SelfOrderNotifyProperties.class
 })
 public class HmsApplication {
 

@@ -59,6 +59,10 @@ public class DepotProduct {
     @Column(name = "stock_qty", nullable = false, precision = 14, scale = 3)
     private BigDecimal stockQty = BigDecimal.ZERO;
 
+    @Version
+    @Column(name = "row_version", nullable = false)
+    private Integer rowVersion = 0;
+
     @Column(name = "stock_type", nullable = false, length = 16)
     private String stockType = "STOCK";
 

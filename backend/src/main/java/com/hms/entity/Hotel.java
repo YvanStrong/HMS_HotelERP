@@ -93,6 +93,21 @@ public class Hotel {
     @Column(name = "order_board_secret", length = 128)
     private String orderBoardSecret;
 
+    /**
+     * When true, {@code /self-order/pickup-board} returns cards without {@code pickupDisplayName}. Kitchen board API is
+     * unaffected.
+     */
+    @Column(name = "pickup_board_hide_guest_names", nullable = false)
+    private boolean pickupBoardHideGuestNames = false;
+
+    /** When false, SMS READY alerts are skipped for this hotel even if Twilio is globally configured. */
+    @Column(name = "self_order_sms_enabled", nullable = false)
+    private boolean selfOrderSmsEnabled = true;
+
+    /** When false, Web Push READY alerts are skipped for this hotel even if VAPID is globally configured. */
+    @Column(name = "self_order_push_enabled", nullable = false)
+    private boolean selfOrderPushEnabled = true;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

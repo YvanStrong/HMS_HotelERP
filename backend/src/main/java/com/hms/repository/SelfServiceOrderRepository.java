@@ -99,4 +99,18 @@ public interface SelfServiceOrderRepository extends JpaRepository<SelfServiceOrd
             @Param("hotelId") UUID hotelId,
             @Param("activeStatuses") Collection<SelfOrderStatus> activeStatuses,
             Pageable pageable);
+
+    @Query(
+            """
+            select distinct o from SelfServiceOrder o
+            join fetch o.depot d
+            left join fetch o.lines l
+            left join fetch l.product p
+            where o.hotel.id = :hotelId and o.status = :ready and o.paymentStatus = :paid
+            order by o.updatedAt desc
+            """)
+    List<SelfServiceOrder> findForPickupBoard(
+            @Param("hotelId") UUID hotelId,
+            @Param("ready") SelfOrderStatus ready,
+            @Param("paid") SelfOrderPaymentStatus paid);
 }

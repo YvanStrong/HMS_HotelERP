@@ -307,7 +307,9 @@
   }
 
   /* Form styles */
-  input, select, textarea {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
     @apply w-full px-4 py-2.5 rounded-lg border border-input bg-background text-sm
            focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary/30
            placeholder:text-muted-foreground/60 transition-all;
@@ -317,8 +319,25 @@
     @apply w-full;
   }
 
+  input[type="checkbox"],
+  input[type="radio"] {
+    @apply h-5 w-5 shrink-0 cursor-pointer rounded border-input bg-background text-primary
+           accent-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background;
+    width: 1.25rem;
+    min-width: 1.25rem;
+    max-width: 1.25rem;
+    padding: 0;
+    min-height: 1.25rem;
+  }
+
   label {
     @apply block text-sm font-medium text-foreground mb-1.5;
+  }
+
+  /* Row layouts that include a checkbox/radio — avoid global “block label” breaking alignment */
+  label:has(> input[type="checkbox"]),
+  label:has(> input[type="radio"]) {
+    @apply mb-0 font-normal;
   }
 
   /* Table styles */

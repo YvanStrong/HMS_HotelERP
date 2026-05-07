@@ -4,6 +4,11 @@ export function trackStorageKey(hotelId: string) {
   return `hms_self_order_track_${hotelId}`;
 }
 
+/** All track tokens from one checkout (multi-outlet). JSON string array in sessionStorage. */
+export function trackBundleStorageKey(hotelId: string) {
+  return `hms_self_order_track_bundle_${hotelId}`;
+}
+
 export function menuItemMatchesService(menuName: string | undefined, st: SelfOrderServiceType): boolean {
   const raw = (menuName ?? "").toUpperCase().replace(/\s+/g, "_");
   const dine = raw.includes("DINE_IN") || raw.includes("DINEIN");
@@ -28,6 +33,16 @@ export function formatRevenueShort(currency: string, total: number): string {
   if (total >= 1_000_000) return `${(total / 1_000_000).toFixed(1)}M`;
   if (total >= 1000) return `${(total / 1000).toFixed(1)}k`;
   return formatMoney(currency, total);
+}
+
+/** VAPID public key (base64url) → `Uint8Array` for `PushManager.subscribe`. */
+export function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
 }
 
 export function formatTime(iso: string) {

@@ -10,6 +10,10 @@ type SelfOrderGuestMeta = {
   currency: string;
   hotelName: string;
   boardKeyConfigured: boolean;
+  /** False when hotel disables SMS on READY for guests. */
+  selfOrderSmsEnabled: boolean;
+  /** False when hotel disables Web Push subscribe for guests. */
+  selfOrderPushEnabled: boolean;
   depots: { id: string; name: string }[];
   items: PublicMenuItem[];
   reload: () => void;
@@ -23,6 +27,8 @@ export function SelfOrderGuestMetaProvider({ hotelId, children }: { hotelId: str
   const [currency, setCurrency] = useState("USD");
   const [hotelName, setHotelName] = useState("");
   const [boardKeyConfigured, setBoardKeyConfigured] = useState(false);
+  const [selfOrderSmsEnabled, setSelfOrderSmsEnabled] = useState(true);
+  const [selfOrderPushEnabled, setSelfOrderPushEnabled] = useState(true);
   const [depots, setDepots] = useState<{ id: string; name: string }[]>([]);
   const [items, setItems] = useState<PublicMenuItem[]>([]);
   const [tick, setTick] = useState(0);
@@ -38,6 +44,8 @@ export function SelfOrderGuestMetaProvider({ hotelId, children }: { hotelId: str
         setCurrency(m.currency || "USD");
         setHotelName(m.hotelName?.trim() || "");
         setBoardKeyConfigured(Boolean(m.orderBoardKeyConfigured));
+        setSelfOrderSmsEnabled(m.selfOrderSmsEnabled !== false);
+        setSelfOrderPushEnabled(m.selfOrderPushEnabled !== false);
         setDepots(m.depots ?? []);
         setItems(m.items ?? []);
       } catch (e) {
@@ -60,11 +68,24 @@ export function SelfOrderGuestMetaProvider({ hotelId, children }: { hotelId: str
         currency,
         hotelName,
         boardKeyConfigured,
+        selfOrderSmsEnabled,
+        selfOrderPushEnabled,
         depots,
         items,
         reload: () => setTick((x) => x + 1),
       }) satisfies SelfOrderGuestMeta,
-    [hotelId, loading, error, currency, hotelName, boardKeyConfigured, depots, items],
+    [
+      hotelId,
+      loading,
+      error,
+      currency,
+      hotelName,
+      boardKeyConfigured,
+      selfOrderSmsEnabled,
+      selfOrderPushEnabled,
+      depots,
+      items,
+    ],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

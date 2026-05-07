@@ -126,9 +126,26 @@ export function KitchenBoardPanel({
                   <div className={`w-1.5 sm:w-2 shrink-0 ${b.bar}`} aria-hidden />
                   <div className="flex-1 p-3 sm:p-4 flex flex-col gap-2 min-w-0">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-[11px] sm:text-xs font-medium uppercase tracking-wider text-zinc-500 truncate">
-                        Order · #{o.displayCode}
-                      </p>
+                      <div className="min-w-0">
+                        {(o.pickupDisplayName ?? "").trim() ? (
+                          <>
+                            <p className="text-base sm:text-lg font-bold text-white truncate">
+                              Order for {(o.pickupDisplayName ?? "").trim()}
+                            </p>
+                            <p className="text-[11px] sm:text-xs font-mono text-zinc-400 mt-0.5">#{o.displayCode}</p>
+                          </>
+                        ) : (
+                          <p className="text-[11px] sm:text-xs font-medium uppercase tracking-wider text-zinc-500 truncate">
+                            Order · #{o.displayCode}
+                          </p>
+                        )}
+                        {(o.pickupLocation ?? "").trim() ? (
+                          <p className="text-[11px] text-amber-200/90 mt-1 truncate">
+                            {o.serviceType === "DINE_IN" ? "Table / seat: " : "Location: "}
+                            {(o.pickupLocation ?? "").trim()}
+                          </p>
+                        ) : null}
+                      </div>
                       <span className="text-[10px] font-mono tabular-nums text-zinc-500 shrink-0">
                         {formatElapsed(o.createdAt, nowMs)}
                       </span>

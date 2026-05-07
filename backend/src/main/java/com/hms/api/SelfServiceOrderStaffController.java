@@ -42,6 +42,15 @@ public class SelfServiceOrderStaffController {
         return selfOrderService.getSelfOrderSettings(hotelId, hotelHeader);
     }
 
+    /** Operational counts from {@code self_order_events} for the hotel’s current local day (midnight boundary in hotel timezone). */
+    @GetMapping("/health")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_RECEPTIONIST')")
+    public SelfOrderDtos.SelfOrderHealthSnapshot health(
+            @PathVariable UUID hotelId, @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return selfOrderService.selfOrderHealth(hotelId, hotelHeader);
+    }
+
     @PutMapping("/settings")
     @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER')")
     public SelfOrderDtos.StaffSelfOrderSettings putSettings(

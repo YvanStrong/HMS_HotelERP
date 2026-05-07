@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState, Suspense } from "react";
 import { OrderStatusTimeline } from "@/components/self-order/OrderStatusTimeline";
+import { SelfOrderPickupCallout } from "@/components/self-order/SelfOrderPickupCallout";
+import { SelfOrderWebPushOptIn } from "@/components/self-order/SelfOrderWebPushOptIn";
 import { fetchSelfOrderTrack, type TrackOrderResponse } from "@/lib/selfOrderApi";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -16,8 +18,10 @@ const STATUS_LABEL: Record<string, string> = {
 
 function TrackInner() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const hotelId = String(params.hotelId);
   const token = String(params.token);
+  const tableFromQr = searchParams.get("table")?.trim() || "";
 
   const [data, setData] = useState<TrackOrderResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +67,9 @@ function TrackInner() {
 
       {data && (
         <div className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-900/50 p-5 sm:p-8 shadow-sm space-y-6">
+          <SelfOrderPickupCallout data={data} tableFromQr={tableFromQr} />
+          <SelfOrderWebPushOptIn hotelId={hotelId} trackToken={token} orderStatus={data.status} />
+
           <div className="text-center">
             <p className="text-xs uppercase tracking-wider text-zinc-500">Order code</p>
             <p className="text-4xl sm:text-5xl font-black tracking-widest text-emerald-400 mt-1 break-all">{data.displayCode}</p>

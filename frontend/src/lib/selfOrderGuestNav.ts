@@ -3,12 +3,12 @@
  * Add entries here only — UI (sidebar) maps over this list.
  */
 
-export type SelfOrderGuestNavId = "menu" | "status" | "kitchen";
+export type SelfOrderGuestNavId = "menu" | "status" | "kitchen" | "pickup";
 
 export type SelfOrderGuestNavDef = {
   id: SelfOrderGuestNavId;
   /** Path segment under /book/order/[hotelId]/ — empty = menu root */
-  segment: "" | "status" | "kitchen";
+  segment: "" | "status" | "kitchen" | "pickup";
   label: string;
 };
 
@@ -16,6 +16,7 @@ export type SelfOrderGuestNavDef = {
 export const SELF_ORDER_GUEST_NAV: readonly SelfOrderGuestNavDef[] = [
   { id: "menu", segment: "", label: "Customer menu" },
   { id: "status", segment: "status", label: "Order status" },
+  { id: "pickup", segment: "pickup", label: "Pickup board" },
   { id: "kitchen", segment: "kitchen", label: "Kitchen display" },
 ] as const;
 
