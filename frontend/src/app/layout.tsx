@@ -24,6 +24,7 @@ export const metadata: Metadata = {
     locale: "en_US",
     siteName: "HMS Hotel Management System",
   },
+  manifest: "/manifest.json",
 };
 
 export const viewport: Viewport = {

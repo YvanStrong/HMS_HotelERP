@@ -51,6 +51,7 @@ const NAV_SECTIONS: NavSection[] = [
         label: "My HK tasks",
         icon: "M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",
       },
+      { key: "serviceRequests", segment: "service-requests", label: "Service Requests", icon: "M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" },
     ]
   },
   {
@@ -66,12 +67,16 @@ const NAV_SECTIONS: NavSection[] = [
       },
       { key: "inventory", segment: "inventory", label: "Inventory", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
       { key: "fb", segment: "fb", label: "F&B", icon: "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" },
+      { key: "pricing", segment: "pricing", label: "Pricing", icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
+      { key: "channels", segment: "channels", label: "Channels", icon: "M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" },
     ]
   },
   {
     title: "Administration",
     items: [
       { key: "staff", segment: "staff", label: "Staff", icon: "M17 20h5V9H2v11h5m10 0v-7.5A2.5 2.5 0 0014.5 10h-5A2.5 2.5 0 007 12.5V20m10 0H7m6-13a3 3 0 110-6 3 3 0 010 6z" },
+      { key: "iot", segment: "iot", label: "IoT & Smart Room", icon: "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0114 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" },
+      { key: "auditLogs", segment: "audit-logs", label: "Audit Logs", icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
       { key: "settings", segment: "settings", label: "Settings", icon: "M10.325 4.317a1 1 0 011.35-.936l1.07.425a1 1 0 001.07-.188l.829-.83a1 1 0 011.414 0l1.414 1.414a1 1 0 010 1.414l-.83.829a1 1 0 00-.188 1.07l.425 1.07a1 1 0 01-.936 1.35h-1.173a1 1 0 00-.948.684l-.363 1.09a1 1 0 01-.95.684h-2a1 1 0 01-.95-.684l-.363-1.09a1 1 0 00-.948-.684H6.055a1 1 0 01-.936-1.35l.425-1.07a1 1 0 00-.188-1.07l-.83-.829a1 1 0 010-1.414L5.94 2.788a1 1 0 011.414 0l.829.83a1 1 0 001.07.188l1.07-.425zM12 15a3 3 0 100-6 3 3 0 000 6z" },
     ],
   },

@@ -87,6 +87,7 @@ public class ReservationService {
     private final InvoiceService invoiceService;
     private final HmsPublicUrlProperties publicUrlProperties;
     private final SecurityAuditService securityAuditService;
+    private final DynamicPricingService dynamicPricingService;
 
     public ReservationService(
             HotelRepository hotelRepository,
@@ -110,7 +111,8 @@ public class ReservationService {
             InvoicePdfService invoicePdfService,
             InvoiceService invoiceService,
             HmsPublicUrlProperties publicUrlProperties,
-            SecurityAuditService securityAuditService) {
+            SecurityAuditService securityAuditService,
+            DynamicPricingService dynamicPricingService) {
         this.hotelRepository = hotelRepository;
         this.roomRepository = roomRepository;
         this.roomTypeRepository = roomTypeRepository;
@@ -133,6 +135,7 @@ public class ReservationService {
         this.invoiceService = invoiceService;
         this.publicUrlProperties = publicUrlProperties;
         this.securityAuditService = securityAuditService;
+        this.dynamicPricingService = dynamicPricingService;
     }
 
     @Transactional(readOnly = true)
@@ -691,8 +694,14 @@ public class ReservationService {
         int n = 0;
         for (LocalDate d = checkIn; d.isBefore(checkOut); d = d.plusDays(1)) {
             n++;
-            BigDecimal night =
-                    roomTypeNightlyRateRepository.findByRoomType_IdAndRateDate(roomTypeId, d).map(RoomTypeNightlyRate::getNightlyRate).orElse(base);
+            // Check manual override first
+            Optional<BigDecimal> override = roomTypeNightlyRateRepository
+                    .findByRoomType_IdAndRateDate(roomTypeId, d)
+                    .map(RoomTypeNightlyRate::getNightlyRate);
+            
+            BigDecimal night = override.orElseGet(() -> 
+                dynamicPricingService.calculateDynamicRate(hotelId, roomTypeId, d, base));
+                
             sum = sum.add(night);
         }
         if (n == 0) {

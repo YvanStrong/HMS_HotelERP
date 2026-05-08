@@ -25,6 +25,11 @@ export type HotelNavKey =
   | "guestKitchenScreen"
   | "inventory"
   | "fb"
+  | "pricing"
+  | "iot"
+  | "channels"
+  | "auditLogs"
+  | "serviceRequests"
   | "settings";
 
 const REALTIME_DASHBOARD_ROLES = [
@@ -200,6 +205,16 @@ export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): bool
       return canInventory(user);
     case "fb":
       return canFb(user);
+    case "pricing":
+      return canReports(user);
+    case "iot":
+      return canReports(user);
+    case "channels":
+      return canReports(user);
+    case "auditLogs":
+      return canReports(user);
+    case "serviceRequests":
+      return canRooms(user);
     case "settings":
       return canSettings(user);
     default:
@@ -227,6 +242,11 @@ export function navHint(key: HotelNavKey): string {
     guestKitchenScreen: "Full-screen kitchen display for this hotel (opens in a new tab); add ?key= if board secret is set.",
     inventory: "List items: finance, F&B, housekeeping; full write: admin/manager/finance.",
     fb: "Permission: fb:* or F&B staff / manager / admin.",
+    pricing: "Dynamic pricing rules, occupancy multipliers, and promotional discounts.",
+    iot: "Smart room device management and energy consumption dashboard.",
+    channels: "OTA channel manager for Booking.com, Expedia, and iCal sync.",
+    auditLogs: "Durable, queryable hotel-level security and operation audit trail.",
+    serviceRequests: "Guest in-stay requests for housekeeping, room service, or maintenance.",
     settings: "Hotel settings: hotel admin or manager.",
   };
   return hints[key];

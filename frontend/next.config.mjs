@@ -39,6 +39,17 @@ const nextConfig = {
         hostname: "*.cloudfront.net",
         pathname: "/**",
       },
+      // Google image CDNs (thumbnails, gstatic, etc.)
+      {
+        protocol: "https",
+        hostname: "*.gstatic.com",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "*.googleapis.com",
+        pathname: "/**",
+      },
     ],
   },
 };

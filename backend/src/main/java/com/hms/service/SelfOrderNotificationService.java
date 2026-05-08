@@ -12,9 +12,11 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.security.Security;
 import java.util.UUID;
 import nl.martijndwars.webpush.Notification;
 import nl.martijndwars.webpush.PushService;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -33,6 +35,12 @@ import org.springframework.web.client.RestTemplate;
 public class SelfOrderNotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(SelfOrderNotificationService.class);
+
+    static {
+        if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
+            Security.addProvider(new BouncyCastleProvider());
+        }
+    }
 
     private final SelfOrderNotifyProperties notifyProperties;
     private final SelfOrderPushSubscriptionRepository pushSubscriptionRepository;
