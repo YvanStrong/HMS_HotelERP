@@ -277,6 +277,13 @@ export default function SelfOrderGuestMenuPage() {
                 <span className="text-[10px] sm:text-xs text-zinc-500">Pickup</span>
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => router.push(buildGuestSelfOrderHref(hotelId, "services", query))}
+              className="w-full mt-2 rounded-lg border border-zinc-700 bg-zinc-800/40 py-2.5 text-xs font-medium text-emerald-400 hover:bg-zinc-800 transition-colors"
+            >
+              🛎️ Need Towels, Cleaning or Support? <span className="underline">Guest Services</span>
+            </button>
           </div>
 
           {!serviceType && (

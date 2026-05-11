@@ -39,6 +39,8 @@ export default function PricingPage() {
   const [baseRate, setBaseRate] = useState(100);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newRule, setNewRule] = useState({ name: "", ruleType: "DAY_OF_WEEK", multiplier: 1.1, priority: 0 });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function loadData() {
     setLoading(true);
