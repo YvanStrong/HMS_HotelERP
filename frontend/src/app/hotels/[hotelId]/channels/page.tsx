@@ -33,6 +33,21 @@ export default function ChannelsPage() {
     }
   }
 
+  async function connectChannel(channelCode: string) {
+    setLoading(true);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/channels`, {
+        method: "POST",
+        body: JSON.stringify({ channelCode, status: "CONNECTED" }),
+      });
+      await loadData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Connection failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function triggerSync(connId: string) {
     setSyncingId(connId);
     try {
@@ -48,6 +63,8 @@ export default function ChannelsPage() {
   useEffect(() => {
     if (getToken()) loadData();
   }, [hotelId]);
+
+  const bookingConn = connections.find(c => c.channelCode === "BOOKING_COM");
 
   return (
     <div className="space-y-6">
@@ -74,30 +91,44 @@ export default function ChannelsPage() {
                 <span className="text-[10px] text-muted-foreground">XML/API Integration</span>
               </div>
             </div>
-            <div className={`w-2 h-2 rounded-full ${connections.find(c => c.channelCode === "BOOKING_COM")?.status === "CONNECTED" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-muted"}`} />
+            <div className={`w-2 h-2 rounded-full ${bookingConn?.status === "CONNECTED" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-muted"}`} />
           </div>
           <div className="space-y-2 mb-6">
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">Status</span>
-              <span className="font-medium">{connections.find(c => c.channelCode === "BOOKING_COM")?.status || "NOT CONFIGURED"}</span>
+              <span className="font-medium">{bookingConn?.status || "NOT CONFIGURED"}</span>
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">Last Sync</span>
-              <span className="font-medium">{connections.find(c => c.channelCode === "BOOKING_COM")?.lastSyncAt ? new Date(connections.find(c => c.channelCode === "BOOKING_COM")!.lastSyncAt!).toLocaleTimeString() : "Never"}</span>
+              <span className="font-medium">{bookingConn?.lastSyncAt ? new Date(bookingConn.lastSyncAt).toLocaleTimeString() : "Never"}</span>
             </div>
           </div>
           <div className="flex gap-2">
-            <button 
-              className="flex-1 hms-btn-solid hms-btn-sm" 
-              disabled={syncingId !== null}
-              onClick={() => {
-                const conn = connections.find(c => c.channelCode === "BOOKING_COM");
-                if (conn) triggerSync(conn.id);
-              }}
-            >
-              {syncingId && connections.find(c => c.id === syncingId)?.channelCode === "BOOKING_COM" ? "Syncing..." : "Sync Now"}
-            </button>
-            <button className="hms-btn-outline hms-btn-sm px-2">Settings</button>
+            {!bookingConn ? (
+              <button 
+                className="w-full hms-btn-solid hms-btn-sm" 
+                onClick={() => connectChannel("BOOKING_COM")}
+                disabled={loading}
+              >
+                Connect Booking.com
+              </button>
+            ) : (
+              <>
+                <button 
+                  className="flex-1 hms-btn-solid hms-btn-sm" 
+                  disabled={syncingId !== null}
+                  onClick={() => triggerSync(bookingConn.id)}
+                >
+                  {syncingId === bookingConn.id ? "Syncing..." : "Sync Now"}
+                </button>
+                <button 
+                  className="hms-btn-outline hms-btn-sm px-2"
+                  onClick={() => alert("Channel Settings (XML/API) configuration coming soon.")}
+                >
+                  Settings
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -129,9 +160,17 @@ export default function ChannelsPage() {
             </div>
           </div>
           <div className="p-3 bg-muted/30 rounded text-[10px] font-mono break-all mb-4 border border-border/50">
-            https://hms-api.ishyiga.com/api/v1/public/hotels/{hotelId}/ical/feed
+            https://hms-api-global.com/api/v1/public/hotels/{hotelId}/ical/feed
           </div>
-          <button className="w-full hms-btn-outline hms-btn-sm">Copy Feed URL</button>
+          <button 
+            className="w-full hms-btn-outline hms-btn-sm"
+            onClick={() => {
+              navigator.clipboard.writeText(`https://hms-api-global.com/api/v1/public/hotels/${hotelId}/ical/feed`);
+              alert("URL copied to clipboard!");
+            }}
+          >
+            Copy Feed URL
+          </button>
         </div>
       </div>
 

@@ -17,21 +17,31 @@ public class ServiceRequest {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "hotel_id", nullable = false)
     private Hotel hotel;
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "reservation_id")
     private Reservation reservation;
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "guest_id")
     private Guest guest;
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "room_id")
     private Room room;
+
+    @Column(name = "room_number", length = 20)
+    private String roomNumber;
+
+    @Column(name = "booking_code", length = 50)
+    private String bookingCode;
 
     /** EXTRA_TOWELS, ROOM_SERVICE, MAINTENANCE, WAKE_UP, LATE_CHECKOUT, OTHER */
     @Column(name = "request_type", nullable = false, length = 30)
@@ -44,6 +54,7 @@ public class ServiceRequest {
     @Column(nullable = false, length = 20)
     private String status = "PENDING";
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assigned_to")
     private AppUser assignedTo;

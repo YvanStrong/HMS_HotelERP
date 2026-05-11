@@ -17,6 +17,7 @@ public class ChannelSyncLog {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "connection_id", nullable = false)
     private ChannelConnection connection;
