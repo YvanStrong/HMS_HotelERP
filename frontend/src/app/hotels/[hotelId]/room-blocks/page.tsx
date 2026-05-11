@@ -170,7 +170,7 @@ export default function RoomBlocksPage() {
     if (type === "COURTESY_HOLD") return "bg-sky-100 text-sky-800";
     if (type === "VIP_PRE_ASSIGN") return "bg-violet-100 text-violet-800";
     if (type === "CORPORATE_BLOCK") return "bg-amber-100 text-amber-900";
-    return "bg-slate-100 text-slate-800";
+    return "bg-muted text-foreground";
   };
 
   return (
@@ -256,7 +256,7 @@ export default function RoomBlocksPage() {
               </div>
             </div>
             <div style={{ marginTop: "1rem", display: "flex", justifyContent: "flex-end" }}>
-              <button type="submit">Create block</button>
+              <button type="submit" className="hms-btn-solid">Create block</button>
             </div>
           </form>
         </div>

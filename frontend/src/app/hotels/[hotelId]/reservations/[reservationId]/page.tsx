@@ -197,6 +197,13 @@ export default function StaffReservationDetailPage() {
   const [overrideBal, setOverrideBal] = useState(false);
   const [overrideBalReason, setOverrideBalReason] = useState("");
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [prefsOpen, setPrefsOpen] = useState(false);
+  const [prefsLoading, setPrefsLoading] = useState(false);
+  const [prefsResult, setPrefsResult] = useState<{
+    appliedPreferences?: Record<string, unknown>;
+    alerts?: Array<Record<string, unknown>>;
+    nextSteps?: string[];
+  } | null>(null);
   /** When true, completing Record payment refreshes folio and syncs amount into the checkout form. */
   const [paymentOpenedFromCheckout, setPaymentOpenedFromCheckout] = useState(false);
   const [chargeOpen, setChargeOpen] = useState(false);
@@ -453,6 +460,28 @@ export default function StaffReservationDetailPage() {
       await load();
     } catch (e) {
       setBanner({ kind: "err", text: e instanceof Error ? e.message : "Cancel failed" });
+    }
+  }
+
+  async function applyGuestPreferences() {
+    setBanner(null);
+    setPrefsLoading(true);
+    setPrefsResult(null);
+    try {
+      const result = await apiFetch<{
+        appliedPreferences?: Record<string, unknown>;
+        alerts?: Array<Record<string, unknown>>;
+        nextSteps?: string[];
+      }>(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/apply-guest-preferences`, {
+        method: "POST",
+        body: JSON.stringify({ applyPreferences: { roomAssignment: true, amenities: true, services: true } }),
+      });
+      setPrefsResult(result);
+      setPrefsOpen(true);
+    } catch (e) {
+      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Failed to apply preferences" });
+    } finally {
+      setPrefsLoading(false);
     }
   }
 
@@ -995,6 +1024,16 @@ export default function StaffReservationDetailPage() {
               {st === "CONFIRMED" && (
                 <button type="button" className="secondary" onClick={() => void doCancel()}>
                   Cancel reservation
+                </button>
+              )}
+              {(st === "CONFIRMED" || st === "CHECKED_IN") && (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={prefsLoading}
+                  onClick={() => void applyGuestPreferences()}
+                >
+                  {prefsLoading ? "Applying…" : "Apply Guest Preferences"}
                 </button>
               )}
             </div>
@@ -1657,6 +1696,45 @@ export default function StaffReservationDetailPage() {
               >
                 Confirm check-out
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {prefsOpen && prefsResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold">Guest Preferences Applied</h3>
+            {prefsResult.alerts && prefsResult.alerts.length > 0 && (
+              <div className="space-y-2">
+                {prefsResult.alerts.map((a, i) => (
+                  <div
+                    key={i}
+                    className={`rounded-lg px-3 py-2 text-sm ${String(a.severity) === "HIGH" ? "bg-red-50 border border-red-200 text-red-800" : "bg-amber-50 border border-amber-200 text-amber-800"}`}
+                  >
+                    <strong>{String(a.type ?? "Alert")}:</strong> {String(a.message ?? JSON.stringify(a))}
+                  </div>
+                ))}
+              </div>
+            )}
+            {prefsResult.appliedPreferences && Object.keys(prefsResult.appliedPreferences).length > 0 && (
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm space-y-1">
+                <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground mb-2">Applied</p>
+                {Object.entries(prefsResult.appliedPreferences).map(([k, v]) => (
+                  <p key={k}>
+                    <span className="font-medium">{k.replace(/([A-Z])/g, " $1").trim()}:</span>{" "}
+                    {typeof v === "object" ? JSON.stringify(v) : String(v)}
+                  </p>
+                ))}
+              </div>
+            )}
+            {prefsResult.nextSteps && prefsResult.nextSteps.length > 0 && (
+              <ul className="text-sm list-disc pl-5 space-y-1 text-muted-foreground">
+                {prefsResult.nextSteps.map((s, i) => <li key={i}>{s}</li>)}
+              </ul>
+            )}
+            <div className="flex justify-end">
+              <button type="button" className="hms-btn-solid" onClick={() => setPrefsOpen(false)}>Done</button>
             </div>
           </div>
         </div>

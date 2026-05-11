@@ -2,9 +2,12 @@ package com.hms.api;
 
 import com.hms.api.dto.InventoryDtos;
 import com.hms.api.dto.InventoryDepotDtos;
+import com.hms.service.InvExtService;
 import com.hms.service.InventoryDepotService;
 import com.hms.service.InventoryService;
 import jakarta.validation.Valid;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,10 +28,15 @@ public class InventoryController {
 
     private final InventoryService inventoryService;
     private final InventoryDepotService inventoryDepotService;
+    private final InvExtService invExtService;
 
-    public InventoryController(InventoryService inventoryService, InventoryDepotService inventoryDepotService) {
+    public InventoryController(
+            InventoryService inventoryService,
+            InventoryDepotService inventoryDepotService,
+            InvExtService invExtService) {
         this.inventoryService = inventoryService;
         this.inventoryDepotService = inventoryDepotService;
+        this.invExtService = invExtService;
     }
 
     @PostMapping("/suppliers")
@@ -89,6 +97,37 @@ public class InventoryController {
             @RequestParam(required = false) Boolean lowStock,
             @RequestParam(required = false) String search) {
         return inventoryService.listItems(hotelId, hotelHeader, category, lowStock, search);
+    }
+
+    @GetMapping("/items/lookup")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_RECEPTIONIST')")
+    public InventoryDtos.InventoryItemRow lookupItem(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) String sku,
+            @RequestParam(required = false) String barcode) {
+        return inventoryService.lookupProduct(hotelId, hotelHeader, sku, barcode);
+    }
+
+    @GetMapping("/items/{itemId}")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_HOUSEKEEPING')")
+    public InventoryDtos.InventoryItemRow getItem(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID itemId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return inventoryService.getItem(hotelId, hotelHeader, itemId);
+    }
+
+    @PatchMapping("/items/{itemId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public InventoryDtos.InventoryItemRow patchItem(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID itemId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestBody InventoryDtos.InventoryItemPatchRequest body) {
+        return inventoryService.patchItem(hotelId, hotelHeader, itemId, body);
     }
 
     @PostMapping("/items/{itemId}/consume")
@@ -218,5 +257,309 @@ public class InventoryController {
             @RequestParam("saleId") UUID saleId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         return inventoryDepotService.getSaleDetail(hotelId, hotelHeader, saleId);
+    }
+
+    // ── Inventory extensions (ERP): suppliers detail, PO list, stock, warehouses, sales invoices, reports ──
+
+    @GetMapping("/suppliers/detail")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public List<InventoryDtos.SupplierDetail> listSuppliersDetail(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.listSuppliersDetail(hotelId, hotelHeader);
+    }
+
+    @GetMapping("/suppliers/{supplierId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public InventoryDtos.SupplierDetail getSupplier(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID supplierId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.getSupplier(hotelId, hotelHeader, supplierId);
+    }
+
+    @PatchMapping("/suppliers/{supplierId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public InventoryDtos.SupplierDetail updateSupplier(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID supplierId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestBody InventoryDtos.SupplierUpdateRequest body) {
+        return invExtService.updateSupplier(hotelId, hotelHeader, supplierId, body);
+    }
+
+    @GetMapping("/purchase-orders")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public List<InventoryDtos.PurchaseOrderSummary> listPurchaseOrders(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.listPurchaseOrders(hotelId, hotelHeader);
+    }
+
+    @PostMapping("/purchase-orders/{poId}/returns")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public ResponseEntity<Void> purchaseReturn(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID poId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody InventoryDtos.PurchaseReturnRequest body) {
+        invExtService.recordPurchaseReturn(hotelId, hotelHeader, poId, body);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/stock/adjust")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public InventoryDtos.StockAdjustResponse adjustStock(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody InventoryDtos.StockAdjustRequest body) {
+        return invExtService.adjustStock(hotelId, hotelHeader, body);
+    }
+
+    @GetMapping("/items/{itemId}/movements")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF')")
+    public List<InventoryDtos.MovementItem> listItemMovements(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID itemId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.listMovements(hotelId, hotelHeader, itemId);
+    }
+
+    @GetMapping("/movements")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF')")
+    public List<InventoryDtos.MovementItem> listHotelMovements(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(defaultValue = "200") int limit) {
+        return invExtService.listHotelMovements(hotelId, hotelHeader, limit);
+    }
+
+    @GetMapping("/alerts")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF')")
+    public InventoryDtos.StockAlertSummary stockAlerts(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.getAlerts(hotelId, hotelHeader);
+    }
+
+    @GetMapping("/items/{itemId}/barcode")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF')")
+    public InventoryDtos.BarcodeResponse barcodeForItem(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID itemId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.generateBarcode(hotelId, hotelHeader, itemId);
+    }
+
+    @PostMapping("/warehouses")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public InventoryDtos.WarehouseItem createWarehouse(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody InventoryDtos.WarehouseCreateRequest body) {
+        return invExtService.createWarehouse(hotelId, hotelHeader, body);
+    }
+
+    @GetMapping("/warehouses")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF')")
+    public List<InventoryDtos.WarehouseItem> listWarehouses(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.listWarehouses(hotelId, hotelHeader);
+    }
+
+    @PostMapping("/customers")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public InventoryDtos.CustomerItem createCustomer(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody InventoryDtos.CustomerCreateRequest body) {
+        return invExtService.createCustomer(hotelId, hotelHeader, body);
+    }
+
+    @GetMapping("/customers")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_RECEPTIONIST')")
+    public List<InventoryDtos.CustomerItem> listCustomers(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.listCustomers(hotelId, hotelHeader);
+    }
+
+    @PostMapping("/sales-invoices")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_RECEPTIONIST')")
+    public ResponseEntity<InventoryDtos.SalesInvoiceItem> createSalesInvoice(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody InventoryDtos.SalesInvoiceCreateRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(invExtService.createSalesInvoice(hotelId, hotelHeader, body));
+    }
+
+    @PostMapping("/sales-invoices/{invoiceId}/issue")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_RECEPTIONIST')")
+    public InventoryDtos.SalesInvoiceItem issueSalesInvoice(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID invoiceId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.issueInvoice(hotelId, hotelHeader, invoiceId);
+    }
+
+    @PostMapping("/sales-invoices/{invoiceId}/payments")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_RECEPTIONIST')")
+    public InventoryDtos.SalesInvoiceItem recordInvoicePayment(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID invoiceId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody InventoryDtos.SalesPaymentRequest body) {
+        return invExtService.recordPayment(hotelId, hotelHeader, invoiceId, body);
+    }
+
+    @PostMapping("/sales-invoices/{invoiceId}/return-full")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public InventoryDtos.SalesInvoiceItem returnSalesInvoiceFull(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID invoiceId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.returnSalesInvoiceFull(hotelId, hotelHeader, invoiceId);
+    }
+
+    @GetMapping("/sales-invoices")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_RECEPTIONIST')")
+    public List<InventoryDtos.SalesInvoiceSummary> listSalesInvoices(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.listSalesInvoices(hotelId, hotelHeader);
+    }
+
+    @GetMapping("/sales-invoices/{invoiceId}")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_RECEPTIONIST')")
+    public InventoryDtos.SalesInvoiceItem getSalesInvoice(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID invoiceId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.getSalesInvoice(hotelId, hotelHeader, invoiceId);
+    }
+
+    @PostMapping("/stock-transfers")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public ResponseEntity<InventoryDtos.TransferItem> createStockTransfer(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody InventoryDtos.TransferCreateRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(invExtService.createTransfer(hotelId, hotelHeader, body));
+    }
+
+    @PostMapping("/stock-transfers/{transferId}/complete")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public InventoryDtos.TransferItem completeStockTransfer(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID transferId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.completeTransfer(hotelId, hotelHeader, transferId);
+    }
+
+    @GetMapping("/stock-transfers")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF')")
+    public List<InventoryDtos.TransferItem> listStockTransfers(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.listTransfers(hotelId, hotelHeader);
+    }
+
+    @GetMapping("/dashboard")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF')")
+    public InventoryDtos.InvDashboardResponse inventoryDashboard(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.getDashboard(hotelId, hotelHeader);
+    }
+
+    @GetMapping("/reports/sales")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF')")
+    public InventoryDtos.SalesReport salesReport(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) LocalDate from,
+            @RequestParam(required = false) LocalDate to) {
+        return invExtService.getSalesReport(hotelId, hotelHeader, from, to);
+    }
+
+    @GetMapping("/reports/purchases")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF')")
+    public InventoryDtos.PurchaseReport purchaseReport(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) LocalDate from,
+            @RequestParam(required = false) LocalDate to) {
+        return invExtService.getPurchaseReport(hotelId, hotelHeader, from, to);
+    }
+
+    @GetMapping("/reports/stock-value")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF')")
+    public InventoryDtos.StockValueReport stockValueReport(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.getStockValueReport(hotelId, hotelHeader);
+    }
+
+    @GetMapping("/reports/profit")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF')")
+    public InventoryDtos.ProfitReport profitReport(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) LocalDate from,
+            @RequestParam(required = false) LocalDate to) {
+        return invExtService.getProfitReport(hotelId, hotelHeader, from, to);
+    }
+
+    @GetMapping("/reports/expired-products")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF')")
+    public List<InventoryDtos.ExpiredProductLine> expiredProductsReport(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.listExpiredProducts(hotelId, hotelHeader);
+    }
+
+    @GetMapping("/reports/user-activity")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public List<InventoryDtos.UserActivityLine> userActivityReport(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return invExtService.listUserActivity(hotelId, hotelHeader);
+    }
+
+    @GetMapping("/settings/valuation")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF')")
+    public java.util.Map<String, String> valuationSettings(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        invExtService.listWarehouses(hotelId, hotelHeader);
+        return java.util.Map.of(
+                "defaultMethod",
+                "AVERAGE_COST",
+                "supported",
+                "FIFO,AVERAGE_COST",
+                "note",
+                "Per-product valuation is stored on each inventory item.");
     }
 }

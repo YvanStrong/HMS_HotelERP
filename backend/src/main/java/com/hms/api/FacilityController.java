@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -135,5 +136,107 @@ public class FacilityController {
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
             @Valid @RequestBody FacilityDtos.FacilityMaintenanceRequest body) {
         return facilityService.reportMaintenance(hotelId, hotelHeader, facilityId, body);
+    }
+
+    @PutMapping("/maintenances/{maintenanceId}/complete")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_MAINTENANCE')")
+    public FacilityDtos.MaintenanceCompleteResponse completeMaintenance(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID maintenanceId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestBody(required = false) FacilityDtos.MaintenanceCompleteRequest body) {
+        FacilityDtos.MaintenanceCompleteRequest req =
+                body != null ? body : new FacilityDtos.MaintenanceCompleteRequest(null, null, null);
+        return facilityService.completeMaintenance(hotelId, hotelHeader, maintenanceId, req);
+    }
+
+    // ── Water Quality ──────────────────────────────────────────────────────────
+
+    @PostMapping("/{facilityId}/water-quality")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_MAINTENANCE')")
+    public ResponseEntity<FacilityDtos.WaterQualityLogItem> logWaterQuality(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID facilityId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody FacilityDtos.WaterQualityLogRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(facilityService.logWaterQuality(hotelId, hotelHeader, facilityId, body));
+    }
+
+    @GetMapping("/{facilityId}/water-quality")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_MAINTENANCE','ROLE_RECEPTIONIST')")
+    public List<FacilityDtos.WaterQualityLogItem> listWaterQuality(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID facilityId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return facilityService.listWaterQualityLogs(hotelId, hotelHeader, facilityId);
+    }
+
+    // ── Lifeguard Roster ───────────────────────────────────────────────────────
+
+    @PostMapping("/{facilityId}/lifeguards")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER')")
+    public ResponseEntity<FacilityDtos.LifeguardShiftItem> addLifeguardShift(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID facilityId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody FacilityDtos.LifeguardShiftRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(facilityService.createLifeguardShift(hotelId, hotelHeader, facilityId, body));
+    }
+
+    @GetMapping("/{facilityId}/lifeguards")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_MAINTENANCE')")
+    public List<FacilityDtos.LifeguardShiftItem> listLifeguards(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID facilityId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) LocalDate shiftDate) {
+        return facilityService.listLifeguardRoster(hotelId, hotelHeader, facilityId, shiftDate);
+    }
+
+    // ── Incidents ─────────────────────────────────────────────────────────────
+
+    @PostMapping("/{facilityId}/incidents")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_MAINTENANCE')")
+    public ResponseEntity<FacilityDtos.IncidentItem> reportIncident(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID facilityId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody FacilityDtos.IncidentReportRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(facilityService.reportIncident(hotelId, hotelHeader, facilityId, body));
+    }
+
+    @GetMapping("/{facilityId}/incidents")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_MAINTENANCE')")
+    public List<FacilityDtos.IncidentItem> listIncidents(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID facilityId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return facilityService.listIncidents(hotelId, hotelHeader, facilityId);
+    }
+
+    @PutMapping("/incidents/{incidentId}/resolve")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_MAINTENANCE')")
+    public FacilityDtos.IncidentItem resolveIncident(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID incidentId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody FacilityDtos.IncidentResolveRequest body) {
+        return facilityService.resolveIncident(hotelId, hotelHeader, incidentId, body);
+    }
+
+    // ── Revenue ────────────────────────────────────────────────────────────────
+
+    @GetMapping("/{facilityId}/revenue")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public FacilityDtos.FacilityRevenueSummary revenueSummary(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID facilityId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) LocalDate fromDate,
+            @RequestParam(required = false) LocalDate toDate) {
+        return facilityService.getRevenueSummary(hotelId, hotelHeader, facilityId, fromDate, toDate);
     }
 }

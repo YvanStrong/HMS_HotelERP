@@ -73,7 +73,7 @@ function statusTone(status: string): string {
   if (status.includes("BLOCKED") || status.includes("OUT_OF_ORDER") || status.includes("MAINTENANCE")) {
     return "bg-rose-100 text-rose-800";
   }
-  return "bg-slate-100 text-slate-800";
+  return "bg-muted text-foreground";
 }
 
 const DEFAULT_ROOM_IMAGE = "/images/default-room.svg";
@@ -248,10 +248,10 @@ export default function RoomDetailPage() {
           <div className="mt-3 flex flex-wrap gap-2">
             <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusTone(room.status)}`}>{room.status}</span>
             <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusTone(room.cleanliness)}`}>{room.cleanliness}</span>
-            <span className="rounded-full px-3 py-1 text-xs font-semibold bg-slate-100 text-slate-700">
+            <span className="rounded-full px-3 py-1 text-xs font-semibold bg-muted text-muted-foreground">
               {room.roomType.name}
             </span>
-            <span className="rounded-full px-3 py-1 text-xs font-semibold bg-slate-100 text-slate-700">
+            <span className="rounded-full px-3 py-1 text-xs font-semibold bg-muted text-muted-foreground">
               Floor {room.floor ?? "—"}
             </span>
           </div>
@@ -379,7 +379,7 @@ export default function RoomDetailPage() {
                 placeholder="Paste image URL, drop, upload, or Ctrl+V"
               />
               <div style={{ marginTop: "1rem" }}>
-                <button type="submit" disabled={savingPhoto}>
+                <button type="submit" disabled={savingPhoto} className="hms-btn-solid">
                   {savingPhoto ? "Saving..." : "Save photo"}
                 </button>
               </div>
@@ -458,7 +458,7 @@ export default function RoomDetailPage() {
                 </>
               )}
               <div style={{ marginTop: "1rem" }}>
-                <button type="submit">Save DND</button>
+                <button type="submit" className="hms-btn-solid">Save DND</button>
               </div>
             </form>
             <hr style={{ margin: "1rem 0", borderColor: "var(--border)" }} />
@@ -488,7 +488,7 @@ export default function RoomDetailPage() {
                 placeholder="e.g. Deep cleaning completed"
               />
               <div style={{ marginTop: "0.8rem" }}>
-                <button type="submit" disabled={!nextStatus || !statusReason.trim()}>
+                <button type="submit" disabled={!nextStatus || !statusReason.trim()} className="hms-btn-solid">
                   Apply status
                 </button>
               </div>
@@ -560,7 +560,7 @@ export default function RoomDetailPage() {
                   onChange={(e) => setBlockUntilLocal(e.target.value)}
                 />
                 <div style={{ marginTop: "0.8rem" }}>
-                  <button type="submit" disabled={!blockReason.trim() || !blockUntilLocal}>
+                  <button type="submit" disabled={!blockReason.trim() || !blockUntilLocal} className="hms-btn-solid">
                     Create maintenance block
                   </button>
                 </div>

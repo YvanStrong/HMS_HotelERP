@@ -49,7 +49,7 @@ function resolveApiBase(): string {
 export const API_BASE = resolveApiBase();
 
 const HOTEL_UUID_IN_API_PATH =
-  /^\/api\/v1\/hotels\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\//;
+  /^\/api\/v1\/hotels\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:\/|$)/;
 
 /** Backend Swagger UI (same origin as API). */
 export function swaggerUiUrl(): string {
@@ -80,6 +80,9 @@ function resolveXHotelId(path: string, explicit?: string): string | undefined {
   return localStorage.getItem("hms_hotel_id") ?? undefined;
 }
 
+/** Public auth paths that must never trigger a redirect loop. */
+const AUTH_PATHS = new Set(["/api/v1/auth/login", "/api/v1/auth/register-guest"]);
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit & { hotelId?: string; /** When true, failed requests do not open the global error popup. */ quiet?: boolean } = {},
@@ -93,6 +96,12 @@ export async function apiFetch<T>(
   if (xHotel) headers.set("X-Hotel-ID", xHotel);
   const res = await fetch(`${API_BASE}${path}`, { ...rest, headers });
   if (!res.ok) {
+    // Session expired or token invalid — wipe stored credentials and send to login.
+    if (res.status === 401 && !AUTH_PATHS.has(path) && typeof window !== "undefined") {
+      clearToken();
+      window.location.replace("/login");
+      throw new Error("Session expired. Redirecting to login…");
+    }
     let msg = res.statusText;
     try {
       const body = await res.json();

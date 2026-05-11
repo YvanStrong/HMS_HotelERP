@@ -221,7 +221,7 @@ export default function RoomsPage() {
             <strong className="text-orange-600">{summaryQuery.data.vacantDirty}</strong> vacant dirty
           </span>
           <span>
-            <strong className="text-slate-600">{summaryQuery.data.outOfOrder}</strong> out of order
+            <strong className="text-muted-foreground">{summaryQuery.data.outOfOrder}</strong> out of order
           </span>
         </div>
       )}
@@ -312,7 +312,7 @@ export default function RoomsPage() {
                     </span>
                   )}
                   {r.hasActiveBlock && (
-                    <span className="text-[11px] font-medium text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
+                    <span className="text-[11px] font-medium text-foreground bg-muted px-1.5 py-0.5 rounded">
                       🔒 Block
                     </span>
                   )}

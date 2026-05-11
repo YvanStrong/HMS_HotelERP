@@ -13,19 +13,25 @@ import com.hms.domain.FacilityType;
 import com.hms.domain.ReservationStatus;
 import com.hms.entity.Facility;
 import com.hms.entity.FacilityBooking;
+import com.hms.entity.FacilityIncident;
 import com.hms.entity.FacilityMaintenance;
 import com.hms.entity.FacilitySlot;
 import com.hms.entity.Guest;
 import com.hms.entity.Hotel;
+import com.hms.entity.LifeguardRoster;
 import com.hms.entity.Reservation;
 import com.hms.entity.RoomCharge;
+import com.hms.entity.WaterQualityLog;
 import com.hms.repository.FacilityBookingRepository;
+import com.hms.repository.FacilityIncidentRepository;
 import com.hms.repository.FacilityMaintenanceRepository;
 import com.hms.repository.FacilityRepository;
 import com.hms.repository.FacilitySlotRepository;
 import com.hms.repository.GuestRepository;
 import com.hms.repository.HotelRepository;
+import com.hms.repository.LifeguardRosterRepository;
 import com.hms.repository.ReservationRepository;
+import com.hms.repository.WaterQualityLogRepository;
 import com.hms.security.TenantAccessService;
 import com.hms.util.QrCodeUtil;
 import com.hms.web.ApiException;
@@ -34,6 +40,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.Year;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
@@ -58,6 +65,9 @@ public class FacilityService {
     private final FacilitySlotRepository facilitySlotRepository;
     private final FacilityBookingRepository facilityBookingRepository;
     private final FacilityMaintenanceRepository facilityMaintenanceRepository;
+    private final WaterQualityLogRepository waterQualityLogRepository;
+    private final LifeguardRosterRepository lifeguardRosterRepository;
+    private final FacilityIncidentRepository facilityIncidentRepository;
     private final ReservationRepository reservationRepository;
     private final GuestRepository guestRepository;
     private final HotelRepository hotelRepository;
@@ -71,6 +81,9 @@ public class FacilityService {
             FacilitySlotRepository facilitySlotRepository,
             FacilityBookingRepository facilityBookingRepository,
             FacilityMaintenanceRepository facilityMaintenanceRepository,
+            WaterQualityLogRepository waterQualityLogRepository,
+            LifeguardRosterRepository lifeguardRosterRepository,
+            FacilityIncidentRepository facilityIncidentRepository,
             ReservationRepository reservationRepository,
             GuestRepository guestRepository,
             HotelRepository hotelRepository,
@@ -82,6 +95,9 @@ public class FacilityService {
         this.facilitySlotRepository = facilitySlotRepository;
         this.facilityBookingRepository = facilityBookingRepository;
         this.facilityMaintenanceRepository = facilityMaintenanceRepository;
+        this.waterQualityLogRepository = waterQualityLogRepository;
+        this.lifeguardRosterRepository = lifeguardRosterRepository;
+        this.facilityIncidentRepository = facilityIncidentRepository;
         this.reservationRepository = reservationRepository;
         this.guestRepository = guestRepository;
         this.hotelRepository = hotelRepository;
@@ -536,6 +552,199 @@ public class FacilityService {
                 slot.getEndTime().atZone(ZoneOffset.UTC).toInstant(),
                 slot.getMaxBookings(),
                 slot.getStatus().name());
+    }
+
+    // ── Water Quality ──────────────────────────────────────────────────────────
+
+    @Transactional
+    public FacilityDtos.WaterQualityLogItem logWaterQuality(
+            UUID hotelId, String hotelHeader, UUID facilityId, FacilityDtos.WaterQualityLogRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Facility facility =
+                facilityRepository.findByIdAndHotel_Id(facilityId, hotelId).orElseThrow(() -> notFound("Facility"));
+        WaterQualityLog log = new WaterQualityLog();
+        log.setFacility(facility);
+        log.setLoggedBy(tenantAccessService.currentUser().getUsername());
+        log.setPhLevel(req.phLevel());
+        log.setFreeChlorinePpm(req.freeChlorinePpm());
+        log.setCombinedChlorinePpm(req.combinedChlorinePpm());
+        log.setTemperatureCelsius(req.temperatureCelsius());
+        log.setTurbidityNtu(req.turbidityNtu());
+        log.setTotalDissolvedSolids(req.totalDissolvedSolids());
+        log.setAlkalinityPpm(req.alkalinityPpm());
+        log.setCalciumHardnessPpm(req.calciumHardnessPpm());
+        log.setNotes(req.notes());
+        log.setPassedInspection(req.passedInspection());
+        log.setInspectorName(req.inspectorName());
+        log = waterQualityLogRepository.save(log);
+        return toWaterQualityItem(log);
+    }
+
+    @Transactional(readOnly = true)
+    public List<FacilityDtos.WaterQualityLogItem> listWaterQualityLogs(
+            UUID hotelId, String hotelHeader, UUID facilityId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        facilityRepository.findByIdAndHotel_Id(facilityId, hotelId).orElseThrow(() -> notFound("Facility"));
+        return waterQualityLogRepository.findByFacility_IdOrderByLoggedAtDesc(facilityId).stream()
+                .map(this::toWaterQualityItem)
+                .toList();
+    }
+
+    private FacilityDtos.WaterQualityLogItem toWaterQualityItem(WaterQualityLog log) {
+        return new FacilityDtos.WaterQualityLogItem(
+                log.getId(), log.getLoggedAt(), log.getLoggedBy(),
+                log.getPhLevel(), log.getFreeChlorinePpm(), log.getCombinedChlorinePpm(),
+                log.getTemperatureCelsius(), log.getTurbidityNtu(), log.getTotalDissolvedSolids(),
+                log.getAlkalinityPpm(), log.getCalciumHardnessPpm(), log.getNotes(),
+                log.isPassedInspection(), log.getInspectorName(), log.getCreatedAt());
+    }
+
+    // ── Lifeguard Roster ───────────────────────────────────────────────────────
+
+    @Transactional
+    public FacilityDtos.LifeguardShiftItem createLifeguardShift(
+            UUID hotelId, String hotelHeader, UUID facilityId, FacilityDtos.LifeguardShiftRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Facility facility =
+                facilityRepository.findByIdAndHotel_Id(facilityId, hotelId).orElseThrow(() -> notFound("Facility"));
+        LifeguardRoster roster = new LifeguardRoster();
+        roster.setHotel(hotelRepository.getReferenceById(hotelId));
+        roster.setFacility(facility);
+        roster.setStaffName(req.staffName().trim());
+        roster.setStaffEmail(req.staffEmail());
+        roster.setCertificationName(req.certificationName());
+        roster.setCertificationExpiry(req.certificationExpiry());
+        try {
+            roster.setShiftDate(LocalDate.parse(req.shiftDate()));
+            roster.setShiftStart(LocalTime.parse(req.shiftStart()));
+            roster.setShiftEnd(LocalTime.parse(req.shiftEnd()));
+        } catch (DateTimeParseException e) {
+            throw new ApiException(org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "shiftDate must be ISO date (yyyy-MM-dd) and shiftStart/shiftEnd must be ISO time (HH:mm)");
+        }
+        roster.setNotes(req.notes());
+        roster = lifeguardRosterRepository.save(roster);
+        return toLifeguardItem(roster);
+    }
+
+    @Transactional(readOnly = true)
+    public List<FacilityDtos.LifeguardShiftItem> listLifeguardRoster(
+            UUID hotelId, String hotelHeader, UUID facilityId, LocalDate shiftDate) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        facilityRepository.findByIdAndHotel_Id(facilityId, hotelId).orElseThrow(() -> notFound("Facility"));
+        List<LifeguardRoster> roster = shiftDate != null
+                ? lifeguardRosterRepository.findByFacility_IdAndShiftDateOrderByShiftStartAsc(facilityId, shiftDate)
+                : lifeguardRosterRepository.findByFacility_IdOrderByShiftDateDescShiftStartAsc(facilityId);
+        return roster.stream().map(this::toLifeguardItem).toList();
+    }
+
+    private FacilityDtos.LifeguardShiftItem toLifeguardItem(LifeguardRoster r) {
+        boolean expiringSoon = r.getCertificationExpiry() != null
+                && r.getCertificationExpiry().isBefore(LocalDate.now().plusDays(30));
+        return new FacilityDtos.LifeguardShiftItem(
+                r.getId(), r.getStaffName(), r.getStaffEmail(),
+                r.getCertificationName(), r.getCertificationExpiry(),
+                r.getShiftDate(), r.getShiftStart(), r.getShiftEnd(),
+                r.getStatus(), r.getNotes(), expiringSoon);
+    }
+
+    // ── Incidents ─────────────────────────────────────────────────────────────
+
+    @Transactional
+    public FacilityDtos.IncidentItem reportIncident(
+            UUID hotelId, String hotelHeader, UUID facilityId, FacilityDtos.IncidentReportRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Facility facility =
+                facilityRepository.findByIdAndHotel_Id(facilityId, hotelId).orElseThrow(() -> notFound("Facility"));
+        FacilityIncident incident = new FacilityIncident();
+        incident.setFacility(facility);
+        incident.setOccurredAt(req.occurredAt() != null ? req.occurredAt() : Instant.now());
+        incident.setTitle(req.title().trim());
+        incident.setDescription(req.description());
+        incident.setSeverity(req.severity() != null ? req.severity().toUpperCase() : "LOW");
+        incident.setReportedBy(tenantAccessService.currentUser().getUsername());
+        incident.setWitnessNames(req.witnessNames());
+        incident = facilityIncidentRepository.save(incident);
+        return toIncidentItem(incident);
+    }
+
+    @Transactional
+    public FacilityDtos.IncidentItem resolveIncident(
+            UUID hotelId, String hotelHeader, UUID incidentId, FacilityDtos.IncidentResolveRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        FacilityIncident incident = facilityIncidentRepository
+                .findByIdAndFacility_Hotel_Id(incidentId, hotelId)
+                .orElseThrow(() -> notFound("Incident"));
+        incident.setStatus("RESOLVED");
+        incident.setResolution(req.resolution());
+        incident.setResolvedBy(req.resolvedBy().trim());
+        incident.setResolvedAt(Instant.now());
+        incident = facilityIncidentRepository.save(incident);
+        return toIncidentItem(incident);
+    }
+
+    @Transactional(readOnly = true)
+    public List<FacilityDtos.IncidentItem> listIncidents(
+            UUID hotelId, String hotelHeader, UUID facilityId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        facilityRepository.findByIdAndHotel_Id(facilityId, hotelId).orElseThrow(() -> notFound("Facility"));
+        return facilityIncidentRepository.findByFacility_IdOrderByOccurredAtDesc(facilityId).stream()
+                .map(this::toIncidentItem)
+                .toList();
+    }
+
+    private FacilityDtos.IncidentItem toIncidentItem(FacilityIncident i) {
+        return new FacilityDtos.IncidentItem(
+                i.getId(), i.getOccurredAt(), i.getTitle(), i.getDescription(),
+                i.getSeverity(), i.getReportedBy(), i.getWitnessNames(),
+                i.getStatus(), i.getResolution(), i.getResolvedAt(), i.getResolvedBy(), i.getCreatedAt());
+    }
+
+    // ── Maintenance completion ─────────────────────────────────────────────────
+
+    @Transactional
+    public FacilityDtos.MaintenanceCompleteResponse completeMaintenance(
+            UUID hotelId, String hotelHeader, UUID maintenanceId, FacilityDtos.MaintenanceCompleteRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        FacilityMaintenance m = facilityMaintenanceRepository.findById(maintenanceId)
+                .orElseThrow(() -> notFound("Maintenance"));
+        if (!m.getFacility().getHotel().getId().equals(hotelId)) {
+            throw notFound("Maintenance");
+        }
+        m.setStatus(FacilityMaintenanceStatus.COMPLETED);
+        m.setCompletedAt(Instant.now());
+        m.setCompletedBy(req.completedBy() != null ? req.completedBy().trim()
+                : tenantAccessService.currentUser().getUsername());
+        m.setInspectorNotes(req.inspectorNotes());
+        m.setComplianceStatus(req.complianceStatus() != null ? req.complianceStatus().toUpperCase() : "PASSED");
+        m = facilityMaintenanceRepository.save(m);
+        return new FacilityDtos.MaintenanceCompleteResponse(
+                m.getId(), m.getStatus().name(), m.getCompletedBy(), m.getComplianceStatus(), m.getCompletedAt());
+    }
+
+    // ── Revenue summary ───────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public FacilityDtos.FacilityRevenueSummary getRevenueSummary(
+            UUID hotelId, String hotelHeader, UUID facilityId, LocalDate fromDate, LocalDate toDate) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Facility facility =
+                facilityRepository.findByIdAndHotel_Id(facilityId, hotelId).orElseThrow(() -> notFound("Facility"));
+        LocalDate from = fromDate != null ? fromDate : LocalDate.now().withDayOfMonth(1);
+        LocalDate to = toDate != null ? toDate : LocalDate.now();
+        LocalDateTime start = from.atStartOfDay();
+        LocalDateTime end = to.plusDays(1).atStartOfDay();
+
+        long totalBookings = facilityBookingRepository.countActiveForFacilityWindow(facilityId, start, end);
+        long checkedIn = facilityBookingRepository.countCheckedInByFacility(facilityId);
+        BigDecimal totalRevenue = facilityBookingRepository.sumRevenueForFacilityWindow(facilityId, start, end);
+        BigDecimal roomChargedRevenue = facilityBookingRepository.sumRoomChargedRevenueForFacilityWindow(facilityId, start, end);
+        BigDecimal directRevenue = totalRevenue.subtract(roomChargedRevenue);
+
+        return new FacilityDtos.FacilityRevenueSummary(
+                facility.getId(), facility.getName(), from, to,
+                (int) totalBookings, (int) checkedIn,
+                totalRevenue, roomChargedRevenue, directRevenue);
     }
 
     private static FacilityPriority parsePriority(String p) {
