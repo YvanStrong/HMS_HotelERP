@@ -10,8 +10,8 @@ type ServiceRequest = {
   description: string;
   status: "PENDING" | "ASSIGNED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
   priority: "LOW" | "NORMAL" | "HIGH" | "URGENT";
-  room: { roomNumber: string };
-  guest: { fullName: string };
+  roomNumber?: string;
+  bookingCode?: string;
   createdAt: string;
 };
 
@@ -70,7 +70,7 @@ export default function ServiceRequestsPage() {
           <div key={req.id} className="hms-section-card flex items-center justify-between gap-4 py-4">
             <div className="flex items-center gap-4 flex-1">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
-                {req.room.roomNumber}
+                {req.roomNumber || "?"}
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 mb-1">
@@ -83,9 +83,9 @@ export default function ServiceRequestsPage() {
                     {req.priority}
                   </span>
                 </div>
-                <p className="text-xs text-muted-foreground line-clamp-1">{req.description || "No additional notes"}</p>
+                <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">{req.description || "No additional notes"}</p>
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  Guest: {req.guest?.fullName || "Unknown"} · Requested {new Date(req.createdAt).toLocaleTimeString()}
+                  Requested {new Date(req.createdAt).toLocaleTimeString()} · Code: {req.bookingCode || "N/A"}
                 </p>
               </div>
             </div>

@@ -27,7 +27,7 @@ export function HmsPublicHeader() {
 
   const staffHotel = user && user.hotelId && !isGuestPortalUser(user) ? user.hotelId : null;
   const guestHotel = user && isGuestPortalUser(user) ? user.hotelId : null;
-  const viewedHotelMatch = pathname.match(/^\/book\/hotels\/([0-9a-fA-F-]{36})(?:\/|$)/);
+  const viewedHotelMatch = pathname.match(/\/(?:hotels|order|hotels\/[^\/]+)\/([0-9a-fA-F-]{36})/);
   const viewedHotelId = viewedHotelMatch?.[1] ?? null;
   const brandHotelId = viewedHotelId ?? undefined;
   const { hotel } = useHotelContext(brandHotelId);
@@ -43,6 +43,12 @@ export function HmsPublicHeader() {
         <Link href="/book/hotels">Hotels</Link>
         <Link href="/book/me">My trips</Link>
         <Link href="/book/lookup">Find booking</Link>
+        {(viewedHotelId || guestHotel) && (
+          <>
+            <Link href={`/book/order/${viewedHotelId || guestHotel}`}>Self Service</Link>
+            <Link href={`/book/order/${viewedHotelId || guestHotel}/services`}>Service Requests</Link>
+          </>
+        )}
         {staffHotel && <span className="hms-public-nav-accent">Staff signed in</span>}
         {user && isSuperAdmin(user) && (
           <Link href="/platform/hotels" className="hms-public-nav-accent">

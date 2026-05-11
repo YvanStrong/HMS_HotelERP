@@ -15,7 +15,7 @@ export default function GuestServicesPage() {
   const router = useRouter();
   const hotelId = String(params.hotelId);
 
-  const [requestType, setRequestType] = useState("");
+  const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [description, setDescription] = useState("");
   const [roomNumber, setRoomNumber] = useState("");
   const [bookingCode, setBookingCode] = useState("");
@@ -23,10 +23,16 @@ export default function GuestServicesPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  function toggleOption(opt: string) {
+    setSelectedOptions(prev => 
+      prev.includes(opt) ? prev.filter(o => o !== opt) : [...prev, opt]
+    );
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!requestType) {
-      setError("Please select a request type.");
+    if (selectedOptions.length === 0 && !description.trim()) {
+      setError("Please select at least one item or describe what you need.");
       return;
     }
     if (!roomNumber || !bookingCode) {
@@ -37,11 +43,16 @@ export default function GuestServicesPage() {
     setSubmitting(true);
     setError(null);
     try {
+      const combinedDesc = [
+        ...selectedOptions,
+        description.trim() ? `Note: ${description.trim()}` : ""
+      ].filter(Boolean).join(", ");
+
       await apiFetch(`/api/v1/hotels/${hotelId}/service-requests`, {
         method: "POST",
         body: JSON.stringify({
-          requestType,
-          description: description.trim() || requestType,
+          requestType: selectedOptions[0] || "OTHER",
+          description: combinedDesc,
           roomNumber,
           bookingCode,
           status: "OPEN",
@@ -89,8 +100,8 @@ export default function GuestServicesPage() {
 
       <main className="max-w-2xl mx-auto space-y-8 pb-10">
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5">
-          <h2 className="text-lg font-semibold mb-2">Need something?</h2>
-          <p className="text-sm text-zinc-400">Select a category below to request items or assistance for your room.</p>
+          <h2 className="text-lg font-semibold mb-2">How can we help?</h2>
+          <p className="text-sm text-zinc-400">Select one or more items, or describe what you need below.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -105,12 +116,17 @@ export default function GuestServicesPage() {
                     <button
                       key={opt}
                       type="button"
-                      onClick={() => setRequestType(opt)}
+                      onClick={() => toggleOption(opt)}
                       className={`py-3 px-3 rounded-xl border text-sm font-medium text-left transition-all ${
-                        requestType === opt ? "bg-emerald-500/20 border-emerald-500 text-emerald-400" : "bg-zinc-900 border-zinc-800 text-zinc-300"
+                        selectedOptions.includes(opt) ? "bg-emerald-500/20 border-emerald-500 text-emerald-400" : "bg-zinc-900 border-zinc-800 text-zinc-300"
                       }`}
                     >
-                      {opt}
+                      <div className="flex items-center justify-between">
+                        <span>{opt}</span>
+                        {selectedOptions.includes(opt) && (
+                          <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                        )}
+                      </div>
                     </button>
                   ))}
                 </div>
