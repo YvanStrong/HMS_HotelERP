@@ -67,7 +67,7 @@ public final class ApiDtos {
             String tokenType,
             AuthUserInfo user) {}
 
-    public record RoomTypeSummary(UUID id, String name, BigDecimal baseRate, Integer maxOccupancy, Integer bedCount) {}
+    public record RoomTypeSummary(UUID id, String code, String name, BigDecimal baseRate, Integer maxOccupancy, Integer bedCount) {}
 
     public record ReservationSummary(
             UUID id,

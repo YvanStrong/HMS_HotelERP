@@ -4,6 +4,7 @@ import com.hms.entity.*;
 import com.hms.repository.*;
 import com.hms.web.ApiException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,15 +30,27 @@ public class ChannelManagerService {
     private final ChannelRatePlanRepository ratePlanRepo;
     private final ChannelSyncLogRepository syncLogRepo;
     private final HotelRepository hotelRepo;
+    private final RoomService roomService;
+    private final com.hms.service.channels.BookingComAdapter bookingComAdapter;
+    private final com.hms.service.channels.ExpediaAdapter expediaAdapter;
+    private final RoomTypeRepository roomTypeRepo;
 
     public ChannelManagerService(ChannelConnectionRepository connRepo,
                                   ChannelRatePlanRepository ratePlanRepo,
                                   ChannelSyncLogRepository syncLogRepo,
-                                  HotelRepository hotelRepo) {
+                                  HotelRepository hotelRepo,
+                                  RoomService roomService,
+                                  com.hms.service.channels.BookingComAdapter bookingComAdapter,
+                                  com.hms.service.channels.ExpediaAdapter expediaAdapter,
+                                  RoomTypeRepository roomTypeRepo) {
         this.connRepo = connRepo;
         this.ratePlanRepo = ratePlanRepo;
         this.syncLogRepo = syncLogRepo;
         this.hotelRepo = hotelRepo;
+        this.roomService = roomService;
+        this.bookingComAdapter = bookingComAdapter;
+        this.expediaAdapter = expediaAdapter;
+        this.roomTypeRepo = roomTypeRepo;
     }
 
     // --- Connection CRUD ---
@@ -51,10 +64,26 @@ public class ChannelManagerService {
     public ChannelConnection createConnection(UUID hotelId, ChannelConnection proto) {
         Hotel hotel = hotelRepo.findById(hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "HOTEL_NOT_FOUND", "Hotel not found."));
-        proto.setHotel(hotel);
-        proto.setStatus("DISCONNECTED");
-        log.info("Channel connection created: channel={} hotel={}", proto.getChannelCode(), hotelId);
-        return connRepo.save(proto);
+        
+        // Upsert logic: find existing by hotel + channelCode
+        Optional<ChannelConnection> existing = connRepo.findByHotel_IdOrderByCreatedAtDesc(hotelId).stream()
+                .filter(c -> c.getChannelCode().equalsIgnoreCase(proto.getChannelCode()))
+                .findFirst();
+
+        ChannelConnection conn = existing.orElse(proto);
+        conn.setHotel(hotel);
+        if (proto.getChannelCode() != null) conn.setChannelCode(proto.getChannelCode());
+        if (proto.getStatus() != null) {
+            conn.setStatus(proto.getStatus());
+        } else if (conn.getStatus() == null) {
+            conn.setStatus("DISCONNECTED");
+        }
+        
+        if (proto.getCredentials() != null) conn.setCredentials(proto.getCredentials());
+        if (proto.getConfig() != null) conn.setConfig(proto.getConfig());
+
+        log.info("Channel connection upserted: channel={} hotel={} status={}", conn.getChannelCode(), hotelId, conn.getStatus());
+        return connRepo.save(conn);
     }
 
     @Transactional
@@ -86,6 +115,11 @@ public class ChannelManagerService {
         return ratePlanRepo.save(plan);
     }
 
+    @Transactional
+    public void deleteRatePlan(UUID planId) {
+        ratePlanRepo.deleteById(planId);
+    }
+
     // --- Sync Operations ---
 
     /**
@@ -98,23 +132,63 @@ public class ChannelManagerService {
         List<Map<String, String>> results = new ArrayList<>();
 
         for (ChannelConnection conn : connected) {
-            // Phase 1: log sync intent. Phase 2: call adapter.pushAvailability()
+            List<ChannelRatePlan> mappings = ratePlanRepo.findByConnection_Id(conn.getId());
+            if (mappings.isEmpty()) {
+                results.add(Map.of("channel", conn.getChannelCode(), "status", "SKIPPED", "detail", "No room mappings found"));
+                continue;
+            }
+
+            // Gather 30 days of data for each unique room type in this connection
+            Map<LocalDate, com.hms.service.channels.ChannelAdapter.DailySyncData> syncData = new HashMap<>();
+            Set<UUID> roomTypeIds = new HashSet<>();
+            mappings.forEach(m -> roomTypeIds.add(m.getRoomTypeId()));
+            
+            // For simplicity in Phase 1, we sync the first mapped room type's availability
+            // Real multi-room sync will iterate over each mapping
+            UUID rtId = roomTypeIds.iterator().next();
+            syncData = gatherSyncData(hotelId, rtId);
+
+            com.hms.service.channels.ChannelAdapter.SyncResult syncResult;
+            if ("BOOKING_COM".equals(conn.getChannelCode())) {
+                syncResult = bookingComAdapter.pushUpdate(conn, mappings, syncData);
+            } else if ("EXPEDIA".equals(conn.getChannelCode())) {
+                syncResult = expediaAdapter.pushUpdate(conn, mappings, syncData);
+            } else {
+                syncResult = new com.hms.service.channels.ChannelAdapter.SyncResult(true, "Mock Sync (No Adapter)", null);
+            }
+
             ChannelSyncLog entry = new ChannelSyncLog();
             entry.setConnection(conn);
             entry.setDirection("PUSH");
-            entry.setPayloadType("AVAILABILITY");
-            entry.setStatus("SUCCESS");
-            entry.setDetails("{\"note\":\"Sync initiated — adapter not yet wired\"}");
+            entry.setPayloadType("AVAILABILITY_AND_RATES");
+            entry.setStatus(syncResult.success() ? "SUCCESS" : "ERROR");
+            entry.setDetails(syncResult.message());
             syncLogRepo.save(entry);
 
-            conn.setLastSyncAt(Instant.now());
-            connRepo.save(conn);
+            if (syncResult.success()) {
+                conn.setLastSyncAt(Instant.now());
+                connRepo.save(conn);
+            }
 
-            results.add(Map.of("channel", conn.getChannelCode(), "status", "SYNCED"));
+            results.add(Map.of("channel", conn.getChannelCode(), "status", syncResult.success() ? "SYNCED" : "FAILED", "detail", syncResult.message()));
         }
 
         log.info("Channel sync triggered for hotel {}: {} channels", hotelId, connected.size());
         return Map.of("channelsSynced", connected.size(), "results", results);
+    }
+
+    private Map<LocalDate, com.hms.service.channels.ChannelAdapter.DailySyncData> gatherSyncData(UUID hotelId, UUID roomTypeId) {
+        Map<LocalDate, com.hms.service.channels.ChannelAdapter.DailySyncData> results = new HashMap<>();
+        LocalDate start = LocalDate.now();
+        RoomType rt = roomTypeRepo.findById(roomTypeId).orElse(null);
+        if (rt == null) return results;
+
+        for (int i = 0; i < 30; i++) {
+            LocalDate date = start.plusDays(i);
+            int avail = roomService.countAvailableOnDate(hotelId, roomTypeId, date);
+            results.put(date, new com.hms.service.channels.ChannelAdapter.DailySyncData(avail, rt.getBaseRate()));
+        }
+        return results;
     }
 
     // --- Sync Log ---

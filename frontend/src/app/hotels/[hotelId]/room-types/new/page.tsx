@@ -107,7 +107,22 @@ export default function CreateRoomTypePage() {
               id="name"
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setName(val);
+                // Simple shorthand generator: Uppercase, remove vowels (except first char), replace spaces with hyphens
+                const generatedCode = val
+                  .split(/\s+/)
+                  .map(word => {
+                    if (!word) return "";
+                    const first = word[0].toUpperCase();
+                    const rest = word.slice(1).toUpperCase().replace(/[AEIOU]/g, "");
+                    return (first + rest).slice(0, 3);
+                  })
+                  .join("-")
+                  .replace(/[^A-Z0-9-]/g, "");
+                setCode(generatedCode);
+              }}
               placeholder="e.g., Deluxe King"
               required
             />
@@ -152,7 +167,7 @@ export default function CreateRoomTypePage() {
               onChange={(e) => setBaseRate(e.target.value)}
               placeholder="0.00"
               required
-              className="pl-8"
+              className="pl-10"
             />
           </div>
         </div>

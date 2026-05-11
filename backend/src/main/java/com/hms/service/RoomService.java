@@ -208,7 +208,7 @@ public class RoomService {
 
     private static ApiDtos.RoomTypeSummary roomTypeSummary(RoomType rt) {
         return new ApiDtos.RoomTypeSummary(
-                rt.getId(), rt.getName(), rt.getBaseRate(), rt.getMaxOccupancy(), rt.getBedCount());
+                rt.getId(), rt.getCode(), rt.getName(), rt.getBaseRate(), rt.getMaxOccupancy(), rt.getBedCount());
     }
 
     private static ApiDtos.ReservationSummary reservationSummary(Reservation res) {
@@ -659,6 +659,11 @@ public class RoomService {
                     rt.getId(), rt.getName(), base, total, currency, nights, available, amenities, List.of()));
         }
         return new ApiDtos.RoomTypesAvailabilityResponse(out);
+    }
+
+    @Transactional(readOnly = true)
+    public int countAvailableOnDate(UUID hotelId, UUID roomTypeId, LocalDate date) {
+        return countSellableRoomsForStay(hotelId, roomTypeId, date, date.plusDays(1), 1);
     }
 
     private int countSellableRoomsForStay(

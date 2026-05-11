@@ -45,6 +45,7 @@ public class ChannelManagerController {
             @RequestBody Map<String, Object> body) {
         ChannelConnection conn = new ChannelConnection();
         conn.setChannelCode(body.getOrDefault("channelCode", "").toString());
+        conn.setStatus(body.getOrDefault("status", "DISCONNECTED").toString());
         conn.setCredentials(body.containsKey("credentials") ? body.get("credentials").toString() : null);
         conn.setConfig(body.containsKey("config") ? body.get("config").toString() : null);
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -109,7 +110,17 @@ public class ChannelManagerController {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ROOM_TYPE_NOT_FOUND", "Room type not found")));
         plan.setChannelRoomCode((String) body.get("channelRoomCode"));
         plan.setRateMarkupPct(new BigDecimal(body.getOrDefault("rateMarkupPct", "0").toString()));
-        plan.setMinStay((int) body.getOrDefault("minStay", 1));
+        plan.setMinStay(Integer.parseInt(body.getOrDefault("minStay", "1").toString()));
         return ResponseEntity.status(HttpStatus.CREATED).body(channelService.createRatePlan(plan));
+    }
+
+    @DeleteMapping("/{connectionId}/rate-plans/{planId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN')")
+    public ResponseEntity<Void> deleteRatePlan(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID connectionId,
+            @PathVariable UUID planId) {
+        channelService.deleteRatePlan(planId);
+        return ResponseEntity.noContent().build();
     }
 }

@@ -28,6 +28,16 @@ public class ChannelRatePlan {
     @JoinColumn(name = "room_type_id", nullable = false)
     private RoomType roomType;
 
+    @com.fasterxml.jackson.annotation.JsonProperty("connectionId")
+    public UUID getConnectionId() {
+        return connection != null ? connection.getId() : null;
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("roomTypeId")
+    public UUID getRoomTypeId() {
+        return roomType != null ? roomType.getId() : null;
+    }
+
     @Column(name = "channel_room_code", length = 50)
     private String channelRoomCode;
 

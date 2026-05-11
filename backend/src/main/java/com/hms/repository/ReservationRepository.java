@@ -17,6 +17,8 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 
     long countByHotel_Id(UUID hotelId);
 
+    List<Reservation> findByHotel_Id(UUID hotelId);
+
     Optional<Reservation> findFirstByGuest_IdAndHotel_IdOrderByCheckInDateDesc(UUID guestId, UUID hotelId);
 
     Optional<Reservation> findByIdAndHotel_Id(UUID id, UUID hotelId);
