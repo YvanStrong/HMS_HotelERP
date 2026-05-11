@@ -167,7 +167,7 @@ export default function CreateRoomTypePage() {
               onChange={(e) => setBaseRate(e.target.value)}
               placeholder="0.00"
               required
-              className="pl-8"
+              className="pl-10"
             />
           </div>
         </div>

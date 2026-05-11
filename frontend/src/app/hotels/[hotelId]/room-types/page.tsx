@@ -93,8 +93,11 @@ export default function RoomTypesPage() {
                 className="bg-card rounded-xl border border-border/60 p-5 shadow-soft hover:shadow-float transition-shadow"
               >
                 <div className="flex items-start justify-between">
-                  <h3 className="text-lg font-semibold text-foreground">{r.name}</h3>
-                  <span className="text-lg font-bold text-primary">{r.baseRate}</span>
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">{r.name}</h3>
+                    {r.code && <span className="text-[10px] font-mono bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">{r.code}</span>}
+                  </div>
+                  <span className="text-lg font-bold text-primary">${r.baseRate}</span>
                 </div>
                 
                 <div className="mt-4 space-y-2 text-sm">
