@@ -30,9 +30,8 @@ public class PublicReservationController {
             @PathVariable UUID hotelId,
             Authentication authentication,
             @Valid @RequestBody ApiDtos.CreateReservationRequest body) {
-        ApiDtos.CreateReservationRequest sanitized = reservationService.sanitizePublicBookingRequest(body);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(reservationService.createReservationForPublic(hotelId, sanitized, authentication));
+                .body(reservationService.createReservationForPublic(hotelId, body, authentication));
     }
 
     @GetMapping("/lookup")
