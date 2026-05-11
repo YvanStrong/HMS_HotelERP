@@ -52,8 +52,10 @@ public class ChannelManagerService {
         Hotel hotel = hotelRepo.findById(hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "HOTEL_NOT_FOUND", "Hotel not found."));
         proto.setHotel(hotel);
-        proto.setStatus("DISCONNECTED");
-        log.info("Channel connection created: channel={} hotel={}", proto.getChannelCode(), hotelId);
+        if (proto.getStatus() == null) {
+            proto.setStatus("DISCONNECTED");
+        }
+        log.info("Channel connection created: channel={} hotel={} status={}", proto.getChannelCode(), hotelId, proto.getStatus());
         return connRepo.save(proto);
     }
 
