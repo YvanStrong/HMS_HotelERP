@@ -45,6 +45,7 @@ public class ChannelManagerController {
             @RequestBody Map<String, Object> body) {
         ChannelConnection conn = new ChannelConnection();
         conn.setChannelCode(body.getOrDefault("channelCode", "").toString());
+        conn.setStatus(body.getOrDefault("status", "DISCONNECTED").toString());
         conn.setCredentials(body.containsKey("credentials") ? body.get("credentials").toString() : null);
         conn.setConfig(body.containsKey("config") ? body.get("config").toString() : null);
         return ResponseEntity.status(HttpStatus.CREATED)
