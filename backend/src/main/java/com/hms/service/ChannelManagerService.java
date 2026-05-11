@@ -102,6 +102,11 @@ public class ChannelManagerService {
         return ratePlanRepo.save(plan);
     }
 
+    @Transactional
+    public void deleteRatePlan(UUID planId) {
+        ratePlanRepo.deleteById(planId);
+    }
+
     // --- Sync Operations ---
 
     /**

@@ -70,6 +70,18 @@ export default function ChannelsPage() {
     }
   }
 
+  async function deleteMapping(connectionId: string, planId: string) {
+    if (!confirm("Are you sure you want to remove this mapping? This will stop synchronization for this room type.")) return;
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/channels/${connectionId}/rate-plans/${planId}`, {
+        method: "DELETE"
+      });
+      await loadData();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Delete failed");
+    }
+  }
+
   async function connectChannel(channelCode: string) {
     setLoading(true);
     try {
@@ -291,11 +303,11 @@ export default function ChannelsPage() {
         </div>
 
         {showAddMapping && (
-          <form onSubmit={addMapping} className="grid gap-4 sm:grid-cols-5 items-end bg-muted/30 p-4 rounded-lg mb-6 border border-border/50">
-            <div>
+          <form onSubmit={addMapping} className="flex flex-wrap gap-4 items-end bg-muted/30 p-4 rounded-lg mb-6 border border-border/50">
+            <div className="flex-1 min-w-[150px]">
               <label className="text-[10px] uppercase font-bold text-muted-foreground block mb-1">OTA Channel</label>
               <select 
-                className="hms-input text-xs" 
+                className="hms-input text-xs w-full" 
                 value={newMap.connectionId} 
                 onChange={e => setNewMap({...newMap, connectionId: e.target.value})}
                 required
@@ -306,10 +318,10 @@ export default function ChannelsPage() {
                 ))}
               </select>
             </div>
-            <div>
+            <div className="flex-1 min-w-[150px]">
               <label className="text-[10px] uppercase font-bold text-muted-foreground block mb-1">HMS Room Type</label>
               <select 
-                className="hms-input text-xs" 
+                className="hms-input text-xs w-full" 
                 value={newMap.roomTypeId} 
                 onChange={e => setNewMap({...newMap, roomTypeId: e.target.value})}
                 required
@@ -320,43 +332,41 @@ export default function ChannelsPage() {
                 ))}
               </select>
             </div>
-            <div>
+            <div className="flex-1 min-w-[120px]">
               <label className="text-[10px] uppercase font-bold text-muted-foreground block mb-1">OTA Code</label>
               <input 
                 type="text" 
                 placeholder="e.g. DXL-KING" 
-                className="hms-input text-xs"
+                className="hms-input text-xs w-full"
                 value={newMap.channelRoomCode}
                 onChange={e => setNewMap({...newMap, channelRoomCode: e.target.value})}
                 required
               />
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-[10px] uppercase font-bold text-muted-foreground block mb-1">Markup %</label>
-                <input 
-                  type="number" 
-                  className="hms-input text-xs"
-                  value={newMap.rateMarkupPct}
-                  onChange={e => setNewMap({...newMap, rateMarkupPct: e.target.value})}
-                />
-              </div>
-              <div>
-                <label className="text-[10px] uppercase font-bold text-muted-foreground block mb-1">Min Stay</label>
-                <input 
-                  type="number" 
-                  className="hms-input text-xs"
-                  value={newMap.minStay}
-                  onChange={e => setNewMap({...newMap, minStay: e.target.value})}
-                />
-              </div>
+            <div className="w-[80px]">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground block mb-1">Markup %</label>
+              <input 
+                type="number" 
+                className="hms-input text-xs w-full"
+                value={newMap.rateMarkupPct}
+                onChange={e => setNewMap({...newMap, rateMarkupPct: e.target.value})}
+              />
             </div>
-            <button type="submit" className="hms-btn-solid hms-btn-sm h-9">Save Mapping</button>
+            <div className="w-[80px]">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground block mb-1">Min Stay</label>
+              <input 
+                type="number" 
+                className="hms-input text-xs w-full"
+                value={newMap.minStay}
+                onChange={e => setNewMap({...newMap, minStay: e.target.value})}
+              />
+            </div>
+            <button type="submit" className="hms-btn-solid hms-btn-sm h-9 px-6 whitespace-nowrap">Save Mapping</button>
           </form>
         )}
 
-        <div className="hms-table-wrap">
-          <table className="hms-table text-sm">
+        <div className="hms-table-wrap overflow-x-auto">
+          <table className="hms-table text-sm min-w-[700px]">
             <thead>
               <tr>
                 <th>Internal Room Type</th>
@@ -388,7 +398,12 @@ export default function ChannelsPage() {
                       <td>{rp.rateMarkupPct}%</td>
                       <td>{rp.minStay} nights</td>
                       <td className="text-right">
-                        <button className="text-destructive hover:underline text-xs" onClick={() => alert("Mapping deletion coming soon.")}>Delete</button>
+                        <button 
+                          className="text-destructive hover:underline text-xs" 
+                          onClick={() => deleteMapping(rp.connectionId, rp.id)}
+                        >
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   );
