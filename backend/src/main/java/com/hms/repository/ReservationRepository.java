@@ -208,4 +208,6 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
             @Param("status") ReservationStatus status,
             @Param("roomNumber") String roomNumber,
             @Param("bookingCode") String bookingCode);
+
+    List<Reservation> findByGuest_Id(UUID guestId);
 }

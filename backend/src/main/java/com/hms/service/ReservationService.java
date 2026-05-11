@@ -699,8 +699,9 @@ public class ReservationService {
                     .findByRoomType_IdAndRateDate(roomTypeId, d)
                     .map(RoomTypeNightlyRate::getNightlyRate);
             
+            LocalDate currentDay = d;
             BigDecimal night = override.orElseGet(() -> 
-                dynamicPricingService.calculateDynamicRate(hotelId, roomTypeId, d, base));
+                dynamicPricingService.calculateDynamicRate(hotelId, base, currentDay));
                 
             sum = sum.add(night);
         }
