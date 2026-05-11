@@ -245,7 +245,7 @@ export default function StaffManagementPage() {
             </select>
 
             <div style={{ marginTop: "1rem", display: "flex", justifyContent: "flex-end" }}>
-              <button type="submit" disabled={loading}>
+              <button type="submit" disabled={loading} className="hms-btn-solid">
                 {loading ? "Creating..." : "Create user"}
               </button>
             </div>
@@ -282,7 +282,7 @@ export default function StaffManagementPage() {
                 <tr key={u.id}>
                   <td>{u.username}</td>
                   <td>
-                    <span className="inline-block rounded-full px-2.5 py-1 text-xs font-semibold bg-slate-100 text-slate-800">
+                    <span className="inline-block rounded-full px-2.5 py-1 text-xs font-semibold bg-muted text-foreground">
                       {u.role}
                     </span>
                   </td>

@@ -81,9 +81,9 @@ export function RealtimeKpiCards({ liveMetrics }: { liveMetrics: Record<string, 
       {Object.entries(liveMetrics).map(([title, raw], index) => {
         const nums = numericEntries(raw);
         const config = categoryConfig[title.toLowerCase()] || { 
-          icon: "📊", 
-          color: "text-slate-600", 
-          bgColor: "bg-slate-50 border-slate-200" 
+          icon: "📊",
+          color: "text-muted-foreground",
+          bgColor: "bg-muted/40 border-border"
         };
         
         // Calculate totals for percentage bars

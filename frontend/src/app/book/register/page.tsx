@@ -201,7 +201,7 @@ export default function GuestRegisterPage() {
         <input id="reg-phone" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
 
         <div className="mt-6">
-          <button type="submit" disabled={loading || !canSubmit} className="w-full sm:w-auto">
+          <button type="submit" disabled={loading || !canSubmit} className="hms-btn-solid w-full sm:w-auto">
             {loading ? "Creating…" : "Create account & sign in"}
           </button>
         </div>
