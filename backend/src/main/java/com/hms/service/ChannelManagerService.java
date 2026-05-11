@@ -51,12 +51,26 @@ public class ChannelManagerService {
     public ChannelConnection createConnection(UUID hotelId, ChannelConnection proto) {
         Hotel hotel = hotelRepo.findById(hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "HOTEL_NOT_FOUND", "Hotel not found."));
-        proto.setHotel(hotel);
-        if (proto.getStatus() == null) {
-            proto.setStatus("DISCONNECTED");
+        
+        // Upsert logic: find existing by hotel + channelCode
+        Optional<ChannelConnection> existing = connRepo.findByHotel_IdOrderByCreatedAtDesc(hotelId).stream()
+                .filter(c -> c.getChannelCode().equalsIgnoreCase(proto.getChannelCode()))
+                .findFirst();
+
+        ChannelConnection conn = existing.orElse(proto);
+        conn.setHotel(hotel);
+        if (proto.getChannelCode() != null) conn.setChannelCode(proto.getChannelCode());
+        if (proto.getStatus() != null) {
+            conn.setStatus(proto.getStatus());
+        } else if (conn.getStatus() == null) {
+            conn.setStatus("DISCONNECTED");
         }
-        log.info("Channel connection created: channel={} hotel={} status={}", proto.getChannelCode(), hotelId, proto.getStatus());
-        return connRepo.save(proto);
+        
+        if (proto.getCredentials() != null) conn.setCredentials(proto.getCredentials());
+        if (proto.getConfig() != null) conn.setConfig(proto.getConfig());
+
+        log.info("Channel connection upserted: channel={} hotel={} status={}", conn.getChannelCode(), hotelId, conn.getStatus());
+        return connRepo.save(conn);
     }
 
     @Transactional

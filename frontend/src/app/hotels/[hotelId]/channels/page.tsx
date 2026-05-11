@@ -114,6 +114,14 @@ export default function ChannelsPage() {
               >
                 Connect Booking.com
               </button>
+            ) : bookingConn.status === "DISCONNECTED" ? (
+              <button 
+                className="w-full hms-btn-solid hms-btn-sm" 
+                onClick={() => connectChannel("BOOKING_COM")}
+                disabled={loading}
+              >
+                Activate Connection
+              </button>
             ) : (
               <>
                 <button 
@@ -164,6 +172,14 @@ export default function ChannelsPage() {
                 disabled={loading}
               >
                 Connect Expedia
+              </button>
+            ) : expediaConn.status === "DISCONNECTED" ? (
+              <button 
+                className="w-full hms-btn-solid hms-btn-sm" 
+                onClick={() => connectChannel("EXPEDIA")}
+                disabled={loading}
+              >
+                Activate Connection
               </button>
             ) : (
               <>
