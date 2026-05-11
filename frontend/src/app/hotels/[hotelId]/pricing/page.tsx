@@ -36,8 +36,9 @@ export default function PricingPage() {
   const [rules, setRules] = useState<PricingRule[]>([]);
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [calendar, setCalendar] = useState<CalendarDay[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [baseRate, setBaseRate] = useState(100);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newRule, setNewRule] = useState({ name: "", ruleType: "DAY_OF_WEEK", multiplier: 1.1, priority: 0 });
 
   async function loadData() {
     setLoading(true);
@@ -45,7 +46,7 @@ export default function PricingPage() {
       const [r, p, c] = await Promise.all([
         apiFetch<PricingRule[]>(`/api/v1/hotels/${hotelId}/pricing/rules`),
         apiFetch<Promotion[]>(`/api/v1/hotels/${hotelId}/pricing/promotions`),
-        apiFetch<CalendarDay[]>(`/api/v1/hotels/${hotelId}/pricing/calendar?baseRate=100`),
+        apiFetch<CalendarDay[]>(`/api/v1/hotels/${hotelId}/pricing/calendar?baseRate=${baseRate}`),
       ]);
       setRules(r);
       setPromos(p);
@@ -59,15 +60,44 @@ export default function PricingPage() {
 
   useEffect(() => {
     if (getToken()) loadData();
-  }, [hotelId]);
+  }, [hotelId, baseRate]);
+
+  async function handleAddRule(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/pricing/rules`, {
+        method: "POST",
+        body: JSON.stringify({ ...newRule, hotelId, active: true }),
+      });
+      setShowAddModal(false);
+      setNewRule({ name: "", ruleType: "DAY_OF_WEEK", multiplier: 1.1, priority: 0 });
+      loadData();
+    } catch (e) {
+      alert("Failed to add rule: " + (e instanceof Error ? e.message : "Unknown error"));
+    }
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Revenue Management</h1>
-        <button onClick={loadData} className="hms-btn-outline hms-btn-sm" disabled={loading}>
-          {loading ? "Loading..." : "Refresh"}
-        </button>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Revenue Management</h1>
+          <p className="text-sm text-muted-foreground">Configure dynamic pricing rules and promotions.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-muted/30 px-3 py-1.5 rounded-lg border border-border/50">
+            <span className="text-xs font-medium">Base Rate Test:</span>
+            <input 
+              type="number" 
+              value={baseRate} 
+              onChange={e => setBaseRate(Number(e.target.value))}
+              className="w-20 bg-transparent border-none p-0 text-sm font-bold text-primary focus:ring-0"
+            />
+          </div>
+          <button onClick={loadData} className="hms-btn-outline hms-btn-sm" disabled={loading}>
+            {loading ? "Loading..." : "Refresh"}
+          </button>
+        </div>
       </div>
 
       {error && <div className="error">{error}</div>}
@@ -76,10 +106,10 @@ export default function PricingPage() {
         {/* Rate Calendar */}
         <section className="hms-section-card">
           <h2 className="hms-section-title">Rate Forecast (30 Days)</h2>
-          <p className="text-xs text-muted-foreground mb-4">Base rate: $100.00 (Example)</p>
+          <p className="text-[10px] text-muted-foreground mb-4">Showing dynamic pricing applied to ${baseRate.toFixed(2)} base rate.</p>
           <div className="h-[300px] overflow-y-auto border border-border/60 rounded-lg">
             <table className="hms-table text-xs">
-              <thead>
+              <thead className="sticky top-0 bg-background shadow-sm">
                 <tr>
                   <th>Date</th>
                   <th>Day</th>
@@ -93,8 +123,8 @@ export default function PricingPage() {
                     <td className="text-muted-foreground">{d.dayOfWeek.slice(0,3)}</td>
                     <td className="text-right font-semibold">
                       ${d.dynamicRate.toFixed(2)}
-                      {d.dynamicRate > 100 && <span className="ml-1 text-[10px] text-emerald-600">↑</span>}
-                      {d.dynamicRate < 100 && <span className="ml-1 text-[10px] text-rose-600">↓</span>}
+                      {d.dynamicRate > baseRate && <span className="ml-1 text-[10px] text-emerald-600">↑</span>}
+                      {d.dynamicRate < baseRate && <span className="ml-1 text-[10px] text-rose-600">↓</span>}
                     </td>
                   </tr>
                 ))}
@@ -121,12 +151,63 @@ export default function PricingPage() {
                 </div>
               </div>
             ))}
-            <button className="w-full py-2 border-2 border-dashed border-border rounded-lg text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-all">
+            <button 
+              onClick={() => setShowAddModal(true)}
+              className="w-full py-2 border-2 border-dashed border-border rounded-lg text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-all"
+            >
               + Add Pricing Rule
             </button>
           </div>
         </section>
       </div>
+
+      {/* Modal for adding rule */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl border border-border">
+            <h3 className="text-xl font-bold mb-4">Add Pricing Rule</h3>
+            <form onSubmit={handleAddRule} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-muted-foreground mb-1">Rule Name</label>
+                <input 
+                  required
+                  value={newRule.name}
+                  onChange={e => setNewRule({...newRule, name: e.target.value})}
+                  placeholder="e.g. Weekend Surcharge"
+                  className="w-full rounded-lg border-border bg-muted/30 text-sm focus:ring-primary"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-muted-foreground mb-1">Type</label>
+                  <select 
+                    value={newRule.ruleType}
+                    onChange={e => setNewRule({...newRule, ruleType: e.target.value})}
+                    className="w-full rounded-lg border-border bg-muted/30 text-sm focus:ring-primary"
+                  >
+                    <option value="DAY_OF_WEEK">Day of Week</option>
+                    <option value="SEASON">Season</option>
+                    <option value="OCCUPANCY_BRACKET">Occupancy</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-muted-foreground mb-1">Multiplier</label>
+                  <input 
+                    type="number" step="0.01"
+                    value={newRule.multiplier}
+                    onChange={e => setNewRule({...newRule, multiplier: Number(e.target.value)})}
+                    className="w-full rounded-lg border-border bg-muted/30 text-sm focus:ring-primary"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-2 rounded-lg border border-border text-sm font-medium hover:bg-muted transition-colors">Cancel</button>
+                <button type="submit" className="flex-1 py-2 rounded-lg bg-primary text-white text-sm font-bold shadow-lg shadow-primary/20 hover:bg-primary/90 transition-colors">Create Rule</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Promotions */}
       <section className="hms-section-card">

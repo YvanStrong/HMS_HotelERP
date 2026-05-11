@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import type { AuthUser } from "@/lib/auth";
-import { saveAuthSession } from "@/lib/auth";
+import { saveAuthSession, postLoginRedirectPath } from "@/lib/auth";
 
 function LoginPageInner() {
   const router = useRouter();
@@ -30,7 +30,7 @@ function LoginPageInner() {
         body: JSON.stringify({ username, password }),
       });
       saveAuthSession(data.accessToken, data.user);
-      router.push("/app");
+      router.push(postLoginRedirectPath(data.user));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
