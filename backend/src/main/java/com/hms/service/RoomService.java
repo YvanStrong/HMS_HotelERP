@@ -661,6 +661,11 @@ public class RoomService {
         return new ApiDtos.RoomTypesAvailabilityResponse(out);
     }
 
+    @Transactional(readOnly = true)
+    public int countAvailableOnDate(UUID hotelId, UUID roomTypeId, LocalDate date) {
+        return countSellableRoomsForStay(hotelId, roomTypeId, date, date.plusDays(1), 1);
+    }
+
     private int countSellableRoomsForStay(
             UUID hotelId, UUID roomTypeId, LocalDate checkIn, LocalDate checkOut, int adults) {
         List<Room> rooms = roomRepository.findByHotel_IdAndRoomType_Id(hotelId, roomTypeId);
