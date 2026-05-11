@@ -208,7 +208,7 @@ public class RoomService {
 
     private static ApiDtos.RoomTypeSummary roomTypeSummary(RoomType rt) {
         return new ApiDtos.RoomTypeSummary(
-                rt.getId(), rt.getName(), rt.getBaseRate(), rt.getMaxOccupancy(), rt.getBedCount());
+                rt.getId(), rt.getCode(), rt.getName(), rt.getBaseRate(), rt.getMaxOccupancy(), rt.getBedCount());
     }
 
     private static ApiDtos.ReservationSummary reservationSummary(Reservation res) {
