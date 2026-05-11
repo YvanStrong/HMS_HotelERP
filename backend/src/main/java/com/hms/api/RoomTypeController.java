@@ -41,7 +41,7 @@ public class RoomTypeController {
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         return roomTypeService.list(hotelId, hotelHeader).stream()
                 .map(rt -> new ApiDtos.RoomTypeSummary(
-                        rt.getId(), rt.getName(), rt.getBaseRate(), rt.getMaxOccupancy(), rt.getBedCount()))
+                        rt.getId(), rt.getCode(), rt.getName(), rt.getBaseRate(), rt.getMaxOccupancy(), rt.getBedCount()))
                 .toList();
     }
 
@@ -54,7 +54,7 @@ public class RoomTypeController {
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         var rt = roomTypeService.get(hotelId, hotelHeader, roomTypeId);
         return new ApiDtos.RoomTypeSummary(
-                rt.getId(), rt.getName(), rt.getBaseRate(), rt.getMaxOccupancy(), rt.getBedCount());
+                rt.getId(), rt.getCode(), rt.getName(), rt.getBaseRate(), rt.getMaxOccupancy(), rt.getBedCount());
     }
 
     @PostMapping
