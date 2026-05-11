@@ -65,6 +65,8 @@ export default function ChannelsPage() {
   }, [hotelId]);
 
   const bookingConn = connections.find(c => c.channelCode === "BOOKING_COM");
+  const expediaConn = connections.find(c => c.channelCode === "EXPEDIA");
+  const airbnbConn = connections.find(c => c.channelCode === "AIRBNB");
 
   return (
     <div className="space-y-6">
@@ -123,7 +125,7 @@ export default function ChannelsPage() {
                 </button>
                 <button 
                   className="hms-btn-outline hms-btn-sm px-2"
-                  onClick={() => alert("Channel Settings (XML/API) configuration coming soon.")}
+                  onClick={() => alert("Booking.com API Settings: Pointing to Ishyiga-Global XML endpoint.")}
                 >
                   Settings
                 </button>
@@ -133,7 +135,7 @@ export default function ChannelsPage() {
         </div>
 
         {/* Expedia */}
-        <div className="hms-section-card flex flex-col justify-between opacity-75">
+        <div className="hms-section-card flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded bg-yellow-500 flex items-center justify-center text-white font-bold text-xs">E.</div>
@@ -142,13 +144,48 @@ export default function ChannelsPage() {
                 <span className="text-[10px] text-muted-foreground">Expedia QuickConnect</span>
               </div>
             </div>
-            <div className="w-2 h-2 rounded-full bg-muted" />
+            <div className={`w-2 h-2 rounded-full ${expediaConn?.status === "CONNECTED" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-muted"}`} />
           </div>
-          <p className="text-[10px] text-center italic text-muted-foreground my-4">Coming soon to Phase 2</p>
-          <button className="w-full hms-btn-outline hms-btn-sm" disabled>Connect Expedia</button>
+          <div className="space-y-2 mb-6">
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Status</span>
+              <span className="font-medium">{expediaConn?.status || "NOT CONFIGURED"}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Last Sync</span>
+              <span className="font-medium">{expediaConn?.lastSyncAt ? new Date(expediaConn.lastSyncAt).toLocaleTimeString() : "Never"}</span>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            {!expediaConn ? (
+              <button 
+                className="w-full hms-btn-solid hms-btn-sm" 
+                onClick={() => connectChannel("EXPEDIA")}
+                disabled={loading}
+              >
+                Connect Expedia
+              </button>
+            ) : (
+              <>
+                <button 
+                  className="flex-1 hms-btn-solid hms-btn-sm" 
+                  disabled={syncingId !== null}
+                  onClick={() => triggerSync(expediaConn.id)}
+                >
+                  {syncingId === expediaConn.id ? "Syncing..." : "Sync Now"}
+                </button>
+                <button 
+                  className="hms-btn-outline hms-btn-sm px-2"
+                  onClick={() => alert("Expedia Settings: Using QuickConnect API v2.")}
+                >
+                  Settings
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
-        {/* iCal / Airbnb */}
+        {/* Airbnb / iCal */}
         <div className="hms-section-card flex flex-col justify-between border-dashed">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
@@ -158,19 +195,32 @@ export default function ChannelsPage() {
                 <span className="text-[10px] text-muted-foreground">Calendar Feed Sync</span>
               </div>
             </div>
+            <div className={`w-2 h-2 rounded-full ${airbnbConn?.status === "CONNECTED" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-muted"}`} />
           </div>
           <div className="p-3 bg-muted/30 rounded text-[10px] font-mono break-all mb-4 border border-border/50">
             https://hms-api-global.com/api/v1/public/hotels/{hotelId}/ical/feed
           </div>
-          <button 
-            className="w-full hms-btn-outline hms-btn-sm"
-            onClick={() => {
-              navigator.clipboard.writeText(`https://hms-api-global.com/api/v1/public/hotels/${hotelId}/ical/feed`);
-              alert("URL copied to clipboard!");
-            }}
-          >
-            Copy Feed URL
-          </button>
+          <div className="flex gap-2">
+            {!airbnbConn ? (
+              <button 
+                className="w-full hms-btn-solid hms-btn-sm" 
+                onClick={() => connectChannel("AIRBNB")}
+                disabled={loading}
+              >
+                Enable iCal Feed
+              </button>
+            ) : (
+              <button 
+                className="w-full hms-btn-outline hms-btn-sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(`https://hms-api-global.com/api/v1/public/hotels/${hotelId}/ical/feed`);
+                  alert("Feed URL copied to clipboard! Paste this into Airbnb/VRBO calendar export settings.");
+                }}
+              >
+                Copy Feed URL
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
