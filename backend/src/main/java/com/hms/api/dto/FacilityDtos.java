@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -145,4 +146,113 @@ public final class FacilityDtos {
             Boolean allowsWalkIn) {}
 
     public record FacilityCreatedResponse(UUID id) {}
+
+    // ── Water Quality ──────────────────────────────────────────────────────────
+
+    public record WaterQualityLogRequest(
+            BigDecimal phLevel,
+            BigDecimal freeChlorinePpm,
+            BigDecimal combinedChlorinePpm,
+            BigDecimal temperatureCelsius,
+            BigDecimal turbidityNtu,
+            Integer totalDissolvedSolids,
+            BigDecimal alkalinityPpm,
+            BigDecimal calciumHardnessPpm,
+            String notes,
+            boolean passedInspection,
+            String inspectorName) {}
+
+    public record WaterQualityLogItem(
+            UUID id,
+            Instant loggedAt,
+            String loggedBy,
+            BigDecimal phLevel,
+            BigDecimal freeChlorinePpm,
+            BigDecimal combinedChlorinePpm,
+            BigDecimal temperatureCelsius,
+            BigDecimal turbidityNtu,
+            Integer totalDissolvedSolids,
+            BigDecimal alkalinityPpm,
+            BigDecimal calciumHardnessPpm,
+            String notes,
+            boolean passedInspection,
+            String inspectorName,
+            Instant createdAt) {}
+
+    // ── Lifeguard Roster ───────────────────────────────────────────────────────
+
+    public record LifeguardShiftRequest(
+            @NotBlank String staffName,
+            String staffEmail,
+            String certificationName,
+            LocalDate certificationExpiry,
+            @NotBlank String shiftDate,
+            @NotBlank String shiftStart,
+            @NotBlank String shiftEnd,
+            String notes) {}
+
+    public record LifeguardShiftItem(
+            UUID id,
+            String staffName,
+            String staffEmail,
+            String certificationName,
+            LocalDate certificationExpiry,
+            LocalDate shiftDate,
+            LocalTime shiftStart,
+            LocalTime shiftEnd,
+            String status,
+            String notes,
+            boolean certificationExpiringSoon) {}
+
+    // ── Incidents ─────────────────────────────────────────────────────────────
+
+    public record IncidentReportRequest(
+            Instant occurredAt,
+            @NotBlank String title,
+            String description,
+            String severity,
+            String witnessNames) {}
+
+    public record IncidentResolveRequest(String resolution, @NotBlank String resolvedBy) {}
+
+    public record IncidentItem(
+            UUID id,
+            Instant occurredAt,
+            String title,
+            String description,
+            String severity,
+            String reportedBy,
+            String witnessNames,
+            String status,
+            String resolution,
+            Instant resolvedAt,
+            String resolvedBy,
+            Instant createdAt) {}
+
+    // ── Maintenance completion ─────────────────────────────────────────────────
+
+    public record MaintenanceCompleteRequest(
+            String completedBy,
+            String inspectorNotes,
+            String complianceStatus) {}
+
+    public record MaintenanceCompleteResponse(
+            UUID maintenanceId,
+            String status,
+            String completedBy,
+            String complianceStatus,
+            Instant completedAt) {}
+
+    // ── Revenue summary ───────────────────────────────────────────────────────
+
+    public record FacilityRevenueSummary(
+            UUID facilityId,
+            String facilityName,
+            LocalDate fromDate,
+            LocalDate toDate,
+            int totalBookings,
+            int checkedInCount,
+            BigDecimal totalRevenue,
+            BigDecimal roomChargedRevenue,
+            BigDecimal directRevenue) {}
 }

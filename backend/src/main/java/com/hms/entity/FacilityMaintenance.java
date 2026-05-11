@@ -63,6 +63,15 @@ public class FacilityMaintenance {
     @Column(precision = 14, scale = 2)
     private BigDecimal cost;
 
+    @Column(name = "completed_by", length = 255)
+    private String completedBy;
+
+    @Column(name = "inspector_notes", columnDefinition = "TEXT")
+    private String inspectorNotes;
+
+    @Column(name = "compliance_status", length = 64)
+    private String complianceStatus = "PENDING";
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

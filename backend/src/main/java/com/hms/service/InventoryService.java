@@ -6,6 +6,7 @@ import com.hms.api.dto.InventoryDtos;
 import com.hms.domain.ChargeType;
 import com.hms.domain.InventoryItemType;
 import com.hms.domain.PoPaymentTerms;
+import com.hms.domain.ValuationMethod;
 import com.hms.domain.PurchaseOrderStatus;
 import com.hms.domain.ReservationStatus;
 import com.hms.domain.StockTransactionType;
@@ -32,6 +33,7 @@ import java.time.Instant;
 import java.time.Year;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -95,7 +97,7 @@ public class InventoryService {
                     .map(InventoryCategory::getId)
                     .orElse(null);
             if (categoryId == null) {
-                long totalItems = inventoryItemRepository.countByHotel_Id(hotelId);
+                long totalItems = inventoryItemRepository.countByHotel_IdAndActiveTrue(hotelId);
                 long low = inventoryItemRepository.countLowStock(hotelId);
                 long out = inventoryItemRepository.countOutOfStock(hotelId);
                 BigDecimal totalValue = inventoryItemRepository.sumStockValue(hotelId);
@@ -123,12 +125,113 @@ public class InventoryService {
             filtered.add(i);
         }
         List<InventoryDtos.InventoryItemRow> rows = filtered.stream().map(this::toRow).toList();
-        long totalItems = inventoryItemRepository.countByHotel_Id(hotelId);
+        long totalItems = inventoryItemRepository.countByHotel_IdAndActiveTrue(hotelId);
         long low = inventoryItemRepository.countLowStock(hotelId);
         long out = inventoryItemRepository.countOutOfStock(hotelId);
         BigDecimal totalValue = inventoryItemRepository.sumStockValue(hotelId);
         return new InventoryDtos.InventoryItemsResponse(
                 rows, new InventoryDtos.InventoryListSummary(totalItems, low, out, totalValue));
+    }
+
+    @Transactional(readOnly = true)
+    public InventoryDtos.InventoryItemRow getItem(UUID hotelId, String hotelHeader, UUID itemId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        InventoryItem i =
+                inventoryItemRepository.findByIdAndHotel_Id(itemId, hotelId).orElseThrow(() -> notFound("Item"));
+        return toRow(i);
+    }
+
+    /** Resolve a product by barcode (preferred) or SKU for POS / receiving scans. */
+    @Transactional(readOnly = true)
+    public InventoryDtos.InventoryItemRow lookupProduct(UUID hotelId, String hotelHeader, String sku, String barcode) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        InventoryItem i = null;
+        if (barcode != null && !barcode.isBlank()) {
+            i = inventoryItemRepository
+                    .findByHotel_IdAndBarcodeIgnoreCase(hotelId, barcode.trim())
+                    .orElse(null);
+        }
+        if (i == null && sku != null && !sku.isBlank()) {
+            i = inventoryItemRepository
+                    .findByHotel_IdAndSkuIgnoreCase(hotelId, sku.trim())
+                    .orElse(null);
+        }
+        if (i == null) {
+            throw notFound("Product");
+        }
+        if (!i.isActive()) {
+            throw new ApiException(HttpStatus.GONE, "Product is inactive");
+        }
+        return toRow(i);
+    }
+
+    @Transactional
+    public InventoryDtos.InventoryItemRow patchItem(
+            UUID hotelId, String hotelHeader, UUID itemId, InventoryDtos.InventoryItemPatchRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        InventoryItem i =
+                inventoryItemRepository.findByIdAndHotel_Id(itemId, hotelId).orElseThrow(() -> notFound("Item"));
+        if (req.name() != null && !req.name().isBlank()) {
+            i.setName(req.name().trim());
+        }
+        if (req.sku() != null && !req.sku().isBlank()) {
+            String newSku = req.sku().trim();
+            final UUID currentItemId = i.getId();
+            inventoryItemRepository
+                    .findByHotel_IdAndSkuIgnoreCase(hotelId, newSku)
+                    .filter(other -> !other.getId().equals(currentItemId))
+                    .ifPresent(x -> {
+                        throw new ApiException(HttpStatus.CONFLICT, "SKU already exists: " + newSku);
+                    });
+            i.setSku(newSku);
+        }
+        if (req.categoryId() != null) {
+            InventoryCategory cat = inventoryCategoryRepository
+                    .findByIdAndHotel_Id(req.categoryId(), hotelId)
+                    .orElseThrow(() -> notFound("Category"));
+            i.setCategory(cat);
+        }
+        if (req.reorderPoint() != null) {
+            i.setReorderPoint(req.reorderPoint());
+        }
+        if (req.minimumStock() != null) {
+            i.setMinimumStock(req.minimumStock());
+        }
+        if (req.maximumStock() != null) {
+            i.setMaximumStock(req.maximumStock());
+        }
+        if (req.unitCost() != null) {
+            i.setUnitCost(req.unitCost());
+        }
+        if (req.sellingPrice() != null) {
+            i.setSellingPrice(req.sellingPrice());
+        }
+        if (req.unitOfMeasure() != null && !req.unitOfMeasure().isBlank()) {
+            i.setUnitOfMeasure(req.unitOfMeasure().trim());
+        }
+        if (req.description() != null) {
+            i.setDescription(req.description().isBlank() ? null : req.description().trim());
+        }
+        if (req.barcode() != null) {
+            i.setBarcode(req.barcode().isBlank() ? null : req.barcode().trim());
+        }
+        if (req.imageUrl() != null) {
+            i.setImageUrl(req.imageUrl().isBlank() ? null : req.imageUrl().trim());
+        }
+        if (req.expiryDate() != null) {
+            i.setExpiryDate(req.expiryDate());
+        }
+        if (req.manufactureDate() != null) {
+            i.setManufactureDate(req.manufactureDate());
+        }
+        if (req.active() != null) {
+            i.setActive(req.active());
+        }
+        if (req.valuationMethod() != null && !req.valuationMethod().isBlank()) {
+            i.setValuation(ValuationMethod.valueOf(req.valuationMethod().trim().toUpperCase()));
+        }
+        i = inventoryItemRepository.save(i);
+        return toRow(i);
     }
 
     private InventoryDtos.InventoryItemRow toRow(InventoryItem i) {
@@ -140,6 +243,7 @@ public class InventoryService {
                 ? new InventoryDtos.SupplierSummary(
                         i.getPreferredSupplier().getId(), i.getPreferredSupplier().getName())
                 : null;
+        String val = i.getValuation() != null ? i.getValuation().name() : ValuationMethod.AVERAGE_COST.name();
         return new InventoryDtos.InventoryItemRow(
                 i.getId(),
                 i.getName(),
@@ -154,7 +258,15 @@ public class InventoryService {
                 i.getMinibarReorderThreshold(),
                 status,
                 last,
-                sup);
+                sup,
+                i.getDescription(),
+                i.getBarcode(),
+                i.getSellingPrice(),
+                i.isActive(),
+                i.getExpiryDate(),
+                i.getManufactureDate(),
+                val,
+                i.getImageUrl());
     }
 
     private static String stockStatus(InventoryItem i) {
@@ -401,7 +513,14 @@ public class InventoryService {
             st.setQuantity(recv);
             st.setReference("PO:" + po.getId());
             st.setPerformedBy(req.receivedBy() != null ? req.receivedBy() : tenantAccessService.currentUser().getUsername());
-            st.setNotes(rl.notes());
+            String recvNotes = rl.notes();
+            if (rl.batchNumber() != null && !rl.batchNumber().isBlank()) {
+                recvNotes = (recvNotes != null ? recvNotes + " " : "") + "[batch=" + rl.batchNumber().trim() + "]";
+            }
+            if (rl.expiryDate() != null && !rl.expiryDate().isBlank()) {
+                recvNotes = (recvNotes != null ? recvNotes + " " : "") + "[expiry=" + rl.expiryDate().trim() + "]";
+            }
+            st.setNotes(recvNotes);
             st.setToLocation(req.location());
             stockTransactionRepository.save(st);
 
@@ -468,16 +587,39 @@ public class InventoryService {
     public InventoryDtos.CreatedIdResponse createCategory(
             UUID hotelId, String hotelHeader, InventoryDtos.CategoryCreateRequest req) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
-        String code = req.code().trim();
+        String name = req.name().trim();
+        String code =
+                req.code() != null && !req.code().isBlank()
+                        ? req.code().trim().toUpperCase(Locale.ROOT)
+                        : generateUniqueCategoryCode(hotelId, name);
         if (inventoryCategoryRepository.existsByHotel_IdAndCodeIgnoreCase(hotelId, code)) {
             throw new ApiException(HttpStatus.CONFLICT, "Category code already exists: " + code);
         }
         InventoryCategory c = new InventoryCategory();
         c.setHotel(hotelRepository.getReferenceById(hotelId));
-        c.setName(req.name().trim());
-        c.setCode(code.toUpperCase());
+        c.setName(name);
+        c.setCode(code);
         c = inventoryCategoryRepository.save(c);
         return new InventoryDtos.CreatedIdResponse(c.getId());
+    }
+
+    private String generateUniqueCategoryCode(UUID hotelId, String name) {
+        String base = name.replaceAll("[^A-Za-z0-9]+", "").toUpperCase(Locale.ROOT);
+        if (base.length() > 50) {
+            base = base.substring(0, 50);
+        }
+        if (base.isEmpty()) {
+            base = "CAT";
+        }
+        String candidate = base.length() > 64 ? base.substring(0, 64) : base;
+        int n = 0;
+        while (inventoryCategoryRepository.existsByHotel_IdAndCodeIgnoreCase(hotelId, candidate)) {
+            n++;
+            String suffix = "-" + n;
+            int keep = Math.max(1, 64 - suffix.length());
+            candidate = (base.length() > keep ? base.substring(0, keep) : base) + suffix;
+        }
+        return candidate;
     }
 
     @Transactional(readOnly = true)
@@ -495,7 +637,10 @@ public class InventoryService {
         InventoryCategory cat = inventoryCategoryRepository
                 .findByIdAndHotel_Id(req.categoryId(), hotelId)
                 .orElseThrow(() -> notFound("Category"));
-        String sku = req.sku().trim();
+        String sku =
+                req.sku() != null && !req.sku().isBlank()
+                        ? req.sku().trim().toUpperCase(Locale.ROOT)
+                        : generateUniqueSku(hotelId);
         if (inventoryItemRepository.findByHotel_IdAndSkuIgnoreCase(hotelId, sku).isPresent()) {
             throw new ApiException(HttpStatus.CONFLICT, "SKU already exists for this hotel: " + sku);
         }
@@ -512,8 +657,40 @@ public class InventoryService {
         i.setUnitOfMeasure(req.unitOfMeasure() != null && !req.unitOfMeasure().isBlank() ? req.unitOfMeasure().trim() : "piece");
         i.setType(i.isMinibarItem() ? InventoryItemType.MINIBAR_PRODUCT : InventoryItemType.CONSUMABLE);
         i.setPreferredSupplier(null);
+        if (req.description() != null && !req.description().isBlank()) {
+            i.setDescription(req.description().trim());
+        }
+        if (req.barcode() != null && !req.barcode().isBlank()) {
+            i.setBarcode(req.barcode().trim());
+        }
+        if (req.sellingPrice() != null) {
+            i.setSellingPrice(req.sellingPrice());
+        }
+        if (req.imageUrl() != null && !req.imageUrl().isBlank()) {
+            i.setImageUrl(req.imageUrl().trim());
+        }
+        if (req.expiryDate() != null) {
+            i.setExpiryDate(req.expiryDate());
+        }
+        if (req.manufactureDate() != null) {
+            i.setManufactureDate(req.manufactureDate());
+        }
         i = inventoryItemRepository.save(i);
         return new InventoryDtos.CreatedIdResponse(i.getId());
+    }
+
+    private String generateUniqueSku(UUID hotelId) {
+        for (int attempt = 0; attempt < 32; attempt++) {
+            String candidate =
+                    "SKU-"
+                            + Year.now()
+                            + "-"
+                            + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase(Locale.ROOT);
+            if (inventoryItemRepository.findByHotel_IdAndSkuIgnoreCase(hotelId, candidate).isEmpty()) {
+                return candidate;
+            }
+        }
+        throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not allocate unique SKU");
     }
 
     private static ApiException notFound(String what) {

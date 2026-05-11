@@ -5,6 +5,7 @@ import com.hms.domain.ValuationMethod;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -64,6 +65,21 @@ public class InventoryItem {
 
     @Column(name = "unit_cost", precision = 14, scale = 4)
     private BigDecimal unitCost = BigDecimal.ZERO;
+
+    @Column(name = "selling_price", precision = 14, scale = 4)
+    private BigDecimal sellingPrice;
+
+    @Column(name = "image_url", columnDefinition = "TEXT")
+    private String imageUrl;
+
+    @Column(name = "is_active", nullable = false)
+    private boolean active = true;
+
+    @Column(name = "expiry_date")
+    private LocalDate expiryDate;
+
+    @Column(name = "manufacture_date")
+    private LocalDate manufactureDate;
 
     @Column(name = "last_purchase_price", precision = 14, scale = 4)
     private BigDecimal lastPurchasePrice;
