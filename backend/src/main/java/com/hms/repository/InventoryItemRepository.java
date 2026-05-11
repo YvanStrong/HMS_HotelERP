@@ -1,6 +1,7 @@
 package com.hms.repository;
 
 import com.hms.entity.InventoryItem;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,7 +15,11 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem, UU
 
     Optional<InventoryItem> findByHotel_IdAndSkuIgnoreCase(UUID hotelId, String sku);
 
+    Optional<InventoryItem> findByHotel_IdAndBarcodeIgnoreCase(UUID hotelId, String barcode);
+
     List<InventoryItem> findByHotel_IdOrderByNameAsc(UUID hotelId);
+
+    List<InventoryItem> findByHotel_IdAndActiveTrueOrderByNameAsc(UUID hotelId);
 
     /**
      * Category filter uses id so we never call {@code upper()} on {@code category.code} (PostgreSQL may map legacy
@@ -24,6 +29,7 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem, UU
             """
             select i from InventoryItem i join fetch i.category c left join fetch i.preferredSupplier
             where i.hotel.id = :hotelId
+            and i.active = true
             and (:categoryId is null or c.id = :categoryId)
             """)
     List<InventoryItem> search(
@@ -33,14 +39,19 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem, UU
 
     long countByHotel_Id(UUID hotelId);
 
+    long countByHotel_IdAndActiveTrue(UUID hotelId);
+
     @Query(
-            "select count(i) from InventoryItem i where i.hotel.id = :hotelId and i.currentStock < i.reorderPoint")
+            "select count(i) from InventoryItem i where i.hotel.id = :hotelId and i.active = true and i.currentStock < i.reorderPoint")
     long countLowStock(@Param("hotelId") UUID hotelId);
 
-    @Query("select count(i) from InventoryItem i where i.hotel.id = :hotelId and i.currentStock <= 0")
+    @Query("select count(i) from InventoryItem i where i.hotel.id = :hotelId and i.active = true and i.currentStock <= 0")
     long countOutOfStock(@Param("hotelId") UUID hotelId);
 
     @Query(
-            "select coalesce(sum(i.currentStock * coalesce(i.unitCost, 0)), 0) from InventoryItem i where i.hotel.id = :hotelId")
+            "select coalesce(sum(i.currentStock * coalesce(i.unitCost, 0)), 0) from InventoryItem i where i.hotel.id = :hotelId and i.active = true")
     java.math.BigDecimal sumStockValue(@Param("hotelId") UUID hotelId);
+
+    List<InventoryItem> findByHotel_IdAndActiveTrueAndExpiryDateIsNotNullAndExpiryDateBeforeOrderByExpiryDateAsc(
+            UUID hotelId, LocalDate before);
 }

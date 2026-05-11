@@ -38,14 +38,30 @@ type Room = {
   } | null;
 };
 
+type ImpersonationResult = {
+  impersonationId?: string;
+  impersonationToken?: string;
+  expiresAt?: string;
+  notification?: Record<string, unknown>;
+  usage?: Record<string, unknown>;
+};
+
 export default function PlatformHotelDetailPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
-  
+
   const [hotel, setHotel] = useState<Hotel | null>(null);
   const [rooms, setRooms] = useState<Room[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [impOpen, setImpOpen] = useState(false);
+  const [impLoading, setImpLoading] = useState(false);
+  const [impReason, setImpReason] = useState("");
+  const [impDuration, setImpDuration] = useState(60);
+  const [impNotify, setImpNotify] = useState(true);
+  const [impResult, setImpResult] = useState<ImpersonationResult | null>(null);
+  const [impError, setImpError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +105,27 @@ export default function PlatformHotelDetailPage() {
       cancelled = true;
     };
   }, [hotelId]);
+
+  async function startImpersonation() {
+    if (impReason.trim().length < 20) {
+      setImpError("Reason must be at least 20 characters and reference a support ticket or business need.");
+      return;
+    }
+    setImpLoading(true);
+    setImpError(null);
+    setImpResult(null);
+    try {
+      const result = await apiFetch<ImpersonationResult>(`/api/v1/platform/tenants/${hotelId}/impersonate`, {
+        method: "POST",
+        body: JSON.stringify({ reason: impReason.trim(), duration: impDuration, notifyTenant: impNotify }),
+      });
+      setImpResult(result);
+    } catch (e) {
+      setImpError(e instanceof Error ? e.message : "Impersonation failed");
+    } finally {
+      setImpLoading(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -300,6 +337,16 @@ export default function PlatformHotelDetailPage() {
               </svg>
               Public Booking Page
             </Link>
+            <button
+              type="button"
+              onClick={() => { setImpResult(null); setImpError(null); setImpReason(""); setImpDuration(60); setImpNotify(true); setImpOpen(true); }}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+              </svg>
+              Impersonate Tenant
+            </button>
           </div>
         </div>
       </div>
@@ -354,6 +401,97 @@ export default function PlatformHotelDetailPage() {
           </div>
         )}
       </div>
+
+      {impOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl space-y-4">
+            <h3 className="text-lg font-semibold">Impersonate Tenant</h3>
+            <p className="text-sm text-muted-foreground">
+              Temporarily act as hotel admin. All actions will be audit-logged. The hotel admin will be notified.
+            </p>
+
+            {!impResult ? (
+              <>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-sm font-medium block mb-1">Reason <span className="text-destructive">*</span></label>
+                    <textarea
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm resize-none"
+                      rows={3}
+                      placeholder="Support ticket #SUP-2026-123: Investigating room assignment issue"
+                      value={impReason}
+                      onChange={(e) => setImpReason(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">{impReason.trim().length}/20 chars minimum</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium block mb-1">Duration</label>
+                    <select
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                      value={impDuration}
+                      onChange={(e) => setImpDuration(Number(e.target.value))}
+                    >
+                      {[15, 30, 45, 60, 90, 120, 180, 240].map((m) => (
+                        <option key={m} value={m}>{m} minutes</option>
+                      ))}
+                    </select>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" checked={impNotify} onChange={(e) => setImpNotify(e.target.checked)} />
+                    Notify hotel admin by email
+                  </label>
+                </div>
+                {impError && <p className="text-sm text-destructive">{impError}</p>}
+                <div className="flex justify-end gap-2">
+                  <button type="button" className="hms-btn-outline" onClick={() => setImpOpen(false)}>Cancel</button>
+                  <button
+                    type="button"
+                    className="hms-btn-solid bg-amber-600 hover:bg-amber-700 border-amber-600"
+                    disabled={impLoading}
+                    onClick={() => void startImpersonation()}
+                  >
+                    {impLoading ? "Processing…" : "Start Impersonation"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="rounded-lg border border-green-200 bg-green-50 p-4 space-y-2">
+                  <p className="text-sm font-semibold text-green-800">Impersonation active</p>
+                  {impResult.impersonationToken && (
+                    <div>
+                      <p className="text-xs text-muted-foreground">Token</p>
+                      <code
+                        className="text-xs font-mono bg-white border border-border rounded px-2 py-1 break-all block mt-1 cursor-copy"
+                        title="Click to copy"
+                        onClick={() => void navigator.clipboard.writeText(impResult.impersonationToken ?? "")}
+                      >
+                        {impResult.impersonationToken}
+                      </code>
+                    </div>
+                  )}
+                  {impResult.expiresAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Expires: <strong>{new Date(impResult.expiresAt).toLocaleString()}</strong>
+                    </p>
+                  )}
+                  {impResult.notification && (
+                    <p className="text-xs text-green-700">
+                      {String((impResult.notification as Record<string, unknown>).sent ? "Tenant notified" : "Tenant not notified")}
+                    </p>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Use this token as <code>X-Impersonate-Token</code> header with your super-admin bearer token to act as this hotel&apos;s admin.
+                </p>
+                <div className="flex justify-end">
+                  <button type="button" className="hms-btn-solid" onClick={() => setImpOpen(false)}>Close</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

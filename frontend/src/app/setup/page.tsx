@@ -27,7 +27,7 @@ export default function SetupDocPage() {
               Run the initialize request once per environment. It creates the platform admin, a sample hotel, and a hotel admin user.
             </p>
 
-            <div className="bg-slate-50 rounded-xl border border-border/60 p-5">
+            <div className="bg-muted/40 rounded-xl border border-border/60 p-5">
               <h2 className="text-lg font-semibold mb-3">Setup Instructions</h2>
               <ol className="space-y-3 text-sm text-muted-foreground">
                 <li className="flex gap-3">

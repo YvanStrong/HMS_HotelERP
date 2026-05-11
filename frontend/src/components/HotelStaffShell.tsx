@@ -132,33 +132,30 @@ export function HotelStaffShell({
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:sticky lg:top-0 inset-y-0 left-0 z-50 w-64 h-screen bg-white/95 backdrop-blur-sm border-r border-border transform transition-transform duration-200 ease-in-out ${
+        className={`fixed lg:sticky lg:top-0 inset-y-0 left-0 z-50 w-64 h-screen bg-white/97 backdrop-blur-sm border-r border-border/80 shadow-[2px_0_16px_rgba(58,45,40,0.06)] transform transition-transform duration-200 ease-in-out ${
           isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
         <div className="h-full flex flex-col">
-          {/* Logo area */}
-          <div className="p-4 border-b border-border">
-            <Link href="/" className="flex items-center gap-2">
+          {/* Brand + Hotel area */}
+          <div className="p-4 border-b border-border/70" style={{ background: "linear-gradient(to bottom right, hsl(40 22% 99%), hsl(30 18% 96%))" }}>
+            <Link href="/" className="flex items-center gap-2.5 no-underline group">
               {hotel.logoUrl ? (
                 <img
                   src={hotel.logoUrl}
                   alt={`${hotel.name} logo`}
-                  className="w-8 h-8 rounded-lg object-cover border border-border/60"
+                  className="w-9 h-9 rounded-lg object-cover border border-border/60 shadow-sm"
                 />
               ) : (
-                <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-sm" style={{ background: "hsl(var(--primary))" }}>
                   {(hotel.name || "H").slice(0, 1).toUpperCase()}
                 </div>
               )}
-              <span className="font-bold text-lg text-foreground truncate">{hotelLoading ? "Loading..." : hotel.name}</span>
+              <div className="min-w-0">
+                <p className="font-bold text-base text-foreground truncate leading-tight group-hover:text-primary transition-colors">{hotelLoading ? "Loading…" : hotel.name}</p>
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">Staff Console</p>
+              </div>
             </Link>
-          </div>
-
-          {/* Hotel info */}
-          <div className="px-4 py-3 bg-muted/50 border-b border-border">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Hotel</p>
-            <p className="font-medium text-foreground truncate">{hotelLoading ? "Loading..." : hotel.name}</p>
           </div>
 
           {/* Navigation */}
@@ -167,7 +164,7 @@ export function HotelStaffShell({
               <div key={section.title} className="mb-2">
                 <button
                   onClick={() => toggleSection(section.title)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
+                  className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors bg-transparent shadow-none rounded-none border-none"
                 >
                   <span>{section.title}</span>
                   <svg 
@@ -256,26 +253,28 @@ export function HotelStaffShell({
           </nav>
 
           {/* User section */}
-          <div className="p-4 border-t border-border">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                <span className="text-sm font-semibold text-primary">{user?.username?.charAt(0).toUpperCase() || "U"}</span>
+          <div className="p-3 border-t border-border/70">
+            <div className="flex items-center gap-2.5 px-1 py-1.5 rounded-lg">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white text-sm font-bold shadow-sm" style={{ background: "hsl(var(--primary))" }}>
+                {user?.username?.charAt(0).toUpperCase() || "U"}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">{user?.username || "User"}</p>
-                <p className="text-xs text-muted-foreground">{user?.role || "HOTEL_ADMIN"}</p>
+                <p className="text-sm font-semibold text-foreground truncate leading-tight">{user?.username || "User"}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{user?.role?.replace(/_/g, " ") || "HOTEL ADMIN"}</p>
               </div>
             </div>
-            <div className="mt-3 space-y-1">
-              {user && (
-                <button type="button" onClick={logout} className="w-full flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                  </svg>
-                  Sign out
-                </button>
-              )}
-            </div>
+            {user && (
+              <button
+                type="button"
+                onClick={logout}
+                className="mt-1 w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors bg-transparent shadow-none border-none"
+              >
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Sign out
+              </button>
+            )}
           </div>
         </div>
       </aside>
@@ -286,7 +285,7 @@ export function HotelStaffShell({
         <header className="lg:hidden bg-white border-b border-border px-4 py-3 flex items-center justify-between">
           <button
             onClick={() => setIsSidebarOpen(true)}
-            className="p-2 rounded-lg hover:bg-accent transition-colors"
+            className="p-2 rounded-lg hover:bg-accent transition-colors bg-transparent shadow-none border-none"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />

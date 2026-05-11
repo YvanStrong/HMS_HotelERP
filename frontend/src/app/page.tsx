@@ -66,15 +66,24 @@ export default function HomePage() {
       <main className="landing-main">
         <section className="landing-feature-strip" aria-label="Platform snapshot">
           <article className="landing-feature-tile">
-            <h3>3-step flow</h3>
+            <div className="flex items-center gap-2.5 mb-1.5">
+              <span className="text-lg" aria-hidden>🔍</span>
+              <h3>3-step flow</h3>
+            </div>
             <p>Search, book, and manage trips.</p>
           </article>
           <article className="landing-feature-tile">
-            <h3>1 guest account</h3>
+            <div className="flex items-center gap-2.5 mb-1.5">
+              <span className="text-lg" aria-hidden>🗝️</span>
+              <h3>1 guest account</h3>
+            </div>
             <p>Track your reservations in one place.</p>
           </article>
           <article className="landing-feature-tile">
-            <h3>24/7 access</h3>
+            <div className="flex items-center gap-2.5 mb-1.5">
+              <span className="text-lg" aria-hidden>⏰</span>
+              <h3>24/7 access</h3>
+            </div>
             <p>Lookup and trip tools whenever needed.</p>
           </article>
         </section>

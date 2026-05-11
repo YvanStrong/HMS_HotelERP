@@ -45,4 +45,52 @@ public interface FacilityBookingRepository extends JpaRepository<FacilityBooking
             @Param("facilityId") UUID facilityId,
             @Param("startInclusive") java.time.LocalDateTime startInclusive,
             @Param("endExclusive") java.time.LocalDateTime endExclusive);
+
+    @Query(
+            """
+            select count(b) from FacilityBooking b
+            where b.facility.id = :facilityId
+              and b.slot.startTime >= :startInclusive
+              and b.slot.startTime < :endExclusive
+              and b.status <> com.hms.domain.FacilityBookingStatus.CANCELLED
+            """)
+    long countActiveForFacilityWindow(
+            @Param("facilityId") UUID facilityId,
+            @Param("startInclusive") java.time.LocalDateTime startInclusive,
+            @Param("endExclusive") java.time.LocalDateTime endExclusive);
+
+    @Query(
+            """
+            select coalesce(sum(b.amountPaid), 0) from FacilityBooking b
+            where b.facility.id = :facilityId
+              and b.slot.startTime >= :startInclusive
+              and b.slot.startTime < :endExclusive
+              and b.status <> com.hms.domain.FacilityBookingStatus.CANCELLED
+            """)
+    java.math.BigDecimal sumRevenueForFacilityWindow(
+            @Param("facilityId") UUID facilityId,
+            @Param("startInclusive") java.time.LocalDateTime startInclusive,
+            @Param("endExclusive") java.time.LocalDateTime endExclusive);
+
+    @Query(
+            """
+            select coalesce(sum(b.amountPaid), 0) from FacilityBooking b
+            where b.facility.id = :facilityId
+              and b.slot.startTime >= :startInclusive
+              and b.slot.startTime < :endExclusive
+              and b.status <> com.hms.domain.FacilityBookingStatus.CANCELLED
+              and b.chargeToRoom = true
+            """)
+    java.math.BigDecimal sumRoomChargedRevenueForFacilityWindow(
+            @Param("facilityId") UUID facilityId,
+            @Param("startInclusive") java.time.LocalDateTime startInclusive,
+            @Param("endExclusive") java.time.LocalDateTime endExclusive);
+
+    @Query(
+            """
+            select count(b) from FacilityBooking b
+            where b.facility.id = :facilityId
+              and b.status = com.hms.domain.FacilityBookingStatus.CHECKED_IN
+            """)
+    long countCheckedInByFacility(@Param("facilityId") UUID facilityId);
 }

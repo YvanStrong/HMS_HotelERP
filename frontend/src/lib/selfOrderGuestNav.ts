@@ -8,7 +8,7 @@ export type SelfOrderGuestNavId = "menu" | "status" | "kitchen" | "pickup";
 export type SelfOrderGuestNavDef = {
   id: SelfOrderGuestNavId;
   /** Path segment under /book/order/[hotelId]/ — empty = menu root */
-  segment: "" | "status" | "kitchen" | "pickup";
+  segment: "" | "status" | "kitchen" | "pickup" | "services";
   label: string;
 };
 

@@ -272,7 +272,7 @@ export function RoomDetailDrawer({
                   </span>
                 )}
                 {room.activeRoomBlockId && (
-                  <span className="text-xs font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
+                  <span className="text-xs font-medium text-foreground bg-muted px-2 py-0.5 rounded-md">
                     🔒 Blocked
                   </span>
                 )}

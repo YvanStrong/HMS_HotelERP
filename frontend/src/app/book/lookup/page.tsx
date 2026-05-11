@@ -125,7 +125,7 @@ export default function BookLookupPage() {
           autoComplete="email"
         />
         <div className="mt-6">
-          <button type="submit" disabled={!canLookup} className="w-full sm:w-auto">
+          <button type="submit" disabled={!canLookup} className="hms-btn-solid w-full sm:w-auto">
             Look up
           </button>
         </div>

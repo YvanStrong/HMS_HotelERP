@@ -242,8 +242,8 @@ export default function GuestTripsPage() {
             </div>
 
             {r.standardArrivalMessage && (
-              <div className="mt-3 p-3 bg-blue-50/80 rounded-lg border border-blue-100">
-                <p className="text-sm text-blue-800">
+              <div className="mt-3 p-3 bg-accent/60 rounded-lg border border-primary/15">
+                <p className="text-sm text-foreground">
                   <span className="font-semibold">Arrival —</span> {r.standardArrivalMessage}
                 </p>
               </div>
