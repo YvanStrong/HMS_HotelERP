@@ -356,6 +356,50 @@ public class GuestService {
                 .orElse(Map.of());
     }
 
+    @Transactional
+    public void mergeGuests(UUID hotelId, UUID sourceGuestId, UUID targetGuestId) {
+        tenantAccessService.assertHotelAccess(hotelId, null);
+        Guest source = guestRepository.findByIdAndHotel_Id(sourceGuestId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Source guest not found"));
+        Guest target = guestRepository.findByIdAndHotel_Id(targetGuestId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Target guest not found"));
+
+        if (source.getId().equals(target.getId())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Source and target guest are the same");
+        }
+
+        // 1. Move reservations
+        reservationRepository.findByGuest_Id(sourceGuestId).forEach(r -> {
+            r.setGuest(target);
+            reservationRepository.save(r);
+        });
+
+        // 2. Move loyalty transactions
+        loyaltyTransactionRepository.findByGuest_IdOrderByTransactionDateDesc(sourceGuestId).forEach(t -> {
+            t.setGuest(target);
+            loyaltyTransactionRepository.save(t);
+        });
+
+        // 3. Sync target points/tier
+        recalculateGuestLoyalty(target);
+
+        // 4. Delete source
+        guestRepository.delete(source);
+    }
+
+    @Transactional
+    public void recalculateAllLoyalty(UUID hotelId) {
+        tenantAccessService.assertHotelAccess(hotelId, null);
+        guestRepository.findByHotel_Id(hotelId).forEach(this::recalculateGuestLoyalty);
+    }
+
+    private void recalculateGuestLoyalty(Guest g) {
+        long totalPoints = loyaltyTransactionRepository.sumPostedPointsByGuestId(g.getId());
+        g.setLoyaltyPoints(totalPoints);
+        g.setLoyaltyTier(tierFromPoints(totalPoints));
+        guestRepository.save(g);
+    }
+
     private Map<String, Object> parseJsonMap(String json) {
         if (json == null || json.isBlank()) {
             return Map.of();

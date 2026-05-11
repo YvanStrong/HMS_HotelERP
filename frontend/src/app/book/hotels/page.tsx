@@ -26,7 +26,6 @@ export default function BookHotelsCatalogPage() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [debug, setDebug] = useState(false);
 
   useEffect(() => {
     let c = false;
@@ -69,11 +68,11 @@ export default function BookHotelsCatalogPage() {
 
   return (
     <div className="container-page py-8">
-      {/* Header */}
-      <div className="text-center max-w-2xl mx-auto mb-8">
-        <h1 className="text-3xl font-bold tracking-tight mb-3">Browse All Hotels</h1>
+      <div className="bg-card rounded-xl border border-border/60 p-5 sm:p-6 shadow-soft mb-8">
+        <p className="text-xs uppercase tracking-[0.18em] font-semibold text-muted-foreground mb-1">Discovery</p>
+        <h1 className="text-3xl font-bold tracking-tight mb-2">Browse all hotels</h1>
         <p className="text-muted-foreground">
-          Explore our curated collection of premium properties. Find your perfect stay with detailed photos, amenities, and instant availability.
+          Explore available properties, compare options quickly, and open a hotel to book in a few steps.
         </p>
       </div>
 
@@ -153,27 +152,6 @@ export default function BookHotelsCatalogPage() {
         </>
       )}
 
-      {/* Debug Toggle */}
-      <div className="mt-8 pt-8 border-t">
-        <button
-          onClick={() => setDebug(!debug)}
-          className="text-xs text-muted-foreground hover:text-foreground underline"
-        >
-          {debug ? "Hide Debug Info" : "Show Debug Info"}
-        </button>
-        {debug && hotels && (
-          <div className="mt-4 p-4 bg-slate-900 text-slate-100 rounded-lg overflow-auto max-h-96 text-xs font-mono">
-            <p className="text-slate-400 mb-2">Raw hotel data from API:</p>
-            {hotels.map(h => (
-              <div key={h.id} className="mb-4 pb-4 border-b border-slate-700">
-                <p><span className="text-yellow-400">{h.name}</span> ({h.id})</p>
-                <p className="text-slate-400">imageUrl: {h.imageUrl ? `"${h.imageUrl.slice(0, 50)}..."` : "undefined"}</p>
-                <p className="text-slate-400">logoUrl: {h.logoUrl ? `"${h.logoUrl.slice(0, 50)}..."` : "undefined"}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

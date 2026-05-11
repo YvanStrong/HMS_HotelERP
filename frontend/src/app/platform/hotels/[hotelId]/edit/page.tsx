@@ -4,8 +4,18 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
+import { isSuperAdmin, loadAuthUser } from "@/lib/auth";
 import { publicFetch } from "@/lib/publicApi";
 import { ImageUpload } from "@/components/ImageUpload";
+
+type StaffUserRow = {
+  id: string;
+  username: string;
+  email: string | null;
+  role: string;
+  isActive: boolean;
+  createdAt: string;
+};
 
 type Hotel = {
   id: string;
@@ -47,6 +57,21 @@ export default function EditHotelPage() {
   const [logoUrl, setLogoUrl] = useState("");
   const [starRating, setStarRating] = useState("");
   const [isActive, setIsActive] = useState(true);
+
+  const [staffUsers, setStaffUsers] = useState<StaffUserRow[]>([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [staffLoadError, setStaffLoadError] = useState<string | null>(null);
+  const [resetUserId, setResetUserId] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [platformSuperAdmin, setPlatformSuperAdmin] = useState(false);
+
+  useEffect(() => {
+    setPlatformSuperAdmin(isSuperAdmin(loadAuthUser()));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,6 +116,91 @@ export default function EditHotelPage() {
       cancelled = true;
     };
   }, [hotelId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!getToken() || !platformSuperAdmin || !hotelId) return undefined;
+    (async () => {
+      setStaffLoading(true);
+      setStaffLoadError(null);
+      setResetUserId("");
+      try {
+        const rows = await apiFetch<StaffUserRow[]>(`/api/v1/hotels/${hotelId}/staff-users`, {
+          quiet: true,
+        });
+        if (!cancelled) {
+          const list = Array.isArray(rows) ? rows : [];
+          setStaffUsers(list);
+          if (list.length > 0) {
+            const admin = list.find((u) => u.role === "HOTEL_ADMIN") ?? list[0];
+            setResetUserId(admin?.id ?? "");
+          }
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setStaffUsers([]);
+          setStaffLoadError(e instanceof Error ? e.message : "Could not load staff users");
+        }
+      } finally {
+        if (!cancelled) setStaffLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hotelId, platformSuperAdmin]);
+
+  function generatePassword() {
+    const chars =
+      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*-_";
+    const len = 14;
+    const arr = new Uint32Array(len);
+    crypto.getRandomValues(arr);
+    let out = "";
+    for (let i = 0; i < len; i++) {
+      out += chars[arr[i]! % chars.length];
+    }
+    setNewPassword(out);
+    setConfirmPassword(out);
+    setResetMessage(null);
+    setResetError(null);
+  }
+
+  async function handleResetCredentials(e: React.FormEvent) {
+    e.preventDefault();
+    setResetMessage(null);
+    setResetError(null);
+    if (!resetUserId) {
+      setResetError("Select a staff account.");
+      return;
+    }
+    if (newPassword.length < 8) {
+      setResetError("Password must be at least 8 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setResetError("Passwords do not match.");
+      return;
+    }
+    setResetBusy(true);
+    try {
+      const user = staffUsers.find((u) => u.id === resetUserId);
+      await apiFetch(`/api/v1/hotels/${hotelId}/staff-users/${resetUserId}/reset-password`, {
+        method: "POST",
+        body: JSON.stringify({ newPassword }),
+        quiet: true,
+      });
+      setResetMessage(
+        `Password updated for ${user?.username ?? "staff"}. Share it with the property through a secure channel.`,
+      );
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "Reset failed");
+    } finally {
+      setResetBusy(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -321,6 +431,93 @@ export default function EditHotelPage() {
             </div>
           </div>
         </div>
+
+        {/* Staff credentials — super admin only (uses hotel staff-users API + X-Hotel-ID from path) */}
+        {platformSuperAdmin && (
+          <div className="space-y-4 pt-4 border-t">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <svg className="w-5 h-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1721 9z" />
+              </svg>
+              Hotel staff credentials
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Reset sign-in passwords for this property&apos;s staff accounts (e.g. hotel admin). Share new passwords only through a secure channel.
+            </p>
+
+            {staffLoading && <p className="text-sm text-muted-foreground">Loading staff…</p>}
+            {staffLoadError && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{staffLoadError}</div>
+            )}
+
+            {!staffLoading && !staffLoadError && staffUsers.length === 0 && (
+              <p className="text-sm text-muted-foreground">No staff users found for this hotel. Create one via platform onboarding or POST /api/v1/platform/users.</p>
+            )}
+
+            {staffUsers.length > 0 && (
+              <form onSubmit={handleResetCredentials} className="space-y-4 rounded-lg border border-border/80 bg-muted/20 p-4">
+                <div>
+                  <label htmlFor="resetStaff" className="block text-sm font-medium mb-1.5">
+                    Staff account
+                  </label>
+                  <select
+                    id="resetStaff"
+                    value={resetUserId}
+                    onChange={(e) => {
+                      setResetUserId(e.target.value);
+                      setResetMessage(null);
+                      setResetError(null);
+                    }}
+                  >
+                    {staffUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.username} · {u.role}
+                        {!u.isActive ? " (inactive)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="newPw" className="block text-sm font-medium mb-1.5">
+                      New password
+                    </label>
+                    <input
+                      id="newPw"
+                      type="password"
+                      autoComplete="new-password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Min. 8 characters"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="confirmPw" className="block text-sm font-medium mb-1.5">
+                      Confirm password
+                    </label>
+                    <input
+                      id="confirmPw"
+                      type="password"
+                      autoComplete="new-password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" className="hms-btn-outline text-sm" onClick={generatePassword}>
+                    Generate secure password
+                  </button>
+                  <button type="submit" disabled={resetBusy || !resetUserId} className="hms-btn-solid text-sm">
+                    {resetBusy ? "Updating…" : "Reset password"}
+                  </button>
+                </div>
+                {resetError && <p className="text-sm text-red-700">{resetError}</p>}
+                {resetMessage && <p className="text-sm text-green-800">{resetMessage}</p>}
+              </form>
+            )}
+          </div>
+        )}
 
         {/* Images */}
         <div className="space-y-4 pt-4 border-t">

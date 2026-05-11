@@ -40,8 +40,12 @@ public final class GuestInputApplier {
         guest.setGender(g.gender());
         guest.setEmail(g.email());
         guest.setPhone(g.phone());
-        guest.setPhoneCountryCode(g.phoneCountryCode());
-        guest.setCountry(g.country() != null && !g.country().isBlank() ? g.country().trim() : "Rwanda");
+        guest.setPhoneCountryCode(
+                g.phoneCountryCode() != null && !g.phoneCountryCode().isBlank()
+                        ? g.phoneCountryCode().trim()
+                        : hotel.getPhoneCountryCode());
+        guest.setCountry(
+                g.country() != null && !g.country().isBlank() ? g.country().trim() : hotel.getDefaultCountry());
         guest.setProvince(g.province());
         guest.setDistrict(g.district());
         guest.setSector(g.sector());
@@ -49,7 +53,11 @@ public final class GuestInputApplier {
         guest.setVillage(g.village());
         guest.setStreetNumber(g.streetNumber());
         guest.setAddressNotes(g.addressNotes());
-        String idType = g.idType() != null && !g.idType().isBlank() ? g.idType().trim().toUpperCase() : "NATIONAL_ID";
+        String idType = g.idType() != null && !g.idType().isBlank()
+                ? g.idType().trim().toUpperCase()
+                : (hotel.getDefaultIdType() != null && !hotel.getDefaultIdType().isBlank()
+                        ? hotel.getDefaultIdType().trim().toUpperCase()
+                        : "NATIONAL_ID");
         guest.setIdType(idType);
         guest.setIdExpiryDate(g.idExpiryDate());
         if (g.idDocument() != null) {
@@ -73,7 +81,7 @@ public final class GuestInputApplier {
         if (g.blacklistReason() != null) {
             guest.setBlacklistReason(g.blacklistReason().isBlank() ? null : g.blacklistReason().trim());
         }
-        GuestProfileDefaults.ensureRequiredForPersistence(guest);
+        GuestProfileDefaults.ensureRequiredForPersistence(guest, hotel);
     }
 
     /** Overwrites fields from staff edit before booking; validates national_id uniqueness when changed. */
@@ -180,6 +188,6 @@ public final class GuestInputApplier {
         if (g.blacklistReason() != null) {
             guest.setBlacklistReason(g.blacklistReason().isBlank() ? null : g.blacklistReason().trim());
         }
-        GuestProfileDefaults.ensureRequiredForPersistence(guest);
+        GuestProfileDefaults.ensureRequiredForPersistence(guest, guest.getHotel());
     }
 }

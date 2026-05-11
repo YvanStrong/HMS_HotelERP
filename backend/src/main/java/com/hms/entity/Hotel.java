@@ -30,6 +30,27 @@ public class Hotel {
     @Column(nullable = false, length = 8)
     private String currency = "USD";
 
+    @Column(name = "default_country", length = 100)
+    private String defaultCountry;
+
+    @Column(name = "default_id_type", length = 30)
+    private String defaultIdType;
+
+    @Column(name = "phone_country_code", length = 5)
+    private String phoneCountryCode;
+
+    @Column(name = "invoice_prefix", length = 20)
+    private String invoicePrefix;
+
+    @Column(name = "check_in_time", length = 5)
+    private String checkInTime;
+
+    @Column(name = "check_out_time", length = 5)
+    private String checkOutTime;
+
+    @Column(name = "tax_rate", precision = 5, scale = 2)
+    private BigDecimal taxRate;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "subscription_status", nullable = false, length = 32)
     private SubscriptionStatus subscriptionStatus;
@@ -71,6 +92,21 @@ public class Hotel {
      */
     @Column(name = "order_board_secret", length = 128)
     private String orderBoardSecret;
+
+    /**
+     * When true, {@code /self-order/pickup-board} returns cards without {@code pickupDisplayName}. Kitchen board API is
+     * unaffected.
+     */
+    @Column(name = "pickup_board_hide_guest_names", nullable = false)
+    private boolean pickupBoardHideGuestNames = false;
+
+    /** When false, SMS READY alerts are skipped for this hotel even if Twilio is globally configured. */
+    @Column(name = "self_order_sms_enabled", nullable = false)
+    private boolean selfOrderSmsEnabled = true;
+
+    /** When false, Web Push READY alerts are skipped for this hotel even if VAPID is globally configured. */
+    @Column(name = "self_order_push_enabled", nullable = false)
+    private boolean selfOrderPushEnabled = true;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;

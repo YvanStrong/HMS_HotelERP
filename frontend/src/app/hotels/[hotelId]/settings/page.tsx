@@ -71,7 +71,7 @@ export default function HotelSettingsPage() {
 
     let remoteSaved = false;
     try {
-      await apiFetch(`/api/v1/platform/hotels/${hotelId}`, {
+      await apiFetch(`/api/v1/hotels/${hotelId}/settings`, {
         method: "PUT",
         body: JSON.stringify(body),
       });

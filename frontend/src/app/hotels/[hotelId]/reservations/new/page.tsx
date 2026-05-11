@@ -7,6 +7,7 @@ import { apiFetch, getToken } from "@/lib/api";
 import { COUNTRY_OPTIONS, GENDER_OPTIONS, PHONE_CODE_OPTIONS } from "@/lib/guestFormConstants";
 import { printReservationDocument } from "@/lib/printReservationDocument";
 import { staffAppPath } from "@/lib/staffAppRoutes";
+import { useHotelContext } from "@/lib/useHotelContext";
 
 type GuestSearchHit = {
   guest: {
@@ -73,6 +74,12 @@ type CreateRes = {
   message: string;
 };
 
+function phoneCodeForCountryName(countryName: string): string {
+  const match = COUNTRY_OPTIONS.find((c) => c.name.toLowerCase() === countryName.trim().toLowerCase());
+  if (!match) return "";
+  const entry = PHONE_CODE_OPTIONS.find((p) => p.iso2 === (match as any).iso2);
+  return entry?.code ?? "";
+}
 function localYmd(d = new Date()) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -106,8 +113,8 @@ export default function NewStaffReservationPage() {
   const [dob, setDob] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [phoneCc, setPhoneCc] = useState("+250");
-  const [country, setCountry] = useState("Rwanda");
+  const [phoneCc, setPhoneCc] = useState("");
+  const [country, setCountry] = useState("");
   const [province, setProvince] = useState("");
   const [district, setDistrict] = useState("");
   const [sector, setSector] = useState("");
@@ -143,10 +150,17 @@ export default function NewStaffReservationPage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState<CreateRes | null>(null);
   const [hotelName, setHotelName] = useState("Hotel");
+  const { hotel } = useHotelContext(hotelId);
   const [pendingDraft, setPendingDraft] = useState<Record<string, unknown> | null>(null);
 
   const bookingSource = walkIn ? "WALK_IN" : "FRONT_DESK";
   const draftKey = `hms:new-reservation:draft:${hotelId}:${walkIn ? "walkin" : "staff"}`;
+
+  useEffect(() => {
+    if (hotel.name) setHotelName(hotel.name);
+    setCountry((prev) => prev || hotel.country || "");
+    setPhoneCc((prev) => prev || phoneCodeForCountryName(hotel.country || ""));
+  }, [hotel]);
 
   const markGuestEdited = useCallback(() => {
     if (guestId) {
@@ -259,8 +273,8 @@ export default function NewStaffReservationPage() {
     setDob(g.date_of_birth);
     setEmail(g.email ?? "");
     setPhone(g.phone ?? "");
-    setPhoneCc(g.phone_country_code ?? "+250");
-    setCountry(a.country ?? "Rwanda");
+    setPhoneCc(g.phone_country_code ?? phoneCodeForCountryName(a.country ?? hotel.country ?? ""));
+    setCountry(a.country ?? hotel.country ?? "");
     setProvince(a.province ?? "");
     setDistrict(a.district ?? "");
     setSector(a.sector ?? "");
@@ -439,8 +453,8 @@ export default function NewStaffReservationPage() {
     setDob(String(d.dob ?? ""));
     setEmail(String(d.email ?? ""));
     setPhone(String(d.phone ?? ""));
-    setPhoneCc(String(d.phoneCc ?? "+250"));
-    setCountry(String(d.country ?? "Rwanda"));
+    setPhoneCc(String(d.phoneCc ?? phoneCodeForCountryName(String(d.country ?? hotel.country ?? ""))));
+    setCountry(String(d.country ?? hotel.country ?? ""));
     setProvince(String(d.province ?? ""));
     setDistrict(String(d.district ?? ""));
     setSector(String(d.sector ?? ""));
@@ -540,7 +554,7 @@ export default function NewStaffReservationPage() {
       email: email.trim() || null,
       phone: phone.trim() || null,
       phone_country_code: phoneCc.trim() || null,
-      country: country.trim() || "Rwanda",
+      country: country.trim() || null,
       province: province.trim() || null,
       district: district.trim() || null,
       sector: sector.trim() || null,
@@ -1718,7 +1732,7 @@ export default function NewStaffReservationPage() {
             <div className="bg-card rounded-2xl border border-border/60 p-6 shadow-sm space-y-5">
               <h2 className="text-lg font-semibold">Payment &amp; confirm</h2>
               <label>
-                Deposit amount ({selectedAvail?.currency ?? "RWF"})
+                Deposit amount ({selectedAvail?.currency ?? hotel.currency ?? "USD"})
                 <input
                   type="number"
                   min={0}

@@ -5,10 +5,14 @@ import com.hms.config.JwtProperties;
 import com.hms.entity.AppUser;
 import com.hms.repository.AppUserRepository;
 import com.hms.service.GuestPortalRegistrationService;
+import com.hms.service.PasswordResetService;
+import com.hms.security.LoginAttemptService;
+import com.hms.security.SecurityAuditService;
 import com.hms.security.JwtService;
 import com.hms.security.RolePermissions;
 import com.hms.security.UserPrincipal;
 import com.hms.web.ApiException;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Optional;
 import org.springframework.http.HttpStatus;
@@ -30,18 +34,27 @@ public class AuthController {
     private final JwtProperties jwtProperties;
     private final AppUserRepository appUserRepository;
     private final GuestPortalRegistrationService guestPortalRegistrationService;
+    private final LoginAttemptService loginAttemptService;
+    private final SecurityAuditService securityAuditService;
+    private final PasswordResetService passwordResetService;
 
     public AuthController(
             AuthenticationManager authenticationManager,
             JwtService jwtService,
             JwtProperties jwtProperties,
             AppUserRepository appUserRepository,
-            GuestPortalRegistrationService guestPortalRegistrationService) {
+            GuestPortalRegistrationService guestPortalRegistrationService,
+            LoginAttemptService loginAttemptService,
+            SecurityAuditService securityAuditService,
+            PasswordResetService passwordResetService) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.jwtProperties = jwtProperties;
         this.appUserRepository = appUserRepository;
         this.guestPortalRegistrationService = guestPortalRegistrationService;
+        this.loginAttemptService = loginAttemptService;
+        this.securityAuditService = securityAuditService;
+        this.passwordResetService = passwordResetService;
     }
 
     @PostMapping("/register-guest")
@@ -50,23 +63,58 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<ApiDtos.LoginResponse> login(@Valid @RequestBody ApiDtos.LoginRequest request) {
+    public ResponseEntity<ApiDtos.LoginResponse> login(
+            @Valid @RequestBody ApiDtos.LoginRequest request, HttpServletRequest httpRequest) {
+        String loginKey = loginKey(request, httpRequest);
+        loginAttemptService.assertAllowed(loginKey);
         Optional<AppUser> resolved = resolveUser(request);
         if (resolved.isEmpty()) {
+            loginAttemptService.onFailure(loginKey);
             throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Invalid username or password");
         }
         AppUser user = resolved.get();
         if (!user.isActive()) {
+            loginAttemptService.onFailure(loginKey);
+            securityAuditService.logEvent(
+                    "LOGIN_BLOCKED_DISABLED_ACCOUNT",
+                    user.getId(),
+                    user.getHotel() != null ? user.getHotel().getId() : null,
+                    java.util.Map.of("username", user.getUsername()));
             throw new ApiException(HttpStatus.UNAUTHORIZED, "ACCOUNT_DISABLED", "This staff account is deactivated");
         }
         try {
             var auth = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(user.getUsername(), request.password()));
             UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
+            loginAttemptService.onSuccess(loginKey);
+            securityAuditService.logEvent(
+                    "LOGIN_SUCCESS",
+                    principal.getId(),
+                    principal.getHotelId(),
+                    java.util.Map.of("username", principal.getUsername()));
             return ResponseEntity.ok(buildLoginResponse(principal));
         } catch (BadCredentialsException e) {
+            loginAttemptService.onFailure(loginKey);
+            securityAuditService.logEvent(
+                    "LOGIN_FAILED_BAD_CREDENTIALS",
+                    user.getId(),
+                    user.getHotel() != null ? user.getHotel().getId() : null,
+                    java.util.Map.of("username", user.getUsername()));
             throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Invalid username or password");
         }
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ApiDtos.ForgotPasswordResponse> forgotPassword(
+            @Valid @RequestBody ApiDtos.ForgotPasswordRequest request) {
+        return ResponseEntity.ok(passwordResetService.requestReset(request.usernameOrEmail()));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<ApiDtos.MessageResponse> resetPasswordWithToken(
+            @Valid @RequestBody ApiDtos.ResetPasswordWithTokenRequest request) {
+        passwordResetService.completeReset(request.token(), request.newPassword());
+        return ResponseEntity.ok(new ApiDtos.MessageResponse("Password updated. You can sign in with your new password."));
     }
 
     @PostMapping("/refresh")
@@ -77,6 +125,11 @@ public class AuthController {
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_INVALID", "User no longer exists"));
         if (!user.isActive()) {
+            securityAuditService.logEvent(
+                    "REFRESH_BLOCKED_DISABLED_ACCOUNT",
+                    user.getId(),
+                    user.getHotel() != null ? user.getHotel().getId() : null,
+                    java.util.Map.of());
             throw new ApiException(HttpStatus.UNAUTHORIZED, "ACCOUNT_DISABLED", "This staff account is deactivated");
         }
         return ResponseEntity.ok(buildLoginResponse(UserPrincipal.fromEntity(user)));
@@ -87,6 +140,26 @@ public class AuthController {
             return appUserRepository.findByEmailIgnoreCase(request.email().trim());
         }
         return appUserRepository.findByUsername(request.username().trim());
+    }
+
+    private static String loginKey(ApiDtos.LoginRequest request, HttpServletRequest httpRequest) {
+        String identity = request.email() != null && !request.email().isBlank()
+                ? request.email().trim().toLowerCase()
+                : request.username().trim().toLowerCase();
+        String ip = clientIp(httpRequest);
+        return identity + "|" + ip;
+    }
+
+    private static String clientIp(HttpServletRequest req) {
+        if (req == null) {
+            return "unknown";
+        }
+        String xff = req.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.isBlank()) {
+            return xff.split(",")[0].trim();
+        }
+        String addr = req.getRemoteAddr();
+        return addr != null && !addr.isBlank() ? addr : "unknown";
     }
 
     private ApiDtos.LoginResponse buildLoginResponse(UserPrincipal principal) {

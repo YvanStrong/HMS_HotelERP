@@ -38,6 +38,14 @@ type AvailabilityResponse = {
   availabilityHint?: string | null;
 };
 
+type RoomTypeAvailabilitySnapshot = {
+  roomTypeId: string;
+  roomTypeName: string;
+  available: boolean;
+  availableCount: number;
+  totalPerNight: number;
+};
+
 type CreateReservationResponse = {
   id: string;
   confirmationCode: string;
@@ -55,6 +63,16 @@ type CreateReservationResponse = {
     balanceDue: number;
   };
   message: string;
+};
+
+type PublicHotelDetails = {
+  id: string;
+  name: string;
+  currency: string;
+  defaultCountry?: string | null;
+  phoneCountryCode?: string | null;
+  address?: string | null;
+  description?: string | null;
 };
 
 function todayISODate() {
@@ -126,7 +144,7 @@ function BookHotelStayPageInner() {
   const [phone, setPhone] = useState("");
   const [nationalId, setNationalId] = useState("");
   const [dob, setDob] = useState("");
-  const [guestCountry, setGuestCountry] = useState("Rwanda");
+  const [guestCountry, setGuestCountry] = useState("");
   const [province, setProvince] = useState("");
   const [district, setDistrict] = useState("");
   const [sector, setSector] = useState("");
@@ -148,6 +166,8 @@ function BookHotelStayPageInner() {
   const [bookMsg, setBookMsg] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState<CreateReservationResponse | null>(null);
   const [portalSameHotel, setPortalSameHotel] = useState(false);
+  const [availabilityByType, setAvailabilityByType] = useState<RoomTypeAvailabilitySnapshot[]>([]);
+  const [availabilityByTypeLoading, setAvailabilityByTypeLoading] = useState(false);
 
   useEffect(() => {
     const u = loadAuthUser();
@@ -162,11 +182,12 @@ function BookHotelStayPageInner() {
     (async () => {
       setError(null);
       try {
-        const hotels = await publicFetch<{ id: string; name: string; currency: string }[]>("/api/v1/public/hotels");
-        const me = hotels.find((h) => h.id === hotelId);
+        const me = await publicFetch<PublicHotelDetails>(`/api/v1/public/hotels/${hotelId}`);
         if (!cancelled && me) {
           setHotelName(me.name);
           setCurrency(me.currency ?? "USD");
+          setGuestCountry(me.defaultCountry ?? "");
+          setPhoneCc(me.phoneCountryCode ?? "");
         }
         const [rt, off] = await Promise.all([
           publicFetch<RoomTypeRow[]>(`/api/v1/public/hotels/${hotelId}/room-types`),
@@ -236,6 +257,60 @@ function BookHotelStayPageInner() {
     }, 480);
     return () => clearTimeout(tm);
   }, [checkIn, checkOut, adults, children, roomTypeId, hotelId, refreshAvailability]);
+
+  useEffect(() => {
+    if (!types.length || !checkIn || !checkOut || checkOut <= checkIn) {
+      setAvailabilityByType([]);
+      return;
+    }
+    let cancelled = false;
+    setAvailabilityByTypeLoading(true);
+    (async () => {
+      try {
+        const rows = await Promise.all(
+          types.map(async (t) => {
+            const q = new URLSearchParams({
+              checkIn,
+              checkOut,
+              adults: String(adults),
+              children: String(children),
+              roomTypeId: t.id,
+            });
+            const data = await publicFetch<AvailabilityResponse>(
+              `/api/v1/hotels/${hotelId}/reservations/availability?${q.toString()}`,
+            );
+            return {
+              roomTypeId: t.id,
+              roomTypeName: t.name,
+              available: data.available,
+              availableCount: data.availableRooms.length,
+              totalPerNight: data.pricing.totalPerNight,
+            } as RoomTypeAvailabilitySnapshot;
+          }),
+        );
+        if (!cancelled) {
+          setAvailabilityByType(rows);
+          if (!rows.some((r) => r.roomTypeId === roomTypeId && r.available)) {
+            const firstAvailable = rows.find((r) => r.available);
+            if (firstAvailable) {
+              setRoomTypeId(firstAvailable.roomTypeId);
+            }
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setAvailabilityByType([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setAvailabilityByTypeLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [types, hotelId, checkIn, checkOut, adults, children, roomTypeId]);
 
   async function runSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -407,7 +482,7 @@ function BookHotelStayPageInner() {
       <div className="bg-gradient-to-r from-slate-50 to-slate-100/50 rounded-2xl p-6 mb-8 border border-border/50">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">{hotelName || "Hotel"}</h1>
+            <h1 className="text-3xl font-bold tracking-tight">{hotelName || ""}</h1>
             <p className="text-muted-foreground mt-1 flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -446,6 +521,45 @@ function BookHotelStayPageInner() {
       </div>
 
       {error && <div className="error">{error}</div>}
+
+      <div className="bg-card rounded-xl border border-border/60 p-6 shadow-soft">
+        <h2 className="text-lg font-semibold mb-2">Free rooms snapshot</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Availability for your current dates and guests. Pick a category that is currently open.
+        </p>
+        {availabilityByTypeLoading ? (
+          <p className="text-sm text-muted-foreground">Checking live availability...</p>
+        ) : availabilityByType.length > 0 ? (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {availabilityByType.map((row) => (
+              <button
+                key={row.roomTypeId}
+                type="button"
+                onClick={() => setRoomTypeId(row.roomTypeId)}
+                className={`text-left rounded-lg border p-3 transition-colors ${
+                  row.roomTypeId === roomTypeId
+                    ? "border-primary bg-primary/5"
+                    : "border-border/70 hover:border-primary/35"
+                }`}
+              >
+                <p className="font-medium">{row.roomTypeName}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  From {row.totalPerNight} {currency} / night
+                </p>
+                <p className="mt-2">
+                  {row.available ? (
+                    <span className="badge badge-success">{row.availableCount} room(s) available</span>
+                  ) : (
+                    <span className="badge badge-destructive">Currently unavailable</span>
+                  )}
+                </p>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Availability preview is not ready yet. Try check availability below.</p>
+        )}
+      </div>
 
       <div className="mt-8">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">

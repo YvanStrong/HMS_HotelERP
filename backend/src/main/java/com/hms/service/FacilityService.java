@@ -565,7 +565,7 @@ public class FacilityService {
         guest.setFullName(g.firstName().trim() + " " + guest.getLastName());
         guest.setEmail(g.email().trim());
         guest.setPhone(g.phone());
-        GuestProfileDefaults.ensureRequiredForPersistence(guest);
+        GuestProfileDefaults.ensureRequiredForPersistence(guest, hotel);
         return guestRepository.save(guest);
     }
 

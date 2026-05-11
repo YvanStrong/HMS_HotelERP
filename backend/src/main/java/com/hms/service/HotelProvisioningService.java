@@ -291,12 +291,11 @@ public class HotelProvisioningService {
             try {
                 hotelPurgeService.purgeAllHotelScopedRows(hotelId);
             } catch (DataIntegrityViolationException ex) {
-                String hint =
-                        ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
+                long activeReservations = reservationRepository.countByHotel_Id(hotelId);
                 throw new ApiException(
                         HttpStatus.CONFLICT,
-                        "Hotel purge hit a foreign-key dependency that is not deleted yet in HotelPurgeService. "
-                                + (hint != null ? hint : "See server logs."));
+                        "Cannot delete hotel: " + activeReservations
+                                + " active reservations exist. Check out all guests and archive data first.");
             }
         } else {
             String blockers = describeHotelDeleteBlockers(hotelId);

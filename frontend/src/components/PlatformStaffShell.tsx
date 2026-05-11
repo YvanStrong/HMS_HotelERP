@@ -72,29 +72,43 @@ export function PlatformStaffShell({ children }: { children: React.ReactNode }) 
           {NAV.map((item) => {
             const active = pathname === item.href || pathname?.startsWith(`${item.href}/`);
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setIsSidebarOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  active
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                } ${!allowed ? "opacity-50 cursor-not-allowed" : ""}`}
-                title={allowed ? item.label : "Requires SUPER_ADMIN login"}
-              >
-                {item.icon && (
-                  <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
-                  </svg>
-                )}
-                <span className="truncate">{item.label}</span>
-                {!allowed && (
+              allowed ? (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setIsSidebarOpen(false)}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    active
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  }`}
+                  title={item.label}
+                >
+                  {item.icon && (
+                    <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+                    </svg>
+                  )}
+                  <span className="truncate">{item.label}</span>
+                </Link>
+              ) : (
+                <div
+                  key={item.href}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground opacity-50 cursor-not-allowed"
+                  title="Requires SUPER_ADMIN login"
+                  aria-disabled="true"
+                >
+                  {item.icon && (
+                    <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+                    </svg>
+                  )}
+                  <span className="truncate">{item.label}</span>
                   <svg className="w-4 h-4 ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
-                )}
-              </Link>
+                </div>
+              )
             );
           })}
         </nav>
@@ -149,7 +163,21 @@ export function PlatformStaffShell({ children }: { children: React.ReactNode }) 
 
         {/* Page Content */}
         <div className="p-4 lg:p-6 animate-fade-in">
-          {children}
+          {!allowed ? (
+            <section className="max-w-2xl rounded-xl border border-amber-200 bg-amber-50 p-6">
+              <h2 className="text-lg font-semibold text-amber-900">Super admin access required</h2>
+              <p className="mt-2 text-sm text-amber-800">
+                Platform pages are restricted to SUPER_ADMIN users. Sign in with a super admin account to manage hotels, tenants, analytics, and audit logs.
+              </p>
+              <div className="mt-4 flex gap-2">
+                <button type="button" className="hms-btn-outline" onClick={logout}>
+                  Switch account
+                </button>
+              </div>
+            </section>
+          ) : (
+            children
+          )}
         </div>
       </main>
     </div>

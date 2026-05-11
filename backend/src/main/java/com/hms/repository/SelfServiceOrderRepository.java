@@ -3,6 +3,7 @@ package com.hms.repository;
 import com.hms.domain.SelfOrderPaymentStatus;
 import com.hms.domain.SelfOrderStatus;
 import com.hms.entity.SelfServiceOrder;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -67,4 +68,49 @@ public interface SelfServiceOrderRepository extends JpaRepository<SelfServiceOrd
             order by o.createdAt desc
             """)
     List<SelfServiceOrder> findRecentByHotel(@Param("hotelId") UUID hotelId, Pageable page);
+
+    long countByHotel_IdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(UUID hotelId, Instant from, Instant to);
+
+    @Query(
+            """
+            select coalesce(sum(o.totalAmount), 0) from SelfServiceOrder o
+            where o.hotel.id = :hotelId and o.createdAt >= :from and o.createdAt < :to
+            and o.paymentStatus = :paid
+            """)
+    java.math.BigDecimal sumPaidTotalBetween(
+            @Param("hotelId") UUID hotelId,
+            @Param("from") Instant from,
+            @Param("to") Instant to,
+            @Param("paid") SelfOrderPaymentStatus paid);
+
+    List<SelfServiceOrder> findByHotel_IdAndStatusAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+            UUID hotelId, SelfOrderStatus status, Instant from, Instant to);
+
+    @Query(
+            """
+            select distinct o from SelfServiceOrder o
+            join fetch o.lines l
+            left join fetch l.product p
+            where o.hotel.id = :hotelId
+            and o.status in :activeStatuses
+            order by o.createdAt desc
+            """)
+    List<SelfServiceOrder> findActiveOrdersWithLines(
+            @Param("hotelId") UUID hotelId,
+            @Param("activeStatuses") Collection<SelfOrderStatus> activeStatuses,
+            Pageable pageable);
+
+    @Query(
+            """
+            select distinct o from SelfServiceOrder o
+            join fetch o.depot d
+            left join fetch o.lines l
+            left join fetch l.product p
+            where o.hotel.id = :hotelId and o.status = :ready and o.paymentStatus = :paid
+            order by o.updatedAt desc
+            """)
+    List<SelfServiceOrder> findForPickupBoard(
+            @Param("hotelId") UUID hotelId,
+            @Param("ready") SelfOrderStatus ready,
+            @Param("paid") SelfOrderPaymentStatus paid);
 }

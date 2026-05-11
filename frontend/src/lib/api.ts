@@ -1,11 +1,49 @@
 import { clearSessionCookies } from "./sessionCookies";
 import { showErrorPopup } from "./errorPopup";
 
-/** Empty env string would otherwise make fetch hit the Next origin instead of the Java API. */
+/**
+ * Optional path prefix when the API is served under the same host as the site, e.g.
+ * `https://hotelerp.rw/Hotel/api/v1/...` → set `NEXT_PUBLIC_API_BASE_PATH=/Hotel`.
+ * Must start with `/`; no trailing slash. Ignored when `NEXT_PUBLIC_API_URL` is set.
+ */
+function normalizeApiBasePath(raw: string | undefined): string {
+  if (raw == null) return "";
+  let s = String(raw).trim();
+  if (s === "") return "";
+  if (!s.startsWith("/")) s = `/${s}`;
+  return s.replace(/\/+$/, "");
+}
+
+/**
+ * Resolves the base URL prepended to paths like `/api/v1/...` (see `apiFetch` / `publicFetch`).
+ *
+ * Production (recommended): set **`NEXT_PUBLIC_API_URL`** at build time, e.g.
+ * `https://hotelerp.rw/Hotel` — no trailing slash. The JAR file name does not matter; match whatever
+ * path Spring or Nginx exposes (often `server.servlet.context-path=/Hotel` on the backend).
+ *
+ * Same host + subpath without full URL: set only **`NEXT_PUBLIC_API_BASE_PATH=/Hotel`**; in the
+ * browser the API base becomes `window.location.origin + "/Hotel"`. For SSR/build-time fetches,
+ * prefer setting the full `NEXT_PUBLIC_API_URL` instead.
+ */
 function resolveApiBase(): string {
-  const raw = process.env.NEXT_PUBLIC_API_URL;
-  if (raw == null || String(raw).trim() === "") return "http://localhost:8080";
-  return String(raw).trim().replace(/\/$/, "");
+  const rawUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (rawUrl != null && String(rawUrl).trim() !== "") {
+    return String(rawUrl).trim().replace(/\/$/, "");
+  }
+
+  const basePath = normalizeApiBasePath(process.env.NEXT_PUBLIC_API_BASE_PATH);
+
+  if (typeof window !== "undefined") {
+    if (basePath) {
+      return `${window.location.origin}${basePath}`.replace(/\/$/, "");
+    }
+    return `${window.location.protocol}//${window.location.hostname}:8080`;
+  }
+
+  if (basePath) {
+    return `http://127.0.0.1:8080${basePath}`.replace(/\/$/, "");
+  }
+  return "http://127.0.0.1:8080";
 }
 
 export const API_BASE = resolveApiBase();

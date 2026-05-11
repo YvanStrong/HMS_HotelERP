@@ -1,9 +1,12 @@
 ﻿"use client";
 
+import Link from "next/link";
+import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
 import { printDepotSaleInvoice } from "@/lib/printDepotSaleInvoice";
+import { staffAppPath } from "@/lib/staffAppRoutes";
 
 type DepotRow = { id: string; name: string; code: string; depotType: string; active: boolean };
 type DepotProductRow = {
@@ -94,6 +97,19 @@ export default function MenuPage() {
   const [guestHits, setGuestHits] = useState<GuestSearchHit[]>([]);
   const [guestPickerOpen, setGuestPickerOpen] = useState(false);
 
+  const [setupMsg, setSetupMsg] = useState<string | null>(null);
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const [addSellBusy, setAddSellBusy] = useState(false);
+  const [sellDepotId, setSellDepotId] = useState("");
+  const [sellName, setSellName] = useState("");
+  const [sellPrice, setSellPrice] = useState("");
+  const [sellCost, setSellCost] = useState("0");
+  const [sellStockType, setSellStockType] = useState<"STOCK" | "NON_STOCK">("NON_STOCK");
+  const [sellStockQty, setSellStockQty] = useState("999");
+  const [sellMenuName, setSellMenuName] = useState("GENERAL");
+  const [sellPhotoUrl, setSellPhotoUrl] = useState("");
+  const [sellLinkItemId, setSellLinkItemId] = useState("");
+
   async function loadAll() {
     setLoading(true);
     setError(null);
@@ -123,6 +139,73 @@ export default function MenuPage() {
     }
     void loadAll();
   }, [hotelId]);
+
+  useEffect(() => {
+    if (depots.length > 0 && !sellDepotId) {
+      setSellDepotId(depots[0].id);
+    }
+  }, [depots, sellDepotId]);
+
+  async function bootstrapDepots() {
+    setBootstrapping(true);
+    setError(null);
+    setSetupMsg(null);
+    try {
+      await apiFetch<DepotRow[]>(`/api/v1/hotels/${hotelId}/inventory/depots/bootstrap`, { method: "POST" });
+      await loadAll();
+      setSetupMsg("Default outlets created where missing. Add sellable products below, then check the public kiosk.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Bootstrap failed");
+    } finally {
+      setBootstrapping(false);
+    }
+  }
+
+  async function addSellableProduct(e: FormEvent) {
+    e.preventDefault();
+    if (!sellDepotId || !sellName.trim()) {
+      setError("Choose an outlet and enter a product name.");
+      return;
+    }
+    const price = Number(sellPrice);
+    if (!Number.isFinite(price) || price < 0) {
+      setError("Enter a valid selling price.");
+      return;
+    }
+    setAddSellBusy(true);
+    setError(null);
+    setSetupMsg(null);
+    try {
+      const link = sellLinkItemId.trim();
+      const uuidOk = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(link);
+      await apiFetch(`/api/v1/hotels/${hotelId}/inventory/depot-products`, {
+        method: "POST",
+        body: JSON.stringify({
+          depotId: sellDepotId,
+          productName: sellName.trim(),
+          batchNo: null,
+          expiryDate: null,
+          costPrice: Number(sellCost) || 0,
+          sellingPrice: price,
+          stockQty: sellStockType === "NON_STOCK" ? 0 : Number(sellStockQty) || 0,
+          stockType: sellStockType,
+          photoUrl: sellPhotoUrl.trim() || null,
+          menuName: sellMenuName.trim() || "GENERAL",
+          inventoryItemId: uuidOk ? link : null,
+          taxable: true,
+        }),
+      });
+      setSetupMsg(`“${sellName.trim()}” added to the sellable list (self-order + this page).`);
+      setSellName("");
+      setSellPrice("");
+      setSellPhotoUrl("");
+      await loadAll();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add product");
+    } finally {
+      setAddSellBusy(false);
+    }
+  }
 
   useEffect(() => {
     const q = customerName.trim();
@@ -322,7 +405,15 @@ export default function MenuPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Menu</h1>
           <p className="text-muted-foreground text-sm">
-            Select a depot menu, view products with photos, and sell to client.
+            Depots and <strong>depot products</strong> are what guests see on{" "}
+            <Link href={`/book/order/${hotelId}`} className="underline font-medium text-foreground" target="_blank" rel="noreferrer">
+              self-order
+            </Link>{" "}
+            and what you sell here. <strong>Inventory → Items</strong> are separate internal SKUs (
+            <Link href={staffAppPath("inventory")} className="underline">
+              open Inventory
+            </Link>
+            ).
           </p>
         </div>
         <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => void loadAll()} disabled={loading}>
@@ -331,6 +422,117 @@ export default function MenuPage() {
       </div>
 
       {error && <div className="error">{error}</div>}
+      {setupMsg && <p className="text-sm text-emerald-700 dark:text-emerald-300 px-1">{setupMsg}</p>}
+
+      <section className="hms-section-card space-y-3">
+        <h2 className="hms-section-title">Self-order &amp; kiosk catalogue</h2>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          If the public kiosk is empty, create at least one <strong>outlet</strong> (depot), then <strong>sellable products</strong>{" "}
+          here. Use menu name <code className="bg-muted px-1 rounded">GENERAL</code> for dine-in and take-away, or tag with{" "}
+          <code className="bg-muted px-1 rounded">DINE_IN</code> / <code className="bg-muted px-1 rounded">TAKE_AWAY</code>{" "}
+          in the name to filter by mode.
+        </p>
+        <div className="flex flex-wrap gap-2 items-center">
+          <button
+            type="button"
+            className="hms-btn-outline hms-btn-sm"
+            disabled={bootstrapping || loading}
+            onClick={() => void bootstrapDepots()}
+          >
+            {bootstrapping ? "Creating…" : "Create default outlets"}
+          </button>
+          {depots.length === 0 ? (
+            <span className="text-xs text-muted-foreground">No depots yet — bootstrap first.</span>
+          ) : (
+            <span className="text-xs text-muted-foreground">{depots.length} outlet(s) loaded.</span>
+          )}
+        </div>
+        <form onSubmit={(e) => void addSellableProduct(e)} className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 border-t border-border/60 pt-3">
+          <div>
+            <label className="text-xs font-medium block mb-1">Outlet (depot)</label>
+            <select
+              value={sellDepotId}
+              onChange={(e) => setSellDepotId(e.target.value)}
+              className="w-full text-sm"
+              required
+            >
+              {depots.length === 0 ? <option value="">Create outlets first</option> : null}
+              {depots.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                  {!d.active ? " (inactive)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1">Product name (e.g. Burger)</label>
+            <input value={sellName} onChange={(e) => setSellName(e.target.value)} className="w-full text-sm" required placeholder="Burger" />
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1">Selling price</label>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={sellPrice}
+              onChange={(e) => setSellPrice(e.target.value)}
+              className="w-full text-sm"
+              required
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1">Cost (optional)</label>
+            <input type="number" min={0} step="0.01" value={sellCost} onChange={(e) => setSellCost(e.target.value)} className="w-full text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1">Stock type</label>
+            <select value={sellStockType} onChange={(e) => setSellStockType(e.target.value as "STOCK" | "NON_STOCK")} className="w-full text-sm">
+              <option value="NON_STOCK">NON_STOCK (kitchen / unlimited)</option>
+              <option value="STOCK">STOCK (quantity tracked)</option>
+            </select>
+          </div>
+          {sellStockType === "STOCK" ? (
+            <div>
+              <label className="text-xs font-medium block mb-1">Stock quantity</label>
+              <input type="number" min={0} step="1" value={sellStockQty} onChange={(e) => setSellStockQty(e.target.value)} className="w-full text-sm" />
+            </div>
+          ) : null}
+          <div>
+            <label className="text-xs font-medium block mb-1">Menu name (kiosk filter)</label>
+            <input
+              value={sellMenuName}
+              onChange={(e) => setSellMenuName(e.target.value)}
+              className="w-full text-sm font-mono"
+              placeholder="GENERAL"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="text-xs font-medium block mb-1">Photo URL (optional — shown on guest kiosk)</label>
+            <input
+              value={sellPhotoUrl}
+              onChange={(e) => setSellPhotoUrl(e.target.value)}
+              className="w-full text-sm"
+              placeholder="https://… (public image link)"
+              inputMode="url"
+            />
+          </div>
+          <div className="sm:col-span-2 lg:col-span-1">
+            <label className="text-xs font-medium block mb-1">Link inventory item ID (optional)</label>
+            <input
+              value={sellLinkItemId}
+              onChange={(e) => setSellLinkItemId(e.target.value)}
+              className="w-full text-sm font-mono text-xs"
+              placeholder="UUID from Inventory → Items"
+            />
+          </div>
+          <div className="sm:col-span-2 flex items-end">
+            <button type="submit" className="hms-btn-solid hms-btn-sm" disabled={addSellBusy || depots.length === 0}>
+              {addSellBusy ? "Adding…" : "Add sellable item"}
+            </button>
+          </div>
+        </form>
+      </section>
 
       <section className="hms-section-card space-y-4 overflow-visible">
         <div className="grid gap-3 md:grid-cols-5">

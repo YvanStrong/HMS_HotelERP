@@ -87,4 +87,21 @@ public class GuestController {
             @Valid @RequestBody GuestDtos.LoyaltyRedeemRequest body) {
         return guestService.redeemLoyalty(hotelId, hotelHeader, guestId, body);
     }
+
+    @PostMapping("/merge")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER')")
+    public ResponseEntity<Void> mergeGuests(
+            @PathVariable UUID hotelId,
+            @RequestParam UUID sourceGuestId,
+            @RequestParam UUID targetGuestId) {
+        guestService.mergeGuests(hotelId, sourceGuestId, targetGuestId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/loyalty/recalculate")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER')")
+    public ResponseEntity<Void> recalculateLoyalty(@PathVariable UUID hotelId) {
+        guestService.recalculateAllLoyalty(hotelId);
+        return ResponseEntity.ok().build();
+    }
 }

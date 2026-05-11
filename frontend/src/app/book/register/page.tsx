@@ -89,6 +89,14 @@ export default function GuestRegisterPage() {
 
   return (
     <div className="container-page py-8">
+      <div className="bg-card rounded-xl border border-border/60 p-5 sm:p-6 shadow-soft mb-6">
+        <p className="text-xs uppercase tracking-[0.18em] font-semibold text-muted-foreground mb-1">Guest onboarding</p>
+        <h1 className="text-2xl font-bold tracking-tight">Create guest account</h1>
+        <p className="text-muted-foreground mt-2 max-w-2xl leading-relaxed">
+          Create one account for your hotel so you can manage trips, track bookings, and access stay updates.
+        </p>
+      </div>
+
       <Link href="/book/hotels" className="text-sm text-muted-foreground hover:text-primary inline-flex items-center gap-1 mb-6">
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -97,7 +105,7 @@ export default function GuestRegisterPage() {
       </Link>
 
       <div className="bg-card rounded-xl border border-border/60 p-6 shadow-soft mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Create guest account</h1>
+        <h1 className="text-xl font-bold tracking-tight">Create guest account</h1>
         <p className="text-muted-foreground mt-2 max-w-2xl leading-relaxed">
           Pick the hotel you stay with — you do <strong>not</strong> need to know any IDs. Your account is scoped to
           that property so you can use <strong>My trips</strong> for bookings, services, and arrival details.

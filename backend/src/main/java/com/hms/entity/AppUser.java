@@ -38,6 +38,12 @@ public class AppUser {
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 
+    @Column(name = "mfa_secret", length = 64)
+    private String mfaSecret;
+
+    @Column(name = "mfa_enabled", nullable = false)
+    private boolean mfaEnabled;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

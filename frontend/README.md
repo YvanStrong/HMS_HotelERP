@@ -17,7 +17,8 @@ copy .env.local.example .env.local   # Windows; use cp on Unix
 
 Edit `.env.local`:
 
-- `NEXT_PUBLIC_API_URL` — API base (no trailing slash).
+- `NEXT_PUBLIC_API_URL` — API base (no trailing slash), e.g. `http://localhost:8080` or `https://hotelerp.rw/Hotel` if Spring uses `server.servlet.context-path=/Hotel`.
+- `NEXT_PUBLIC_API_BASE_PATH` — optional; same-origin path only (e.g. `/Hotel`) when you do not set the full URL. See `src/lib/api.ts` comments.
 - `NEXT_PUBLIC_DEFAULT_HOTEL_ID` — hotel UUID from initialize / Postman `hotelId`.
 
 ## Run

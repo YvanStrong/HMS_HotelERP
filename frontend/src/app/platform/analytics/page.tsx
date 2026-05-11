@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch, getToken } from "@/lib/api";
 
 type RevenueMetrics = {
@@ -10,6 +10,22 @@ type RevenueMetrics = {
   revenueByHotel?: { hotelName: string; revenue: number; reservations: number }[];
   revenueByMonth?: { month: string; revenue: number }[];
   topPerformingHotels?: { hotelName: string; revenue: number; growth: number }[];
+};
+
+type PlatformRevenueApi = {
+  revenue?: {
+    mrr?: number;
+    arr?: number;
+    ltv?: number;
+    churnRate?: number;
+  };
+  byTier?: {
+    tier: string;
+    tenants: number;
+    mrr: number;
+    avgRevenuePerTenant: number;
+    churnRisk: number;
+  }[];
 };
 
 export default function PlatformAnalyticsPage() {
@@ -27,13 +43,40 @@ export default function PlatformAnalyticsPage() {
         return;
       }
       try {
-        const data = await apiFetch<RevenueMetrics>(
+        const raw = await apiFetch<PlatformRevenueApi>(
           `/api/v1/platform/analytics/revenue?period=${period}&groupBy=tier`,
         );
-        if (!cancelled) setMetrics(data);
+        const byTier = raw.byTier ?? [];
+        const totalTenants = byTier.reduce((sum, row) => sum + (row.tenants ?? 0), 0);
+        const totalMrr = Number(raw.revenue?.mrr ?? 0);
+        const normalized: RevenueMetrics = {
+          totalRevenue: totalMrr,
+          totalReservations: totalTenants,
+          averageBookingValue: totalTenants > 0 ? totalMrr / totalTenants : 0,
+          revenueByHotel: byTier.map((row) => ({
+            hotelName: row.tier,
+            revenue: Number(row.mrr ?? 0),
+            reservations: Number(row.tenants ?? 0),
+          })),
+          topPerformingHotels: byTier
+            .slice()
+            .sort((a, b) => Number(b.mrr ?? 0) - Number(a.mrr ?? 0))
+            .slice(0, 3)
+            .map((row) => ({
+              hotelName: row.tier,
+              revenue: Number(row.mrr ?? 0),
+              growth: Number(row.churnRisk ?? 0) * -1,
+            })),
+        };
+        if (!cancelled) {
+          setError(null);
+          setMetrics(normalized);
+        }
       } catch (e) {
-        // API might not exist, show empty state
-        if (!cancelled) setMetrics(null);
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load analytics");
+          setMetrics(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -52,13 +95,18 @@ export default function PlatformAnalyticsPage() {
     }).format(value);
   };
 
+  const topHotelRevenue = useMemo(() => {
+    if (!metrics?.revenueByHotel?.length) return 0;
+    return Math.max(...metrics.revenueByHotel.map((h) => h.revenue));
+  }, [metrics]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Platform Revenue Analytics</h1>
           <p className="text-muted-foreground mt-1">
-            Revenue metrics and reporting across all tenants
+            SaaS revenue metrics and tenant distribution across the platform
           </p>
         </div>
         <select
@@ -90,6 +138,27 @@ export default function PlatformAnalyticsPage() {
         </div>
       ) : metrics ? (
         <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-card rounded-xl border border-border/60 p-4 shadow-soft">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">KPI period</p>
+              <p className="mt-2 text-lg font-semibold capitalize">{period}</p>
+            </div>
+            <div className="bg-card rounded-xl border border-border/60 p-4 shadow-soft">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Hotels with revenue</p>
+              <p className="mt-2 text-lg font-semibold">{metrics.revenueByHotel?.length ?? 0}</p>
+            </div>
+            <div className="bg-card rounded-xl border border-border/60 p-4 shadow-soft">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Top hotel revenue</p>
+              <p className="mt-2 text-lg font-semibold">{formatCurrency(topHotelRevenue)}</p>
+            </div>
+            <div className="bg-card rounded-xl border border-border/60 p-4 shadow-soft">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Revenue concentration</p>
+              <p className="mt-2 text-lg font-semibold">
+                {metrics.totalRevenue > 0 ? `${Math.round((topHotelRevenue / metrics.totalRevenue) * 100)}%` : "0%"}
+              </p>
+            </div>
+          </div>
+
           {/* KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-card rounded-xl border border-border/60 p-5 shadow-soft">
@@ -111,7 +180,7 @@ export default function PlatformAnalyticsPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                   </svg>
                 </div>
-                <span className="text-sm text-muted-foreground">Total Reservations</span>
+                <span className="text-sm text-muted-foreground">Active Tenants</span>
               </div>
               <p className="text-3xl font-bold">{(metrics?.totalReservations ?? 0).toLocaleString()}</p>
             </div>
@@ -123,7 +192,7 @@ export default function PlatformAnalyticsPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                   </svg>
                 </div>
-                <span className="text-sm text-muted-foreground">Avg. Booking Value</span>
+                <span className="text-sm text-muted-foreground">Avg. Revenue per Tenant</span>
               </div>
               <p className="text-3xl font-bold">{formatCurrency(metrics?.averageBookingValue ?? 0)}</p>
             </div>
@@ -133,16 +202,25 @@ export default function PlatformAnalyticsPage() {
           {metrics.revenueByHotel && metrics.revenueByHotel.length > 0 && (
             <div className="bg-card rounded-xl border border-border/60 p-5 shadow-soft">
               <h2 className="text-lg font-semibold mb-4">Revenue by Hotel</h2>
-              <div className="space-y-3">
-                {metrics.revenueByHotel.map((hotel) => (
-                  <div key={hotel.hotelName} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                    <div>
-                      <p className="font-medium">{hotel.hotelName}</p>
-                      <p className="text-sm text-muted-foreground">{hotel.reservations} reservations</p>
-                    </div>
-                    <p className="font-bold text-lg">{formatCurrency(hotel.revenue)}</p>
-                  </div>
-                ))}
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-muted/50 border-b border-border">
+                    <tr>
+                      <th className="text-left px-3 py-2 text-sm font-medium">Tier</th>
+                      <th className="text-left px-3 py-2 text-sm font-medium">Tenants</th>
+                      <th className="text-left px-3 py-2 text-sm font-medium">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {metrics.revenueByHotel.map((hotel) => (
+                      <tr key={hotel.hotelName} className="hover:bg-muted/30 transition-colors">
+                        <td className="px-3 py-2 text-sm font-medium">{hotel.hotelName}</td>
+                        <td className="px-3 py-2 text-sm text-muted-foreground">{hotel.reservations.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-sm font-semibold">{formatCurrency(hotel.revenue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

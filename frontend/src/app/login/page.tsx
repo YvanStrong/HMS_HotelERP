@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import type { AuthUser } from "@/lib/auth";
-import { postLoginRedirectPath, saveAuthSession } from "@/lib/auth";
+import { saveAuthSession, postLoginRedirectPath } from "@/lib/auth";
 
-export default function LoginPage() {
+function LoginPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const passwordJustReset = searchParams.get("reset") === "1";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -52,9 +54,7 @@ export default function LoginPage() {
               <span className="text-2xl font-bold tracking-tight">H</span>
             </div>
             <div>
-              <p className="font-serif text-3xl font-semibold leading-snug lg:text-4xl">
-                Grand Ubumwe
-              </p>
+              <p className="font-serif text-3xl font-semibold leading-snug lg:text-4xl">Hotel Management System</p>
               <p className="mt-2 text-sm uppercase tracking-[0.2em] text-white/80">
                 Hotel management
               </p>
@@ -86,7 +86,7 @@ export default function LoginPage() {
                 <h1 className="mt-3 font-serif text-2xl font-semibold text-[hsl(var(--foreground))]">
                   Sign in
                 </h1>
-                <p className="mt-1 text-sm text-muted-foreground">Grand Ubumwe management system</p>
+                <p className="mt-1 text-sm text-muted-foreground">Hotel management system</p>
               </div>
 
               <div className="hidden md:block">
@@ -97,6 +97,12 @@ export default function LoginPage() {
                   Enter your staff username and password to continue.
                 </p>
               </div>
+
+              {passwordJustReset && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                  Your password was updated. Sign in with your new password.
+                </div>
+              )}
 
               <form className="space-y-4" onSubmit={onSubmit}>
                 <div>
@@ -143,7 +149,7 @@ export default function LoginPage() {
                     Remember me
                   </label>
                   <Link
-                    href="#"
+                    href="/login/forgot-password"
                     className="font-medium text-[hsl(var(--primary))] hover:text-[hsl(var(--primary-hover))]"
                   >
                     Forgot password?
@@ -159,6 +165,15 @@ export default function LoginPage() {
                 {error && <div className="error text-destructive text-sm">{error}</div>}
               </form>
 
+              <div className="flex justify-center">
+                <Link
+                  href="/"
+                  className="text-sm font-medium text-[hsl(var(--primary))] hover:text-[hsl(var(--primary-hover))] hover:underline"
+                >
+                  Back to landing page
+                </Link>
+              </div>
+
               <p className="text-center text-xs text-muted-foreground">
                 Secured with JWT · Hotel-scoped access after login
               </p>
@@ -167,5 +182,19 @@ export default function LoginPage() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-svh items-center justify-center bg-gradient-to-br from-[hsl(40_30%_97%)] to-[hsl(30_22%_88%)]">
+          <div className="text-sm text-muted-foreground">Loading…</div>
+        </div>
+      }
+    >
+      <LoginPageInner />
+    </Suspense>
   );
 }

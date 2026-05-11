@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { API_BASE, apiFetch, getToken } from "@/lib/api";
 import { loadAuthUser } from "@/lib/auth";
 import { staffAppPath } from "@/lib/staffAppRoutes";
+import { useHotelContext } from "@/lib/useHotelContext";
 import {
   buildTaxInvoiceHtml,
   guessPaymentMethodFromItems,
@@ -165,10 +166,19 @@ function canOverrideBalance(role: string | undefined) {
   return role === "MANAGER" || role === "FINANCE" || role === "SUPER_ADMIN" || role === "HOTEL_ADMIN";
 }
 
+/** Whether checkout-side payment covers remaining folio balance (tolerates cent rounding). */
+function checkoutAmountCoversDue(due: number, pay: number): boolean {
+  if (due <= 0.01) return true;
+  return pay >= due - 0.02;
+}
+
+const MIN_OVERRIDE_BALANCE_REASON_LEN = 10;
+
 export default function StaffReservationDetailPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
   const reservationId = String(params.reservationId);
+  const { hotel } = useHotelContext(hotelId);
   const [folio, setFolio] = useState<Folio | null>(null);
   const [staffDetail, setStaffDetail] = useState<StaffReservationDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -185,24 +195,31 @@ export default function StaffReservationDetailPage() {
   const [minibarOk, setMinibarOk] = useState(false);
   const [lateOut, setLateOut] = useState(false);
   const [overrideBal, setOverrideBal] = useState(false);
+  const [overrideBalReason, setOverrideBalReason] = useState("");
   const [paymentOpen, setPaymentOpen] = useState(false);
+  /** When true, completing Record payment refreshes folio and syncs amount into the checkout form. */
+  const [paymentOpenedFromCheckout, setPaymentOpenedFromCheckout] = useState(false);
   const [chargeOpen, setChargeOpen] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("CASH");
-  const [paymentTypesUsed, setPaymentTypesUsed] = useState("");
-  const [paymentRef, setPaymentRef] = useState("");
-  const [paymentNotes, setPaymentNotes] = useState("");
+  const [folioPaymentAmount, setFolioPaymentAmount] = useState("");
+  const [folioPaymentMethod, setFolioPaymentMethod] = useState("CASH");
+  const [folioPaymentRef, setFolioPaymentRef] = useState("");
+  const [folioPaymentNotes, setFolioPaymentNotes] = useState("");
+  const [checkoutPayAmount, setCheckoutPayAmount] = useState("");
+  const [checkoutPayMethod, setCheckoutPayMethod] = useState("CASH");
+  const [checkoutPayTypesUsed, setCheckoutPayTypesUsed] = useState("");
+  const [checkoutPayRef, setCheckoutPayRef] = useState("");
+  const [checkoutPayNotes, setCheckoutPayNotes] = useState("");
   const [chargeAmount, setChargeAmount] = useState("");
   const [chargeType, setChargeType] = useState("MINIBAR");
   const [chargeDesc, setChargeDesc] = useState("");
 
   const user = typeof window !== "undefined" ? loadAuthUser() : null;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<Folio | null> => {
     setError(null);
     if (!getToken()) {
       setError("Not signed in.");
-      return;
+      return null;
     }
     try {
       const f = await apiFetch<Folio>(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/folio`);
@@ -215,8 +232,10 @@ export default function StaffReservationDetailPage() {
       } catch {
         setStaffDetail(null);
       }
+      return f;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load folio");
+      return null;
     }
   }, [hotelId, reservationId]);
 
@@ -277,11 +296,18 @@ export default function StaffReservationDetailPage() {
     setMinibarOk(true);
     setLateOut(false);
     setOverrideBal(false);
-    setPaymentMethod("CASH");
-    setPaymentTypesUsed("");
-    setPaymentAmount(
-      folio?.summary.balanceDue && folio.summary.balanceDue > 0 ? String(folio.summary.balanceDue) : "0",
-    );
+    setOverrideBalReason("");
+    setCheckoutPayMethod("CASH");
+    setCheckoutPayTypesUsed("");
+    setCheckoutPayRef("");
+    setCheckoutPayNotes("");
+    const due =
+      typeof folio?.summary.balanceDue === "number"
+        ? folio.summary.balanceDue
+        : typeof folio?.summary.balance_due === "number"
+          ? folio.summary.balance_due
+          : 0;
+    setCheckoutPayAmount(due > 0.01 ? String(Math.round(due * 100) / 100) : "0");
     try {
       const policy = await apiFetch<FeePolicy>(`/api/v1/hotels/${hotelId}/fee-policy`);
       setFees(policy);
@@ -294,18 +320,34 @@ export default function StaffReservationDetailPage() {
   async function submitCheckOut() {
     if (!minibarOk) return;
     setBanner(null);
+    const paid = Number(checkoutPayAmount || "0");
+    const checkoutPayParsedSubmit = Number.isFinite(paid) ? paid : 0;
+    const waivedByOverride =
+      overrideBal &&
+      balance > 0.01 &&
+      !checkoutAmountCoversDue(balance, checkoutPayParsedSubmit);
+    if (waivedByOverride && overrideBalReason.trim().length < MIN_OVERRIDE_BALANCE_REASON_LEN) {
+      setBanner({
+        kind: "err",
+        text: `Explain why checkout proceeds without full payment (at least ${MIN_OVERRIDE_BALANCE_REASON_LEN} characters).`,
+      });
+      return;
+    }
     try {
-      const paid = Number(paymentAmount || "0");
       const result = await apiFetch<CheckOutResponse>(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/check-out`, {
         method: "POST",
         body: JSON.stringify({
           minibar_inspected: minibarOk,
           is_late_checkout: lateOut,
           override_balance_warning: overrideBal,
+          ...(waivedByOverride
+            ? { override_balance_reason: overrideBalReason.trim() }
+            : {}),
           finalPayment: {
-            method: paymentTypesUsed.trim() || paymentMethod,
-            amount: Number.isFinite(paid) ? paid : 0,
-            transactionId: null,
+            method: checkoutPayTypesUsed.trim() || checkoutPayMethod,
+            amount: checkoutPayParsedSubmit,
+            transactionId:
+              [checkoutPayRef.trim(), checkoutPayNotes.trim()].filter(Boolean).join(" — ").slice(0, 240) || null,
           },
         }),
       });
@@ -324,6 +366,9 @@ export default function StaffReservationDetailPage() {
       }
       if (msg.includes("FOLIO_BALANCE_DUE") || msg.toLowerCase().includes("outstanding balance")) {
         hints.push("Settle folio balance or enable authorized override.");
+      }
+      if (msg.includes("OVERRIDE_REASON_REQUIRED")) {
+        hints.push("Enter a clear reason for waiving the unpaid balance (manager / finance).");
       }
       if (msg.includes("NO_ROOM_ASSIGNED")) {
         hints.push("Assign a room before checkout.");
@@ -360,7 +405,7 @@ export default function StaffReservationDetailPage() {
       depositPaid = deposit;
       remainingBeforePayment = Math.max(0, totalCharges - depositPaid);
     }
-    const paid = Number(paymentAmount || "0");
+    const paid = Number(checkoutPayAmount || "0");
     const dueAfterPayment = Math.max(0, remainingBeforePayment - paid);
     const checkoutAt = new Date().toLocaleString();
     const inv = result.invoice;
@@ -387,9 +432,11 @@ export default function StaffReservationDetailPage() {
       depositPaid,
       remainingBeforePayment,
       paidAtCheckout: paid,
-      paymentMethodLabel: paymentMethod,
-      paymentTypesUsed: paymentTypesUsed || paymentMethod,
+      paymentMethodLabel: checkoutPayMethod,
+      paymentTypesUsed: checkoutPayTypesUsed || checkoutPayMethod,
       balanceAfter: dueAfterPayment,
+      hotelLogoUrl: hotel.logoUrl,
+      hotelName: hotel.name,
     });
     openTaxInvoicePrintWindow(html);
   }
@@ -410,27 +457,38 @@ export default function StaffReservationDetailPage() {
   }
 
   async function submitPayment() {
-    const amt = Number(paymentAmount);
+    const amt = Number(folioPaymentAmount);
     if (!Number.isFinite(amt) || amt <= 0) return;
     setBanner(null);
+    const fromCheckout = paymentOpenedFromCheckout;
     try {
       await apiFetch(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/payments`, {
         method: "POST",
         body: JSON.stringify({
           payment_type: "PARTIAL",
-          method: paymentMethod,
+          method: folioPaymentMethod,
           amount: amt,
           currency: folio?.summary.currency ?? "RWF",
-          reference: paymentRef || null,
-          notes: paymentNotes || null,
+          reference: folioPaymentRef || null,
+          notes: folioPaymentNotes || null,
         }),
       });
       setPaymentOpen(false);
-      setPaymentAmount("");
-      setPaymentRef("");
-      setPaymentNotes("");
+      setFolioPaymentAmount("");
+      setFolioPaymentRef("");
+      setFolioPaymentNotes("");
       setBanner({ kind: "ok", text: "Payment recorded." });
-      await load();
+      const f = await load();
+      if (fromCheckout && f) {
+        const due =
+          typeof f.summary.balanceDue === "number"
+            ? f.summary.balanceDue
+            : typeof f.summary.balance_due === "number"
+              ? f.summary.balance_due
+              : 0;
+        setCheckoutPayAmount(due > 0.01 ? String(Math.round(due * 100) / 100) : "0");
+      }
+      setPaymentOpenedFromCheckout(false);
     } catch (e) {
       setBanner({ kind: "err", text: e instanceof Error ? e.message : "Payment failed" });
     }
@@ -515,6 +573,8 @@ export default function StaffReservationDetailPage() {
           paymentMethodLabel: pm,
           paymentTypesUsed: pm,
           balanceAfter: sums.balanceAfter,
+          hotelLogoUrl: hotel.logoUrl,
+          hotelName: hotel.name,
         });
         openTaxInvoicePrintWindow(html);
         return;
@@ -554,6 +614,8 @@ export default function StaffReservationDetailPage() {
         paymentMethodLabel: pm,
         paymentTypesUsed: pm,
         balanceAfter: sums.balanceAfter,
+        hotelLogoUrl: hotel.logoUrl,
+        hotelName: hotel.name,
       });
       openTaxInvoicePrintWindow(html);
     } catch (e) {
@@ -716,10 +778,23 @@ export default function StaffReservationDetailPage() {
   const canOverride = canOverrideBalance(user?.role);
   const hasAssignedRoom = Boolean(folio?.roomId);
   const statusOkForCheckout = st === "CHECKED_IN";
-  const balanceOk = balance <= 0.01 || (canOverride && overrideBal);
+  const checkoutPayNum = Number(checkoutPayAmount);
+  const checkoutPayParsed = Number.isFinite(checkoutPayNum) ? checkoutPayNum : 0;
+  const balanceOk =
+    balance <= 0.01 ||
+    (canOverride && overrideBal) ||
+    checkoutAmountCoversDue(balance, checkoutPayParsed);
   const blockedByBalance =
     balance > 0.01 &&
-    (!canOverride || (canOverride && !overrideBal));
+    !(canOverride && overrideBal) &&
+    !checkoutAmountCoversDue(balance, checkoutPayParsed);
+  const checkoutWaivedByOverride =
+    overrideBal &&
+    balance > 0.01 &&
+    !checkoutAmountCoversDue(balance, checkoutPayParsed);
+  const overrideReasonOk =
+    !checkoutWaivedByOverride ||
+    overrideBalReason.trim().length >= MIN_OVERRIDE_BALANCE_REASON_LEN;
 
   const statusChip = (status: string) => {
     const base = "text-xs font-semibold px-2 py-0.5 rounded-full";
@@ -891,7 +966,17 @@ export default function StaffReservationDetailPage() {
               <button type="button" onClick={() => setChargeOpen(true)}>
                 + Add Charge
               </button>
-              <button type="button" onClick={() => setPaymentOpen(true)}>
+              <button
+                type="button"
+                onClick={() => {
+                  setPaymentOpenedFromCheckout(false);
+                  setFolioPaymentAmount("");
+                  setFolioPaymentMethod("CASH");
+                  setFolioPaymentRef("");
+                  setFolioPaymentNotes("");
+                  setPaymentOpen(true);
+                }}
+              >
                 + Record Payment
               </button>
               <button type="button" className="secondary" onClick={() => void printInvoicePdf()}>
@@ -998,16 +1083,16 @@ export default function StaffReservationDetailPage() {
       )}
 
       {paymentOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: "1rem" }}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: "1rem" }}>
           <div className="panel" style={{ maxWidth: 420, width: "100%" }}>
             <h3 style={{ marginTop: 0 }}>Record payment</h3>
             <p style={{ margin: "0 0 0.6rem", fontSize: "0.85rem", color: "var(--muted)" }}>
               This reduces balance due.
             </p>
             <label>Amount</label>
-            <input type="number" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} />
+            <input type="number" value={folioPaymentAmount} onChange={(e) => setFolioPaymentAmount(e.target.value)} />
             <label>Method</label>
-            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+            <select value={folioPaymentMethod} onChange={(e) => setFolioPaymentMethod(e.target.value)}>
               {["CASH", "CARD", "MOBILE_MONEY", "BANK_TRANSFER"].map((m) => (
                 <option key={m} value={m}>
                   {m}
@@ -1015,9 +1100,9 @@ export default function StaffReservationDetailPage() {
               ))}
             </select>
             <label>Reference</label>
-            <input value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} />
+            <input value={folioPaymentRef} onChange={(e) => setFolioPaymentRef(e.target.value)} />
             <label>Notes</label>
-            <textarea value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} />
+            <textarea value={folioPaymentNotes} onChange={(e) => setFolioPaymentNotes(e.target.value)} />
             <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "0.8rem" }}>
               <button type="button" className="secondary" onClick={() => setPaymentOpen(false)}>
                 Cancel
@@ -1222,65 +1307,157 @@ export default function StaffReservationDetailPage() {
             padding: "1rem",
           }}
         >
-          <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm" style={{ maxWidth: 460, width: "100%" }}>
-            <h3 style={{ marginTop: 0, marginBottom: "0.25rem" }}>Check out</h3>
-            <p style={{ margin: "0 0 0.9rem", color: "var(--muted)", fontSize: "0.9rem" }}>
-              Complete departure checks and finalize folio.
-            </p>
-            <p style={{ margin: "0 0 0.75rem" }}>
-              <strong>Folio balance due:</strong> {balance} {folio.summary.currency}
-            </p>
-            {balance > 0.01 && (
-              <p style={{ color: "#b91c1c", fontSize: "0.95rem", marginBottom: "0.75rem" }}>
-                Outstanding balance: {balance} {folio.summary.currency}. Collect payment before checkout.
+          <div
+            className="panel rounded-2xl border border-border/60 bg-card shadow-sm"
+            style={{
+              maxWidth: 480,
+              width: "100%",
+              maxHeight: "min(92vh, 900px)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              padding: 0,
+            }}
+          >
+            <div style={{ flexShrink: 0, padding: "1.15rem 1.25rem 0.75rem", borderBottom: "1px solid var(--border)" }}>
+              <h3 style={{ marginTop: 0, marginBottom: "0.25rem" }}>Check out</h3>
+              <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.9rem" }}>
+                Complete departure checks and finalize folio.
               </p>
-            )}
-            <p style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
-              Deposit paid:{" "}
-              <strong>
-                {folio.payments
-                  .filter((p) => p.status === "COMPLETED" && String(p.type).toUpperCase() === "DEPOSIT")
-                  .reduce((s, p) => s + Number(p.amount), 0)}
-              </strong>{" "}
-              {folio.summary.currency}
-            </p>
-            <p style={{ fontSize: "0.9rem", marginBottom: "0.75rem" }}>
-              Remaining to collect now: <strong>{Math.max(0, balance)}</strong> {folio.summary.currency}
-            </p>
-            <label style={{ display: "block", marginBottom: "0.5rem" }}>
-              Amount paid at checkout
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={paymentAmount}
-                onChange={(e) => setPaymentAmount(e.target.value)}
-                style={{ width: "100%", marginTop: "0.35rem" }}
-              />
-            </label>
-            <label style={{ display: "block", marginBottom: "0.5rem" }}>
-              Payment method
-              <select
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-                style={{ width: "100%", marginTop: "0.35rem" }}
+            </div>
+            <div style={{ overflowY: "auto", flex: 1, minHeight: 0, padding: "1rem 1.25rem 1rem" }}>
+              <p style={{ margin: "0 0 0.75rem" }}>
+                <strong>Folio balance due:</strong> {balance} {folio.summary.currency}
+              </p>
+              {balance > 0.01 && (
+                <p style={{ color: "#b91c1c", fontSize: "0.95rem", marginBottom: "0.75rem" }}>
+                  Outstanding balance: {balance} {folio.summary.currency}. Collect payment before checkout (enter amount
+                  below, use <strong>Record payment</strong>, or manager override).
+                </p>
+              )}
+              {balance < -0.01 && (
+                <p
+                  className="text-muted-foreground"
+                  style={{
+                    fontSize: "0.7rem",
+                    lineHeight: 1.35,
+                    margin: "0 0 0.4rem",
+                    fontWeight: 400,
+                    opacity: 0.9,
+                  }}
+                >
+                  Negative balance is a credit (payments exceed charges). Leave Amount collected at checkout at 0 for
+                  checkout; that field is only for money still owed on the folio. Post extra takings with + Record payment so
+                  they appear on the folio and update this balance.
+                </p>
+              )}
+              <p style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
+                Deposit paid:{" "}
+                <strong>
+                  {folio.payments
+                    .filter((p) => p.status === "COMPLETED" && String(p.type).toUpperCase() === "DEPOSIT")
+                    .reduce((s, p) => s + Number(p.amount), 0)}
+                </strong>{" "}
+                {folio.summary.currency}
+              </p>
+              <p style={{ fontSize: "0.9rem", marginBottom: "0.65rem" }}>
+                Remaining to collect now: <strong>{Math.max(0, balance)}</strong> {folio.summary.currency}
+              </p>
+              <button
+                type="button"
+                className="secondary"
+                style={{ width: "100%", marginBottom: "0.65rem", fontWeight: 600 }}
+                onClick={() => {
+                  setPaymentOpenedFromCheckout(true);
+                  setFolioPaymentAmount(balance > 0.01 ? String(Math.round(balance * 100) / 100) : "");
+                  setFolioPaymentMethod(checkoutPayMethod);
+                  setFolioPaymentRef("");
+                  setFolioPaymentNotes("");
+                  setPaymentOpen(true);
+                }}
               >
-                <option value="CASH">CASH</option>
-                <option value="CARD">CARD</option>
-                <option value="BANK_TRANSFER">BANK TRANSFER</option>
-                <option value="MOBILE_MONEY">MOBILE MONEY</option>
-                <option value="MIXED">MIXED</option>
-              </select>
-            </label>
-            <label style={{ display: "block", marginBottom: "0.75rem" }}>
-              Payment types used (optional)
-              <input
-                value={paymentTypesUsed}
-                onChange={(e) => setPaymentTypesUsed(e.target.value)}
-                placeholder="e.g. CASH + CARD"
-                style={{ width: "100%", marginTop: "0.35rem" }}
-              />
-            </label>
+                + Record payment (folio)
+              </button>
+              <p
+                className="text-muted-foreground"
+                style={{
+                  fontSize: "0.7rem",
+                  lineHeight: 1.35,
+                  margin: "0 0 0.45rem",
+                  fontWeight: 400,
+                  opacity: 0.9,
+                }}
+              >
+                Posts to the folio like the main toolbar — refreshes balance here. If the guest still owes, enter that amount
+                under Amount collected at checkout (counts for this step only when there is an outstanding balance).
+              </p>
+              <label style={{ display: "block", marginBottom: "0.5rem" }}>
+                Amount collected at checkout
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={checkoutPayAmount}
+                  onChange={(e) => setCheckoutPayAmount(e.target.value)}
+                  style={{
+                    width: "100%",
+                    marginTop: "0.35rem",
+                    boxShadow:
+                      balance > 0.01 && balanceOk
+                        ? "0 0 0 2px rgba(22, 101, 52, 0.35)"
+                        : balance > 0.01
+                          ? "0 0 0 1px rgba(185, 28, 28, 0.25)"
+                          : undefined,
+                  }}
+                />
+              </label>
+              {balance > 0.01 && balanceOk && (
+                <p style={{ margin: "0 0 0.5rem", fontSize: "0.82rem", color: "#166534", fontWeight: 600 }}>
+                  Covers balance due for checkout (or use manager override).
+                </p>
+              )}
+              <label style={{ display: "block", marginBottom: "0.5rem" }}>
+                Payment method
+                <select
+                  value={checkoutPayMethod}
+                  onChange={(e) => setCheckoutPayMethod(e.target.value)}
+                  style={{ width: "100%", marginTop: "0.35rem" }}
+                >
+                  <option value="CASH">CASH</option>
+                  <option value="CARD">CARD</option>
+                  <option value="BANK_TRANSFER">BANK TRANSFER</option>
+                  <option value="MOBILE_MONEY">MOBILE MONEY</option>
+                  <option value="MIXED">MIXED</option>
+                </select>
+              </label>
+              <label style={{ display: "block", marginBottom: "0.5rem" }}>
+                Payment types used (optional)
+                <input
+                  value={checkoutPayTypesUsed}
+                  onChange={(e) => setCheckoutPayTypesUsed(e.target.value)}
+                  placeholder="e.g. CASH + CARD"
+                  style={{ width: "100%", marginTop: "0.35rem" }}
+                />
+              </label>
+              <label style={{ display: "block", marginBottom: "0.5rem" }}>
+                Reference
+                <input
+                  value={checkoutPayRef}
+                  onChange={(e) => setCheckoutPayRef(e.target.value)}
+                  placeholder="Receipt / auth code"
+                  style={{ width: "100%", marginTop: "0.35rem" }}
+                />
+              </label>
+              <label style={{ display: "block", marginBottom: "0.75rem" }}>
+                Notes
+                <textarea
+                  value={checkoutPayNotes}
+                  onChange={(e) => setCheckoutPayNotes(e.target.value)}
+                  rows={2}
+                  placeholder="Optional"
+                  style={{ width: "100%", marginTop: "0.35rem", resize: "vertical" }}
+                />
+              </label>
             <div
               style={{
                 border: "1px solid var(--border)",
@@ -1381,10 +1558,49 @@ export default function StaffReservationDetailPage() {
               </p>
             )}
             {balance > 0.01 && canOverride && (
-              <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "1rem" }}>
-                <input type="checkbox" checked={overrideBal} onChange={(e) => setOverrideBal(e.target.checked)} />
-                Override — proceed anyway (manager / finance)
-              </label>
+              <div style={{ marginBottom: "1rem" }}>
+                <label style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={overrideBal}
+                    onChange={(e) => {
+                      const on = e.target.checked;
+                      setOverrideBal(on);
+                      if (!on) setOverrideBalReason("");
+                    }}
+                  />
+                  Override — proceed anyway (manager / finance)
+                </label>
+                {checkoutWaivedByOverride && (
+                  <div style={{ marginTop: "0.75rem" }}>
+                    <label
+                      htmlFor="override-bal-reason"
+                      style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.35rem" }}
+                    >
+                      Why is checkout allowed without collecting the full balance? (required)
+                    </label>
+                    <textarea
+                      id="override-bal-reason"
+                      rows={3}
+                      value={overrideBalReason}
+                      onChange={(e) => setOverrideBalReason(e.target.value)}
+                      placeholder="e.g. Comp night approved by GM on 2026-04-28; corporate master account XYZ to be invoiced separately."
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        padding: "8px 10px",
+                        borderRadius: "8px",
+                        border: "1px solid var(--border)",
+                        fontSize: "0.9rem",
+                        resize: "vertical",
+                      }}
+                    />
+                    <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+                      Minimum {MIN_OVERRIDE_BALANCE_REASON_LEN} characters. Stored for audit.
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
             <div
               style={{
@@ -1406,18 +1622,37 @@ export default function StaffReservationDetailPage() {
                 <li style={{ color: hasAssignedRoom ? "#166534" : "#991b1b" }}>
                   {hasAssignedRoom ? "OK" : "Missing"} — Reservation must have an <strong>assigned room</strong>.
                 </li>
-                <li style={{ color: balanceOk ? "#166534" : "#991b1b" }}>
-                  {balanceOk ? "OK" : "Missing"} — Folio balance must be settled, or authorized override enabled.
+                <li style={{ color: balanceOk && overrideReasonOk ? "#166534" : "#991b1b" }}>
+                  {balanceOk && overrideReasonOk
+                    ? "OK"
+                    : "Missing"} — Folio balance must be settled, or authorized override with a written reason.
                 </li>
               </ul>
             </div>
-            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+            </div>
+            <div
+              style={{
+                flexShrink: 0,
+                padding: "1rem 1.25rem",
+                borderTop: "1px solid var(--border)",
+                display: "flex",
+                gap: "0.5rem",
+                justifyContent: "flex-end",
+                background: "var(--card)",
+              }}
+            >
               <button type="button" className="secondary" onClick={() => setCheckOutOpen(false)}>
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={!minibarOk || blockedByBalance || !statusOkForCheckout || !hasAssignedRoom}
+                disabled={
+                  !minibarOk ||
+                  blockedByBalance ||
+                  !statusOkForCheckout ||
+                  !hasAssignedRoom ||
+                  !overrideReasonOk
+                }
                 onClick={() => void submitCheckOut()}
               >
                 Confirm check-out

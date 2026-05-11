@@ -65,6 +65,10 @@ The system is structured into:
 
 -npm run dev
 
+## Deploying to a server
+
+See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for a beginner-friendly guide: one-domain setup with Nginx, split app/API URLs, JAR vs WAR, and `NEXT_PUBLIC_API_URL`.
+
 ## 📂 Project Structure
 
 ```bash

@@ -35,4 +35,8 @@ public class SelfServiceOrderLine {
 
     @Column(name = "line_total", nullable = false, precision = 14, scale = 2)
     private BigDecimal lineTotal;
+
+    /** Guest modifiers / allergens / special prep (e.g. "No onions", "Extra spicy"). */
+    @Column(name = "modifiers_note", length = 280)
+    private String modifiersNote;
 }

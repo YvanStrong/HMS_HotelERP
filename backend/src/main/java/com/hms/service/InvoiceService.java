@@ -25,6 +25,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,24 +59,43 @@ public class InvoiceService {
     }
 
     @Transactional(readOnly = true)
-    public List<ApiDtos.InvoiceListItem> listInvoices(UUID hotelId, String hotelHeader) {
+    public ApiDtos.InvoiceListPageResponse listInvoicesPage(UUID hotelId, String hotelHeader, int page, int size) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
-        List<Invoice> invoices = invoiceRepository.findDetailedByHotelIdOrderByCreatedAtDesc(hotelId);
-        return invoices.stream()
-                .map(i -> new ApiDtos.InvoiceListItem(
-                        i.getId(),
-                        i.getInvoiceNumber(),
-                        i.getReservation().getConfirmationCode(),
-                        i.getReservation().getBookingReference(),
-                        guestName(i.getReservation()),
-                        i.getReservation().getRoom() != null
-                                ? i.getReservation().getRoom().getRoomNumber()
-                                : null,
-                        i.getTotalAmount(),
-                        i.getHotel().getCurrency(),
-                        i.getCreatedAt(),
-                        publicUrlProperties.invoicePdfUrl(hotelId, i.getId())))
-                .toList();
+        BigDecimal sumAll = invoiceRepository.sumTotalAmountByHotelId(hotelId);
+        if (sumAll == null) {
+            sumAll = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        } else {
+            sumAll = sumAll.setScale(2, RoundingMode.HALF_UP);
+        }
+        int p = Math.max(page, 1) - 1;
+        int s = Math.min(Math.max(size, 1), 100);
+        Page<Invoice> pg = invoiceRepository.findByHotel_IdOrderByCreatedAtDesc(hotelId, PageRequest.of(p, s));
+        List<ApiDtos.InvoiceListItem> data =
+                pg.getContent().stream()
+                        .map(i -> toInvoiceListItem(hotelId, i))
+                        .toList();
+        return new ApiDtos.InvoiceListPageResponse(data, paginate(page, s, pg.getTotalElements()), sumAll);
+    }
+
+    private ApiDtos.InvoiceListItem toInvoiceListItem(UUID hotelId, Invoice i) {
+        return new ApiDtos.InvoiceListItem(
+                i.getId(),
+                i.getInvoiceNumber(),
+                i.getReservation().getConfirmationCode(),
+                i.getReservation().getBookingReference(),
+                guestName(i.getReservation()),
+                i.getReservation().getRoom() != null ? i.getReservation().getRoom().getRoomNumber() : null,
+                i.getTotalAmount(),
+                i.getHotel().getCurrency(),
+                i.getCreatedAt(),
+                publicUrlProperties.invoicePdfUrl(hotelId, i.getId()));
+    }
+
+    private static ApiDtos.Pagination paginate(int page, int size, long total) {
+        int totalPages = size > 0 ? (int) Math.ceil((double) total / size) : 0;
+        boolean hasNext = (long) page * size < total;
+        boolean hasPrevious = page > 1;
+        return new ApiDtos.Pagination(page, size, total, totalPages, hasNext, hasPrevious);
     }
 
     @Transactional(readOnly = true)

@@ -6,11 +6,13 @@ import com.hms.entity.AppUser;
 import com.hms.entity.Hotel;
 import com.hms.repository.AppUserRepository;
 import com.hms.repository.HotelRepository;
+import com.hms.security.SecurityAuditService;
 import com.hms.security.TenantAccessService;
 import com.hms.security.UserPrincipal;
 import com.hms.web.ApiException;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -55,16 +57,19 @@ public class HotelStaffUserService {
     private final HotelRepository hotelRepository;
     private final PasswordEncoder passwordEncoder;
     private final TenantAccessService tenantAccessService;
+    private final SecurityAuditService securityAuditService;
 
     public HotelStaffUserService(
             AppUserRepository appUserRepository,
             HotelRepository hotelRepository,
             PasswordEncoder passwordEncoder,
-            TenantAccessService tenantAccessService) {
+            TenantAccessService tenantAccessService,
+            SecurityAuditService securityAuditService) {
         this.appUserRepository = appUserRepository;
         this.hotelRepository = hotelRepository;
         this.passwordEncoder = passwordEncoder;
         this.tenantAccessService = tenantAccessService;
+        this.securityAuditService = securityAuditService;
     }
 
     @Transactional(readOnly = true)
@@ -112,7 +117,13 @@ public class HotelStaffUserService {
         user.setRole(targetRole);
         user.setActive(true);
         user.setHotel(hotel);
-        return toRow(appUserRepository.save(user));
+        AppUser saved = appUserRepository.save(user);
+        securityAuditService.logEvent(
+                "STAFF_USER_CREATED",
+                actor.getId(),
+                hotelId,
+                Map.of("newUserId", saved.getId(), "username", saved.getUsername(), "role", saved.getRole().name()));
+        return toRow(saved);
     }
 
     @Transactional
@@ -129,8 +140,15 @@ public class HotelStaffUserService {
         }
         Role targetRole = parseRole(req.role());
         validateCreatePermission(actor.getRole(), targetRole);
+        String previousRole = user.getRole().name();
         user.setRole(targetRole);
-        return toRow(appUserRepository.save(user));
+        AppUser saved = appUserRepository.save(user);
+        securityAuditService.logEvent(
+                "STAFF_ROLE_UPDATED",
+                actor.getId(),
+                hotelId,
+                Map.of("targetUserId", userId, "fromRole", previousRole, "toRole", saved.getRole().name()));
+        return toRow(saved);
     }
 
     @Transactional
@@ -144,8 +162,15 @@ public class HotelStaffUserService {
         if (user.getHotel() == null || !hotelId.equals(user.getHotel().getId())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Staff user not found");
         }
+        UserPrincipal actor = tenantAccessService.currentUser();
         user.setActive(active);
-        return toRow(appUserRepository.save(user));
+        AppUser saved = appUserRepository.save(user);
+        securityAuditService.logEvent(
+                "STAFF_ACTIVE_FLAG_SET",
+                actor.getId(),
+                hotelId,
+                Map.of("targetUserId", userId, "active", active));
+        return toRow(saved);
     }
 
     @Transactional
@@ -163,8 +188,15 @@ public class HotelStaffUserService {
         if (user.getHotel() == null || !hotelId.equals(user.getHotel().getId())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Staff user not found");
         }
+        UserPrincipal actor = tenantAccessService.currentUser();
         user.setPasswordHash(passwordEncoder.encode(req.newPassword()));
-        return toRow(appUserRepository.save(user));
+        AppUser saved = appUserRepository.save(user);
+        securityAuditService.logEvent(
+                "STAFF_PASSWORD_RESET",
+                actor.getId(),
+                hotelId,
+                Map.of("targetUserId", userId, "username", saved.getUsername()));
+        return toRow(saved);
     }
 
     private static Role parseRole(String roleRaw) {

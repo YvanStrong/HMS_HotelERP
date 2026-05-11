@@ -1,6 +1,6 @@
 # HMS Market Readiness - Execution Status
 
-Last updated: 2026-04-30
+Last updated: 2026-04-30 (security hardening + checklist pass)
 
 ## Module 1 (Dashboard) - Done
 
@@ -276,11 +276,22 @@ Last updated: 2026-04-30
 - Form-level inline validation + disabled submit while loading.
 - Success and error toast notifications.
 
-## Security/Platform Hardening Still Pending
-- Login rate limiting with temporary lockout.
-- Financial endpoint tenancy ownership checks verification.
-- Expanded audit logs for key financial and security actions.
-- Production profile hardening (`application-prod.properties` and `ddl-auto=validate`).
+## Security / platform hardening (pass 2026-04-30) — Done
+- **Login lockout (in-memory):** configurable failed-attempt window + temporary lockout on `POST /api/v1/auth/login` (`LoginAttemptService`, properties `hms.auth.login.*`). Returns HTTP 429 with `LOGIN_TEMP_LOCKED` when locked.
+- **Tenant header for super-admin:** `TenantAccessService.assertHotelAccess` now requires **`X-Hotel-ID` matching the URL hotel** for `SUPER_ADMIN` as well, so path hotel IDs cannot be exercised without an explicit header match (aligns with staff clients that derive `X-Hotel-ID` from `/hotels/{hotelId}/...` paths).
+- **Guest folio isolation:** `ReservationService.getFolio` denies `ROLE_GUEST` unless the reservation’s guest profile is linked to the signed-in portal account (`portal_account_id`).
+- **Structured security audit log (SLF4J):** logger `SECURITY_AUDIT` for login outcomes, folio payments / voids, and staff lifecycle actions (`SecurityAuditService` + `AuthController` / `ReservationService` / `HotelStaffUserService`). Ship logs to your SIEM in production.
+- **Production profile:** `application-prod.properties` sets `ddl-auto=validate`, disables OpenAPI/Swagger UI, requires `JWT_SECRET` / `SETUP_TOKEN`, and documents `HMS_CORS_ALLOWED_ORIGIN_PATTERNS`. **`ProductionSecurityGuardrails`** fails startup on unsafe default JWT/setup secrets when `spring.profiles.active=prod`.
+- **CORS:** `hms.cors.allowed-origin-patterns` (comma-separated) replaces hard-coded localhost-only patterns in `SecurityConfig`.
+
+### Final checklist (release-oriented)
+- [x] Hotel-scoped APIs: `X-Hotel-ID` vs path hotel enforced for all roles including super-admin.
+- [x] Guest-facing folio: only the owning portal guest can read the folio.
+- [x] Login abuse: basic rate lock on failed password attempts (per identity + client IP).
+- [x] Financial writes: folio payment add/void emit audit events; DB remains source of truth for amounts.
+- [x] Staff security actions: create user, role change, activate/deactivate, password reset audited (no secrets in logs).
+- [x] Prod profile: validate-only DDL, Swagger off, secrets not defaulted in `application-prod.properties`.
+- [ ] **Multi-instance / edge:** replace in-memory login lockout with Redis or WAF rules; add DB-backed hotel audit if long-term retention is required.
 
 ## Next execution order
-1. Security hardening + final checklist pass
+1. Optional: multi-instance rate limiting + durable hotel-level audit table

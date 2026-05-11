@@ -44,6 +44,8 @@ export type TaxInvoiceHtmlOpts = {
   paymentMethodLabel: string;
   paymentTypesUsed: string;
   balanceAfter: number;
+  hotelLogoUrl?: string | null;
+  hotelName?: string;
 };
 
 export function buildTaxInvoiceHtml(opts: TaxInvoiceHtmlOpts) {
@@ -69,7 +71,11 @@ export function buildTaxInvoiceHtml(opts: TaxInvoiceHtmlOpts) {
         <img class="logo-img" src="${esc(assetUrl("/images/RRA_LOGO.png"))}" alt="RRA" />
         <img class="logo-img" src="${esc(assetUrl("/images/rraLogo2.png"))}" alt="RRA" />
       </div>
-      <img class="logo-img" style="height:56px" src="${esc(assetUrl("/images/logoubumwe.png"))}" alt="Hotel" />
+      ${
+        opts.hotelLogoUrl
+          ? `<img class="logo-img" style="height:56px" src="${esc(opts.hotelLogoUrl)}" alt="${esc(opts.hotelName || "Hotel")}" />`
+          : `<div class="muted strong">${esc(opts.hotelName || "HMS")}</div>`
+      }
     </div>
     <h2>Tax Invoice</h2>
     <div class="inv">

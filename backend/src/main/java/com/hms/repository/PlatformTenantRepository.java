@@ -1,7 +1,6 @@
 package com.hms.repository;
 
 import com.hms.domain.PlatformBillingStatus;
-import com.hms.domain.ProvisioningStatus;
 import com.hms.domain.SubscriptionTier;
 import com.hms.entity.PlatformTenant;
 import java.util.List;

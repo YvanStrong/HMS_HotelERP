@@ -24,6 +24,11 @@ public class PublicCatalogController {
         return publicCatalogService.listHotels();
     }
 
+    @GetMapping("/hotels/{hotelId}")
+    public ApiDtos.PublicHotelCatalogItem getHotel(@PathVariable UUID hotelId) {
+        return publicCatalogService.getHotel(hotelId);
+    }
+
     @GetMapping("/hotels/{hotelId}/room-types")
     public List<ApiDtos.PublicRoomTypeCatalogItem> listRoomTypes(@PathVariable UUID hotelId) {
         return publicCatalogService.listRoomTypes(hotelId);

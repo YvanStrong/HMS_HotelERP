@@ -30,6 +30,7 @@ public class ApiException extends RuntimeException {
             case UNPROCESSABLE_ENTITY -> "UNPROCESSABLE_ENTITY";
             case PAYMENT_REQUIRED -> "PAYMENT_REQUIRED";
             case SERVICE_UNAVAILABLE -> "SERVICE_UNAVAILABLE";
+            case TOO_MANY_REQUESTS -> "TOO_MANY_REQUESTS";
             default -> status.name();
         };
     }

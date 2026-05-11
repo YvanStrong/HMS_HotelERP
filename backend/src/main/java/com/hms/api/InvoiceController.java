@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -28,10 +29,12 @@ public class InvoiceController {
     @GetMapping
     @PreAuthorize(
             "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
-    public List<ApiDtos.InvoiceListItem> listInvoices(
+    public ApiDtos.InvoiceListPageResponse listInvoices(
             @PathVariable UUID hotelId,
-            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
-        return invoiceService.listInvoices(hotelId, hotelHeader);
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return invoiceService.listInvoicesPage(hotelId, hotelHeader, page, size);
     }
 
     @GetMapping("/proformas")

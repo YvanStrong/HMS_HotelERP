@@ -24,6 +24,23 @@ public class TenantAccessService {
     public void assertHotelAccess(UUID hotelIdFromPath, String hotelIdHeader) {
         UserPrincipal user = currentUser();
         if (user.getRole() == Role.SUPER_ADMIN) {
+            if (hotelIdHeader == null || hotelIdHeader.isBlank()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "X_HOTEL_ID_REQUIRED", "X-Hotel-ID header is required");
+            }
+            String headerRaw = sanitizeHeaderUuid(hotelIdHeader);
+            if (headerRaw.isEmpty()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "X_HOTEL_ID_REQUIRED", "X-Hotel-ID header is required");
+            }
+            UUID headerId;
+            try {
+                headerId = UUID.fromString(headerRaw);
+            } catch (IllegalArgumentException e) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_X_HOTEL_ID", "Invalid X-Hotel-ID");
+            }
+            if (!headerId.equals(hotelIdFromPath)) {
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST, "X_HOTEL_ID_MISMATCH", "X-Hotel-ID must match hotel in URL");
+            }
             return;
         }
         if (hotelIdHeader == null || hotelIdHeader.isBlank()) {

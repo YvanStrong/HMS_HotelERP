@@ -20,3 +20,16 @@ hms.setup.token=${SETUP_TOKEN}
 
 # Optional: defaults to 8080 in application.properties when unset
 # SERVER_PORT=8082
+
+# Optional: serve the API under a URL prefix (matches NEXT_PUBLIC_API_URL or path + /api/v1/...).
+# Example: server.servlet.context-path=/Hotel  →  http://localhost:8080/Hotel/swagger-ui/index.html
+# The JAR file name (e.g. Hotel.jar) does not set this; you configure it explicitly or via reverse proxy.
+# server.servlet.context-path=/Hotel
+
+# Guest self-order READY alerts (optional). VAPID = browser push; Twilio = SMS if guest left a phone on the order.
+# hms.self-order.notify.vapid-public-key=
+# hms.self-order.notify.vapid-private-key=
+# hms.self-order.notify.vapid-subject=mailto:ops@example.com
+# hms.self-order.notify.twilio-account-sid=
+# hms.self-order.notify.twilio-auth-token=
+# hms.self-order.notify.twilio-from-number=
