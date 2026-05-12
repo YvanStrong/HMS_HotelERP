@@ -82,7 +82,7 @@ export function RealtimeKpiCharts({ liveMetrics }: { liveMetrics: Record<string,
           >
             {isShare ? (
               <HmsDonutChart
-                data={data}
+                data={data.map((d) => ({ name: d.label, value: d.value, color: d.color }))}
                 centerLabel={sum.toLocaleString()}
                 centerSub="total"
               />
