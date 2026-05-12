@@ -11,11 +11,52 @@ type GuestProfile = {
   id: string;
   name: string;
   email: string;
-  loyalty?: Record<string, unknown>;
+  registry?: Record<string, unknown>;
+  loyalty?: {
+    tier: string;
+    points: number;
+    nextTier?: string;
+    pointsToNextTier?: number;
+    tierBenefits?: string[];
+  };
   preferences?: Record<string, unknown>;
   stayHistory?: Record<string, unknown>;
   communication?: Record<string, unknown>;
-  flags?: Record<string, unknown>;
+  flags?: {
+    isVIP: boolean;
+    requiresSpecialAttention: boolean;
+    blacklisted: boolean;
+    blacklistReason?: string;
+    returningGuest?: boolean;
+    open_operational_complaints?: number;
+  };
+  feedback?: {
+    history: Array<{
+      rating: number | null;
+      category?: string;
+      comment: string;
+      date: string;
+      resolved: boolean;
+      resolutionNotes?: string;
+    }>;
+    averageRating: number;
+  };
+  operational_complaints?: {
+    cases: Array<{
+      id: string;
+      type: string;
+      severity: string;
+      status: string;
+      description: string;
+      resolution: string | null;
+      opened_at: string;
+      resolved_at: string | null;
+      reservation_id: string;
+      assigned_to: string | null;
+      assigned_to_name: string | null;
+    }>;
+    open_count: number;
+  };
 };
 
 type ReservationRow = {
@@ -42,7 +83,9 @@ export default function GuestDetailPage() {
   const [stays, setStays] = useState<ReservationRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"profile" | "stays" | "preferences" | "flags">("profile");
+  const [activeTab, setActiveTab] = useState<
+    "profile" | "stays" | "preferences" | "flags" | "feedback" | "complaints" | "registry"
+  >("profile");
   const [earnPoints, setEarnPoints] = useState("100");
   const [redeemPoints, setRedeemPoints] = useState("100");
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -57,14 +100,12 @@ export default function GuestDetailPage() {
       return;
     }
     try {
-      const [p, allReservations] = await Promise.all([
+      const [p, guestReservations] = await Promise.all([
         apiFetch<GuestProfile>(`/api/v1/hotels/${hotelId}/guests/${guestId}/profile`),
-        apiFetch<ReservationRow[]>(
-          `/api/v1/hotels/${hotelId}/reservations?status=CONFIRMED,CHECKED_IN,CHECKED_OUT,CANCELLED,NO_SHOW,PENDING`,
-        ),
+        apiFetch<ReservationRow[]>(`/api/v1/hotels/${hotelId}/guests/${guestId}/reservations`),
       ]);
       setProfile(p);
-      setStays(allReservations.filter((r) => r.guestId === guestId));
+      setStays(guestReservations);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load guest");
       setProfile(null);
@@ -123,6 +164,17 @@ export default function GuestDetailPage() {
     }
   }
 
+  const outstandingBalance = useMemo(() => {
+    const sh = profile?.stayHistory as Record<string, unknown> | undefined;
+    if (!sh) return null;
+    const amt = sh.outstandingBalance;
+    const cur = sh.outstandingBalanceCurrency;
+    if (typeof amt !== "number" && typeof amt !== "string") return null;
+    const n = typeof amt === "number" ? amt : Number(amt);
+    if (!Number.isFinite(n)) return null;
+    return { amount: n, currency: typeof cur === "string" ? cur : "" };
+  }, [profile]);
+
   const lifetimeValue = useMemo(() => {
     const val = profile?.stayHistory?.lifetimeValue;
     return typeof val === "number" ? val : typeof val === "string" ? val : "—";
@@ -131,16 +183,40 @@ export default function GuestDetailPage() {
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-        <p className="text-sm mb-2">
-          <Link href={staffAppPath("guests")} className="text-primary">
-            ← Guests
-          </Link>
-        </p>
-        <h1 className="text-3xl font-bold tracking-tight">Guest profile</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Unified profile, stay history, loyalty actions, and communication details.
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm mb-2">
+              <Link href={staffAppPath("guests")} className="text-primary">
+                ← Guests
+              </Link>
+            </p>
+            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
+              {profile?.name}
+              {profile?.flags?.isVIP && (
+                <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full border border-amber-200">VIP</span>
+              )}
+              {profile?.flags?.returningGuest && (
+                <span className="bg-sky-100 text-sky-800 text-xs px-2 py-0.5 rounded-full border border-sky-200">Returning</span>
+              )}
+            </h1>
+          </div>
+          {profile?.loyalty && (
+            <div className="text-right">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">{profile.loyalty.tier} MEMBER</p>
+              <p className="text-2xl font-black text-primary">{profile.loyalty.points} pts</p>
+            </div>
+          )}
+        </div>
       </div>
+
+      {profile?.flags?.requiresSpecialAttention && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-800 flex items-center gap-3 animate-pulse">
+          <div className="w-2 h-2 rounded-full bg-rose-600" />
+          <p className="text-sm font-semibold text-rose-900 uppercase tracking-wide">
+            Action required: unresolved guest feedback or open operational complaints for this guest
+          </p>
+        </div>
+      )}
 
       {error && <div className="error">{error}</div>}
       {banner && (
@@ -159,10 +235,26 @@ export default function GuestDetailPage() {
 
       {!isLoading && profile && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
             <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Guest</p>
-              <p className="mt-1 text-lg font-semibold">{profile.name}</p>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Outstanding (open folios)</p>
+              <p className="mt-1 text-xl font-bold text-rose-600">
+                {outstandingBalance
+                  ? `${outstandingBalance.amount.toFixed(2)}${outstandingBalance.currency ? ` ${outstandingBalance.currency}` : ""}`
+                  : "—"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Average Rating</p>
+              <p className="mt-1 text-lg font-bold text-indigo-600">{profile.feedback?.averageRating?.toFixed(1) || "—"} / 5.0</p>
+            </div>
+            <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Open operational complaints</p>
+              <p className="mt-1 text-2xl font-bold text-rose-600">
+                {typeof profile.flags?.open_operational_complaints === "number"
+                  ? profile.flags.open_operational_complaints
+                  : "—"}
+              </p>
             </div>
             <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Email</p>
@@ -183,8 +275,11 @@ export default function GuestDetailPage() {
               {[
                 { key: "profile", label: "Profile" },
                 { key: "stays", label: "Stay History" },
+                { key: "feedback", label: "Feedback & Sentiment" },
+                { key: "complaints", label: "Complaints (ops)" },
                 { key: "preferences", label: "Preferences" },
                 { key: "flags", label: "Flags & Communication" },
+                { key: "registry", label: "Registry & ops" },
               ].map((t) => (
                 <button
                   key={t.key}
@@ -200,27 +295,42 @@ export default function GuestDetailPage() {
             {activeTab === "profile" && (
               <div className="space-y-4">
                 <KeyValueTable title="Guest profile" rows={recordToRows({ id: profile.id, name: profile.name, email: profile.email })} />
-                <KeyValueTable title="Loyalty" rows={recordToRows(profile.loyalty)} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="rounded-xl border border-border/60 p-4">
-                    <h3 className="text-sm font-semibold mb-2">Add loyalty points</h3>
-                    <label>
-                      Points
-                      <input value={earnPoints} type="number" min={1} onChange={(e) => setEarnPoints(e.target.value)} />
-                    </label>
-                    <button type="button" className="hms-btn-solid mt-3" onClick={() => void submitEarn()}>
-                      Add points
-                    </button>
+                    <h3 className="text-sm font-semibold mb-2 flex items-center justify-between">
+                      Loyalty: {profile.loyalty?.tier}
+                      <span className="text-xs font-normal text-muted-foreground">{profile.loyalty?.points} pts</span>
+                    </h3>
+                    <div className="w-full bg-slate-100 h-2 rounded-full mb-3 overflow-hidden">
+                      <div className="bg-primary h-full rounded-full" style={{ width: profile.loyalty?.nextTier ? '45%' : '100%' }} />
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-4">
+                      {profile.loyalty?.nextTier ? `${profile.loyalty.pointsToNextTier} more points to reach ${profile.loyalty.nextTier}` : 'Highest tier reached!'}
+                    </p>
+                    <label className="text-xs text-slate-500 uppercase font-bold">Add points</label>
+                    <div className="flex gap-2 mt-1">
+                      <input className="text-sm" value={earnPoints} type="number" min={1} onChange={(e) => setEarnPoints(e.target.value)} />
+                      <button type="button" className="hms-btn-solid text-xs whitespace-nowrap" onClick={() => void submitEarn()}>
+                        Add
+                      </button>
+                    </div>
                   </div>
                   <div className="rounded-xl border border-border/60 p-4">
-                    <h3 className="text-sm font-semibold mb-2">Redeem loyalty points</h3>
-                    <label>
-                      Points
-                      <input value={redeemPoints} type="number" min={1} onChange={(e) => setRedeemPoints(e.target.value)} />
-                    </label>
-                    <button type="button" className="hms-btn-outline mt-3" onClick={() => void submitRedeem()}>
-                      Redeem points
-                    </button>
+                    <h3 className="text-sm font-semibold mb-2">Tier Benefits</h3>
+                    <ul className="text-xs space-y-1 text-slate-600">
+                      {(profile.loyalty?.tierBenefits || []).map(b => (
+                        <li key={b} className="flex items-center gap-2">
+                          <div className="w-1 h-1 rounded-full bg-emerald-500" />
+                          {b.replaceAll("_", " ")}
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-4 pt-4 border-t border-slate-100 flex gap-2">
+                      <input className="text-sm" value={redeemPoints} type="number" min={1} onChange={(e) => setRedeemPoints(e.target.value)} />
+                      <button type="button" className="hms-btn-outline text-xs whitespace-nowrap" onClick={() => void submitRedeem()}>
+                        Redeem
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -229,31 +339,134 @@ export default function GuestDetailPage() {
             {activeTab === "stays" && (
               <div>
                 {stays.length === 0 ? (
-                  <p className="text-muted-foreground">No stay history found for this guest.</p>
+                  <p className="text-muted-foreground text-center py-8">No stay history found for this guest.</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                          <th>Booking</th>
-                          <th>Stay</th>
-                          <th>Status</th>
-                          <th>Room</th>
-                          <th>Total</th>
+                          <th className="pb-3">Booking</th>
+                          <th className="pb-3">Stay</th>
+                          <th className="pb-3">Status</th>
+                          <th className="pb-3">Room</th>
+                          <th className="pb-3">Total</th>
+                          <th className="pb-3 text-right">Folio</th>
                         </tr>
                       </thead>
                       <tbody>
                         {stays.map((s) => (
-                          <tr key={s.id} className="border-t border-border/50">
-                            <td className="font-mono text-xs">{s.booking_reference || s.confirmationCode}</td>
-                            <td className="whitespace-nowrap">{s.checkInDate} → {s.checkOutDate}</td>
-                            <td>{s.status.replaceAll("_", " ")}</td>
-                            <td>{s.roomNumber || "Unassigned"}</td>
-                            <td>{s.totalAmount} {s.currency}</td>
+                          <tr key={s.id} className="border-t border-border/50 hover:bg-slate-50 transition-colors">
+                            <td className="py-3 font-mono text-xs">{s.booking_reference || s.confirmationCode}</td>
+                            <td className="py-3 whitespace-nowrap">{s.checkInDate} → {s.checkOutDate}</td>
+                            <td className="py-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                s.status === 'CHECKED_OUT' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'
+                              }`}>
+                                {s.status.replaceAll("_", " ")}
+                              </span>
+                            </td>
+                            <td className="py-3">{s.roomNumber || "Unassigned"}</td>
+                            <td className="py-3 font-semibold">{s.totalAmount} {s.currency}</td>
+                            <td className="py-3 text-right">
+                              <Link href={staffAppPath("reservations", s.id)} className="hms-btn-outline text-xs">
+                                Open
+                              </Link>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === "feedback" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-slate-800">Feedback history</h3>
+                  <p className="text-xs text-slate-500">{profile.feedback?.history.length || 0} entries</p>
+                </div>
+                <div className="space-y-3">
+                  {(profile.feedback?.history || []).length === 0 ? (
+                    <p className="text-center text-slate-400 italic py-8">No feedback submitted by this guest yet.</p>
+                  ) : (
+                    profile.feedback?.history.map((f, i) => (
+                      <div key={i} className="p-4 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-1">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <div
+                                key={star}
+                                className={`w-3 h-3 rounded-full ${f.rating != null && star <= f.rating ? "bg-amber-400" : "bg-slate-200"}`}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-[10px] text-slate-400">{new Date(f.date).toLocaleDateString()}</span>
+                        </div>
+                        {f.category && (
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{f.category}</p>
+                        )}
+                        <p className="text-sm text-slate-700 italic">{f.comment}</p>
+                        <div className="mt-3 flex items-center justify-between">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${f.resolved ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {f.resolved ? "Resolved" : "Pending Review"}
+                          </span>
+                        </div>
+                        {f.resolutionNotes && (
+                          <p className="mt-2 text-xs text-muted-foreground">Resolution: {f.resolutionNotes}</p>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === "complaints" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-slate-800">Operational complaint history</h3>
+                  <p className="text-xs text-slate-500">
+                    {(profile.operational_complaints?.cases ?? []).length} cases ·{" "}
+                    {profile.operational_complaints?.open_count ?? 0} open workflow
+                  </p>
+                </div>
+                {(profile.operational_complaints?.cases ?? []).length === 0 ? (
+                  <p className="text-center text-slate-400 italic py-8">No operational complaints for this guest.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {(profile.operational_complaints?.cases ?? []).map((c) => (
+                      <div key={c.id} className="p-4 rounded-xl border border-slate-100 bg-slate-50/50">
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border bg-slate-100 text-slate-800 border-slate-200">
+                              {c.severity}
+                            </span>
+                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border border-slate-200 bg-white text-slate-700">
+                              {c.status.replaceAll("_", " ")}
+                            </span>
+                            <span className="text-[10px] text-slate-500">{c.type.replaceAll("_", " ")}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">{new Date(c.opened_at).toLocaleString()}</span>
+                        </div>
+                        <p className="text-sm text-slate-800">{c.description}</p>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                          <span>Owner: {c.assigned_to_name || "—"}</span>
+                          <Link href={staffAppPath("reservations", c.reservation_id)} className="text-primary hover:underline">
+                            Linked stay
+                          </Link>
+                          <Link href={staffAppPath("guests/complaints")} className="text-primary hover:underline">
+                            Hotel complaint board
+                          </Link>
+                        </div>
+                        {c.resolution && (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            <span className="font-semibold text-foreground">Resolution:</span> {c.resolution}
+                          </p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -267,8 +480,23 @@ export default function GuestDetailPage() {
 
             {activeTab === "flags" && (
               <div className="space-y-4">
-                <KeyValueTable title="Flags" rows={recordToRows(profile.flags)} />
-                <KeyValueTable title="Communication" rows={recordToRows(profile.communication)} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <KeyValueTable title="Flags" rows={recordToRows(profile.flags)} />
+                  <KeyValueTable title="Communication" rows={recordToRows(profile.communication)} />
+                </div>
+              </div>
+            )}
+
+            {activeTab === "registry" && (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Guest type, emergency contact, corporate billing pointers, document index, communication log, active
+                  stay summary, and sensitive incidents (managers only). Update fields via{" "}
+                  <code className="rounded bg-muted px-1">PATCH /guests/{"{guestId}"}</code> with the staff guest payload.
+                </p>
+                <pre className="max-h-[520px] overflow-auto rounded-lg border border-border/60 bg-muted/30 p-4 text-xs leading-relaxed">
+                  {JSON.stringify(profile.registry ?? {}, null, 2)}
+                </pre>
               </div>
             )}
           </div>

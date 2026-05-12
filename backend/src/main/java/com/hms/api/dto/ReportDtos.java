@@ -1,6 +1,7 @@
 package com.hms.api.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -58,4 +59,46 @@ public final class ReportDtos {
             List<ExecutiveArrivalRow> todaysArrivals,
             List<ExecutiveDepartureRow> todaysDepartures,
             List<ExecutiveActivityRow> recentActivity) {}
+
+    public record ComplaintsByTypeRow(String type, long count) {}
+
+    public record ComplaintsByStaffRow(
+            @JsonProperty("staff_user_id") UUID staffUserId,
+            @JsonProperty("staff_username") String staffUsername,
+            long count) {}
+
+    public record ComplaintsMetricsResponse(
+            @JsonProperty("period_start") Instant periodStart,
+            @JsonProperty("average_resolution_hours") Double averageResolutionHours,
+            @JsonProperty("by_type") List<ComplaintsByTypeRow> byType,
+            @JsonProperty("by_staff") List<ComplaintsByStaffRow> byStaff,
+            @JsonProperty("total_in_range") long totalInRange) {}
+
+    public record GuestNationalitySlice(String nationality, long count, BigDecimal percent) {}
+
+    public record GuestRepeatBookingsMonth(String month, long repeatBookingCount) {}
+
+    public record GuestDashboardDocumentation(
+            String averageGuestLifetimeValueMeaning,
+            String revenuePerGuestMeaning,
+            String noShowRateDenominator,
+            String staySelectionCriteria,
+            String repeatBookingTrendWindow) {}
+
+    public record GuestDashboardResponse(
+            String reportType,
+            UUID hotelId,
+            LocalDate fromDate,
+            LocalDate toDate,
+            List<GuestNationalitySlice> nationalityDistribution,
+            long repeatGuestCount,
+            List<GuestRepeatBookingsMonth> repeatBookingTrendLast12Months,
+            long vipGuestCount,
+            BigDecimal noShowRatePercent,
+            BigDecimal averageStayNights,
+            BigDecimal averageGuestLifetimeValue,
+            String averageGuestLifetimeValueNote,
+            BigDecimal revenuePerGuest,
+            String revenuePerGuestNote,
+            GuestDashboardDocumentation documentation) {}
 }

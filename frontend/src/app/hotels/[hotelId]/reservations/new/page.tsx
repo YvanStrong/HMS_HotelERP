@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, getToken } from "@/lib/api";
 import { COUNTRY_OPTIONS, GENDER_OPTIONS, PHONE_CODE_OPTIONS } from "@/lib/guestFormConstants";
 import { printReservationDocument } from "@/lib/printReservationDocument";
@@ -98,9 +98,12 @@ export default function NewStaffReservationPage() {
   const searchParams = useSearchParams();
   const hotelId = String(params.hotelId);
   const walkIn = searchParams.get("type") === "walkin";
+  const groupIdFromQuery = searchParams.get("groupId");
+  const queryHydratedRef = useRef(false);
 
   const [step, setStep] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  const [linkedGroupLabel, setLinkedGroupLabel] = useState<string | null>(null);
 
   const [searchQ, setSearchQ] = useState("");
   const [hits, setHits] = useState<GuestSearchHit[]>([]);
@@ -161,6 +164,45 @@ export default function NewStaffReservationPage() {
     setCountry((prev) => prev || hotel.country || "");
     setPhoneCc((prev) => prev || phoneCodeForCountryName(hotel.country || ""));
   }, [hotel]);
+
+  useEffect(() => {
+    const gid = groupIdFromQuery?.trim();
+    if (!gid) {
+      setLinkedGroupLabel(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!getToken()) {
+          if (!cancelled) setLinkedGroupLabel(`Group ${gid.slice(0, 8)}…`);
+          return;
+        }
+        const list = await apiFetch<{ id: string; groupName: string }[]>(`/api/v1/hotels/${hotelId}/groups`);
+        const hit = list.find((g) => g.id === gid);
+        if (!cancelled) setLinkedGroupLabel(hit?.groupName ?? `Group ${gid.slice(0, 8)}…`);
+      } catch {
+        if (!cancelled) setLinkedGroupLabel(`Group ${gid.slice(0, 8)}…`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hotelId, groupIdFromQuery]);
+
+  useLayoutEffect(() => {
+    if (queryHydratedRef.current) return;
+    const ci = searchParams.get("check_in");
+    const co = searchParams.get("check_out");
+    const rt = searchParams.get("room_type_id");
+    const ad = searchParams.get("adults");
+    if (ci && /^\d{4}-\d{2}-\d{2}$/.test(ci)) setCheckIn(ci);
+    if (co && /^\d{4}-\d{2}-\d{2}$/.test(co)) setCheckOut(co);
+    if (rt && /^[0-9a-f-]{36}$/i.test(rt)) setRoomTypeId(rt);
+    const n = ad != null ? Number(ad) : NaN;
+    if (Number.isFinite(n) && n >= 1 && n <= 12) setAdults(n);
+    if (ci || co || rt || ad) queryHydratedRef.current = true;
+  }, [searchParams]);
 
   const markGuestEdited = useCallback(() => {
     if (guestId) {
@@ -622,6 +664,7 @@ export default function NewStaffReservationPage() {
                 paymentMethod,
               }
             : null,
+        ...(groupIdFromQuery?.trim() ? { group_booking_id: groupIdFromQuery.trim() } : {}),
       };
       const res = await apiFetch<CreateRes>(`/api/v1/hotels/${hotelId}/reservations`, {
         method: "POST",
@@ -817,6 +860,13 @@ export default function NewStaffReservationPage() {
               />
             </div>
           </div>
+
+          {groupIdFromQuery?.trim() && (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50/90 px-4 py-3 text-sm text-indigo-950">
+              <strong>Group link:</strong> {linkedGroupLabel ?? "Resolving group…"} — the confirmation step will attach
+              this stay to that group master booking.
+            </div>
+          )}
 
           {step === 1 && (
             <div className="bg-card rounded-2xl border border-border/60 p-6 shadow-sm space-y-5">

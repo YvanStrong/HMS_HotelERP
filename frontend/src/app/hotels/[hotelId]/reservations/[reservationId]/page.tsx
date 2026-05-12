@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { API_BASE, apiFetch, getToken } from "@/lib/api";
 import { loadAuthUser } from "@/lib/auth";
 import { staffAppPath } from "@/lib/staffAppRoutes";
@@ -14,11 +14,172 @@ import {
   summarizeFromLineItems,
 } from "@/lib/taxInvoiceHtml";
 
+type PreferenceMoveActions = { onMove: (roomId: string) => void; movingRoomId: string | null };
+
+function renderSuggestedAlternativesBlock(
+  m: Record<string, unknown>,
+  moveActions?: PreferenceMoveActions | null,
+): ReactNode {
+  const alts = m.suggestedAlternatives;
+  if (!Array.isArray(alts)) return null;
+  const msg = typeof m.message === "string" ? m.message : "";
+  const cur = m.currentRoomNumber;
+  return (
+    <div className="space-y-3">
+      {msg ? <p className="text-foreground">{msg}</p> : null}
+      {cur != null && String(cur).length > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Assigned room: <strong className="text-foreground">{String(cur)}</strong>
+        </p>
+      ) : null}
+      {alts.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No other vacant-ready rooms matched this room type and stay dates — inventory is tight for this window.
+        </p>
+      ) : (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Suggested alternatives (same type, ready for sale)
+          </p>
+          <ul className="mt-2 space-y-2 rounded-lg border border-border/60 bg-background p-3">
+            {alts.map((item, idx) => {
+              const row = item as Record<string, unknown>;
+              const num = row.roomNumber ?? row.room_number;
+              const fl = row.floor;
+              const reason = row.reason ?? row.reasonSummary;
+              const ridRaw = row.roomId ?? row.room_id;
+              const ridStr = typeof ridRaw === "string" ? ridRaw : ridRaw != null ? String(ridRaw) : "";
+              return (
+                <li key={idx} className="flex flex-wrap items-start justify-between gap-2 border-b border-border/40 pb-2 last:border-0 last:pb-0">
+                  <div className="min-w-0 flex-1 text-sm">
+                    <span className="font-semibold text-foreground">{String(num ?? "—")}</span>
+                    {fl != null && String(fl).length > 0 ? (
+                      <span className="text-muted-foreground"> · Floor {String(fl)}</span>
+                    ) : null}
+                    {typeof reason === "string" && reason ? (
+                      <span className="mt-0.5 block text-xs text-muted-foreground">{reason}</span>
+                    ) : null}
+                  </div>
+                  {moveActions && ridStr ? (
+                    <button
+                      type="button"
+                      className="hms-btn-outline shrink-0 px-3 py-1.5 text-xs"
+                      disabled={moveActions.movingRoomId != null}
+                      onClick={() => void moveActions.onMove(ridStr)}
+                    >
+                      {moveActions.movingRoomId === ridStr
+                        ? "Moving…"
+                        : `Move to ${String(num ?? "room")}`}
+                    </button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function humanizePrefsSectionKey(key: string): string {
+  switch (key) {
+    case "roomAssigned":
+      return "Room";
+    case "amenitiesPrepared":
+      return "Amenities";
+    case "servicesScheduled":
+      return "Services";
+    default:
+      return key
+        .replace(/([A-Z])/g, " $1")
+        .replace(/^./, (s) => s.toUpperCase())
+        .trim();
+  }
+}
+
+function renderAppliedPreferenceValue(key: string, v: unknown): ReactNode {
+  if (v == null) return "—";
+  if (key === "roomAssigned" && typeof v === "object" && v !== null && !Array.isArray(v)) {
+    const m = v as Record<string, unknown>;
+    const alts = m.suggestedAlternatives;
+    if (Array.isArray(alts)) {
+      return renderSuggestedAlternativesBlock(m, null);
+    }
+    if (Array.isArray(m.matchedPreferences) && (m.roomNumber != null || m.roomId != null)) {
+      return (
+        <span>
+          Reassigned to room <strong>{String(m.roomNumber ?? m.roomId)}</strong>
+          {m.matchedPreferences.length > 0 ? (
+            <span className="text-muted-foreground"> (matched: {m.matchedPreferences.join(", ")})</span>
+          ) : null}
+        </span>
+      );
+    }
+    if (typeof m.message === "string") {
+      const msg = m.message;
+      if (msg.includes("No preferredFloor")) {
+        return (
+          <span>
+            Nothing to auto-move: guest preferences do not include a numeric{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">preferredFloor</code> (or{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">preferred_floor</code>). The current room stays
+            assigned.
+          </span>
+        );
+      }
+      if (msg.includes("No better-matching")) {
+        return (
+          <span>
+            No vacant-clean room on the preferred floor matched this stay window and room type, so the current room was
+            kept.
+          </span>
+        );
+      }
+      return <span>{msg}</span>;
+    }
+    const rn = m.roomNumber;
+    const rid = m.roomId;
+    if (rn != null || rid != null) {
+      return (
+        <span>
+          Reassigned to room <strong>{String(rn ?? rid)}</strong>
+        </span>
+      );
+    }
+  }
+  if (Array.isArray(v)) {
+    if (v.length === 0) {
+      if (key === "amenitiesPrepared") {
+        return "None logged automatically — review dietary / pillow notes on the guest profile.";
+      }
+      if (key === "servicesScheduled") {
+        return "None scheduled automatically.";
+      }
+      return "None";
+    }
+    return (
+      <ul className="ml-4 list-disc space-y-0.5">
+        {v.map((item, i) => (
+          <li key={i}>{typeof item === "object" ? JSON.stringify(item) : String(item)}</li>
+        ))}
+      </ul>
+    );
+  }
+  if (typeof v === "object") {
+    return <span className="font-mono text-xs text-muted-foreground">{JSON.stringify(v)}</span>;
+  }
+  return String(v);
+}
+
 type Folio = {
   reservationId: string;
   hotelId: string;
   confirmationCode?: string;
   booking_reference?: string;
+  billing_routed_from_reservation_id?: string | null;
+  billing_routed_to_reservation_id?: string | null;
+  billing_route_note?: string | null;
   roomId: string | null;
   guest: { id: string; name: string; email: string };
   stay: { checkIn: string; checkOut: string; reservationStatus: string; totalNights: number };
@@ -32,6 +193,7 @@ type Folio = {
     type: string;
     quantity: number;
     postedBy: string;
+    originating_reservation_id?: string | null;
   }[];
   summary: {
     reservation_id?: string;
@@ -41,6 +203,7 @@ type Folio = {
     tax_total?: number;
     discount_total?: number;
     grand_total?: number;
+    deposit_credit?: number;
     payments_total?: number;
     balanceDue?: number;
     balance_due?: number;
@@ -58,7 +221,29 @@ type Folio = {
     reference?: string | null;
     notes?: string | null;
   }[];
+  ledger?: {
+    id: string;
+    type: string;
+    category: string;
+    description: string;
+    amount: number;
+    debit_credit: string;
+    reference?: string | null;
+    createdAt: string;
+  }[];
 };
+
+function folioTaxLabel(summary: Folio["summary"]): string {
+  const gross = Number(summary.gross_total ?? 0);
+  const tax = Number(summary.tax_total ?? 0);
+  if (gross > 0.0001 && tax >= 0) {
+    const pct = Math.round((tax / gross) * 1000) / 10;
+    if (Number.isFinite(pct) && pct > 0) {
+      return `Tax (${pct}%)`;
+    }
+  }
+  return "Tax";
+}
 
 type StaffReservationDetail = {
   reservation_id: string;
@@ -204,6 +389,7 @@ export default function StaffReservationDetailPage() {
     alerts?: Array<Record<string, unknown>>;
     nextSteps?: string[];
   } | null>(null);
+  const [prefsMoveRoomId, setPrefsMoveRoomId] = useState<string | null>(null);
   /** When true, completing Record payment refreshes folio and syncs amount into the checkout form. */
   const [paymentOpenedFromCheckout, setPaymentOpenedFromCheckout] = useState(false);
   const [chargeOpen, setChargeOpen] = useState(false);
@@ -229,7 +415,7 @@ export default function StaffReservationDetailPage() {
       return null;
     }
     try {
-      const f = await apiFetch<Folio>(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/folio`);
+      const f = await apiFetch<Folio>(`/api/v1/hotels/${hotelId}/folios/${reservationId}`);
       setFolio(f);
       try {
         const d = await apiFetch<StaffReservationDetail>(
@@ -485,13 +671,35 @@ export default function StaffReservationDetailPage() {
     }
   }
 
+  async function reassignToSuggestedRoom(roomId: string) {
+    setBanner(null);
+    setPrefsMoveRoomId(roomId);
+    try {
+      await apiFetch<{ message?: string }>(
+        `/api/v1/hotels/${hotelId}/reservations/${reservationId}/reassign-room`,
+        {
+          method: "POST",
+          body: JSON.stringify({ room_id: roomId }),
+        },
+      );
+      setPrefsOpen(false);
+      setPrefsResult(null);
+      setBanner({ kind: "ok", text: "Room reassigned successfully." });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Could not reassign room" });
+    } finally {
+      setPrefsMoveRoomId(null);
+    }
+  }
+
   async function submitPayment() {
     const amt = Number(folioPaymentAmount);
     if (!Number.isFinite(amt) || amt <= 0) return;
     setBanner(null);
     const fromCheckout = paymentOpenedFromCheckout;
     try {
-      await apiFetch(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/payments`, {
+      await apiFetch(`/api/v1/hotels/${hotelId}/folios/${reservationId}/payments`, {
         method: "POST",
         body: JSON.stringify({
           payment_type: "PARTIAL",
@@ -535,7 +743,7 @@ export default function StaffReservationDetailPage() {
     }
     setBanner(null);
     try {
-      await apiFetch(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/charges`, {
+      await apiFetch(`/api/v1/hotels/${hotelId}/folios/${reservationId}/charges`, {
         method: "POST",
         body: JSON.stringify({
           charge_type: chargeType,
@@ -615,7 +823,7 @@ export default function StaffReservationDetailPage() {
 
       const items: { description: string; amount: number }[] = [
         { description: "Subtotal (room & posted charges)", amount: Number(folio.summary.gross_total ?? 0) },
-        { description: "Tax (VAT)", amount: Number(folio.summary.tax_total ?? 0) },
+        { description: folioTaxLabel(folio.summary), amount: Number(folio.summary.tax_total ?? 0) },
       ];
       for (const p of folio.payments.filter((x) => x.status === "COMPLETED")) {
         const label =
@@ -1042,6 +1250,26 @@ export default function StaffReservationDetailPage() {
             <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>
               FOLIO — {folio.booking_reference ?? folio.confirmationCode ?? folio.reservationId}
             </h2>
+            {folio.billing_route_note ? (
+              <p
+                style={{
+                  margin: "0 0 0.75rem",
+                  padding: "0.5rem 0.65rem",
+                  fontSize: "0.8rem",
+                  borderRadius: 8,
+                  background: "var(--muted)",
+                  color: "var(--foreground)",
+                }}
+              >
+                {folio.billing_route_note}
+                {folio.billing_routed_from_reservation_id && folio.billing_routed_to_reservation_id ? (
+                  <span className="block mt-1 font-mono text-[11px] text-muted-foreground">
+                    Routed from {folio.billing_routed_from_reservation_id.slice(0, 8)}… → this folio (
+                    {folio.billing_routed_to_reservation_id.slice(0, 8)}…)
+                  </span>
+                ) : null}
+              </p>
+            ) : null}
             <h3 style={{ marginBottom: "0.4rem" }}>Charges</h3>
             {folio.charges.length === 0 ? (
               <p style={{ color: "var(--muted)", margin: 0 }}>No incidental charges yet.</p>
@@ -1064,7 +1292,14 @@ export default function StaffReservationDetailPage() {
                             ? JSON.stringify(c.date)
                             : "—"}
                       </td>
-                      <td>{c.description}</td>
+                      <td>
+                        <div>{c.description}</div>
+                        {c.originating_reservation_id ? (
+                          <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
+                            Incurred on stay {c.originating_reservation_id.slice(0, 8)}…
+                          </div>
+                        ) : null}
+                      </td>
                       <td>
                         {c.amount} {folio.summary.currency}
                       </td>
@@ -1075,13 +1310,33 @@ export default function StaffReservationDetailPage() {
             )}
             <div style={{ marginTop: "0.8rem", borderTop: "1px solid var(--border)", paddingTop: "0.6rem" }}>
               <p style={{ margin: "0.15rem 0" }}>
-                Subtotal: <strong>{folio.summary.gross_total ?? 0}</strong> {folio.summary.currency}
+                Room charges: <strong>{folio.summary.room_charges_total ?? 0}</strong> {folio.summary.currency}
               </p>
               <p style={{ margin: "0.15rem 0" }}>
-                VAT (18%): <strong>{folio.summary.tax_total ?? 0}</strong> {folio.summary.currency}
+                Other charges: <strong>{folio.summary.other_charges_total ?? 0}</strong> {folio.summary.currency}
               </p>
               <p style={{ margin: "0.15rem 0" }}>
-                Grand Total: <strong>{folio.summary.grand_total ?? 0}</strong> {folio.summary.currency}
+                Subtotal (pre-tax): <strong>{folio.summary.gross_total ?? 0}</strong> {folio.summary.currency}
+              </p>
+              <p style={{ margin: "0.15rem 0" }}>
+                {folioTaxLabel(folio.summary)}: <strong>{folio.summary.tax_total ?? 0}</strong> {folio.summary.currency}
+              </p>
+              {Number(folio.summary.discount_total ?? 0) > 0 ? (
+                <p style={{ margin: "0.15rem 0" }}>
+                  Discount: <strong>{folio.summary.discount_total ?? 0}</strong> {folio.summary.currency}
+                </p>
+              ) : null}
+              <p style={{ margin: "0.15rem 0" }}>
+                Total (after tax): <strong>{folio.summary.grand_total ?? 0}</strong> {folio.summary.currency}
+              </p>
+              {Number(folio.summary.deposit_credit ?? 0) > 0 ? (
+                <p style={{ margin: "0.15rem 0" }}>
+                  Deposit credit: <strong>{folio.summary.deposit_credit ?? 0}</strong> {folio.summary.currency}
+                </p>
+              ) : null}
+              <p style={{ margin: "0.15rem 0" }}>
+                Payments total (incl. deposit): <strong>{folio.summary.payments_total ?? 0}</strong>{" "}
+                {folio.summary.currency}
               </p>
             </div>
             <h3 style={{ margin: "0.9rem 0 0.35rem" }}>Payments</h3>
@@ -1117,6 +1372,42 @@ export default function StaffReservationDetailPage() {
                 {balance} {folio.summary.currency}
               </strong>
             </p>
+            {folio.ledger && folio.ledger.length > 0 ? (
+              <>
+                <h3 style={{ margin: "1rem 0 0.35rem" }}>Ledger</h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>When</th>
+                      <th>Type</th>
+                      <th>Description</th>
+                      <th>D/C</th>
+                      <th>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {folio.ledger.map((row) => (
+                      <tr key={row.id}>
+                        <td style={{ fontSize: "0.8rem", whiteSpace: "nowrap" }}>
+                          {row.createdAt ? String(row.createdAt).slice(0, 16).replace("T", " ") : "—"}
+                        </td>
+                        <td style={{ fontSize: "0.8rem" }}>
+                          {row.type}
+                          {row.category ? (
+                            <span className="text-muted-foreground"> · {row.category}</span>
+                          ) : null}
+                        </td>
+                        <td>{row.description ?? "—"}</td>
+                        <td style={{ fontSize: "0.8rem" }}>{row.debit_credit}</td>
+                        <td>
+                          {row.amount} {folio.summary.currency}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            ) : null}
           </div>
         </>
       )}
@@ -1704,7 +1995,16 @@ export default function StaffReservationDetailPage() {
       {prefsOpen && prefsResult && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
           <div className="w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold">Guest Preferences Applied</h3>
+            <div>
+              <h3 className="text-lg font-semibold">Guest preferences</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Summary of the last run. Automatic room moves require status <strong>CONFIRMED</strong>, an assigned
+                room, and a numeric floor preference on the guest profile. When there is no floor preference, you still
+                get ranked alternative rooms (same type, ready for sale). Use <strong>Move to …</strong> for a
+                one-click reassignment (reservation must be <strong>CONFIRMED</strong>). Amenities and services remain
+                mostly manual follow-ups for now.
+              </p>
+            </div>
             {prefsResult.alerts && prefsResult.alerts.length > 0 && (
               <div className="space-y-2">
                 {prefsResult.alerts.map((a, i) => (
@@ -1718,14 +2018,29 @@ export default function StaffReservationDetailPage() {
               </div>
             )}
             {prefsResult.appliedPreferences && Object.keys(prefsResult.appliedPreferences).length > 0 && (
-              <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm space-y-1">
-                <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground mb-2">Applied</p>
-                {Object.entries(prefsResult.appliedPreferences).map(([k, v]) => (
-                  <p key={k}>
-                    <span className="font-medium">{k.replace(/([A-Z])/g, " $1").trim()}:</span>{" "}
-                    {typeof v === "object" ? JSON.stringify(v) : String(v)}
-                  </p>
-                ))}
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm space-y-3">
+                <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Results</p>
+                {Object.entries(prefsResult.appliedPreferences).map(([k, v]) => {
+                  const isRoomWithAlts =
+                    k === "roomAssigned" &&
+                    typeof v === "object" &&
+                    v !== null &&
+                    !Array.isArray(v) &&
+                    Array.isArray((v as Record<string, unknown>).suggestedAlternatives);
+                  return (
+                    <div key={k}>
+                      <p className="font-medium text-foreground">{humanizePrefsSectionKey(k)}</p>
+                      <div className="mt-1 text-muted-foreground">
+                        {isRoomWithAlts
+                          ? renderSuggestedAlternativesBlock(v as Record<string, unknown>, {
+                              onMove: reassignToSuggestedRoom,
+                              movingRoomId: prefsMoveRoomId,
+                            })
+                          : renderAppliedPreferenceValue(k, v)}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
             {prefsResult.nextSteps && prefsResult.nextSteps.length > 0 && (

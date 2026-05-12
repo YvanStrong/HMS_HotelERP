@@ -2,6 +2,7 @@ package com.hms.service;
 
 import com.hms.api.dto.ReportDtos;
 import com.hms.domain.FolioStatus;
+import com.hms.domain.GuestComplaintSeverity;
 import com.hms.domain.HousekeepingTaskStatus;
 import com.hms.domain.LoyaltyTier;
 import com.hms.domain.ReservationStatus;
@@ -10,7 +11,9 @@ import com.hms.entity.Guest;
 import com.hms.entity.Payment;
 import com.hms.entity.Reservation;
 import com.hms.entity.RoomCharge;
+import com.hms.repository.GuestComplaintRepository;
 import com.hms.repository.GuestRepository;
+import com.hms.repository.GuestStayAnalyticsRepository;
 import com.hms.repository.HousekeepingTaskRepository;
 import com.hms.repository.InvoiceRepository;
 import com.hms.repository.PaymentRepository;
@@ -18,6 +21,7 @@ import com.hms.repository.ReservationRepository;
 import com.hms.repository.RoomRepository;
 import com.hms.repository.RoomChargeRepository;
 import com.hms.security.TenantAccessService;
+import com.hms.service.folio.FolioLedgerService;
 import com.hms.web.ApiException;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
@@ -56,6 +60,9 @@ public class ReportService {
     private final RoomChargeRepository roomChargeRepository;
     private final HousekeepingTaskRepository housekeepingTaskRepository;
     private final TenantAccessService tenantAccessService;
+    private final FolioLedgerService folioLedgerService;
+    private final GuestComplaintRepository guestComplaintRepository;
+    private final GuestStayAnalyticsRepository guestStayAnalyticsRepository;
 
     public ReportService(
             RoomRepository roomRepository,
@@ -65,7 +72,10 @@ public class ReportService {
             PaymentRepository paymentRepository,
             RoomChargeRepository roomChargeRepository,
             HousekeepingTaskRepository housekeepingTaskRepository,
-            TenantAccessService tenantAccessService) {
+            TenantAccessService tenantAccessService,
+            FolioLedgerService folioLedgerService,
+            GuestComplaintRepository guestComplaintRepository,
+            GuestStayAnalyticsRepository guestStayAnalyticsRepository) {
         this.roomRepository = roomRepository;
         this.reservationRepository = reservationRepository;
         this.guestRepository = guestRepository;
@@ -74,6 +84,9 @@ public class ReportService {
         this.roomChargeRepository = roomChargeRepository;
         this.housekeepingTaskRepository = housekeepingTaskRepository;
         this.tenantAccessService = tenantAccessService;
+        this.folioLedgerService = folioLedgerService;
+        this.guestComplaintRepository = guestComplaintRepository;
+        this.guestStayAnalyticsRepository = guestStayAnalyticsRepository;
     }
 
     @Transactional(readOnly = true)
@@ -346,6 +359,11 @@ public class ReportService {
         live.put(
                 "revenue",
                 Map.of("todayToDate", todayRev, "projected", todayRev, "vsForecast", "n/a"));
+        long openComplaints =
+                guestComplaintRepository.countByHotel_IdAndStatusIn(hotelId, GuestComplaintService.OPEN_WORKFLOW_STATUSES);
+        long criticalOpen = guestComplaintRepository.countByHotel_IdAndSeverityAndStatusIn(
+                hotelId, GuestComplaintSeverity.CRITICAL, GuestComplaintService.OPEN_WORKFLOW_STATUSES);
+        live.put("complaints", Map.of("open", openComplaints, "critical_unresolved", criticalOpen));
 
         List<Map<String, Object>> alerts = new ArrayList<>();
         List<Map<String, Object>> actions = List.of(
@@ -396,14 +414,9 @@ public class ReportService {
         BigDecimal outstanding = BigDecimal.ZERO;
         long unpaidCount = 0;
         for (Reservation r : openFolios) {
-            BigDecimal charges = roomChargeRepository.sumAmountForReservation(r.getId());
-            BigDecimal tax = charges.multiply(new BigDecimal("0.18")).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal grand = charges.add(tax);
-            BigDecimal paid = paymentRepository.sumCompletedForReservation(r.getId());
-            if (r.isDepositPaid() && r.getDepositAmount() != null) {
-                paid = paid.add(r.getDepositAmount());
-            }
-            BigDecimal due = grand.subtract(paid).setScale(2, RoundingMode.HALF_UP);
+            List<RoomCharge> ch = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId());
+            List<Payment> pay = paymentRepository.findByReservation_IdOrderByProcessedAtDesc(r.getId());
+            BigDecimal due = folioLedgerService.compute(r, ch, pay).balanceDue();
             if (due.signum() > 0) {
                 outstanding = outstanding.add(due);
                 unpaidCount++;
@@ -476,31 +489,55 @@ public class ReportService {
                         unpaidCount + " reservations with unpaid balance",
                         "/app/reservations?filter=unpaid"));
 
-        List<ReportDtos.ExecutiveKpiCard> opsAlerts = List.of(
+        List<ReportDtos.ExecutiveKpiCard> opsAlerts = new ArrayList<>();
+        long openComplaints =
+                guestComplaintRepository.countByHotel_IdAndStatusIn(hotelId, GuestComplaintService.OPEN_WORKFLOW_STATUSES);
+        long criticalOpen = guestComplaintRepository.countByHotel_IdAndSeverityAndStatusIn(
+                hotelId, GuestComplaintSeverity.CRITICAL, GuestComplaintService.OPEN_WORKFLOW_STATUSES);
+        opsAlerts.add(
                 new ReportDtos.ExecutiveKpiCard(
-                        "pending_hk",
-                        "Pending HK Tasks",
-                        BigDecimal.valueOf(hkPendingInProgress),
-                        String.valueOf(hkPendingInProgress),
-                        hkPendingInProgress > 0 ? "amber" : "green",
-                        hkUrgent + " urgent",
-                        "/app/housekeeping"),
+                        "open_complaints",
+                        "Open complaints",
+                        BigDecimal.valueOf(openComplaints),
+                        String.valueOf(openComplaints),
+                        openComplaints > 0 ? "amber" : "green",
+                        "OPEN / IN_PROGRESS / ESCALATED",
+                        "/app/guests/complaints"));
+        opsAlerts.add(
                 new ReportDtos.ExecutiveKpiCard(
-                        "rooms_need_attention",
-                        "Rooms Needing Attention",
-                        BigDecimal.valueOf(vacantDirty),
-                        String.valueOf(vacantDirty),
-                        vacantDirty > 0 ? "amber" : "green",
-                        "Need cleaning before next check-in",
-                        "/app/housekeeping"),
-                new ReportDtos.ExecutiveKpiCard(
-                        "dnd_alerts",
-                        "DND Alerts",
-                        BigDecimal.valueOf(staleDnd),
-                        String.valueOf(staleDnd),
-                        staleDnd > 0 ? "red" : "green",
-                        "Welfare check required",
-                        "/app/rooms"));
+                        "critical_complaints",
+                        "Critical (unresolved)",
+                        BigDecimal.valueOf(criticalOpen),
+                        String.valueOf(criticalOpen),
+                        criticalOpen > 0 ? "red" : "green",
+                        "CRITICAL severity still in workflow",
+                        "/app/guests/complaints"));
+        opsAlerts.addAll(
+                List.of(
+                        new ReportDtos.ExecutiveKpiCard(
+                                "pending_hk",
+                                "Pending HK Tasks",
+                                BigDecimal.valueOf(hkPendingInProgress),
+                                String.valueOf(hkPendingInProgress),
+                                hkPendingInProgress > 0 ? "amber" : "green",
+                                hkUrgent + " urgent",
+                                "/app/housekeeping"),
+                        new ReportDtos.ExecutiveKpiCard(
+                                "rooms_need_attention",
+                                "Rooms Needing Attention",
+                                BigDecimal.valueOf(vacantDirty),
+                                String.valueOf(vacantDirty),
+                                vacantDirty > 0 ? "amber" : "green",
+                                "Need cleaning before next check-in",
+                                "/app/housekeeping"),
+                        new ReportDtos.ExecutiveKpiCard(
+                                "dnd_alerts",
+                                "DND Alerts",
+                                BigDecimal.valueOf(staleDnd),
+                                String.valueOf(staleDnd),
+                                staleDnd > 0 ? "red" : "green",
+                                "Welfare check required",
+                                "/app/rooms")));
 
         List<Reservation> arrivals = reservationRepository.findArrivalsForDashboard(
                 hotelId, today, List.of(ReservationStatus.CONFIRMED, ReservationStatus.CHECKED_IN));
@@ -521,14 +558,9 @@ public class ReportService {
         List<ReportDtos.ExecutiveDepartureRow> departureRows = departures.stream()
                 .limit(8)
                 .map(r -> {
-                    BigDecimal charges = roomChargeRepository.sumAmountForReservation(r.getId());
-                    BigDecimal tax = charges.multiply(new BigDecimal("0.18")).setScale(2, RoundingMode.HALF_UP);
-                    BigDecimal grand = charges.add(tax);
-                    BigDecimal paid = paymentRepository.sumCompletedForReservation(r.getId());
-                    if (r.isDepositPaid() && r.getDepositAmount() != null) {
-                        paid = paid.add(r.getDepositAmount());
-                    }
-                    BigDecimal due = grand.subtract(paid).setScale(2, RoundingMode.HALF_UP);
+                    List<RoomCharge> ch = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId());
+                    List<Payment> pay = paymentRepository.findByReservation_IdOrderByProcessedAtDesc(r.getId());
+                    BigDecimal due = folioLedgerService.compute(r, ch, pay).balanceDue();
                     return new ReportDtos.ExecutiveDepartureRow(
                             r.getId(),
                             r.getBookingReference(),
@@ -557,6 +589,102 @@ public class ReportService {
 
         return new ReportDtos.ExecutiveDashboardResponse(
                 Instant.now().toString(), hotelId, todaysOps, revenueCards, opsAlerts, arrivalRows, departureRows, activity);
+    }
+
+    @Transactional(readOnly = true)
+    public ReportDtos.GuestDashboardResponse guestDashboard(
+            UUID hotelId, String hotelHeader, LocalDate fromDate, LocalDate toDate) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        LocalDate to = toDate != null ? toDate : LocalDate.now(ZoneOffset.UTC);
+        LocalDate from = fromDate != null ? fromDate : to.minusDays(90);
+        if (to.isBefore(from)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "toDate must be on or after fromDate");
+        }
+
+        GuestStayAnalyticsRepository.StayKpiRow kpis = guestStayAnalyticsRepository.stayKpis(hotelId, from, to);
+        long totalStaysForNat = kpis.totalStays();
+        List<GuestStayAnalyticsRepository.NationalityCountRow> natRows =
+                guestStayAnalyticsRepository.nationalityCounts(hotelId, from, to);
+
+        List<ReportDtos.GuestNationalitySlice> natDist = new ArrayList<>();
+        for (GuestStayAnalyticsRepository.NationalityCountRow row : natRows) {
+            BigDecimal pct = totalStaysForNat > 0
+                    ? BigDecimal.valueOf(row.count())
+                            .multiply(BigDecimal.valueOf(100))
+                            .divide(BigDecimal.valueOf(totalStaysForNat), 2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+            natDist.add(new ReportDtos.GuestNationalitySlice(row.nationality(), row.count(), pct));
+        }
+
+        BigDecimal noShowPct = kpis.nonCancelledStays() > 0
+                ? BigDecimal.valueOf(kpis.noShows())
+                        .multiply(BigDecimal.valueOf(100))
+                        .divide(BigDecimal.valueOf(kpis.nonCancelledStays()), 2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+        BigDecimal avgNights = kpis.avgNights().setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal avgLtv = guestStayAnalyticsRepository
+                .averageGuestLifetimeValue(hotelId, from, to)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal revPerGuest = kpis.distinctGuests() > 0
+                ? kpis.periodRevenue()
+                        .divide(BigDecimal.valueOf(kpis.distinctGuests()), 2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+        List<GuestStayAnalyticsRepository.MonthBookingCountRow> trendRaw =
+                guestStayAnalyticsRepository.repeatBookingsTrendLast12Months(hotelId, to);
+        List<ReportDtos.GuestRepeatBookingsMonth> trend = new ArrayList<>();
+        for (GuestStayAnalyticsRepository.MonthBookingCountRow r : trendRaw) {
+            String ym = r.monthStart() != null ? r.monthStart().toString().substring(0, 7) : "";
+            trend.add(new ReportDtos.GuestRepeatBookingsMonth(ym, r.bookingCount()));
+        }
+
+        ReportDtos.GuestDashboardDocumentation doc = new ReportDtos.GuestDashboardDocumentation(
+                "Average all-time stay revenue per guest among guests with a check-in in the selected window; each guest total sums non-cancelled stays only.",
+                "Total non-cancelled stay revenue in the window divided by distinct guests with a check-in in the window.",
+                "NO_SHOW divided by reservations excluding CANCELLED (same check-in date window).",
+                "Stays included when reservation check_in falls between fromDate and toDate inclusive.",
+                "Twelve month buckets from the first day of (toDate's month minus 11 months) through toDate; counts bookings where the guest had a prior non-cancelled stay at this hotel.");
+
+        return new ReportDtos.GuestDashboardResponse(
+                "GUEST_STAY_DASHBOARD",
+                hotelId,
+                from,
+                to,
+                natDist,
+                kpis.repeatGuestCount(),
+                trend,
+                kpis.vipGuestCount(),
+                noShowPct,
+                avgNights,
+                avgLtv,
+                "Per-guest average of lifetime stay revenue at this hotel for the cohort that checked in during the window.",
+                revPerGuest,
+                "Window revenue per distinct guest (not divided by stays).",
+                doc);
+    }
+
+    @Transactional(readOnly = true)
+    public ReportDtos.ComplaintsMetricsResponse complaintsMetrics(
+            UUID hotelId, String hotelHeader, LocalDate fromDate) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        LocalDate from = fromDate != null ? fromDate : LocalDate.now(ZoneOffset.UTC).minusDays(90);
+        Instant fromInstant = from.atStartOfDay(ZoneOffset.UTC).toInstant();
+        Double avgRaw = guestComplaintRepository.averageResolutionHoursSince(hotelId, fromInstant);
+        double avg = avgRaw != null && !avgRaw.isNaN() ? avgRaw : 0d;
+        List<ReportDtos.ComplaintsByTypeRow> byType =
+                guestComplaintRepository.countByTypeSince(hotelId, fromInstant).stream()
+                        .map(row -> new ReportDtos.ComplaintsByTypeRow((String) row[0], ((Number) row[1]).longValue()))
+                        .toList();
+        List<ReportDtos.ComplaintsByStaffRow> byStaff =
+                guestComplaintRepository.countByAssignedStaffSince(hotelId, fromInstant).stream()
+                        .map(row -> new ReportDtos.ComplaintsByStaffRow(
+                                (UUID) row[0], (String) row[1], ((Number) row[2]).longValue()))
+                        .toList();
+        long total = guestComplaintRepository.countByHotel_IdAndOpenedAtGreaterThanEqual(hotelId, fromInstant);
+        return new ReportDtos.ComplaintsMetricsResponse(fromInstant, avg, byType, byStaff, total);
     }
 
     private ReportDtos.ExecutiveActivityRow toPaymentActivity(Payment p) {

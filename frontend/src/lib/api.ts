@@ -88,8 +88,18 @@ export async function apiFetch<T>(
   options: RequestInit & { hotelId?: string; /** When true, failed requests do not open the global error popup. */ quiet?: boolean } = {},
 ): Promise<T> {
   const { hotelId, quiet, headers: initHeaders, ...rest } = options;
-  const headers = new Headers(initHeaders);
-  headers.set("Content-Type", "application/json");
+  const headers = new Headers(initHeaders ?? undefined);
+  const method = String(rest.method ?? "GET").toUpperCase();
+  const rawBody = rest.body;
+  const isFormData = typeof FormData !== "undefined" && rawBody instanceof FormData;
+  // Spring returns 415 if Content-Type is application/json but there is no body (common for POST-without-body).
+  if (isFormData) {
+    headers.delete("Content-Type");
+  } else if (rawBody != null && method !== "GET" && method !== "HEAD") {
+    headers.set("Content-Type", "application/json");
+  } else {
+    headers.delete("Content-Type");
+  }
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const xHotel = resolveXHotelId(path, hotelId);

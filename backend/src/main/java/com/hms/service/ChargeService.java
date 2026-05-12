@@ -11,6 +11,7 @@ import com.hms.repository.ReservationRepository;
 import com.hms.repository.RoomChargeRepository;
 import com.hms.security.TenantAccessService;
 import com.hms.security.UserPrincipal;
+import com.hms.service.folio.FolioLedgerService;
 import com.hms.web.ApiException;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -26,16 +27,22 @@ public class ChargeService {
     private final RoomChargeRepository roomChargeRepository;
     private final TenantAccessService tenantAccessService;
     private final ObjectMapper objectMapper;
+    private final FolioLedgerService folioLedgerService;
+    private final GroupBillingRouter groupBillingRouter;
 
     public ChargeService(
             ReservationRepository reservationRepository,
             RoomChargeRepository roomChargeRepository,
             TenantAccessService tenantAccessService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            FolioLedgerService folioLedgerService,
+            GroupBillingRouter groupBillingRouter) {
         this.reservationRepository = reservationRepository;
         this.roomChargeRepository = roomChargeRepository;
         this.tenantAccessService = tenantAccessService;
         this.objectMapper = objectMapper;
+        this.folioLedgerService = folioLedgerService;
+        this.groupBillingRouter = groupBillingRouter;
     }
 
     @Transactional
@@ -43,7 +50,7 @@ public class ChargeService {
             UUID hotelId, String hotelHeader, UUID roomId, ApiDtos.PostChargeRequest req) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         Reservation r = reservationRepository
-                .findByIdAndHotel_Id(req.reservationId(), hotelId)
+                .findByIdAndHotel_IdWithGroupBilling(req.reservationId(), hotelId)
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND,
                         "No reservation with this id for this hotel. Use the reservation id from POST .../reservations "
@@ -62,17 +69,23 @@ public class ChargeService {
                             + "(Create reservation returns `room.id`); do not use a different physical room.");
         }
         UserPrincipal user = tenantAccessService.currentUser();
-        BigDecimal priorConsumption = roomChargeRepository.sumAmountForReservation(r.getId());
+        ChargeType chargeType = ChargeType.valueOf(req.type().trim().toUpperCase());
+        Reservation target = groupBillingRouter.resolveFolioReservation(r, chargeType);
+
+        BigDecimal priorConsumption = roomChargeRepository.sumAmountForReservation(target.getId());
         BigDecimal previousTotalPreTax =
-                r.getTotalAmount().add(priorConsumption).setScale(2, java.math.RoundingMode.HALF_UP);
+                target.getTotalAmount().add(priorConsumption).setScale(2, java.math.RoundingMode.HALF_UP);
 
         RoomCharge c = new RoomCharge();
-        c.setReservation(r);
+        c.setReservation(target);
         c.setRoom(r.getRoom());
+        if (!target.getId().equals(r.getId())) {
+            c.setOriginatingReservation(r);
+        }
         c.setDescription(req.description());
         c.setAmount(req.amount().setScale(2, java.math.RoundingMode.HALF_UP));
         c.setQuantity(req.quantity() != null ? req.quantity() : 1);
-        c.setChargeType(ChargeType.valueOf(req.type().trim().toUpperCase()));
+        c.setChargeType(chargeType);
         c.setPostedBy(req.postedBy() != null ? req.postedBy() : user.getUsername());
         if (req.metadata() != null && !req.metadata().isEmpty()) {
             try {
@@ -87,13 +100,15 @@ public class ChargeService {
         }
         c.setChargedAt(Instant.now());
         c = roomChargeRepository.save(c);
+        folioLedgerService.onRoomChargePosted(c);
 
-        BigDecimal consumption = roomChargeRepository.sumAmountForReservation(r.getId());
-        BigDecimal running = r.getTotalAmount().add(consumption).setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal consumption = roomChargeRepository.sumAmountForReservation(target.getId());
+        BigDecimal running = target.getTotalAmount().add(consumption).setScale(2, java.math.RoundingMode.HALF_UP);
         String posted = c.getPostedBy() != null ? c.getPostedBy() : user.getUsername();
+        UUID billingOrig = target.getId().equals(r.getId()) ? null : r.getId();
         return new ApiDtos.PostChargeResponse(
                 c.getId(),
-                r.getId(),
+                target.getId(),
                 r.getRoom().getRoomNumber(),
                 c.getDescription(),
                 c.getAmount(),
@@ -103,7 +118,8 @@ public class ChargeService {
                 new ApiDtos.PostChargeFolioSnapshot(previousTotalPreTax, running),
                 running,
                 c.getChargedAt(),
-                null);
+                null,
+                billingOrig);
     }
 
     /**
@@ -142,9 +158,17 @@ public class ChargeService {
         if (reservation.getRoom() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Reservation has no room assigned");
         }
+        Reservation orig = reservationRepository
+                .findByIdAndHotel_IdWithGroupBilling(reservation.getId(), hotelId)
+                .orElse(reservation);
+        Reservation target = groupBillingRouter.resolveFolioReservation(orig, chargeType);
+
         RoomCharge c = new RoomCharge();
-        c.setReservation(reservation);
-        c.setRoom(reservation.getRoom());
+        c.setReservation(target);
+        c.setRoom(orig.getRoom());
+        if (!target.getId().equals(orig.getId())) {
+            c.setOriginatingReservation(orig);
+        }
         c.setDescription(description);
         c.setAmount(amount.setScale(2, java.math.RoundingMode.HALF_UP));
         c.setQuantity(1);
@@ -155,6 +179,8 @@ public class ChargeService {
             c.setProductSku(productSku.trim());
         }
         c.setChargedAt(Instant.now());
-        return roomChargeRepository.save(c);
+        c = roomChargeRepository.save(c);
+        folioLedgerService.onRoomChargePosted(c);
+        return c;
     }
 }

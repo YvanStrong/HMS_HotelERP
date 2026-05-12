@@ -11,6 +11,7 @@ import com.hms.domain.FolioStatus;
 import com.hms.domain.ReservationStatus;
 import com.hms.domain.Role;
 import com.hms.domain.RoomStatus;
+import com.hms.entity.GroupBooking;
 import com.hms.entity.Guest;
 import com.hms.entity.Hotel;
 import com.hms.entity.Invoice;
@@ -23,6 +24,7 @@ import com.hms.entity.RoomType;
 import com.hms.events.RoomCheckedOutEvent;
 import com.hms.entity.RoomTypeNightlyRate;
 import com.hms.repository.AppUserRepository;
+import com.hms.repository.GroupBookingRepository;
 import com.hms.repository.GuestRepository;
 import com.hms.repository.HotelRepository;
 import com.hms.repository.InvoiceRepository;
@@ -34,6 +36,8 @@ import com.hms.repository.RoomRepository;
 import com.hms.repository.RoomTypeNightlyRateRepository;
 import com.hms.repository.RoomTypeRepository;
 import com.hms.config.HmsPublicUrlProperties;
+import com.hms.service.folio.FolioLedgerService;
+import com.hms.service.folio.FolioTax;
 import com.hms.security.SecurityAuditService;
 import com.hms.security.TenantAccessService;
 import com.hms.security.UserPrincipal;
@@ -49,6 +53,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -62,7 +67,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ReservationService {
 
-    private static final BigDecimal TAX_RATE = new BigDecimal("0.15");
     private static final BigDecimal FEE_PER_NIGHT = new BigDecimal("10.00");
 
     private final HotelRepository hotelRepository;
@@ -89,6 +93,10 @@ public class ReservationService {
     private final HmsPublicUrlProperties publicUrlProperties;
     private final SecurityAuditService securityAuditService;
     private final DynamicPricingService dynamicPricingService;
+    private final GroupBookingRepository groupBookingRepository;
+    private final GuestService guestService;
+    private final FolioLedgerService folioLedgerService;
+    private final GroupBillingRouter groupBillingRouter;
 
     public ReservationService(
             HotelRepository hotelRepository,
@@ -114,7 +122,11 @@ public class ReservationService {
             InvoiceService invoiceService,
             HmsPublicUrlProperties publicUrlProperties,
             SecurityAuditService securityAuditService,
-            DynamicPricingService dynamicPricingService) {
+            DynamicPricingService dynamicPricingService,
+            GroupBookingRepository groupBookingRepository,
+            GuestService guestService,
+            FolioLedgerService folioLedgerService,
+            GroupBillingRouter groupBillingRouter) {
         this.hotelRepository = hotelRepository;
         this.roomRepository = roomRepository;
         this.roomTypeRepository = roomTypeRepository;
@@ -139,6 +151,10 @@ public class ReservationService {
         this.publicUrlProperties = publicUrlProperties;
         this.securityAuditService = securityAuditService;
         this.dynamicPricingService = dynamicPricingService;
+        this.groupBookingRepository = groupBookingRepository;
+        this.guestService = guestService;
+        this.folioLedgerService = folioLedgerService;
+        this.groupBillingRouter = groupBillingRouter;
     }
 
     @Transactional(readOnly = true)
@@ -169,7 +185,8 @@ public class ReservationService {
                 ? resolveBaseRate(hotelId, roomTypeId)
                 : available.get(0).rate();
         long nights = ChronoUnit.DAYS.between(checkIn, exclusiveCheckOut);
-        BigDecimal taxes = baseRate.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
+        Hotel hotelForTax = hotelRepository.findById(hotelId).orElse(null);
+        BigDecimal taxes = FolioTax.taxOnSubtotal(baseRate, hotelForTax);
         BigDecimal fees = FEE_PER_NIGHT.multiply(BigDecimal.valueOf(nights)).setScale(2, RoundingMode.HALF_UP);
         BigDecimal totalPerNight =
                 baseRate.add(taxes).add(FEE_PER_NIGHT).setScale(2, RoundingMode.HALF_UP);
@@ -318,6 +335,7 @@ public class ReservationService {
                 body.specialRequests(),
                 body.source() != null && !body.source().isBlank() ? body.source() : "web",
                 rp,
+                null,
                 null);
     }
 
@@ -339,7 +357,8 @@ public class ReservationService {
                 req.specialRequests(),
                 req.source(),
                 req.ratePlan(),
-                req.payment());
+                req.payment(),
+                req.groupBookingId());
     }
 
     private ApiDtos.CreateReservationResponse createReservationWithActor(
@@ -362,6 +381,7 @@ public class ReservationService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Occupancy exceeds room type capacity");
         }
         Guest guest = resolveGuest(hotel, req, portalBooker);
+        assertGuestNotBlacklisted(guest);
         long nights = ChronoUnit.DAYS.between(req.checkInDate(), req.checkOutDate());
         BigDecimal nightly;
         if (serverAuthoritativePricing) {
@@ -397,6 +417,12 @@ public class ReservationService {
         r.setStatus(ReservationStatus.CONFIRMED);
         r.setSpecialRequests(req.specialRequests());
         r.setSource(req.source() != null ? req.source() : "direct");
+        if (req.groupBookingId() != null) {
+            GroupBooking gb = groupBookingRepository
+                    .findByIdAndHotel_Id(req.groupBookingId(), hotelId)
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Group booking not found"));
+            r.setGroupBooking(gb);
+        }
         if (req.ratePlan() != null) {
             r.setIncludesBreakfast(Boolean.TRUE.equals(req.ratePlan().includesBreakfast()));
             r.setCancellationPolicy(req.ratePlan().cancellationPolicy());
@@ -469,10 +495,14 @@ public class ReservationService {
             String statusCsv,
             String q) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        UserPrincipal viewer = tenantAccessService.currentUser();
         Hotel hotel = hotelRepository
                 .findById(hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Hotel not found"));
         List<ReservationStatus> statuses = parseReservationStatusFilter(statusCsv);
+        if (viewer.getRole() == Role.HOUSEKEEPING || viewer.getRole() == Role.HOUSEKEEPING_SUPERVISOR) {
+            statuses = new ArrayList<>(List.of(ReservationStatus.CHECKED_IN));
+        }
         String search = q != null && !q.isBlank() ? q.trim() : "";
         LocalDate from = stayStart != null ? stayStart : LocalDate.of(1900, 1, 1);
         LocalDate to = stayEnd != null ? stayEnd : LocalDate.of(2999, 12, 31);
@@ -480,6 +510,26 @@ public class ReservationService {
                 reservationRepository.searchForHotelStaff(hotelId, from, to, statuses, search);
         String currency = hotel.getCurrency();
         return rows.stream().map(r -> toReservationListItem(r, currency)).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ApiDtos.ReservationListItem> listReservationsForGuest(
+            UUID hotelId, String hotelHeader, UUID guestId, String statusCsv) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (!guestRepository.existsByIdAndHotel_Id(guestId, hotelId)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Guest not found");
+        }
+        Hotel hotel = hotelRepository
+                .findById(hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Hotel not found"));
+        List<ReservationStatus> statuses = parseReservationStatusFilter(statusCsv);
+        List<Reservation> rows =
+                reservationRepository.findByHotel_IdAndGuest_IdOrderByCheckInDateDesc(hotelId, guestId);
+        String currency = hotel.getCurrency();
+        return rows.stream()
+                .filter(r -> statuses.contains(r.getStatus()))
+                .map(r -> toReservationListItem(r, currency))
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -500,7 +550,7 @@ public class ReservationService {
         }
         List<RoomCharge> charges = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId());
         List<Payment> paymentsDb = paymentRepository.findByReservation_IdOrderByProcessedAtDesc(r.getId());
-        ApiDtos.FolioSummary summary = computeFolioSummary(r, charges, paymentsDb);
+        ApiDtos.FolioSummary summary = folioLedgerService.toSummary(r, charges, paymentsDb);
         String roomTypeName = "";
         if (r.getRoom() != null && r.getRoom().getRoomType() != null) {
             roomTypeName = r.getRoom().getRoomType().getName();
@@ -570,7 +620,7 @@ public class ReservationService {
     private ApiDtos.ReservationPricingSummary buildCreatePricing(Reservation r, long nights) {
         BigDecimal nightly = r.getNightlyRate();
         BigDecimal roomSub = r.getTotalAmount();
-        BigDecimal taxes = roomSub.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal taxes = FolioTax.taxOnSubtotal(roomSub, r.getHotel());
         BigDecimal fees = FEE_PER_NIGHT.multiply(BigDecimal.valueOf(nights)).setScale(2, RoundingMode.HALF_UP);
         BigDecimal depositPaid =
                 r.isDepositPaid() && r.getDepositAmount() != null ? r.getDepositAmount() : BigDecimal.ZERO;
@@ -766,10 +816,25 @@ public class ReservationService {
         Room current = r.getRoom();
         JsonNode prefs = parseGuestPreferenceNode(r.getGuest(), null);
         Integer prefFloor = extractPreferredFloor(prefs);
+        return buildAssignmentSuggestionRooms(hotelId, r, current, prefFloor);
+    }
+
+    /**
+     * Same-type rooms that are vacant/ready for sale, free for the reservation stay window, ranked for staff picks.
+     * When {@code preferredFloor} is null, same floor as the reservation's assigned room scores slightly higher so
+     * "easy" moves bubble up without requiring a stored preference.
+     */
+    private List<ApiDtos.AssignmentSuggestionRoom> buildAssignmentSuggestionRooms(
+            UUID hotelId, Reservation r, Room assignedRoom, Integer preferredFloor) {
+        if (assignedRoom == null || assignedRoom.getRoomType() == null) {
+            return List.of();
+        }
+        UUID roomTypeId = assignedRoom.getRoomType().getId();
         LocalDate ci = r.getCheckInDate();
         LocalDate co = r.getCheckOutDate();
         int party = r.getAdults() + (r.getChildren() != null ? r.getChildren() : 0);
-        List<Room> candidates = roomRepository.findByHotel_IdAndRoomType_Id(hotelId, current.getRoomType().getId());
+        int anchorFloor = assignedRoom.getFloor() != null ? assignedRoom.getFloor() : 0;
+        List<Room> candidates = roomRepository.findByHotel_IdAndRoomType_Id(hotelId, roomTypeId);
         List<ApiDtos.AssignmentSuggestionRoom> scored = new ArrayList<>();
         for (Room cand : candidates) {
             if (!RoomBookingEligibility.isVacantBookable(cand)) {
@@ -785,18 +850,43 @@ public class ReservationService {
                 continue;
             }
             int f = cand.getFloor() != null ? cand.getFloor() : 0;
-            int score = 50;
-            String reason = "Available for stay window";
-            if (prefFloor != null) {
-                int dist = Math.abs(f - prefFloor);
+            int score;
+            String reason;
+            if (preferredFloor != null) {
+                int dist = Math.abs(f - preferredFloor);
                 score = 100 - Math.min(dist * 5, 40);
-                reason = "Floor distance " + dist + " vs preferred " + prefFloor;
+                reason = "Floor distance " + dist + " vs preferred " + preferredFloor;
+            } else {
+                score = 50;
+                reason = "Available for stay window";
+                if (f == anchorFloor) {
+                    score = 62;
+                    reason = "Same floor as current assignment — minimal move";
+                }
             }
             scored.add(new ApiDtos.AssignmentSuggestionRoom(
                     cand.getId(), cand.getRoomNumber(), cand.getFloor(), score, reason));
         }
-        scored.sort(Comparator.comparingInt(ApiDtos.AssignmentSuggestionRoom::score).reversed());
+        Comparator<ApiDtos.AssignmentSuggestionRoom> byScore =
+                Comparator.comparingInt(ApiDtos.AssignmentSuggestionRoom::score).reversed();
+        Comparator<ApiDtos.AssignmentSuggestionRoom> byRoom = Comparator.comparing(
+                ApiDtos.AssignmentSuggestionRoom::roomNumber, Comparator.nullsLast(String::compareTo));
+        scored.sort(byScore.thenComparing(byRoom));
         return scored;
+    }
+
+    private static Map<String, Object> assignmentSuggestionToMap(ApiDtos.AssignmentSuggestionRoom s) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("roomId", s.roomId());
+        m.put("roomNumber", s.roomNumber());
+        m.put("floor", s.floor());
+        m.put("score", s.score());
+        m.put("reason", s.reasonSummary());
+        return m;
+    }
+
+    private static List<Map<String, Object>> topSuggestionMaps(List<ApiDtos.AssignmentSuggestionRoom> ranked, int limit) {
+        return ranked.stream().limit(limit).map(ReservationService::assignmentSuggestionToMap).toList();
     }
 
     private String generateConfirmationCode(Hotel hotel) {
@@ -881,6 +971,16 @@ public class ReservationService {
         if (r.getStatus() != ReservationStatus.CONFIRMED) {
             throw new ApiException(
                     HttpStatus.UNPROCESSABLE_ENTITY, "RESERVATION_WRONG_STATUS", "Reservation must be CONFIRMED to check in");
+        }
+        assertGuestNotBlacklisted(r.getGuest());
+        if ("WALK_IN".equalsIgnoreCase(r.getGuest().getGuestType())
+                && r.getDepositAmount() != null
+                && r.getDepositAmount().compareTo(BigDecimal.ZERO) > 0
+                && !r.isDepositPaid()) {
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "WALK_IN_DEPOSIT_REQUIRED",
+                    "Walk-in reservation requires deposit to be marked paid before check-in");
         }
         if (!Boolean.TRUE.equals(req.guestIdVerified())) {
             throw new ApiException(
@@ -988,7 +1088,7 @@ public class ReservationService {
         ApiDtos.CheckInPaymentInfo paymentInfo = null;
         if (req.paymentMethod() != null) {
             ApiDtos.PaymentMethodInput pm = req.paymentMethod();
-            BigDecimal preAuth = computeFolioSummary(
+            BigDecimal preAuth = folioLedgerService.toSummary(
                             r,
                             roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId()),
                             paymentRepository.findByReservation_IdOrderByProcessedAtDesc(r.getId()))
@@ -1001,13 +1101,13 @@ public class ReservationService {
                     preAuth);
         }
 
-        ApiDtos.FolioSummary opening = computeFolioSummary(
+        ApiDtos.FolioSummary opening = folioLedgerService.toSummary(
                 r,
                 roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId()),
                 paymentRepository.findByReservation_IdOrderByProcessedAtDesc(r.getId()));
         ApiDtos.FolioOpenedInfo folioOpened = new ApiDtos.FolioOpenedInfo(
                 r.getId().toString(),
-                "/api/v1/hotels/" + hotelId + "/reservations/" + r.getId() + "/folio",
+                "/api/v1/hotels/" + hotelId + "/folios/" + r.getId(),
                 opening.balanceDue());
 
         Map<String, Object> broadcastPayload = new HashMap<>();
@@ -1020,6 +1120,8 @@ public class ReservationService {
                         "hotel:" + hotelId + ":rooms",
                         "hotel:" + hotelId + ":reservations:" + r.getId()),
                 broadcastPayload);
+
+        folioLedgerService.refreshGuestFolioSnapshot(r);
 
         return new ApiDtos.CheckInResponse(
                 r.getId(),
@@ -1046,7 +1148,7 @@ public class ReservationService {
                         ? req
                         : new ApiDtos.CheckOutRequest(null, null, null, null, null, null, null, null);
         Reservation r = reservationRepository
-                .findDetailedByIdAndHotel_Id(reservationId, hotelId)
+                .findForCheckoutWithGroupBilling(reservationId, hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
         if (r.getStatus() != ReservationStatus.CHECKED_IN) {
             throw new ApiException(
@@ -1060,7 +1162,7 @@ public class ReservationService {
             throw new ApiException(HttpStatus.CONFLICT, "Invoice already generated for this reservation");
         }
         List<RoomCharge> chargesPreview = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId());
-        ApiDtos.FolioSummary folioBefore = computeFolioSummary(
+        ApiDtos.FolioSummary folioBefore = folioLedgerService.toSummary(
                 r, chargesPreview, paymentRepository.findByReservation_IdOrderByProcessedAtDesc(r.getId()));
         BigDecimal due = folioBefore.balanceDue();
         BigDecimal paymentAmount =
@@ -1071,9 +1173,20 @@ public class ReservationService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Final payment amount cannot be negative");
         }
         BigDecimal dueAfterPayment = due.subtract(paymentAmount).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal masterBalanceDue = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        if (groupBillingRouter.requiresMasterFolioClearForMemberCheckout(r)) {
+            Reservation master = r.getGroupBooking().getMasterReservation();
+            List<RoomCharge> masterCharges =
+                    roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(master.getId());
+            List<Payment> masterPayments =
+                    paymentRepository.findByReservation_IdOrderByProcessedAtDesc(master.getId());
+            masterBalanceDue = folioLedgerService.toSummary(master, masterCharges, masterPayments).balanceDue();
+        }
         // Only block when the guest still *owes* after declared checkout collection. Negative balanceDue
         // means credit/overpayment; subtracting more "collected" deepens the credit and must not trigger FOLIO_BALANCE_DUE.
-        if (dueAfterPayment.compareTo(new BigDecimal("0.01")) > 0) {
+        boolean memberOwes = dueAfterPayment.compareTo(new BigDecimal("0.01")) > 0;
+        boolean masterOwes = masterBalanceDue.compareTo(new BigDecimal("0.01")) > 0;
+        if (memberOwes || masterOwes) {
             boolean override = Boolean.TRUE.equals(b.overrideBalanceWarning());
             boolean allowed =
                     staff.getRole() == Role.MANAGER
@@ -1081,10 +1194,23 @@ public class ReservationService {
                             || staff.getRole() == Role.SUPER_ADMIN
                             || staff.getRole() == Role.HOTEL_ADMIN;
             if (!override || !allowed) {
-                throw new ApiException(
-                        HttpStatus.UNPROCESSABLE_ENTITY,
-                        "FOLIO_BALANCE_DUE",
-                        "Outstanding balance: " + dueAfterPayment + " " + folioBefore.currency());
+                StringBuilder msg = new StringBuilder();
+                if (memberOwes) {
+                    msg.append("This folio outstanding after payment: ")
+                            .append(dueAfterPayment)
+                            .append(" ")
+                            .append(folioBefore.currency());
+                }
+                if (masterOwes) {
+                    if (memberOwes) {
+                        msg.append(". ");
+                    }
+                    msg.append("Master group folio still owes ")
+                            .append(masterBalanceDue)
+                            .append(" ")
+                            .append(folioBefore.currency());
+                }
+                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "FOLIO_BALANCE_DUE", msg.toString());
             }
             String overrideReason =
                     b.overrideBalanceReason() != null ? b.overrideBalanceReason().trim() : "";
@@ -1168,6 +1294,14 @@ public class ReservationService {
                 .toList();
 
         int loyalty = inv.getTotalAmount().setScale(0, RoundingMode.DOWN).intValue();
+        if (loyalty > 0) {
+            guestService.internalEarnLoyalty(
+                    r.getGuest().getId(),
+                    loyalty,
+                    "Points from stay invoice " + inv.getInvoiceNumber(),
+                    "INVOICE",
+                    inv.getId().toString());
+        }
 
         ApiDtos.InvoiceBreakdown breakdown = invoiceBreakdownForCheckout(r, charges);
 
@@ -1221,6 +1355,7 @@ public class ReservationService {
             c.setChargeType(ChargeType.NO_SHOW);
             c.setPostedBy(actor.getUsername());
             roomChargeRepository.save(c);
+            folioLedgerService.onRoomChargePosted(c);
         }
         if (rm != null) {
             if (rm.getCurrentBooking() != null && rm.getCurrentBooking().getId().equals(r.getId())) {
@@ -1240,7 +1375,7 @@ public class ReservationService {
         BigDecimal extras =
                 charges.stream().map(RoomCharge::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal sub = roomLine.add(extras);
-        BigDecimal tax = sub.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal tax = FolioTax.taxOnSubtotal(sub, r.getHotel());
         BigDecimal deposit = r.isDepositPaid() && r.getDepositAmount() != null ? r.getDepositAmount() : BigDecimal.ZERO;
         BigDecimal grand = sub.add(tax).subtract(deposit).setScale(2, RoundingMode.HALF_UP);
         return new ApiDtos.InvoiceBreakdown(roomLine, extras, sub, tax, deposit, grand);
@@ -1309,8 +1444,9 @@ public class ReservationService {
             extras = extras.add(c.getAmount());
         }
         BigDecimal sub = roomLine.add(extras);
-        BigDecimal tax = sub.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
-        items.add(line(inv, order++, "Tax (15%)", tax));
+        BigDecimal tax = FolioTax.taxOnSubtotal(sub, r.getHotel());
+        BigDecimal pct = FolioTax.effectiveRate(r.getHotel()).multiply(new BigDecimal("100")).stripTrailingZeros();
+        items.add(line(inv, order++, "Tax (" + pct + "%)", tax));
 
         BigDecimal deposit = r.isDepositPaid() && r.getDepositAmount() != null ? r.getDepositAmount() : BigDecimal.ZERO;
         if (deposit.signum() > 0) {
@@ -1420,12 +1556,32 @@ public class ReservationService {
                     applied.put("roomAssigned", ra);
                     nextSteps.add("Room reassigned using guest floor preference");
                 } else {
-                    applied.put(
-                            "roomAssigned",
-                            Map.of("message", "No better-matching VACANT_CLEAN room for same room type and stay dates"));
+                    List<ApiDtos.AssignmentSuggestionRoom> ranked =
+                            buildAssignmentSuggestionRooms(hotelId, r, current, prefFloor);
+                    Map<String, Object> ra = new LinkedHashMap<>();
+                    ra.put(
+                            "message",
+                            "No strictly better floor match for this stay (current room is already among the best available).");
+                    ra.put("suggestedAlternatives", topSuggestionMaps(ranked, 8));
+                    ra.put("currentRoomNumber", current.getRoomNumber());
+                    applied.put("roomAssigned", ra);
+                    if (!ranked.isEmpty()) {
+                        nextSteps.add(
+                                "Comparable vacant-ready rooms are listed below if you still want to change room number.");
+                    }
                 }
             } else {
-                applied.put("roomAssigned", Map.of("message", "No preferredFloor in guest preferences (or overrides)"));
+                List<ApiDtos.AssignmentSuggestionRoom> ranked =
+                        buildAssignmentSuggestionRooms(hotelId, r, current, null);
+                Map<String, Object> ra = new LinkedHashMap<>();
+                ra.put(
+                        "message",
+                        "No floor preference on file; current room unchanged. Ranked alternatives (same room type) are below.");
+                ra.put("suggestedAlternatives", topSuggestionMaps(ranked, 8));
+                ra.put("currentRoomNumber", current.getRoomNumber());
+                applied.put("roomAssigned", ra);
+                nextSteps.add(
+                        "Add preferredFloor or preferred_floor to the guest profile to auto-swap toward a favorite floor, or pick an alternative below when you manually reassign on the reservation.");
             }
         }
 
@@ -1441,6 +1597,87 @@ public class ReservationService {
             nextSteps.add("Preferences evaluated");
         }
         return new GuestDtos.ApplyGuestPreferencesResponse(r.getId(), applied, alerts, nextSteps);
+    }
+
+    @Transactional
+    public ApiDtos.ReservationReassignRoomResponse reassignReservationRoom(
+            UUID hotelId, String hotelHeader, UUID reservationId, ApiDtos.ReservationReassignRoomRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (req == null || req.roomId() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "room_id is required");
+        }
+        UUID newRoomId = req.roomId();
+        Reservation r = reservationRepository
+                .findDetailedByIdAndHotel_Id(reservationId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
+        if (r.getStatus() != ReservationStatus.CONFIRMED) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "Room can only be reassigned while reservation is CONFIRMED. Current status: " + r.getStatus());
+        }
+        Room current = r.getRoom();
+        if (current == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Reservation has no assigned room");
+        }
+        if (current.getId().equals(newRoomId)) {
+            return new ApiDtos.ReservationReassignRoomResponse(
+                    r.getId(),
+                    current.getId(),
+                    current.getRoomNumber(),
+                    current.getFloor(),
+                    "Already assigned to this room.");
+        }
+        Room newR = roomRepository
+                .findByIdAndHotel_Id(newRoomId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Room not found"));
+        if (!newR.getRoomType().getId().equals(current.getRoomType().getId())) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST, "Target room must be the same room type as the current assignment");
+        }
+        int party = r.getAdults() + (r.getChildren() != null ? r.getChildren() : 0);
+        ensureRoomAssignable(newR, r.getCheckInDate(), r.getCheckOutDate(), party, r.getId());
+
+        Room oldR = current;
+        RoomStatus oldPs = oldR.getStatus();
+        CleanlinessStatus oldPc = oldR.getCleanliness();
+        RoomStatus newPs = newR.getStatus();
+        CleanlinessStatus newPc = newR.getCleanliness();
+        String actor = auditActor();
+
+        oldR.setStatus(RoomStatus.VACANT_CLEAN);
+        oldR.setCurrentBooking(null);
+        newR.setStatus(RoomStatus.RESERVED);
+        newR.setCurrentBooking(r);
+        r.setRoom(newR);
+        reservationRepository.save(r);
+        roomRepository.save(oldR);
+        roomRepository.save(newR);
+
+        roomStatusAuditService.logTransition(
+                hotelId,
+                oldR,
+                oldPs,
+                RoomStatus.VACANT_CLEAN,
+                oldPc,
+                oldPc,
+                actor,
+                "Staff reassignment: vacated previous room");
+        roomStatusAuditService.logTransition(
+                hotelId,
+                newR,
+                newPs,
+                RoomStatus.RESERVED,
+                newPc,
+                newPc,
+                actor,
+                "Staff reassignment: assigned for confirmed reservation");
+
+        return new ApiDtos.ReservationReassignRoomResponse(
+                r.getId(),
+                newR.getId(),
+                newR.getRoomNumber(),
+                newR.getFloor(),
+                "Room reassigned to " + newR.getRoomNumber() + ".");
     }
 
     private JsonNode parseGuestPreferenceNode(Guest g, Map<String, Object> overrides) {
@@ -1470,9 +1707,15 @@ public class ReservationService {
         if (n.hasNonNull("preferredFloor") && n.get("preferredFloor").isNumber()) {
             return n.get("preferredFloor").asInt();
         }
+        if (n.hasNonNull("preferred_floor") && n.get("preferred_floor").isNumber()) {
+            return n.get("preferred_floor").asInt();
+        }
         JsonNode room = n.get("room");
         if (room != null && room.hasNonNull("preferredFloor") && room.get("preferredFloor").isNumber()) {
             return room.get("preferredFloor").asInt();
+        }
+        if (room != null && room.hasNonNull("preferred_floor") && room.get("preferred_floor").isNumber()) {
+            return room.get("preferred_floor").asInt();
         }
         return null;
     }
@@ -1576,7 +1819,7 @@ public class ReservationService {
         if (r.getNoShowAt() != null) {
             timeline.add(new GuestDtos.ReservationTimelineStep("NO_SHOW", r.getNoShowAt()));
         }
-        String folioPath = "/api/v1/hotels/" + hotelId + "/reservations/" + reservationId + "/folio";
+        String folioPath = "/api/v1/hotels/" + hotelId + "/folios/" + reservationId;
         return new GuestDtos.StaffReservationDetailResponse(
                 r.getId(),
                 r.getBookingReference(),
@@ -1616,11 +1859,24 @@ public class ReservationService {
                 g.isBlacklisted(),
                 g.getBlacklistReason(),
                 g.getNotes(),
-                g.isMarketingConsent());
+                g.isMarketingConsent(),
+                g.getGuestType() != null ? g.getGuestType() : "RETURNING",
+                g.getLoyaltyMemberNumber());
     }
 
     @Transactional(readOnly = true)
     public ApiDtos.FolioResponse getFolio(UUID hotelId, String hotelHeader, UUID reservationId) {
+        return getFolio(hotelId, hotelHeader, reservationId, null, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public ApiDtos.FolioResponse getFolio(
+            UUID hotelId,
+            String hotelHeader,
+            UUID reservationId,
+            UUID billingRoutedFromReservationId,
+            UUID billingRoutedToReservationId,
+            String billingRouteNote) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         Reservation r = reservationRepository
                 .findDetailedByIdAndHotel_Id(reservationId, hotelId)
@@ -1632,6 +1888,7 @@ public class ReservationService {
                 throw new ApiException(HttpStatus.FORBIDDEN, "FOLIO_ACCESS_DENIED", "Not authorized to view this folio");
             }
         }
+        folioLedgerService.ensureGuestFolio(r);
         List<RoomCharge> charges = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(reservationId);
         List<ApiDtos.FolioCharge> fc = charges.stream()
                 .map(c -> new ApiDtos.FolioCharge(
@@ -1643,11 +1900,12 @@ public class ReservationService {
                         c.getQuantity(),
                         c.getPostedBy() != null ? c.getPostedBy() : "system",
                         true,
-                        c.getProductSku()))
+                        c.getProductSku(),
+                        c.getOriginatingReservation() != null ? c.getOriginatingReservation().getId() : null))
                 .toList();
         List<Payment> paymentsDb = paymentRepository.findByReservation_IdOrderByProcessedAtDesc(reservationId);
         ApiDtos.FolioSummary summary =
-                computeFolioSummary(r, charges, paymentsDb);
+                folioLedgerService.toSummary(r, charges, paymentsDb);
         Guest g = r.getGuest();
         ApiDtos.FolioGuestBlock guestBlock =
                 new ApiDtos.FolioGuestBlock(g.getId(), g.getFirstName() + " " + g.getLastName(), g.getEmail());
@@ -1699,12 +1957,15 @@ public class ReservationService {
                 .toList());
 
         List<String> actions = List.of(
-                "POST /api/v1/hotels/{hotelId}/reservations/{reservationId}/charges — post consumption to this folio",
-                "POST /api/v1/hotels/{hotelId}/reservations/{reservationId}/payments — record payment",
+                "GET /api/v1/hotels/{hotelId}/folios/{reservationId} — unified folio view",
+                "POST /api/v1/hotels/{hotelId}/folios/{reservationId}/charges — post consumption",
+                "POST /api/v1/hotels/{hotelId}/folios/{reservationId}/payments — record payment",
                 "POST /api/v1/hotels/{hotelId}/reservations/{reservationId}/check-out — settle on departure");
         ApiDtos.FolioRealtimeHint realtime = new ApiDtos.FolioRealtimeHint(
                 "ws://realtime.example/hotels/" + hotelId + "/folios/" + reservationId,
                 "Illustrative channel template; wire a WebSocket client when realtime is enabled.");
+
+        List<ApiDtos.FolioLedgerLine> ledger = folioLedgerService.ledgerForReservation(reservationId);
 
         return new ApiDtos.FolioResponse(
                 r.getId(),
@@ -1719,28 +1980,25 @@ public class ReservationService {
                 fc,
                 payments,
                 summary,
+                ledger,
                 actions,
-                realtime);
+                realtime,
+                billingRoutedFromReservationId,
+                billingRoutedToReservationId,
+                billingRouteNote);
     }
 
-    private ApiDtos.FolioSummary computeFolioSummary(Reservation r, List<RoomCharge> charges, List<Payment> payments) {
-        BigDecimal roomTotal = r.getTotalAmount();
-        BigDecimal otherCharges =
-                charges.stream().map(RoomCharge::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal gross = roomTotal.add(otherCharges);
-        BigDecimal tax = gross.multiply(new BigDecimal("0.18")).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal discount = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-        BigDecimal grand = gross.add(tax).subtract(discount).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal depositPaid = r.isDepositPaid() && r.getDepositAmount() != null ? r.getDepositAmount() : BigDecimal.ZERO;
-        BigDecimal paymentRows = payments.stream()
-                .filter(p -> "COMPLETED".equalsIgnoreCase(p.getStatus()))
-                .map(Payment::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal paymentsTotal = paymentRows.add(depositPaid).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal balanceDue = grand.subtract(paymentsTotal).setScale(2, RoundingMode.HALF_UP);
-        String currency = r.getHotel() != null ? r.getHotel().getCurrency() : "USD";
-        return new ApiDtos.FolioSummary(
-                r.getId(), roomTotal, otherCharges, gross, tax, discount, grand, paymentsTotal, balanceDue, currency);
+    private static void assertGuestNotBlacklisted(Guest guest) {
+        if (guest.isBlacklisted()) {
+            String reason =
+                    guest.getBlacklistReason() != null && !guest.getBlacklistReason().isBlank()
+                            ? ": " + guest.getBlacklistReason().trim()
+                            : "";
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "GUEST_BLACKLISTED",
+                    "This guest is blacklisted and cannot be booked or checked in" + reason);
+        }
     }
 
     @Transactional
@@ -1754,7 +2012,7 @@ public class ReservationService {
             throw new ApiException(HttpStatus.CONFLICT, "Reservation must be CHECKED_IN to post charge");
         }
         ChargeType type = ChargeType.valueOf(body.chargeType().trim().toUpperCase());
-        chargeService.postFolioCharge(
+        RoomCharge ch = chargeService.postFolioCharge(
                 hotelId,
                 r,
                 body.amount(),
@@ -1762,7 +2020,15 @@ public class ReservationService {
                 type,
                 tenantAccessService.currentUser().getUsername(),
                 null);
-        return getFolio(hotelId, hotelHeader, reservationId);
+        UUID folioRes = ch.getReservation().getId();
+        boolean routed = !folioRes.equals(reservationId);
+        return getFolio(
+                hotelId,
+                hotelHeader,
+                folioRes,
+                routed ? reservationId : null,
+                routed ? folioRes : null,
+                routed ? "Charge posted to consolidated group folio (see master reservation)." : null);
     }
 
     @Transactional
@@ -1786,6 +2052,7 @@ public class ReservationService {
         UserPrincipal up = tenantAccessService.currentUser();
         p.setProcessedBy(appUserRepository.findById(up.getId()).orElse(null));
         paymentRepository.save(p);
+        folioLedgerService.onPaymentPosted(p);
         securityAuditService.logEvent(
                 "FOLIO_PAYMENT_ADDED",
                 up.getId(),
@@ -1834,6 +2101,7 @@ public class ReservationService {
         p.setVoidReason(body.reason());
         p.setVoidedAt(Instant.now());
         paymentRepository.save(p);
+        folioLedgerService.onPaymentVoided(p);
         UserPrincipal actor = tenantAccessService.currentUser();
         securityAuditService.logEvent(
                 "FOLIO_PAYMENT_VOIDED",
@@ -1855,7 +2123,7 @@ public class ReservationService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
         List<RoomCharge> charges = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(reservationId);
         List<Payment> payments = paymentRepository.findByReservation_IdOrderByProcessedAtDesc(reservationId);
-        ApiDtos.FolioSummary s = computeFolioSummary(r, charges, payments);
+        ApiDtos.FolioSummary s = folioLedgerService.toSummary(r, charges, payments);
         return invoicePdfService.renderInvoicePdf(
                 r,
                 charges,

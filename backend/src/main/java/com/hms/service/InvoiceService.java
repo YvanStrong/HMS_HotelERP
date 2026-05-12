@@ -14,6 +14,7 @@ import com.hms.repository.InvoiceRepository;
 import com.hms.repository.ReservationRepository;
 import com.hms.repository.RoomChargeRepository;
 import com.hms.security.TenantAccessService;
+import com.hms.service.folio.FolioTax;
 import com.hms.web.ApiException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -33,8 +34,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class InvoiceService {
-
-    private static final BigDecimal TAX_RATE = new BigDecimal("0.15");
 
     private final TenantAccessService tenantAccessService;
     private final InvoiceRepository invoiceRepository;
@@ -166,10 +165,64 @@ public class InvoiceService {
         if (raw == null) {
             return List.of();
         }
-        return raw.stream()
-                .sorted(Comparator.comparing(li -> li.getLineOrder() != null ? li.getLineOrder() : 0))
-                .map(li -> new ApiDtos.InvoiceLine(li.getDescription(), li.getAmount()))
-                .toList();
+        List<InvoiceLineItem> sorted =
+                raw.stream()
+                        .sorted(Comparator.comparing(li -> li.getLineOrder() != null ? li.getLineOrder() : 0))
+                        .toList();
+        Hotel hotel = inv.getHotel();
+        if (hotel == null && inv.getReservation() != null) {
+            hotel = inv.getReservation().getHotel();
+        }
+        List<ApiDtos.InvoiceLine> out = new ArrayList<>();
+        BigDecimal preTaxPositive = BigDecimal.ZERO;
+        for (InvoiceLineItem li : sorted) {
+            String desc = li.getDescription();
+            BigDecimal amt = li.getAmount() != null ? li.getAmount() : BigDecimal.ZERO;
+            String label = desc;
+            if (isTaxLikeInvoiceLine(desc) && amt.signum() > 0 && preTaxPositive.signum() > 0 && hotel != null) {
+                BigDecimal hotelTax = FolioTax.taxOnSubtotal(preTaxPositive, hotel);
+                if (hotelTax.subtract(amt).abs().compareTo(new BigDecimal("0.02")) <= 0) {
+                    BigDecimal pct =
+                            FolioTax.effectiveRate(hotel).multiply(new BigDecimal("100")).stripTrailingZeros();
+                    label = taxHeadingFromOriginal(desc) + " (" + formatInvoicePercentLabel(pct) + "%)";
+                } else {
+                    BigDecimal impliedPct =
+                            amt.multiply(new BigDecimal("100"))
+                                    .divide(preTaxPositive, 2, RoundingMode.HALF_UP)
+                                    .stripTrailingZeros();
+                    label = taxHeadingFromOriginal(desc) + " (" + formatInvoicePercentLabel(impliedPct) + "%)";
+                }
+            }
+            out.add(new ApiDtos.InvoiceLine(label, amt));
+            if (amt.signum() > 0 && !isTaxLikeInvoiceLine(desc)) {
+                preTaxPositive = preTaxPositive.add(amt);
+            }
+        }
+        return out;
+    }
+
+    private static boolean isTaxLikeInvoiceLine(String desc) {
+        if (desc == null || desc.isBlank()) {
+            return false;
+        }
+        String d = desc.trim();
+        return d.regionMatches(true, 0, "tax", 0, 3) || d.regionMatches(true, 0, "vat", 0, 3);
+    }
+
+    /** Preserve "VAT" vs "Tax" prefix from the stored line when rewriting the percentage. */
+    private static String taxHeadingFromOriginal(String desc) {
+        if (desc != null && desc.trim().regionMatches(true, 0, "vat", 0, 3)) {
+            return "VAT";
+        }
+        return "Tax";
+    }
+
+    private static String formatInvoicePercentLabel(BigDecimal pct) {
+        if (pct == null) {
+            return "?";
+        }
+        BigDecimal s = pct.stripTrailingZeros();
+        return s.scale() <= 0 ? s.toBigInteger().toString() : s.toPlainString();
     }
 
     private static String blankToDash(String s) {
@@ -226,7 +279,8 @@ public class InvoiceService {
             lines.add(new ApiDtos.InvoiceLine(c.getDescription(), scale(c.getAmount())));
         }
         Totals totals = computeTotals(r, charges);
-        lines.add(new ApiDtos.InvoiceLine("Tax (15%)", totals.taxes()));
+        BigDecimal taxPct = FolioTax.effectiveRate(r.getHotel()).multiply(new BigDecimal("100")).stripTrailingZeros();
+        lines.add(new ApiDtos.InvoiceLine("Tax (" + taxPct + "%)", totals.taxes()));
         if (totals.depositCredit().signum() > 0) {
             lines.add(new ApiDtos.InvoiceLine("Deposit Paid", totals.depositCredit().negate()));
         }
@@ -253,7 +307,7 @@ public class InvoiceService {
         BigDecimal roomLine = scale(r.getTotalAmount());
         BigDecimal extras = charges.stream().map(RoomCharge::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal subtotal = roomLine.add(scale(extras));
-        BigDecimal taxes = scale(subtotal.multiply(TAX_RATE));
+        BigDecimal taxes = scale(FolioTax.taxOnSubtotal(subtotal, r.getHotel()));
         BigDecimal deposit = r.isDepositPaid() && r.getDepositAmount() != null ? scale(r.getDepositAmount()) : BigDecimal.ZERO;
         BigDecimal grand = scale(subtotal.add(taxes).subtract(deposit));
         return new Totals(subtotal, taxes, deposit, grand);

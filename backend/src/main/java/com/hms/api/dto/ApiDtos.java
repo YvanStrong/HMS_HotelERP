@@ -7,6 +7,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -199,7 +201,20 @@ public final class ApiDtos {
             @JsonProperty("marketing_consent") Boolean marketingConsent,
             String notes,
             @JsonProperty("is_blacklisted") Boolean isBlacklisted,
-            @JsonProperty("blacklist_reason") String blacklistReason) {}
+            @JsonProperty("blacklist_reason") String blacklistReason,
+            @JsonProperty("guest_type") String guestType,
+            @JsonProperty("emergency_contact_name") String emergencyContactName,
+            @JsonProperty("emergency_contact_phone") String emergencyContactPhone,
+            @JsonProperty("emergency_contact_relation") String emergencyContactRelation,
+            @JsonProperty("internal_notes") String internalNotes,
+            @JsonProperty("behavior_notes") String behaviorNotes,
+            @JsonProperty("loyalty_member_number") String loyaltyMemberNumber,
+            @JsonProperty("corporate_company_name") String corporateCompanyName,
+            @JsonProperty("corporate_account_code") String corporateAccountCode,
+            @JsonProperty("corporate_billing_instructions") String corporateBillingInstructions,
+            @JsonProperty("corporate_credit_limit") BigDecimal corporateCreditLimit,
+            @JsonProperty("corporate_negotiated_rate_note") String corporateNegotiatedRateNote,
+            @JsonProperty("preferences_json") String preferencesJson) {}
 
     public record IdDocumentInput(String type, String number) {}
 
@@ -221,7 +236,9 @@ public final class ApiDtos {
             String specialRequests,
             String source,
             RatePlanInput ratePlan,
-            PaymentInput payment) {}
+            PaymentInput payment,
+            /** Optional: link reservation to an existing group master booking. */
+            @JsonProperty("group_booking_id") UUID groupBookingId) {}
 
     public record GuestBrief(UUID id, String name, String email) {}
 
@@ -411,6 +428,79 @@ public final class ApiDtos {
 
     public record CancelReservationResponse(UUID reservationId, String status, String message) {}
 
+    /** Staff: move a CONFIRMED reservation from its current physical room to another same-type vacant-ready room. */
+    public record ReservationReassignRoomRequest(
+            @NotNull @JsonProperty("room_id") @JsonAlias("roomId") UUID roomId) {}
+
+    public record ReservationReassignRoomResponse(
+            UUID reservationId, UUID roomId, String roomNumber, Integer floor, String message) {}
+
+    /** Staff: create N confirmed reservations for one group in one transaction (same lead guest, same room type). */
+    public record GroupBlockReserveRequest(
+            @NotNull LocalDate checkInDate,
+            @NotNull LocalDate checkOutDate,
+            @NotNull UUID roomTypeId,
+            @Min(1) @Max(40) int roomCount,
+            @Min(1) @Max(20) int adultsPerRoom,
+            @NotNull UUID leadGuestId) {}
+
+    public record GroupBlockReserveResponse(
+            UUID groupId,
+            int createdCount,
+            List<CreateReservationResponse> reservations,
+            String message) {}
+
+    public record CorporateAccountCreateRequest(
+            @NotBlank String companyName,
+            String billingEmail,
+            BigDecimal creditLimit,
+            String paymentTerms,
+            String status) {}
+
+    public record CorporateAccountRow(
+            UUID id,
+            String companyName,
+            String billingEmail,
+            BigDecimal creditLimit,
+            String paymentTerms,
+            String status,
+            Instant createdAt) {}
+
+    public record GroupBillingPatchRequest(
+            @JsonProperty("master_reservation_id") UUID masterReservationId,
+            @JsonProperty("clear_master_reservation") Boolean clearMasterReservation,
+            @JsonProperty("corporate_account_id") UUID corporateAccountId,
+            @JsonProperty("clear_corporate_account") Boolean clearCorporateAccount,
+            @JsonProperty("billing_preference") String billingPreference) {}
+
+    public record GroupBillingDashboardCorporate(
+            UUID id, String companyName, String billingEmail, BigDecimal creditLimit, String paymentTerms, String status) {}
+
+    public record GroupBillingDashboardMasterFolio(
+            UUID reservationId,
+            String confirmationCode,
+            @JsonProperty("guest_name") String guestName,
+            @JsonProperty("balance_due") BigDecimal balanceDue,
+            String currency) {}
+
+    public record GroupBillingDashboardMember(
+            UUID reservationId,
+            String confirmationCode,
+            @JsonProperty("guest_name") String guestName,
+            @JsonProperty("room_number") String roomNumber,
+            String status,
+            @JsonProperty("folio_balance_due") BigDecimal folioBalanceDue,
+            @JsonProperty("is_master") boolean isMaster) {}
+
+    public record GroupBillingDashboardResponse(
+            UUID groupId,
+            String groupName,
+            String groupCode,
+            @JsonProperty("billing_preference") String billingPreference,
+            GroupBillingDashboardCorporate corporateAccount,
+            GroupBillingDashboardMasterFolio masterFolio,
+            List<GroupBillingDashboardMember> members) {}
+
     public record NoShowResponse(UUID reservationId, String status, String message) {}
 
     public record HotelFeePolicy(
@@ -457,7 +547,8 @@ public final class ApiDtos {
             PostChargeFolioSnapshot folio,
             BigDecimal runningTotal,
             Instant postedAt,
-            Map<String, Object> inventoryImpact) {}
+            Map<String, Object> inventoryImpact,
+            @JsonProperty("billing_originating_reservation_id") UUID billingOriginatingReservationId) {}
 
     public record ReservationChargePostRequest(
             @NotBlank @JsonProperty("charge_type") String chargeType,
@@ -474,7 +565,8 @@ public final class ApiDtos {
             Integer quantity,
             String postedBy,
             boolean reversible,
-            String productSku) {}
+            String productSku,
+            @JsonProperty("originating_reservation_id") UUID originatingReservationId) {}
 
     public record FolioSummary(
             @JsonProperty("reservation_id") UUID reservationId,
@@ -484,9 +576,20 @@ public final class ApiDtos {
             @JsonProperty("tax_total") BigDecimal taxTotal,
             @JsonProperty("discount_total") BigDecimal discountTotal,
             @JsonProperty("grand_total") BigDecimal grandTotal,
+            @JsonProperty("deposit_credit") BigDecimal depositCredit,
             @JsonProperty("payments_total") BigDecimal paymentsTotal,
             @JsonProperty("balance_due") BigDecimal balanceDue,
             String currency) {}
+
+    public record FolioLedgerLine(
+            UUID id,
+            String type,
+            String category,
+            String description,
+            BigDecimal amount,
+            @JsonProperty("debit_credit") String debitCredit,
+            String reference,
+            Instant createdAt) {}
 
     public record FolioGuestBlock(UUID id, String name, String email) {}
 
@@ -529,8 +632,12 @@ public final class ApiDtos {
             List<FolioCharge> charges,
             List<FolioPaymentLine> payments,
             FolioSummary summary,
+            List<FolioLedgerLine> ledger,
             List<String> actions,
-            FolioRealtimeHint realtime) {}
+            FolioRealtimeHint realtime,
+            @JsonProperty("billing_routed_from_reservation_id") UUID billingRoutedFromReservationId,
+            @JsonProperty("billing_routed_to_reservation_id") UUID billingRoutedToReservationId,
+            @JsonProperty("billing_route_note") String billingRouteNote) {}
 
     public record NightAuditRunResponse(
             @JsonProperty("run_date") LocalDate runDate,

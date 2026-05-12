@@ -7,6 +7,7 @@ import com.hms.entity.InvoiceLineItem;
 import com.hms.entity.Payment;
 import com.hms.entity.Reservation;
 import com.hms.entity.RoomCharge;
+import com.hms.service.folio.FolioTax;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -189,8 +190,11 @@ public class InvoicePdfService {
 
                 float summaryTop = Math.max(y - 8, 122);
                 drawLine(cs, left, right, summaryTop);
+                BigDecimal vatPctWhole =
+                        FolioTax.effectiveRate(h).multiply(new BigDecimal("100")).stripTrailingZeros();
+                String vatPctLabel = vatPctWhole.scale() > 0 ? vatPctWhole.toPlainString() : vatPctWhole.toBigInteger().toString();
                 textRight(cs, right, summaryTop - 14, 9, false, "Subtotal: " + money(subtotal, currency));
-                textRight(cs, right, summaryTop - 28, 9, false, "VAT (18%): " + money(tax, currency));
+                textRight(cs, right, summaryTop - 28, 9, false, "VAT (" + vatPctLabel + "%): " + money(tax, currency));
                 textRight(cs, right, summaryTop - 42, 9, false, "Discounts: " + money(discount, currency));
                 textRight(cs, right, summaryTop - 56, 10, true, "Grand Total: " + money(grandTotal, currency));
                 textRight(cs, right, summaryTop - 72, 9, false, "Total Paid: " + money(paymentsTotal, currency));

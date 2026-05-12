@@ -2,6 +2,7 @@ package com.hms.entity;
 
 import com.hms.domain.LoyaltyTier;
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -141,6 +142,43 @@ public class Guest {
 
     @Column(name = "preferred_language", length = 8)
     private String preferredLanguage = "en";
+
+    @Column(name = "guest_type", nullable = false, length = 30)
+    @ColumnDefault("'RETURNING'")
+    private String guestType = "RETURNING";
+
+    @Column(name = "emergency_contact_name", length = 128)
+    private String emergencyContactName;
+
+    @Column(name = "emergency_contact_phone", length = 64)
+    private String emergencyContactPhone;
+
+    @Column(name = "emergency_contact_relation", length = 64)
+    private String emergencyContactRelation;
+
+    @Column(name = "internal_notes", columnDefinition = "TEXT")
+    private String internalNotes;
+
+    @Column(name = "behavior_notes", columnDefinition = "TEXT")
+    private String behaviorNotes;
+
+    @Column(name = "loyalty_member_number", length = 64)
+    private String loyaltyMemberNumber;
+
+    @Column(name = "corporate_company_name", length = 200)
+    private String corporateCompanyName;
+
+    @Column(name = "corporate_account_code", length = 64)
+    private String corporateAccountCode;
+
+    @Column(name = "corporate_billing_instructions", columnDefinition = "TEXT")
+    private String corporateBillingInstructions;
+
+    @Column(name = "corporate_credit_limit", precision = 14, scale = 2)
+    private BigDecimal corporateCreditLimit;
+
+    @Column(name = "corporate_negotiated_rate_note", columnDefinition = "TEXT")
+    private String corporateNegotiatedRateNote;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;

@@ -22,6 +22,11 @@ public class RoomCharge {
     @JoinColumn(name = "reservation_id", nullable = false)
     private Reservation reservation;
 
+    /** When charges are consolidated on a master folio, the member stay that incurred the charge. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "originating_reservation_id")
+    private Reservation originatingReservation;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "room_id", nullable = false)
     private Room room;

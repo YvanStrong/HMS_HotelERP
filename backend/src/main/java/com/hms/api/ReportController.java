@@ -64,6 +64,16 @@ public class ReportController {
                 .body(bytes);
     }
 
+    @GetMapping("/guests")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public ReportDtos.GuestDashboardResponse guestDashboard(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) LocalDate fromDate,
+            @RequestParam(required = false) LocalDate toDate) {
+        return reportService.guestDashboard(hotelId, hotelHeader, fromDate, toDate);
+    }
+
     @GetMapping("/guest-analytics")
     @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
     public ReportDtos.GuestAnalyticsResponse guestAnalytics(
@@ -116,5 +126,15 @@ public class ReportController {
             @PathVariable UUID hotelId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         return reportService.executive(hotelId, hotelHeader);
+    }
+
+    @GetMapping("/complaints-metrics")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
+    public ReportDtos.ComplaintsMetricsResponse complaintsMetrics(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) LocalDate fromDate) {
+        return reportService.complaintsMetrics(hotelId, hotelHeader, fromDate);
     }
 }

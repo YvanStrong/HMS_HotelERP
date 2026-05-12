@@ -446,12 +446,22 @@ export default function InvoicesPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {(invoiceDetail.items ?? []).map((it, idx) => (
-                          <tr key={`${it.description}-${idx}`}>
-                            <td>{it.description}</td>
-                            <td className="text-right font-medium">{Number(it.amount).toFixed(2)}</td>
-                          </tr>
-                        ))}
+                        {(invoiceDetail.items ?? []).map((it, idx) => {
+                          const raw = it.amount as unknown;
+                          const n =
+                            typeof raw === "number"
+                              ? raw
+                              : typeof raw === "string"
+                                ? Number(raw)
+                                : Number(raw);
+                          const amt = Number.isFinite(n) ? n.toFixed(2) : "—";
+                          return (
+                            <tr key={`${it.description}-${idx}`}>
+                              <td>{it.description}</td>
+                              <td className="text-right font-medium tabular-nums min-w-[7rem]">{amt}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

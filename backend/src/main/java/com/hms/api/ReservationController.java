@@ -48,7 +48,7 @@ public class ReservationController {
 
     @GetMapping
     @PreAuthorize(
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE','ROLE_HOUSEKEEPING','ROLE_HOUSEKEEPING_SUPERVISOR')")
     public List<ApiDtos.ReservationListItem> listReservations(
             @PathVariable UUID hotelId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
@@ -94,6 +94,17 @@ public class ReservationController {
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
             @RequestBody(required = false) GuestDtos.ApplyGuestPreferencesRequest request) {
         return reservationService.applyGuestPreferences(hotelId, hotelHeader, reservationId, request);
+    }
+
+    @PostMapping("/{reservationId}/reassign-room")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST')")
+    public ApiDtos.ReservationReassignRoomResponse reassignReservationRoom(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID reservationId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody ApiDtos.ReservationReassignRoomRequest body) {
+        return reservationService.reassignReservationRoom(hotelId, hotelHeader, reservationId, body);
     }
 
     @PostMapping("/{reservationId}/check-in")

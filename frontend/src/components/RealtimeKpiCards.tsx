@@ -47,6 +47,11 @@ const categoryConfig: Record<string, { icon: string; color: string; bgColor: str
     color: "text-rose-600", 
     bgColor: "bg-rose-50 border-rose-200" 
   },
+  complaints: {
+    icon: "⚠️",
+    color: "text-amber-700",
+    bgColor: "bg-amber-50 border-amber-200",
+  },
 };
 
 function formatLabel(label: string): string {

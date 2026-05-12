@@ -29,6 +29,30 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 
     @Query(
             """
+            select r from Reservation r
+            left join fetch r.groupBooking gb
+            left join fetch gb.masterReservation
+            left join fetch gb.corporateAccount
+            where r.id = :id and r.hotel.id = :hotelId
+            """)
+    Optional<Reservation> findByIdAndHotel_IdWithGroupBilling(@Param("id") UUID id, @Param("hotelId") UUID hotelId);
+
+    @Query(
+            """
+            select r from Reservation r
+            join fetch r.guest
+            join fetch r.hotel
+            left join fetch r.room rm
+            left join fetch rm.roomType
+            left join fetch r.groupBooking gb
+            left join fetch gb.masterReservation
+            left join fetch gb.corporateAccount
+            where r.id = :id and r.hotel.id = :hotelId
+            """)
+    Optional<Reservation> findForCheckoutWithGroupBilling(@Param("id") UUID id, @Param("hotelId") UUID hotelId);
+
+    @Query(
+            """
             select count(r) from Reservation r
             where r.room.id = :roomId
             and r.status in ('CONFIRMED', 'CHECKED_IN')
@@ -212,4 +236,23 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
             @Param("bookingCode") String bookingCode);
 
     List<Reservation> findByGuest_Id(UUID guestId);
+
+    @Query(
+            """
+            select r from Reservation r
+            join fetch r.hotel
+            join fetch r.guest g
+            left join fetch r.room rm
+            left join fetch rm.roomType
+            where r.hotel.id = :hotelId and g.id = :guestId
+            order by r.checkInDate desc
+            """)
+    List<Reservation> findByHotel_IdAndGuest_IdOrderByCheckInDateDesc(
+            @Param("hotelId") UUID hotelId, @Param("guestId") UUID guestId);
+
+    List<Reservation> findByGroupBooking_Id(UUID groupId);
+
+    List<Reservation> findByCheckInDateAndStatus(LocalDate checkInDate, ReservationStatus status);
+
+    List<Reservation> findByCheckOutDateAndStatus(LocalDate checkOutDate, ReservationStatus status);
 }

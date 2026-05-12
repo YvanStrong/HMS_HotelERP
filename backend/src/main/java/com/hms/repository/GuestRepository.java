@@ -17,6 +17,8 @@ public interface GuestRepository extends JpaRepository<Guest, UUID> {
 
     Optional<Guest> findByIdAndHotel_Id(UUID id, UUID hotelId);
 
+    boolean existsByIdAndHotel_Id(UUID id, UUID hotelId);
+
     Optional<Guest> findByHotel_IdAndEmailIgnoreCase(UUID hotelId, String email);
 
     Optional<Guest> findByHotel_IdAndPortalAccount_Id(UUID hotelId, UUID portalAccountId);

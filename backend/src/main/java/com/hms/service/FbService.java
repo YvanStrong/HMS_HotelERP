@@ -21,6 +21,7 @@ import com.hms.repository.InventoryItemRepository;
 import com.hms.repository.MenuItemRepository;
 import com.hms.repository.ReservationRepository;
 import com.hms.security.TenantAccessService;
+import com.hms.service.folio.FolioTax;
 import com.hms.web.ApiException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -39,8 +40,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class FbService {
 
-    private static final BigDecimal TAX_RATE = new BigDecimal("0.15");
-
     private final FbOutletRepository fbOutletRepository;
     private final MenuItemRepository menuItemRepository;
     private final HotelRepository hotelRepository;
@@ -48,6 +47,7 @@ public class FbService {
     private final ReservationRepository reservationRepository;
     private final InventoryItemRepository inventoryItemRepository;
     private final ChargeService chargeService;
+    private final GuestService guestService;
     private final FacilityWebSocketPublisher facilityWebSocketPublisher;
     private final TenantAccessService tenantAccessService;
 
@@ -59,6 +59,7 @@ public class FbService {
             ReservationRepository reservationRepository,
             InventoryItemRepository inventoryItemRepository,
             ChargeService chargeService,
+            GuestService guestService,
             FacilityWebSocketPublisher facilityWebSocketPublisher,
             TenantAccessService tenantAccessService) {
         this.fbOutletRepository = fbOutletRepository;
@@ -68,6 +69,7 @@ public class FbService {
         this.reservationRepository = reservationRepository;
         this.inventoryItemRepository = inventoryItemRepository;
         this.chargeService = chargeService;
+        this.guestService = guestService;
         this.facilityWebSocketPublisher = facilityWebSocketPublisher;
         this.tenantAccessService = tenantAccessService;
     }
@@ -276,7 +278,7 @@ public class FbService {
             line.setInventoryDeducted(false);
             order.getLines().add(line);
         }
-        BigDecimal tax = subtotal.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal tax = FolioTax.taxOnSubtotal(subtotal, outlet.getHotel());
         BigDecimal total = subtotal.add(tax).setScale(2, RoundingMode.HALF_UP);
         order.setSubtotal(subtotal);
         order.setTax(tax);
@@ -314,7 +316,7 @@ public class FbService {
             roomChargeMap.put("description", desc);
             roomChargeMap.put("amount", total);
             roomChargeMap.put("postedToFolio", true);
-            roomChargeMap.put("folioUrl", "/api/v1/hotels/" + hotelId + "/reservations/" + res.getId() + "/folio");
+            roomChargeMap.put("folioUrl", "/api/v1/hotels/" + hotelId + "/folios/" + res.getId());
             facilityWebSocketPublisher.publishFolioCharge(
                     res.getId(),
                     Map.of("type", "folio.charge.added", "chargeId", ch.getId().toString(), "amount", ch.getAmount()));
@@ -362,6 +364,19 @@ public class FbService {
             }
             if (next == FbOrderStatus.CLOSED) {
                 order.setClosedTime(req.timestamp() != null ? req.timestamp() : Instant.now());
+                if (order.getGuestReservation() != null && order.getGuestReservation().getGuest() != null) {
+                    // Award 1 point per 10 currency units
+                    long points = order.getTotal().longValue() / 10;
+                    if (points > 0) {
+                        guestService.internalEarnLoyalty(
+                            order.getGuestReservation().getGuest().getId(),
+                            points,
+                            "F&B Order " + order.getOrderNumber(),
+                            "FB_ORDER",
+                            order.getId().toString()
+                        );
+                    }
+                }
             }
         }
         List<Map<String, Object>> sideEffects = new ArrayList<>();
