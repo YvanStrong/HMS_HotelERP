@@ -195,20 +195,17 @@ export default function HotelReportsPage() {
     };
   }, [tab, hotelId, startDate]);
 
-  const occRows = occupancy?.data ?? [];
-
-  const occChartData = useMemo(
-    () =>
-      occRows.map((r) => ({
-        date: shortDate(String(r.date ?? "")),
-        Occupancy: toNumber(r.occupancyRate),
-        ADR: toNumber(r.adr),
-        RevPAR: toNumber(r.revpar),
-        Occupied: toNumber(r.occupiedRooms),
-        Total: toNumber(r.totalRooms),
-      })),
-    [occRows],
-  );
+  const occChartData = useMemo(() => {
+    const rows = occupancy?.data ?? [];
+    return rows.map((r) => ({
+      date: shortDate(String(r.date ?? "")),
+      Occupancy: toNumber(r.occupancyRate),
+      ADR: toNumber(r.adr),
+      RevPAR: toNumber(r.revpar),
+      Occupied: toNumber(r.occupiedRooms),
+      Total: toNumber(r.totalRooms),
+    }));
+  }, [occupancy]);
 
   const occupancySeries = useMemo(() => occChartData.map((r) => r.Occupancy), [occChartData]);
 
