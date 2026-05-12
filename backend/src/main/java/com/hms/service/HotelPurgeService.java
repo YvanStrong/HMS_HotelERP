@@ -24,6 +24,10 @@ public class HotelPurgeService {
         Object id = hotelId;
 
         jdbc.update(
+                "DELETE FROM guest_complaints WHERE reservation_id IN (SELECT id FROM reservations WHERE hotel_id = ?)",
+                id);
+
+        jdbc.update(
                 "DELETE FROM guest_feedback WHERE reservation_id IN (SELECT id FROM reservations WHERE hotel_id = ?)",
                 id);
 
@@ -62,6 +66,13 @@ public class HotelPurgeService {
         jdbc.update("DELETE FROM housekeeping_tasks WHERE hotel_id = ?", id);
         jdbc.update("DELETE FROM notifications WHERE hotel_id = ?", id);
         jdbc.update("DELETE FROM night_audit_runs WHERE hotel_id = ?", id);
+
+        jdbc.update("UPDATE reservations SET group_booking_id = NULL WHERE hotel_id = ?", id);
+        jdbc.update(
+                "UPDATE group_bookings SET master_reservation_id = NULL, corporate_account_id = NULL WHERE hotel_id = ?",
+                id);
+        jdbc.update("DELETE FROM group_bookings WHERE hotel_id = ?", id);
+        jdbc.update("DELETE FROM corporate_accounts WHERE hotel_id = ?", id);
 
         // Payments reference reservations (payments.reservation_id FK), so remove them before reservations.
         jdbc.update("DELETE FROM payments WHERE reservation_id IN (SELECT id FROM reservations WHERE hotel_id = ?)", id);

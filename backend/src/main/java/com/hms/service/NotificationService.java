@@ -71,4 +71,19 @@ public class NotificationService {
         n.setReferenceId(reservation.getId());
         notificationRepository.save(n);
     }
+
+    @Transactional
+    public void sendNotification(Hotel hotel, UUID guestId, String type, String message) {
+        Notification n = new Notification();
+        n.setHotel(hotel);
+        n.setType(type);
+        n.setChannel("EMAIL");
+        n.setRecipientType("GUEST");
+        n.setRecipientId(guestId);
+        n.setSubject("Message from " + hotel.getName());
+        n.setBody(message);
+        n.setStatus("PENDING");
+        n.setScheduledFor(Instant.now());
+        notificationRepository.save(n);
+    }
 }

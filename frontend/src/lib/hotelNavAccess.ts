@@ -9,10 +9,12 @@ import { userHasAnyPermission, userHasPermission, userHasRole } from "./permissi
 export type HotelNavKey =
   | "dashboard"
   | "reports"
+  | "guestAnalytics"
   | "roomTypes"
   | "rooms"
   | "roomBlocks"
   | "reservations"
+  | "groups"
   | "invoices"
   | "guests"
   | "staff"
@@ -69,6 +71,7 @@ function canRooms(user: AuthUser | null): boolean {
 function canReservations(user: AuthUser | null): boolean {
   if (!user) return false;
   if (isSuperAdmin(user)) return true;
+  if (userHasRole(user, ["HOUSEKEEPING", "HOUSEKEEPING_SUPERVISOR"])) return true;
   return userHasAnyPermission(user, ["reservation:*", "reservation:self"]);
 }
 
@@ -173,6 +176,8 @@ export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): bool
       return canDashboard(user);
     case "reports":
       return canReports(user);
+    case "guestAnalytics":
+      return canReports(user);
     case "roomTypes":
       return canRoomTypes(user);
     case "rooms":
@@ -180,6 +185,8 @@ export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): bool
     case "roomBlocks":
       return canRoomBlocks(user);
     case "reservations":
+      return canReservations(user);
+    case "groups":
       return canReservations(user);
     case "invoices":
       return canInvoices(user);
@@ -226,12 +233,16 @@ export function navHint(key: HotelNavKey): string {
   const hints: Record<HotelNavKey, string> = {
     dashboard: "Room status board + occupancy grid; also staff with housekeeping or room read access.",
     reports: "Permissions: report:* or roles hotel admin, manager, finance.",
+    guestAnalytics:
+      "Guest stay analytics (nationality, repeat, VIP, no-show, LTV): same access as Reports (finance/manager/admin).",
     roomTypes: "GET /room-types: hotel admin, manager, receptionist, maintenance, finance.",
     rooms: "Permission: room:read or room:* (or super admin).",
     roomBlocks: "Courtesy holds / maintenance blocks: admin, manager, receptionist (list); create: admin/manager.",
     reservations: "Permission: reservation:* or reservation:self (availability is public).",
+    groups: "Corporate and event group management, rooming lists, and group billing.",
     invoices: "Finance and front office invoices: hotel admin, manager, receptionist, finance.",
-    guests: "Guest profile and loyalty routes: receptionist read; finance loyalty earn.",
+    guests:
+      "Guest directory, check-in/checkout desks, in-house board, complaint log, profile (folio, loyalty, registry, documents API).",
     staff: "Hotel staff management: hotel admin and manager.",
     housekeeping: "Permission: housekeeping:* or room:status.",
     hkMyTasks: "Housekeeping line staff: tasks assigned to you.",

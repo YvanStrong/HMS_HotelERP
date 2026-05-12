@@ -43,6 +43,10 @@ public class ServiceRequest {
     @Column(name = "booking_code", length = 50)
     private String bookingCode;
 
+    /** HOUSEKEEPING, MAINTENANCE, FRONT_DESK, FB, SECURITY */
+    @Column(name = "target_department", length = 30)
+    private String targetDepartment;
+
     /** EXTRA_TOWELS, ROOM_SERVICE, MAINTENANCE, WAKE_UP, LATE_CHECKOUT, OTHER */
     @Column(name = "request_type", nullable = false, length = 30)
     private String requestType;

@@ -32,6 +32,10 @@ public class Reservation {
     @JoinColumn(name = "guest_id", nullable = false)
     private Guest guest;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "group_booking_id")
+    private GroupBooking groupBooking;
+
     /** Set when a logged-in guest portal user completes the booking. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "booked_by_app_user_id")

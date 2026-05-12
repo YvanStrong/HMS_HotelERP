@@ -81,6 +81,25 @@ public final class GuestInputApplier {
         if (g.blacklistReason() != null) {
             guest.setBlacklistReason(g.blacklistReason().isBlank() ? null : g.blacklistReason().trim());
         }
+        if (g.guestType() != null && !g.guestType().isBlank()) {
+            guest.setGuestType(g.guestType().trim().toUpperCase());
+        } else {
+            guest.setGuestType("RETURNING");
+        }
+        guest.setEmergencyContactName(trimToNull(g.emergencyContactName()));
+        guest.setEmergencyContactPhone(trimToNull(g.emergencyContactPhone()));
+        guest.setEmergencyContactRelation(trimToNull(g.emergencyContactRelation()));
+        guest.setInternalNotes(trimToNull(g.internalNotes()));
+        guest.setBehaviorNotes(trimToNull(g.behaviorNotes()));
+        guest.setLoyaltyMemberNumber(trimToNull(g.loyaltyMemberNumber()));
+        guest.setCorporateCompanyName(trimToNull(g.corporateCompanyName()));
+        guest.setCorporateAccountCode(trimToNull(g.corporateAccountCode()));
+        guest.setCorporateBillingInstructions(trimToNull(g.corporateBillingInstructions()));
+        guest.setCorporateCreditLimit(g.corporateCreditLimit());
+        guest.setCorporateNegotiatedRateNote(trimToNull(g.corporateNegotiatedRateNote()));
+        if (g.preferencesJson() != null && !g.preferencesJson().isBlank()) {
+            guest.setPreferencesJson(g.preferencesJson().trim());
+        }
         GuestProfileDefaults.ensureRequiredForPersistence(guest, hotel);
     }
 
@@ -188,6 +207,53 @@ public final class GuestInputApplier {
         if (g.blacklistReason() != null) {
             guest.setBlacklistReason(g.blacklistReason().isBlank() ? null : g.blacklistReason().trim());
         }
+        if (g.guestType() != null && !g.guestType().isBlank()) {
+            guest.setGuestType(g.guestType().trim().toUpperCase());
+        }
+        if (g.emergencyContactName() != null) {
+            guest.setEmergencyContactName(trimToNull(g.emergencyContactName()));
+        }
+        if (g.emergencyContactPhone() != null) {
+            guest.setEmergencyContactPhone(trimToNull(g.emergencyContactPhone()));
+        }
+        if (g.emergencyContactRelation() != null) {
+            guest.setEmergencyContactRelation(trimToNull(g.emergencyContactRelation()));
+        }
+        if (g.internalNotes() != null) {
+            guest.setInternalNotes(trimToNull(g.internalNotes()));
+        }
+        if (g.behaviorNotes() != null) {
+            guest.setBehaviorNotes(trimToNull(g.behaviorNotes()));
+        }
+        if (g.loyaltyMemberNumber() != null) {
+            guest.setLoyaltyMemberNumber(trimToNull(g.loyaltyMemberNumber()));
+        }
+        if (g.corporateCompanyName() != null) {
+            guest.setCorporateCompanyName(trimToNull(g.corporateCompanyName()));
+        }
+        if (g.corporateAccountCode() != null) {
+            guest.setCorporateAccountCode(trimToNull(g.corporateAccountCode()));
+        }
+        if (g.corporateBillingInstructions() != null) {
+            guest.setCorporateBillingInstructions(trimToNull(g.corporateBillingInstructions()));
+        }
+        if (g.corporateCreditLimit() != null) {
+            guest.setCorporateCreditLimit(g.corporateCreditLimit());
+        }
+        if (g.corporateNegotiatedRateNote() != null) {
+            guest.setCorporateNegotiatedRateNote(trimToNull(g.corporateNegotiatedRateNote()));
+        }
+        if (g.preferencesJson() != null) {
+            guest.setPreferencesJson(g.preferencesJson().isBlank() ? null : g.preferencesJson().trim());
+        }
         GuestProfileDefaults.ensureRequiredForPersistence(guest, guest.getHotel());
+    }
+
+    private static String trimToNull(String s) {
+        if (s == null) {
+            return null;
+        }
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
     }
 }
