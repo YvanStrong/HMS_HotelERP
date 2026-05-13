@@ -149,6 +149,7 @@ export default function NewStaffReservationPage() {
   const [earlyCheckIn, setEarlyCheckIn] = useState(false);
   const [deposit, setDeposit] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("CASH");
+  const [taxRate, setTaxRate] = useState(18);
 
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState<CreateRes | null>(null);
@@ -406,6 +407,14 @@ export default function NewStaffReservationPage() {
   useEffect(() => {
     if (step !== 2) return;
     void loadAvailability();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, hotelId]);
+
+  useEffect(() => {
+    if (step !== 5) return;
+    if (!avail && roomTypeId) {
+      void loadAvailability();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, hotelId]);
 
@@ -1801,9 +1810,21 @@ export default function NewStaffReservationPage() {
                       </p>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Total Stay Cost:</span>
-                      <p className="font-bold text-lg text-primary">
+                      <span className="text-muted-foreground">Subtotal:</span>
+                      <p className="font-medium">
                         {selectedAvail.total_price.toFixed(2)} {selectedAvail.currency}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Tax ({taxRate}%):</span>
+                      <p className="font-medium">
+                        {(selectedAvail.total_price * (taxRate / 100)).toFixed(2)} {selectedAvail.currency}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Grand Total:</span>
+                      <p className="font-bold text-lg text-primary">
+                        {(selectedAvail.total_price * (1 + taxRate / 100)).toFixed(2)} {selectedAvail.currency}
                       </p>
                     </div>
                   </div>
