@@ -1781,6 +1781,35 @@ export default function NewStaffReservationPage() {
           {step === 5 && (
             <div className="bg-card rounded-2xl border border-border/60 p-6 shadow-sm space-y-5">
               <h2 className="text-lg font-semibold">Payment &amp; confirm</h2>
+              
+              {selectedAvail && (
+                <div className="bg-muted/50 rounded-xl p-4 space-y-3 border border-border/60">
+                  <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Room Price Summary</h3>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Room Type:</span>
+                      <p className="font-medium">{selectedAvail.name}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Nights:</span>
+                      <p className="font-medium">{selectedAvail.nights}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Price per Night:</span>
+                      <p className="font-medium">
+                        {(selectedAvail.total_price / Math.max(1, selectedAvail.nights)).toFixed(2)} {selectedAvail.currency}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Total Stay Cost:</span>
+                      <p className="font-bold text-lg text-primary">
+                        {selectedAvail.total_price.toFixed(2)} {selectedAvail.currency}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <label>
                 Deposit amount ({selectedAvail?.currency ?? hotel.currency ?? "USD"})
                 <input

@@ -59,6 +59,16 @@ export default function GroupsPage() {
     loadGroups();
   }, [hotelId]);
 
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showAddModal) {
+        setShowAddModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [showAddModal]);
+
   async function loadGroups() {
     try {
       setLoading(true);
@@ -266,8 +276,14 @@ export default function GroupsPage() {
 
       {/* CREATE GROUP MODAL */}
       {showAddModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-300 border border-white/20">
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-300"
+          onClick={() => setShowAddModal(false)}
+        >
+          <div 
+            className="bg-white rounded-[32px] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-300 border border-white/20 flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="px-8 py-7 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
               <div className="space-y-1">
                 <h2 className="text-2xl font-black text-slate-900 tracking-tight leading-none">Create Group Block</h2>
@@ -283,7 +299,7 @@ export default function GroupsPage() {
               </button>
             </div>
             
-            <div className="p-8 space-y-6 bg-white">
+            <div className="p-8 space-y-6 bg-white overflow-y-auto flex-1">
               {createErr && (
                 <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-700 text-sm font-bold shadow-sm animate-in shake duration-500">
                   {createErr}
