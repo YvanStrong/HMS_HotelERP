@@ -26,8 +26,11 @@ export async function publicFetch<T>(path: string, init: RequestInit = {}): Prom
     }
     throw new Error(msg);
   }
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  if (res.status === 204 || res.status === 205) return undefined as T;
+  const text = await res.text();
+  const trimmed = text.trim();
+  if (!trimmed) return undefined as T;
+  return JSON.parse(trimmed) as T;
 }
 
 /** Public book — sends Bearer when {@code accessToken} is set (guest portal user). */
@@ -53,5 +56,8 @@ export async function publicBook<T>(hotelId: string, body: unknown, accessToken:
     }
     throw new Error(msg);
   }
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  const trimmed = text.trim();
+  if (!trimmed) return undefined as T;
+  return JSON.parse(trimmed) as T;
 }

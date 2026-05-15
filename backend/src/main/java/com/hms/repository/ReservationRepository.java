@@ -24,7 +24,16 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
     Optional<Reservation> findByIdAndHotel_Id(UUID id, UUID hotelId);
 
     @Query(
-            "select r from Reservation r join fetch r.guest g left join fetch g.portalAccount join fetch r.room join fetch r.room.roomType join fetch r.hotel where r.id = :id and r.hotel.id = :hotelId")
+            """
+            select r from Reservation r
+            join fetch r.guest g
+            left join fetch g.portalAccount
+            join fetch r.room
+            join fetch r.room.roomType
+            join fetch r.hotel
+            left join fetch r.groupBooking gb
+            where r.id = :id and r.hotel.id = :hotelId
+            """)
     Optional<Reservation> findDetailedByIdAndHotel_Id(@Param("id") UUID id, @Param("hotelId") UUID hotelId);
 
     @Query(
@@ -65,6 +74,8 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
             @Param("checkIn") LocalDate checkIn,
             @Param("checkOut") LocalDate checkOut,
             @Param("excludeId") UUID excludeReservationId);
+
+    long countByGroupBooking_Id(UUID groupBookingId);
 
     List<Reservation> findByHotel_IdAndStatusIn(UUID hotelId, List<ReservationStatus> statuses);
 

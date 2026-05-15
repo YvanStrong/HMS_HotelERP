@@ -51,6 +51,44 @@ export const API_BASE = resolveApiBase();
 const HOTEL_UUID_IN_API_PATH =
   /^\/api\/v1\/hotels\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:\/|$)/;
 
+/** Staff-facing titles — avoid raw HTTP jargon in popups. */
+function friendlyApiErrorTitle(status: number): string {
+  switch (status) {
+    case 400:
+      return "We couldn't process that";
+    case 403:
+      return "You don't have access";
+    case 404:
+      return "Not found";
+    case 409:
+      return "That isn't available right now";
+    case 422:
+      return "Please review and try again";
+    case 429:
+      return "Too many attempts";
+    default:
+      if (status >= 500) return "Something went wrong";
+      return "Request failed";
+  }
+}
+
+type ApiErrorBody = { error?: unknown; message?: unknown };
+
+function userFacingApiMessage(status: number, body: ApiErrorBody | null): string {
+  const code = typeof body?.error === "string" ? body.error : null;
+  const message = typeof body?.message === "string" ? body.message.trim() : null;
+  if (message) return message;
+
+  const fallbacks: Record<string, string> = {
+    GROUP_HAS_RESERVATIONS:
+      "This group still has reservations attached. Finish or cancel those stays first, then try deleting the group again.",
+  };
+  if (code && fallbacks[code]) return fallbacks[code];
+
+  if (code) return "Something went wrong. Please try again or contact support if it keeps happening.";
+  return status >= 500 ? "The server had a problem. Please try again in a moment." : "The request could not be completed.";
+}
+
 /** Backend Swagger UI (same origin as API). */
 export function swaggerUiUrl(): string {
   return `${API_BASE.replace(/\/$/, "")}/swagger-ui/index.html`;
@@ -113,21 +151,25 @@ export async function apiFetch<T>(
       throw new Error("Session expired. Redirecting to login…");
     }
     let msg = res.statusText;
+    let body: ApiErrorBody | null = null;
     try {
-      const body = await res.json();
-      const code = typeof body?.error === "string" ? body.error : null;
-      const message = typeof body?.message === "string" ? body.message : null;
-      if (code && message) msg = `${code}: ${message}`;
-      else if (message) msg = message;
-      else if (code) msg = code;
+      body = (await res.json()) as ApiErrorBody;
+      msg = userFacingApiMessage(res.status, body);
     } catch {
       /* ignore */
     }
     if (!quiet) {
-      showErrorPopup({ message: msg, title: `Request failed (${res.status})` });
+      showErrorPopup({ message: msg, title: friendlyApiErrorTitle(res.status) });
     }
     throw new Error(msg);
   }
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  if (res.status === 204 || res.status === 205) return undefined as T;
+  const text = await res.text();
+  const trimmed = text.trim();
+  if (!trimmed) return undefined as T;
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    throw new Error("Invalid JSON from server");
+  }
 }

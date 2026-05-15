@@ -4,8 +4,10 @@ import com.hms.api.dto.ApiDtos;
 import com.hms.config.JwtProperties;
 import com.hms.entity.AppUser;
 import com.hms.repository.AppUserRepository;
+import com.hms.domain.Role;
 import com.hms.service.GuestPortalRegistrationService;
 import com.hms.service.PasswordResetService;
+import com.hms.service.PlatformTenantService;
 import com.hms.security.LoginAttemptService;
 import com.hms.security.SecurityAuditService;
 import com.hms.security.JwtService;
@@ -15,6 +17,8 @@ import com.hms.web.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -29,6 +33,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
+
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final JwtProperties jwtProperties;
@@ -37,6 +43,7 @@ public class AuthController {
     private final LoginAttemptService loginAttemptService;
     private final SecurityAuditService securityAuditService;
     private final PasswordResetService passwordResetService;
+    private final PlatformTenantService platformTenantService;
 
     public AuthController(
             AuthenticationManager authenticationManager,
@@ -46,7 +53,8 @@ public class AuthController {
             GuestPortalRegistrationService guestPortalRegistrationService,
             LoginAttemptService loginAttemptService,
             SecurityAuditService securityAuditService,
-            PasswordResetService passwordResetService) {
+            PasswordResetService passwordResetService,
+            PlatformTenantService platformTenantService) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.jwtProperties = jwtProperties;
@@ -55,6 +63,7 @@ public class AuthController {
         this.loginAttemptService = loginAttemptService;
         this.securityAuditService = securityAuditService;
         this.passwordResetService = passwordResetService;
+        this.platformTenantService = platformTenantService;
     }
 
     @PostMapping("/register-guest")
@@ -92,6 +101,18 @@ public class AuthController {
                     principal.getId(),
                     principal.getHotelId(),
                     java.util.Map.of("username", principal.getUsername()));
+            if (principal.getRole() == Role.SUPER_ADMIN) {
+                try {
+                    platformTenantService.recordCrossPlatformAudit(
+                            principal.getId(),
+                            "SUPER_ADMIN_LOGIN",
+                            null,
+                            java.util.Map.of("username", principal.getUsername()),
+                            httpRequest);
+                } catch (Exception ex) {
+                    log.warn("Could not persist platform audit row for super admin login: {}", ex.getMessage());
+                }
+            }
             return ResponseEntity.ok(buildLoginResponse(principal));
         } catch (BadCredentialsException e) {
             loginAttemptService.onFailure(loginKey);
