@@ -2,17 +2,22 @@ package com.hms.service;
 
 import com.hms.api.dto.InventoryDepotDtos;
 import com.hms.domain.DepotType;
+import com.hms.domain.StockTransactionType;
 import com.hms.entity.DepotProduct;
 import com.hms.entity.DepotSale;
 import com.hms.entity.DepotSaleLine;
 import com.hms.entity.Hotel;
+import com.hms.entity.InvWarehouse;
 import com.hms.entity.InventoryDepot;
 import com.hms.entity.InventoryItem;
+import com.hms.entity.StockTransaction;
 import com.hms.repository.DepotProductRepository;
 import com.hms.repository.DepotSaleRepository;
 import com.hms.repository.HotelRepository;
+import com.hms.repository.InvWarehouseRepository;
 import com.hms.repository.InventoryDepotRepository;
 import com.hms.repository.InventoryItemRepository;
+import com.hms.repository.StockTransactionRepository;
 import com.hms.security.TenantAccessService;
 import com.hms.web.ApiException;
 import java.math.BigDecimal;
@@ -44,6 +49,8 @@ public class InventoryDepotService {
     private final DepotSaleRepository depotSaleRepository;
     private final HotelRepository hotelRepository;
     private final InventoryItemRepository inventoryItemRepository;
+    private final InvWarehouseRepository invWarehouseRepository;
+    private final StockTransactionRepository stockTransactionRepository;
 
     public InventoryDepotService(
             TenantAccessService tenantAccessService,
@@ -51,13 +58,17 @@ public class InventoryDepotService {
             DepotProductRepository depotProductRepository,
             DepotSaleRepository depotSaleRepository,
             HotelRepository hotelRepository,
-            InventoryItemRepository inventoryItemRepository) {
+            InventoryItemRepository inventoryItemRepository,
+            InvWarehouseRepository invWarehouseRepository,
+            StockTransactionRepository stockTransactionRepository) {
         this.tenantAccessService = tenantAccessService;
         this.inventoryDepotRepository = inventoryDepotRepository;
         this.depotProductRepository = depotProductRepository;
         this.depotSaleRepository = depotSaleRepository;
         this.hotelRepository = hotelRepository;
         this.inventoryItemRepository = inventoryItemRepository;
+        this.invWarehouseRepository = invWarehouseRepository;
+        this.stockTransactionRepository = stockTransactionRepository;
     }
 
     @Transactional(readOnly = true)
@@ -66,6 +77,72 @@ public class InventoryDepotService {
         return inventoryDepotRepository.findByHotel_IdOrderByNameAsc(hotelId).stream()
                 .map(this::toRow)
                 .toList();
+    }
+
+    /**
+     * For each active menu outlet (depot), ensures an {@link InvWarehouse} exists with the matching
+     * store code and links the depot. Outlet code {@code PRINC} maps to warehouse {@code PRINCIPAL}.
+     * Custom outlets (e.g. {@code BAR01}, {@code PRDR01}) become their own warehouse rows so branches
+     * / transfers lists stay aligned with Menu.
+     */
+    @Transactional
+    public void syncWarehousesFromDepots(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Hotel hotel = hotelRepository.findById(hotelId).orElseThrow(() -> notFound("Hotel"));
+        final boolean[] noDefaultPrincipal = {
+            invWarehouseRepository.findByHotel_IdAndIsDefaultTrue(hotelId).isEmpty()
+        };
+
+        for (InventoryDepot d : inventoryDepotRepository.findByHotel_IdOrderByNameAsc(hotelId)) {
+            if (!d.isActive()) {
+                continue;
+            }
+            String whCode = warehouseCodeForDepot(d);
+            if (whCode.isBlank()) {
+                continue;
+            }
+            InvWarehouse w = invWarehouseRepository
+                    .findByHotel_IdAndCodeIgnoreCase(hotelId, whCode)
+                    .orElseGet(() -> {
+                        InvWarehouse nw = new InvWarehouse();
+                        nw.setHotel(hotel);
+                        nw.setName(warehouseDisplayNameForDepot(d, whCode));
+                        nw.setCode(whCode);
+                        nw.setAddress(null);
+                        boolean setDefault = "PRINCIPAL".equals(whCode) && noDefaultPrincipal[0];
+                        nw.setDefault(setDefault);
+                        nw.setActive(true);
+                        InvWarehouse saved = invWarehouseRepository.save(nw);
+                        if (setDefault) {
+                            noDefaultPrincipal[0] = false;
+                        }
+                        return saved;
+                    });
+            if (d.getLinkedWarehouse() == null
+                    || !d.getLinkedWarehouse().getId().equals(w.getId())) {
+                d.setLinkedWarehouse(w);
+                inventoryDepotRepository.save(d);
+            }
+        }
+    }
+
+    private static String warehouseCodeForDepot(InventoryDepot d) {
+        String raw = d.getCode() == null ? "" : d.getCode().trim().toUpperCase(Locale.ROOT);
+        if (raw.isBlank()) {
+            return "";
+        }
+        if ("PRINC".equals(raw)) {
+            return "PRINCIPAL";
+        }
+        return raw.length() > 32 ? raw.substring(0, 32) : raw;
+    }
+
+    private static String warehouseDisplayNameForDepot(InventoryDepot d, String whCode) {
+        if ("PRINCIPAL".equals(whCode)) {
+            return "Principal";
+        }
+        String n = d.getName() == null ? "" : d.getName().trim();
+        return n.isBlank() ? whCode : n;
     }
 
     @Transactional
@@ -83,6 +160,7 @@ public class InventoryDepotService {
             d.setDepotType(seed.type());
             inventoryDepotRepository.save(d);
         }
+        syncWarehousesFromDepots(hotelId, hotelHeader);
         return listDepots(hotelId, hotelHeader);
     }
 
@@ -101,6 +179,7 @@ public class InventoryDepotService {
         d.setCode(code);
         d.setDepotType(parseDepotType(req.depotType()));
         d = inventoryDepotRepository.save(d);
+        syncWarehousesFromDepots(hotelId, hotelHeader);
         return new InventoryDepotDtos.CreateDepotResponse(
                 d.getId(), d.getName(), d.getCode(), d.getDepotType().name(), "Depot created");
     }
@@ -142,6 +221,11 @@ public class InventoryDepotService {
             InventoryItem ii = inventoryItemRepository
                     .findByIdAndHotel_Id(req.inventoryItemId(), hotelId)
                     .orElseThrow(() -> notFound("Inventory item"));
+            if (depotProductRepository.existsByHotel_IdAndDepot_IdAndInventoryItem_Id(hotelId, depot.getId(), ii.getId())) {
+                throw new ApiException(
+                        HttpStatus.CONFLICT,
+                        "This inventory item is already on this outlet’s menu. Refresh the page.");
+            }
             p.setInventoryItem(ii);
         }
         p = depotProductRepository.save(p);
@@ -279,6 +363,28 @@ public class InventoryDepotService {
             if (managedStock) {
                 p.setStockQty(p.getStockQty().subtract(line.quantity()).setScale(3, RoundingMode.HALF_UP));
                 depotProductRepository.save(p);
+                if (p.getInventoryItem() != null) {
+                    InventoryItem ii = inventoryItemRepository
+                            .findByIdAndHotel_Id(p.getInventoryItem().getId(), hotelId)
+                            .orElseThrow(() -> notFound("Inventory item"));
+                    if (ii.getCurrentStock().compareTo(line.quantity()) < 0) {
+                        throw new ApiException(
+                                HttpStatus.CONFLICT,
+                                "Insufficient ERP stock for linked item " + ii.getSku());
+                    }
+                    ii.setCurrentStock(
+                            ii.getCurrentStock().subtract(line.quantity()).setScale(4, RoundingMode.HALF_UP));
+                    inventoryItemRepository.save(ii);
+                    StockTransaction st = new StockTransaction();
+                    st.setItem(ii);
+                    st.setType(StockTransactionType.CONSUMPTION);
+                    st.setQuantity(line.quantity());
+                    st.setReference("MENU_SALE:" + sale.getSaleNumber());
+                    st.setNotes("Menu / outlet sale @ " + depot.getName());
+                    st.setPerformedBy(tenantAccessService.currentUser().getUsername());
+                    st.setFromLocation(depot.getName());
+                    stockTransactionRepository.save(st);
+                }
             }
 
             responseLines.add(new InventoryDepotDtos.SaleLineRow(
@@ -351,10 +457,16 @@ public class InventoryDepotService {
     }
 
     private InventoryDepotDtos.DepotRow toRow(InventoryDepot d) {
-        return new InventoryDepotDtos.DepotRow(d.getId(), d.getName(), d.getCode(), d.getDepotType().name(), d.isActive());
+        InvWarehouse lw = d.getLinkedWarehouse();
+        UUID whId = lw == null ? null : lw.getId();
+        String whCode = lw == null ? null : lw.getCode();
+        String whName = lw == null ? null : lw.getName();
+        return new InventoryDepotDtos.DepotRow(
+                d.getId(), d.getName(), d.getCode(), d.getDepotType().name(), d.isActive(), whId, whCode, whName);
     }
 
     private InventoryDepotDtos.DepotProductRow toProductRow(DepotProduct p) {
+        UUID invId = p.getInventoryItem() == null ? null : p.getInventoryItem().getId();
         return new InventoryDepotDtos.DepotProductRow(
                 p.getId(),
                 p.getDepot().getId(),
@@ -371,7 +483,8 @@ public class InventoryDepotService {
                 p.getPhotoUrl(),
                 p.getMenuName(),
                 p.isTaxable(),
-                p.isActive());
+                p.isActive(),
+                invId);
     }
 
     private String nextProductCode(UUID hotelId, String productName) {

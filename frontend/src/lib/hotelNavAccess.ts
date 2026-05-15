@@ -20,6 +20,7 @@ export type HotelNavKey =
   | "hkMyTasks"
   | "facilities"
   | "menu"
+  | "pos"
   | "selfOrders"
   | "guestSelfOrder"
   | "guestKitchenScreen"
@@ -195,6 +196,8 @@ export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): bool
       return canFacilities(user);
     case "menu":
       return canMenu(user);
+    case "pos":
+      return canMenu(user);
     case "selfOrders":
       return canMenu(user);
     case "guestSelfOrder":
@@ -237,6 +240,7 @@ export function navHint(key: HotelNavKey): string {
     hkMyTasks: "Housekeeping line staff: tasks assigned to you.",
     facilities: "List facilities: receptionist and reservation-capable roles.",
     menu: "Depot menu sale screen for restaurant/bar/barista products.",
+    pos: "Point of sale: running order, categories, and checkout for depot sellables.",
     selfOrders: "Self-service kiosk queue and status updates for guest orders.",
     guestSelfOrder: "Public guest ordering hub (opens in a new tab) — share QR or in-room tablet link.",
     guestKitchenScreen: "Full-screen kitchen display for this hotel (opens in a new tab); add ?key= if board secret is set.",

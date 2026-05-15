@@ -200,18 +200,6 @@ type PoSummary = {
   createdAt?: string;
 };
 type WarehouseRow = { id: string; name: string; code: string; address?: string | null; isDefault: boolean; active: boolean };
-type CustomerRow = { id: string; name: string; code?: string | null; phone?: string | null; email?: string | null };
-type InvoiceSummary = {
-  id: string;
-  invoiceNumber: string;
-  status: string;
-  customerName: string;
-  invoiceDate: string;
-  totalAmount: number | string;
-  amountPaid: number | string;
-  balanceDue: number | string;
-  paymentMethod?: string | null;
-};
 type TransferRow = {
   id: string;
   transferNumber: string;
@@ -222,6 +210,26 @@ type TransferRow = {
   items: { itemId: string; itemName: string; sku: string; quantity: number | string }[];
 };
 
+type MenuOutletRow = {
+  id: string;
+  name: string;
+  code: string;
+  depotType: string;
+  active: boolean;
+  warehouseId?: string | null;
+  warehouseCode?: string | null;
+  warehouseName?: string | null;
+};
+
+type DepotMenuSaleRow = {
+  saleId: string;
+  saleNumber: string;
+  depotName: string;
+  customerName?: string | null;
+  totalAmount: number | string;
+  soldAt: string;
+};
+
 const PAGE_SIZE = 12;
 
 type Tab =
@@ -229,7 +237,6 @@ type Tab =
   | "catalog"
   | "stock"
   | "purchasing"
-  | "sales"
   | "branches"
   | "alerts"
   | "reports"
@@ -290,8 +297,7 @@ export function InventoryErpClient() {
   const [movements, setMovements] = useState<MovementRow[]>([]);
   const [poList, setPoList] = useState<PoSummary[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseRow[]>([]);
-  const [customers, setCustomers] = useState<CustomerRow[]>([]);
-  const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
+  const [menuOutlets, setMenuOutlets] = useState<MenuOutletRow[]>([]);
   const [transfers, setTransfers] = useState<TransferRow[]>([]);
   const [supplierDetails, setSupplierDetails] = useState<SupplierDetail[]>([]);
 
@@ -307,18 +313,6 @@ export function InventoryErpClient() {
   const [trQty, setTrQty] = useState("");
   const [trPendingId, setTrPendingId] = useState("");
 
-  const [custForm, setCustForm] = useState({ name: "", phone: "", email: "" });
-  const [invCustomerId, setInvCustomerId] = useState("");
-  const [invLineItem, setInvLineItem] = useState("");
-  const [invLineQty, setInvLineQty] = useState("");
-  const [invLinePrice, setInvLinePrice] = useState("");
-  const [invDiscountPct, setInvDiscountPct] = useState("0");
-  const [invLines, setInvLines] = useState<
-    { itemId: string; quantity: number; unitPrice: number; discountPct: number; taxRate: number }[]
-  >([]);
-  const [invPayMethod, setInvPayMethod] = useState("CASH");
-  const [lastInvoiceId, setLastInvoiceId] = useState<string | null>(null);
-
   const [reportKind, setReportKind] = useState<string | null>(null);
   const [salesReport, setSalesReport] = useState<SalesReportPayload | null>(null);
   const [purchaseReport, setPurchaseReport] = useState<PurchaseReportPayload | null>(null);
@@ -327,7 +321,8 @@ export function InventoryErpClient() {
   const [expiredReport, setExpiredReport] = useState<ExpiredLinePayload[] | null>(null);
   const [userActivityReport, setUserActivityReport] = useState<UserActivityPayload[] | null>(null);
   const [valuationReport, setValuationReport] = useState<ValuationPayload | null>(null);
-
+  const [menuSalesReport, setMenuSalesReport] = useState<DepotMenuSaleRow[] | null>(null);
+  const [menuSalesDepotId, setMenuSalesDepotId] = useState("");
   const [editItem, setEditItem] = useState<ItemRow | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
@@ -377,13 +372,12 @@ export function InventoryErpClient() {
   const loadExtensions = useCallback(async () => {
     if (!getToken()) return;
     try {
-      const [dash, mov, pos, wh, cust, inv, trf, supD] = await Promise.all([
+      const [dash, mov, pos, wh, outlets, trf, supD] = await Promise.all([
         apiFetch<DashboardPayload>(`/api/v1/hotels/${hotelId}/inventory/dashboard`),
         apiFetch<MovementRow[]>(`/api/v1/hotels/${hotelId}/inventory/movements?limit=150`),
         apiFetch<PoSummary[]>(`/api/v1/hotels/${hotelId}/inventory/purchase-orders`),
         apiFetch<WarehouseRow[]>(`/api/v1/hotels/${hotelId}/inventory/warehouses`),
-        apiFetch<CustomerRow[]>(`/api/v1/hotels/${hotelId}/inventory/customers`),
-        apiFetch<InvoiceSummary[]>(`/api/v1/hotels/${hotelId}/inventory/sales-invoices`),
+        apiFetch<MenuOutletRow[]>(`/api/v1/hotels/${hotelId}/inventory/depots`).catch(() => []),
         apiFetch<TransferRow[]>(`/api/v1/hotels/${hotelId}/inventory/stock-transfers`),
         apiFetch<SupplierDetail[]>(`/api/v1/hotels/${hotelId}/inventory/suppliers/detail`).catch(() => []),
       ]);
@@ -391,8 +385,7 @@ export function InventoryErpClient() {
       setMovements(mov ?? []);
       setPoList(pos ?? []);
       setWarehouses(wh ?? []);
-      setCustomers(cust ?? []);
-      setInvoices(inv ?? []);
+      setMenuOutlets(Array.isArray(outlets) ? outlets : []);
       setTransfers(trf ?? []);
       setSupplierDetails(Array.isArray(supD) ? supD : []);
       if (wh && wh.length > 0) {
@@ -423,9 +416,10 @@ export function InventoryErpClient() {
       tab === "overview" ||
       tab === "branches" ||
       tab === "purchasing" ||
-      tab === "sales" ||
       tab === "catalog" ||
-      tab === "stock"
+      tab === "stock" ||
+      tab === "reports" ||
+      tab === "waste"
     ) {
       void loadExtensions();
     }
@@ -793,97 +787,6 @@ export function InventoryErpClient() {
     }
   }
 
-  async function createCustomer(e: React.FormEvent) {
-    e.preventDefault();
-    if (!custForm.name.trim()) return;
-    setError(null);
-    try {
-      await apiFetch(`/api/v1/hotels/${hotelId}/inventory/customers`, {
-        method: "POST",
-        body: JSON.stringify({
-          name: custForm.name.trim(),
-          code: null,
-          phone: custForm.phone.trim() || null,
-          email: custForm.email.trim() || null,
-          address: null,
-          creditLimit: 0,
-        }),
-      });
-      setMsg("Customer saved.");
-      setCustForm({ name: "", phone: "", email: "" });
-      void loadExtensions();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Customer failed");
-    }
-  }
-
-  function addInvoiceLine() {
-    if (!invLineItem || !invLineQty || !invLinePrice) {
-      setError("Invoice line needs item, qty, price.");
-      return;
-    }
-    setInvLines((l) => [
-      ...l,
-      {
-        itemId: invLineItem,
-        quantity: Number(invLineQty),
-        unitPrice: Number(invLinePrice),
-        discountPct: Number(invDiscountPct || 0),
-        taxRate: 0,
-      },
-    ]);
-    setInvLineItem("");
-    setInvLineQty("");
-    setInvLinePrice("");
-  }
-
-  async function createDraftInvoice() {
-    if (invLines.length === 0) {
-      setError("Add invoice lines.");
-      return;
-    }
-    setError(null);
-    try {
-      const inv = await apiFetch<{ id: string }>(`/api/v1/hotels/${hotelId}/inventory/sales-invoices`, {
-        method: "POST",
-        body: JSON.stringify({
-          customerId: invCustomerId || null,
-          customerName: null,
-          invoiceDate: null,
-          dueDate: null,
-          lines: invLines,
-          discountAmount: 0,
-          paymentMethod: invPayMethod,
-          notes: null,
-        }),
-      });
-      setLastInvoiceId(inv.id);
-      setInvLines([]);
-      setMsg(`Draft invoice ${inv.id} created. Issue it to deduct stock.`);
-      void loadExtensions();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Invoice failed");
-    }
-  }
-
-  async function issueLastInvoice() {
-    if (!lastInvoiceId) {
-      setError("No draft invoice id in session.");
-      return;
-    }
-    setError(null);
-    try {
-      await apiFetch(`/api/v1/hotels/${hotelId}/inventory/sales-invoices/${lastInvoiceId}/issue`, {
-        method: "POST",
-      });
-      setMsg("Invoice issued; stock deducted for internal items.");
-      await load();
-      void loadExtensions();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Issue failed");
-    }
-  }
-
   function clearReportPayloads() {
     setSalesReport(null);
     setPurchaseReport(null);
@@ -892,9 +795,10 @@ export function InventoryErpClient() {
     setExpiredReport(null);
     setUserActivityReport(null);
     setValuationReport(null);
+    setMenuSalesReport(null);
   }
 
-  async function fetchReport(kind: string) {
+  async function fetchReport(kind: string, opts?: { menuDepotId?: string }) {
     setError(null);
     clearReportPayloads();
     setReportKind(kind);
@@ -932,6 +836,14 @@ export function InventoryErpClient() {
       if (kind === "valuation") {
         const data = await apiFetch<ValuationPayload>(`/api/v1/hotels/${hotelId}/inventory/settings/valuation`);
         setValuationReport(data);
+        return;
+      }
+      if (kind === "menu-sales") {
+        const dep = opts?.menuDepotId ?? menuSalesDepotId;
+        const q = dep ? `?depotId=${encodeURIComponent(dep)}` : "";
+        const data = await apiFetch<DepotMenuSaleRow[]>(`/api/v1/hotels/${hotelId}/inventory/sales${q}`);
+        setMenuSalesReport(Array.isArray(data) ? data : []);
+        return;
       }
     } catch (e) {
       clearReportPayloads();
@@ -1004,8 +916,11 @@ export function InventoryErpClient() {
       <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
         <h1 className="text-3xl font-bold tracking-tight">Inventory management</h1>
         <p className="text-muted-foreground mt-1">
-          Products, stock, purchasing, sales invoices, branches/warehouses, alerts, and reports aligned with ERP
-          inventory requirements.
+          Products, stock, purchasing, branches/warehouses, alerts, and reports. Sell through{" "}
+          <Link href={staffAppPath("menu")} className="underline font-medium text-foreground">
+            Menu
+          </Link>{" "}
+          (outlets linked to warehouses); menu sales appear under Reports.
         </p>
         <p className="text-xs text-muted-foreground mt-3 leading-relaxed border-t border-border/60 pt-3">
           <strong>Internal inventory items</strong> (SKU, valuation, POs, adjustments) are here.{" "}
@@ -1025,7 +940,6 @@ export function InventoryErpClient() {
               ["catalog", "Products"],
               ["stock", "Stock ops"],
               ["purchasing", "Purchasing"],
-              ["sales", "Sales"],
               ["branches", "Branches"],
               ["alerts", "Alerts"],
               ["reports", "Reports"],
@@ -1804,132 +1718,6 @@ export function InventoryErpClient() {
         </div>
       )}
 
-      {tab === "sales" && (
-        <div className="space-y-4">
-          <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
-            <h2 className="text-lg font-semibold mb-3">Customers (optional)</h2>
-            <form onSubmit={createCustomer} className="grid grid-cols-1 md:grid-cols-4 gap-2">
-              <input placeholder="Name" value={custForm.name} onChange={(e) => setCustForm((f) => ({ ...f, name: e.target.value }))} />
-              <input placeholder="Phone" value={custForm.phone} onChange={(e) => setCustForm((f) => ({ ...f, phone: e.target.value }))} />
-              <input placeholder="Email" value={custForm.email} onChange={(e) => setCustForm((f) => ({ ...f, email: e.target.value }))} />
-              <button type="submit" className="hms-btn-outline text-sm">
-                Save customer
-              </button>
-            </form>
-            <p className="text-xs text-muted-foreground mt-2">
-              Payment methods on invoices: CASH, MOBILE_MONEY, BANK, CREDIT (and others as plain text).
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
-            <h2 className="text-lg font-semibold mb-3">Sales invoice (internal stock)</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
-              <div>
-                <label>Customer</label>
-                <select value={invCustomerId} onChange={(e) => setInvCustomerId(e.target.value)}>
-                  <option value="">Walk-in</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label>Payment method</label>
-                <select value={invPayMethod} onChange={(e) => setInvPayMethod(e.target.value)}>
-                  {["CASH", "MOBILE_MONEY", "BANK", "CREDIT"].map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-              <select
-                value={invLineItem}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  setInvLineItem(id);
-                  if (!id) {
-                    setInvLinePrice("");
-                    return;
-                  }
-                  const row = items.find((i) => i.id === id);
-                  const sp = row?.sellingPrice;
-                  if (sp != null && sp !== "") {
-                    const n = typeof sp === "number" ? sp : Number(sp);
-                    if (!Number.isNaN(n)) setInvLinePrice(String(n));
-                    else setInvLinePrice("");
-                  } else {
-                    setInvLinePrice("");
-                  }
-                }}
-              >
-                <option value="">Item…</option>
-                {items.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name}
-                  </option>
-                ))}
-              </select>
-              <input type="number" placeholder="Qty" value={invLineQty} onChange={(e) => setInvLineQty(e.target.value)} />
-              <input type="number" placeholder="Unit price" value={invLinePrice} onChange={(e) => setInvLinePrice(e.target.value)} />
-              <input type="number" placeholder="Disc %" value={invDiscountPct} onChange={(e) => setInvDiscountPct(e.target.value)} />
-              <button type="button" className="hms-btn-outline text-sm" onClick={addInvoiceLine}>
-                Add line
-              </button>
-            </div>
-            {invLines.length > 0 && (
-              <ul className="text-sm mt-2 space-y-1">
-                {invLines.map((l, i) => (
-                  <li key={i}>
-                    {l.itemId} × {l.quantity} @ {l.unitPrice} ({l.discountPct}% off)
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="flex flex-wrap gap-2 mt-3">
-              <button type="button" className="hms-btn-solid text-sm" onClick={() => void createDraftInvoice()}>
-                Create draft invoice
-              </button>
-              <button type="button" className="hms-btn-outline text-sm" onClick={() => void issueLastInvoice()}>
-                Issue last draft ({lastInvoiceId ?? "—"})
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
-            <h3 className="text-base font-semibold mb-2">Posted invoices</h3>
-            {invoices.length === 0 ? (
-              <p className="text-sm text-muted-foreground">None yet.</p>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Customer</th>
-                    <th>Status</th>
-                    <th>Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoices.map((iv) => (
-                    <tr key={iv.id}>
-                      <td>{iv.invoiceNumber}</td>
-                      <td>{iv.customerName}</td>
-                      <td>{iv.status}</td>
-                      <td>{String(iv.totalAmount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-      )}
-
       {tab === "branches" && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
@@ -1950,8 +1738,13 @@ export function InventoryErpClient() {
               </button>
             </form>
             <p className="text-xs text-muted-foreground mt-2">
-              Transfers log movement between branches; hotel-wide SKU quantity stays the same until per-location stock is
-              modeled.
+              Warehouses match{" "}
+              <Link href={staffAppPath("menu")} className="underline">
+                Menu
+              </Link>{" "}
+              outlets (Principal depot ↔ <strong>PRINCIPAL</strong> store). Use <strong>Create default outlets</strong> on
+              Menu if links are missing. Transfers log movement between branches; hotel-wide SKU quantity stays the same
+              until per-location stock is modeled.
             </p>
           </div>
           <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
@@ -2048,12 +1841,13 @@ export function InventoryErpClient() {
           <div className="flex flex-wrap gap-2">
             {(
               [
-                ["sales", "Sales"],
+                ["sales", "Sales (invoices)"],
                 ["purchases", "Purchases"],
                 ["stock", "Stock value"],
                 ["profit", "Profit"],
                 ["expired", "Expired products"],
                 ["users", "User activity (movements)"],
+                ["menu-sales", "Menu / POS sales"],
                 ["valuation", "Valuation settings"],
               ] as const
             ).map(([k, label]) => (
@@ -2300,6 +2094,68 @@ export function InventoryErpClient() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {reportKind === "menu-sales" && menuSalesReport && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-end gap-2 text-sm">
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Outlet (depot)</label>
+                  <select
+                    className="min-w-[200px]"
+                    value={menuSalesDepotId}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setMenuSalesDepotId(v);
+                      void fetchReport("menu-sales", { menuDepotId: v });
+                    }}
+                  >
+                    <option value="">All outlets</option>
+                    {menuOutlets.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.name}
+                        {o.warehouseCode ? ` (${o.warehouseCode})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-xs text-muted-foreground pb-1">
+                  From{" "}
+                  <Link href={staffAppPath("menu")} className="underline">
+                    Menu
+                  </Link>{" "}
+                  / self-order POS sales.
+                </p>
+              </div>
+              <div className="max-h-96 overflow-auto">
+                {menuSalesReport.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No menu sales loaded.</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr>
+                        <th className="text-left">Sale #</th>
+                        <th className="text-left">Outlet</th>
+                        <th className="text-left">Customer</th>
+                        <th className="text-right">Total</th>
+                        <th className="text-left">Sold at</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {menuSalesReport.map((r) => (
+                        <tr key={r.saleId} className="border-t border-border/40">
+                          <td>{r.saleNumber}</td>
+                          <td>{r.depotName}</td>
+                          <td>{r.customerName?.trim() || "Walk-in"}</td>
+                          <td className="text-right">{fmtNum(r.totalAmount)}</td>
+                          <td>{new Date(r.soldAt).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </div>
           )}
 

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { QueryProvider } from "@/components/QueryProvider";
 import { clearToken } from "@/lib/api";
 import type { AuthUser } from "@/lib/auth";
 import { loadAuthUser } from "@/lib/auth";
@@ -59,6 +58,12 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { key: "facilities", segment: "facilities", label: "Facilities", icon: "M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" },
       { key: "menu", segment: "menu", label: "Menu", icon: "M4 6h16M4 12h16M4 18h10m4 0h2M9 6v12" },
+      {
+        key: "pos",
+        segment: "pos",
+        label: "POS",
+        icon: "M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z",
+      },
       {
         key: "selfOrders",
         segment: "self-orders",
@@ -120,7 +125,6 @@ export function HotelStaffShell({
   }
 
   return (
-    <QueryProvider>
     <div className="h-screen overflow-hidden bg-gradient-to-br from-[hsl(40,33%,97%)] to-[hsl(31,24%,93%)] flex">
       {/* Mobile sidebar overlay */}
       {isSidebarOpen && (
@@ -238,6 +242,10 @@ export function HotelStaffShell({
                         <Link
                           key={item.segment}
                           href={href}
+                          prefetch={allowed}
+                          onPointerEnter={() => {
+                            if (allowed) router.prefetch(href);
+                          }}
                           onClick={() => setIsSidebarOpen(false)}
                           className={className}
                           title={title}
@@ -297,12 +305,9 @@ export function HotelStaffShell({
 
         {/* Page content */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-          <div className="max-w-7xl mx-auto animate-fade-in">
-            {children}
-          </div>
+          <div className="mx-auto max-w-7xl min-w-0">{children}</div>
         </main>
       </div>
     </div>
-    </QueryProvider>
   );
 }
