@@ -8,7 +8,17 @@ import { apiFetch, getToken } from "@/lib/api";
 import { printDepotSaleInvoice } from "@/lib/printDepotSaleInvoice";
 import { staffAppPath } from "@/lib/staffAppRoutes";
 
-type DepotRow = { id: string; name: string; code: string; depotType: string; active: boolean };
+type DepotRow = {
+  id: string;
+  name: string;
+  code: string;
+  depotType: string;
+  active: boolean;
+  warehouseId?: string | null;
+  warehouseCode?: string | null;
+  warehouseName?: string | null;
+};
+type WarehouseRow = { id: string; name: string; code: string; isDefault: boolean; active: boolean };
 type DepotProductRow = {
   id: string;
   depotId: string;
@@ -27,6 +37,28 @@ type DepotProductRow = {
   /** When false, receipt treats line as 0% VAT (selling price has no VAT split). */
   taxable?: boolean;
   active: boolean;
+  /** ERP inventory item when this sellable row is linked to stock. */
+  inventoryItemId?: string | null;
+};
+
+type ErpInventoryRow = {
+  id: string;
+  name: string;
+  sku?: string;
+  currentStock?: number | string;
+  unitCost?: number | string | null;
+  sellingPrice?: number | string | null;
+  imageUrl?: string | null;
+  active?: boolean;
+};
+
+type InventoryItemsPayload = { data?: ErpInventoryRow[] };
+type CreateDepotProductApiResponse = {
+  id: string;
+  autoProductNumber: number;
+  autoProductCode: string;
+  message: string;
+  product: DepotProductRow;
 };
 type SaleRow = { saleId: string; saleNumber: string; depotName: string; customerName?: string | null; totalAmount: number; soldAt: string };
 
@@ -77,15 +109,30 @@ function clientLabelFromGuestHit(hit: GuestSearchHit): string {
   return "Guest";
 }
 
+function depotIdForWarehouse(wh: WarehouseRow, depotsList: DepotRow[]): string {
+  const linked = depotsList.find((d) => d.warehouseId === wh.id);
+  if (linked) return linked.id;
+  const byCode = depotsList.find((d) => d.code.toUpperCase() === wh.code.toUpperCase());
+  if (byCode) return byCode.id;
+  if (wh.code.toUpperCase() === "PRINCIPAL") {
+    const pr = depotsList.find((d) => d.code.toUpperCase() === "PRINC");
+    if (pr) return pr.id;
+  }
+  return "";
+}
+
 export default function MenuPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
 
   const [error, setError] = useState<string | null>(null);
   const [depots, setDepots] = useState<DepotRow[]>([]);
+  const [warehouses, setWarehouses] = useState<WarehouseRow[]>([]);
   const [products, setProducts] = useState<DepotProductRow[]>([]);
+  const [erpInventoryItems, setErpInventoryItems] = useState<ErpInventoryRow[]>([]);
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [publishingItemId, setPublishingItemId] = useState<string | null>(null);
 
   const [selectedDepotId, setSelectedDepotId] = useState("");
   const [selectedMenu, setSelectedMenu] = useState("");
@@ -114,16 +161,23 @@ export default function MenuPage() {
     setLoading(true);
     setError(null);
     try {
-      const [d, p, s] = await Promise.all([
+      const [d, wh, p, s, inv] = await Promise.all([
         apiFetch<DepotRow[]>(`/api/v1/hotels/${hotelId}/inventory/depots`),
+        apiFetch<WarehouseRow[]>(`/api/v1/hotels/${hotelId}/inventory/warehouses`),
         apiFetch<DepotProductRow[]>(`/api/v1/hotels/${hotelId}/inventory/depot-products`),
         apiFetch<SaleRow[]>(`/api/v1/hotels/${hotelId}/inventory/sales`),
+        apiFetch<InventoryItemsPayload>(`/api/v1/hotels/${hotelId}/inventory/items`),
       ]);
       setDepots(d);
+      setWarehouses(wh ?? []);
       setProducts(p);
       setSales(s);
+      setErpInventoryItems(inv?.data ?? []);
       if (!selectedDepotId && d.length > 0) {
-        setSelectedDepotId(d[0].id);
+        const preferredWh = (wh ?? []).find((w) => w.isDefault) ?? (wh ?? [])[0];
+        const fallbackDepot = d[0].id;
+        const resolved = preferredWh ? depotIdForWarehouse(preferredWh, d) : "";
+        setSelectedDepotId(resolved || fallbackDepot);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load menu");
@@ -140,11 +194,42 @@ export default function MenuPage() {
     void loadAll();
   }, [hotelId]);
 
+  const outletSelectOptions = useMemo(() => {
+    const activeWh = (warehouses ?? []).filter((w) => w.active);
+    const fromWh = activeWh
+      .map((w) => {
+        const depotId = depotIdForWarehouse(w, depots);
+        if (!depotId) return null;
+        const dep = depots.find((x) => x.id === depotId);
+        return {
+          depotId,
+          label: `${w.name} (${w.code})`,
+          sortKey: w.isDefault ? 0 : 1,
+          depName: dep?.name,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => Boolean(x));
+    fromWh.sort((a, b) => {
+      if (a.sortKey !== b.sortKey) return a.sortKey - b.sortKey;
+      return a.label.localeCompare(b.label);
+    });
+    const seen = new Set(fromWh.map((x) => x.depotId));
+    const extra = depots
+      .filter((d) => d.active && !seen.has(d.id))
+      .map((d) => ({
+        depotId: d.id,
+        label: `${d.name} (outlet · ${d.code})`,
+        sortKey: 2,
+        depName: undefined as string | undefined,
+      }));
+    return [...fromWh, ...extra];
+  }, [warehouses, depots]);
+
   useEffect(() => {
-    if (depots.length > 0 && !sellDepotId) {
-      setSellDepotId(depots[0].id);
+    if (outletSelectOptions.length > 0 && !sellDepotId) {
+      setSellDepotId(outletSelectOptions[0].depotId);
     }
-  }, [depots, sellDepotId]);
+  }, [outletSelectOptions, sellDepotId]);
 
   async function bootstrapDepots() {
     setBootstrapping(true);
@@ -248,6 +333,62 @@ export default function MenuPage() {
       ),
     [products, selectedDepotId, selectedMenu, selectedStockType],
   );
+
+  /** ERP inventory rows not yet published as a depot product on the selected outlet. */
+  const unpublishedErpForDepot = useMemo(() => {
+    if (!selectedDepotId) return [];
+    return erpInventoryItems.filter((item) => {
+      if (item.active === false) return false;
+      const linkedHere = products.some(
+        (p) => p.depotId === selectedDepotId && p.inventoryItemId === item.id,
+      );
+      return !linkedHere;
+    });
+  }, [erpInventoryItems, products, selectedDepotId]);
+
+  async function publishErpItemToMenu(item: ErpInventoryRow) {
+    if (!selectedDepotId) {
+      setError("Select an outlet first.");
+      return;
+    }
+    const selling = Number(item.sellingPrice ?? 0);
+    if (!Number.isFinite(selling) || selling < 0) {
+      setError(`Set a selling price on “${item.name}” in Inventory before adding it to the menu.`);
+      return;
+    }
+    setPublishingItemId(item.id);
+    setError(null);
+    setSetupMsg(null);
+    try {
+      const cost = Number(item.unitCost ?? 0);
+      const stockN = Number(item.currentStock ?? 0);
+      const stockQty = Number.isFinite(stockN) && stockN >= 0 ? stockN : 0;
+      const menuTag = (selectedMenu || "GENERAL").trim() || "GENERAL";
+      await apiFetch<CreateDepotProductApiResponse>(`/api/v1/hotels/${hotelId}/inventory/depot-products`, {
+        method: "POST",
+        body: JSON.stringify({
+          depotId: selectedDepotId,
+          productName: item.name,
+          batchNo: null,
+          expiryDate: null,
+          costPrice: Number.isFinite(cost) && cost >= 0 ? cost : 0,
+          sellingPrice: selling,
+          stockQty,
+          stockType: "STOCK",
+          photoUrl: item.imageUrl?.trim() || null,
+          menuName: menuTag,
+          inventoryItemId: item.id,
+          taxable: true,
+        }),
+      });
+      setSetupMsg(`“${item.name}” is now on this outlet and guest self-order.`);
+      await loadAll();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add to menu");
+    } finally {
+      setPublishingItemId(null);
+    }
+  }
 
   const cartRows = useMemo(() => {
     return Object.entries(cart)
@@ -409,11 +550,12 @@ export default function MenuPage() {
             <Link href={`/book/order/${hotelId}`} className="underline font-medium text-foreground" target="_blank" rel="noreferrer">
               self-order
             </Link>{" "}
-            and what you sell here. <strong>Inventory → Items</strong> are separate internal SKUs (
+            and what you sell here. Products you create under{" "}
             <Link href={staffAppPath("inventory")} className="underline">
-              open Inventory
-            </Link>
-            ).
+              Inventory
+            </Link>{" "}
+            appear below until you add them to the selected outlet; use <strong>Add to menu</strong> to publish (linked
+            stock and selling price).
           </p>
         </div>
         <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => void loadAll()} disabled={loading}>
@@ -449,18 +591,17 @@ export default function MenuPage() {
         </div>
         <form onSubmit={(e) => void addSellableProduct(e)} className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 border-t border-border/60 pt-3">
           <div>
-            <label className="text-xs font-medium block mb-1">Outlet (depot)</label>
+            <label className="text-xs font-medium block mb-1">Store / outlet (linked warehouse)</label>
             <select
               value={sellDepotId}
               onChange={(e) => setSellDepotId(e.target.value)}
               className="w-full text-sm"
               required
             >
-              {depots.length === 0 ? <option value="">Create outlets first</option> : null}
-              {depots.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                  {!d.active ? " (inactive)" : ""}
+              {outletSelectOptions.length === 0 ? <option value="">Bootstrap outlets first</option> : null}
+              {outletSelectOptions.map((o) => (
+                <option key={o.depotId} value={o.depotId}>
+                  {o.label}
                 </option>
               ))}
             </select>
@@ -527,7 +668,7 @@ export default function MenuPage() {
             />
           </div>
           <div className="sm:col-span-2 flex items-end">
-            <button type="submit" className="hms-btn-solid hms-btn-sm" disabled={addSellBusy || depots.length === 0}>
+            <button type="submit" className="hms-btn-solid hms-btn-sm" disabled={addSellBusy || outletSelectOptions.length === 0}>
               {addSellBusy ? "Adding…" : "Add sellable item"}
             </button>
           </div>
@@ -537,10 +678,10 @@ export default function MenuPage() {
       <section className="hms-section-card space-y-4 overflow-visible">
         <div className="grid gap-3 md:grid-cols-5">
           <select value={selectedDepotId} onChange={(e) => setSelectedDepotId(e.target.value)}>
-            <option value="">Select depot menu</option>
-            {depots.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
+            <option value="">Select store / outlet</option>
+            {outletSelectOptions.map((o) => (
+              <option key={o.depotId} value={o.depotId}>
+                {o.label}
               </option>
             ))}
           </select>
@@ -675,8 +816,60 @@ export default function MenuPage() {
               </div>
             </div>
           ))}
-          {productsForDepot.length === 0 && (
-            <p className="text-muted-foreground text-sm sm:col-span-2 lg:col-span-3 xl:col-span-4">No products for selected depot/menu.</p>
+          {unpublishedErpForDepot.length > 0 ? (
+            <>
+              <p className="text-muted-foreground text-xs sm:col-span-2 lg:col-span-3 xl:col-span-4 pt-2 border-t border-border/60">
+                <span className="font-semibold text-foreground">From Inventory</span> — not on this outlet yet. Add to
+                menu to show here and on self-order (uses selling price and current stock).
+              </p>
+              {unpublishedErpForDepot.map((item) => {
+                const sp = Number(item.sellingPrice ?? 0);
+                const priceLabel = Number.isFinite(sp) ? sp.toFixed(2) : "—";
+                const st = item.currentStock != null ? Number(item.currentStock) : NaN;
+                const stockLabel = Number.isFinite(st) ? st.toFixed(3) : "—";
+                return (
+                  <div
+                    key={`erp-${item.id}`}
+                    className="flex items-start gap-1.5 rounded-lg border border-dashed border-amber-500/40 bg-amber-500/5 p-1.5"
+                  >
+                    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md bg-muted/30">
+                      {item.imageUrl ? (
+                        <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="flex h-full items-center justify-center px-1 text-center text-[10px] text-muted-foreground">
+                          No photo
+                        </span>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1 flex flex-col gap-0.5">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="line-clamp-1 text-sm font-semibold leading-tight">{item.name}</p>
+                        <p className="shrink-0 text-xs font-semibold tabular-nums">{priceLabel}</p>
+                      </div>
+                      <p className="line-clamp-1 text-[10px] leading-tight text-muted-foreground">
+                        {item.sku ?? "SKU —"} · Stock {stockLabel}
+                        <span className="ml-1 rounded bg-muted px-1 font-mono text-[9px]">ERP</span>
+                      </p>
+                      <div className="pt-0.5">
+                        <button
+                          type="button"
+                          className="hms-btn-solid hms-btn-sm px-2 py-0 text-xs"
+                          disabled={publishingItemId === item.id}
+                          onClick={() => void publishErpItemToMenu(item)}
+                        >
+                          {publishingItemId === item.id ? "Adding…" : "Add to menu"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          ) : null}
+          {productsForDepot.length === 0 && unpublishedErpForDepot.length === 0 && (
+            <p className="text-muted-foreground text-sm sm:col-span-2 lg:col-span-3 xl:col-span-4">
+              No products for selected depot/menu. Create items in Inventory or add sellable items above.
+            </p>
           )}
         </div>
 

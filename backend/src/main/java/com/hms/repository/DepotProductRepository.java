@@ -32,4 +32,6 @@ public interface DepotProductRepository extends JpaRepository<DepotProduct, UUID
             @Param("activeOnly") boolean activeOnly);
 
     List<DepotProduct> findByHotel_IdAndProductCodeStartingWithIgnoreCase(UUID hotelId, String codePrefix);
+
+    boolean existsByHotel_IdAndDepot_IdAndInventoryItem_Id(UUID hotelId, UUID depotId, UUID inventoryItemId);
 }

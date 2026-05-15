@@ -33,6 +33,11 @@ public class InventoryDepot {
     @Column(name = "depot_type", nullable = false, length = 32)
     private DepotType depotType = DepotType.OTHER;
 
+    /** ERP warehouse this outlet is tied to (same store for menu + stock transfers). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "inv_warehouse_id")
+    private InvWarehouse linkedWarehouse;
+
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 
