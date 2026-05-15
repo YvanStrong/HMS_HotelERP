@@ -1,4 +1,5 @@
 -- Link menu outlets (inventory_depots) to ERP warehouses (inv_warehouses) for unified store selection.
+-- Renumbered from V35 to avoid collision with V35__group_bookings.sql (parallel branch merge).
 
 ALTER TABLE inventory_depots
     ADD COLUMN IF NOT EXISTS inv_warehouse_id UUID REFERENCES inv_warehouses (id) ON DELETE SET NULL;
