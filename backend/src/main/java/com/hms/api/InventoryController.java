@@ -188,7 +188,8 @@ public class InventoryController {
     }
 
     @PostMapping("/depot-products")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF')")
     public ResponseEntity<InventoryDepotDtos.CreateDepotProductResponse> createDepotProduct(
             @PathVariable UUID hotelId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
@@ -370,6 +371,7 @@ public class InventoryController {
     public List<InventoryDtos.WarehouseItem> listWarehouses(
             @PathVariable UUID hotelId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        inventoryDepotService.syncWarehousesFromDepots(hotelId, hotelHeader);
         return invExtService.listWarehouses(hotelId, hotelHeader);
     }
 
@@ -553,6 +555,7 @@ public class InventoryController {
     public java.util.Map<String, String> valuationSettings(
             @PathVariable UUID hotelId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        inventoryDepotService.syncWarehousesFromDepots(hotelId, hotelHeader);
         invExtService.listWarehouses(hotelId, hotelHeader);
         return java.util.Map.of(
                 "defaultMethod",

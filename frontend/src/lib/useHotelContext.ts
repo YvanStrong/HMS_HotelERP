@@ -57,6 +57,8 @@ export function useHotelContext(explicitHotelId?: string) {
     queryKey: ["hotel", hotelId],
     enabled: Boolean(hotelId),
     staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
     queryFn: () => apiFetch<HotelContextResponse>(`/api/v1/hotels/${hotelId}`),
   });
 

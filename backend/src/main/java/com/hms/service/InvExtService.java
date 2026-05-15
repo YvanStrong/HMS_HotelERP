@@ -301,8 +301,8 @@ public class InvExtService {
         if (existing.isEmpty()) {
             InvWarehouse wh = new InvWarehouse();
             wh.setHotel(hotelRepository.getReferenceById(hotelId));
-            wh.setName("Main store");
-            wh.setCode("MAIN");
+            wh.setName("Principal");
+            wh.setCode("PRINCIPAL");
             wh.setAddress(null);
             wh.setDefault(true);
             wh.setActive(true);

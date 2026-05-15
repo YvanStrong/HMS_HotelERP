@@ -14,12 +14,14 @@ import com.hms.entity.Hotel;
 import com.hms.entity.InventoryCategory;
 import com.hms.entity.InventoryItem;
 import com.hms.entity.PurchaseOrder;
+import com.hms.entity.InvWarehouse;
 import com.hms.entity.PurchaseOrderLine;
 import com.hms.entity.StockTransaction;
 import com.hms.entity.Supplier;
 import com.hms.repository.HotelRepository;
 import com.hms.repository.InventoryCategoryRepository;
 import com.hms.repository.InventoryItemRepository;
+import com.hms.repository.InvWarehouseRepository;
 import com.hms.repository.PurchaseOrderLineRepository;
 import com.hms.repository.PurchaseOrderRepository;
 import com.hms.repository.ReservationRepository;
@@ -49,6 +51,7 @@ public class InventoryService {
     private final PurchaseOrderRepository purchaseOrderRepository;
     private final PurchaseOrderLineRepository purchaseOrderLineRepository;
     private final StockTransactionRepository stockTransactionRepository;
+    private final InvWarehouseRepository invWarehouseRepository;
     private final ReservationRepository reservationRepository;
     private final TenantAccessService tenantAccessService;
     private final ChargeService chargeService;
@@ -62,6 +65,7 @@ public class InventoryService {
             PurchaseOrderRepository purchaseOrderRepository,
             PurchaseOrderLineRepository purchaseOrderLineRepository,
             StockTransactionRepository stockTransactionRepository,
+            InvWarehouseRepository invWarehouseRepository,
             ReservationRepository reservationRepository,
             TenantAccessService tenantAccessService,
             ChargeService chargeService,
@@ -73,6 +77,7 @@ public class InventoryService {
         this.purchaseOrderRepository = purchaseOrderRepository;
         this.purchaseOrderLineRepository = purchaseOrderLineRepository;
         this.stockTransactionRepository = stockTransactionRepository;
+        this.invWarehouseRepository = invWarehouseRepository;
         this.reservationRepository = reservationRepository;
         this.tenantAccessService = tenantAccessService;
         this.chargeService = chargeService;
@@ -676,7 +681,32 @@ public class InventoryService {
             i.setManufactureDate(req.manufactureDate());
         }
         i = inventoryItemRepository.save(i);
+        recordOpeningStockAtPrincipalWarehouse(hotelId, i);
         return new InventoryDtos.CreatedIdResponse(i.getId());
+    }
+
+    private void recordOpeningStockAtPrincipalWarehouse(UUID hotelId, InventoryItem i) {
+        BigDecimal opening = i.getCurrentStock();
+        if (opening == null || opening.signum() <= 0) {
+            return;
+        }
+        java.util.Optional<InvWarehouse> wh =
+                invWarehouseRepository.findByHotel_IdAndCodeIgnoreCase(hotelId, "PRINCIPAL");
+        if (wh.isEmpty()) {
+            wh = invWarehouseRepository.findByHotel_IdAndIsDefaultTrue(hotelId);
+        }
+        if (wh.isEmpty()) {
+            return;
+        }
+        StockTransaction st = new StockTransaction();
+        st.setItem(i);
+        st.setType(StockTransactionType.RECEIPT);
+        st.setQuantity(opening);
+        st.setReference("OPENING_BALANCE");
+        st.setNotes("Initial stock at warehouse " + wh.get().getCode());
+        st.setToLocation(wh.get().getCode());
+        st.setPerformedBy(tenantAccessService.currentUser().getUsername());
+        stockTransactionRepository.save(st);
     }
 
     private String generateUniqueSku(UUID hotelId) {

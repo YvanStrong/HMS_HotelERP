@@ -15,7 +15,15 @@ public final class InventoryDepotDtos {
 
     private InventoryDepotDtos() {}
 
-    public record DepotRow(UUID id, String name, String code, String depotType, boolean active) {}
+    public record DepotRow(
+            UUID id,
+            String name,
+            String code,
+            String depotType,
+            boolean active,
+            UUID warehouseId,
+            String warehouseCode,
+            String warehouseName) {}
 
     public record CreateDepotRequest(@NotBlank String name, String code, String depotType) {}
 
@@ -37,7 +45,9 @@ public final class InventoryDepotDtos {
             String photoUrl,
             String menuName,
             boolean taxable,
-            boolean active) {}
+            boolean active,
+            /** Present when this sellable row is linked to an ERP {@link com.hms.entity.InventoryItem}. */
+            UUID inventoryItemId) {}
 
     public record CreateDepotProductRequest(
             @NotNull UUID depotId,
