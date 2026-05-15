@@ -81,6 +81,10 @@ public class GroupBooking {
     @Column(name = "room_mix_summary", length = 500)
     private String roomMixSummary;
 
+    /** Primary room type targeted for this block (see reserve-block flow). */
+    @Column(name = "preferred_room_type_id")
+    private UUID preferredRoomTypeId;
+
     /** MASTER_PAYS_ALL, SPLIT_BILLING, GUEST_PAYS_INCIDENTALS — enforced by {@link com.hms.service.GroupBillingRouter}. */
     @Column(name = "billing_preference", length = 32)
     private String billingPreference;

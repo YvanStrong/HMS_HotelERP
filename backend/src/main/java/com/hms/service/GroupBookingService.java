@@ -4,6 +4,7 @@ import com.hms.api.dto.ApiDtos;
 import com.hms.domain.GroupBillingPreference;
 import com.hms.entity.CorporateAccount;
 import com.hms.entity.GroupBooking;
+import com.hms.entity.Guest;
 import com.hms.entity.Hotel;
 import com.hms.entity.Reservation;
 import com.hms.repository.CorporateAccountRepository;
@@ -13,6 +14,7 @@ import com.hms.repository.HotelRepository;
 import com.hms.repository.PaymentRepository;
 import com.hms.repository.ReservationRepository;
 import com.hms.repository.RoomChargeRepository;
+import com.hms.repository.RoomTypeRepository;
 import com.hms.security.TenantAccessService;
 import com.hms.service.folio.FolioLedgerService;
 import com.hms.web.ApiException;
@@ -47,18 +49,23 @@ public class GroupBookingService {
     private final PaymentRepository paymentRepository;
     private final FolioLedgerService folioLedgerService;
     private final CorporateAccountRepository corporateAccountRepository;
+    private final RoomTypeRepository roomTypeRepository;
 
     @Transactional
     public GroupBooking createGroup(UUID hotelId, String hotelHeader, GroupBooking group) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         Hotel hotel = hotelRepository.findById(hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Hotel not found"));
-        
+
         group.setHotel(hotel);
         if (group.getGroupCode() != null && groupBookingRepository.existsByGroupCodeIgnoreCase(group.getGroupCode())) {
             throw new ApiException(HttpStatus.CONFLICT, "Group code already exists");
         }
-        
+        if (group.getPreferredRoomTypeId() != null
+                && roomTypeRepository.findByIdAndHotel_Id(group.getPreferredRoomTypeId(), hotelId).isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Preferred room type not found for this hotel");
+        }
+
         log.info("Creating group booking: {} for hotel {}", group.getGroupName(), hotelId);
         return groupBookingRepository.save(group);
     }
@@ -112,9 +119,7 @@ public class GroupBookingService {
         GroupBooking group = groupBookingRepository
                 .findByIdAndHotel_Id(groupId, hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Group not found"));
-        if (!guestRepository.existsByIdAndHotel_Id(req.leadGuestId(), hotelId)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Lead guest not found for this hotel");
-        }
+        UUID leadGuestId = resolveLeadGuestId(hotelId, req.leadGuestId(), group);
         LocalDate exclusiveOut =
                 bookingDateNormalizer.toStorageCheckOutExclusive(req.checkInDate(), req.checkOutDate());
         if (!req.checkInDate().isBefore(exclusiveOut)) {
@@ -124,7 +129,7 @@ public class GroupBookingService {
         List<ApiDtos.CreateReservationResponse> created = new ArrayList<>();
         for (int i = 1; i <= n; i++) {
             ApiDtos.CreateReservationRequest body = new ApiDtos.CreateReservationRequest(
-                    req.leadGuestId(),
+                    leadGuestId,
                     null,
                     req.roomTypeId(),
                     null,
@@ -145,8 +150,79 @@ public class GroupBookingService {
                 + " confirmed reservation(s) linked to group \""
                 + group.getGroupName()
                 + "\". Each has its own room key path on the reservation screen.";
-        log.info("Group block reserve: groupId={} rooms={} leadGuest={}", groupId, n, req.leadGuestId());
+        log.info("Group block reserve: groupId={} rooms={} leadGuest={}", groupId, n, leadGuestId);
         return new ApiDtos.GroupBlockReserveResponse(group.getId(), created.size(), created, msg);
+    }
+
+    /**
+     * Uses the explicit lead guest when provided; otherwise finds or creates a deterministic placeholder guest
+     * keyed by group id so repeat block bookings stay on one profile.
+     */
+    private UUID resolveLeadGuestId(UUID hotelId, UUID requestedLeadGuestId, GroupBooking group) {
+        if (requestedLeadGuestId != null) {
+            if (!guestRepository.existsByIdAndHotel_Id(requestedLeadGuestId, hotelId)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Lead guest not found for this hotel");
+            }
+            return requestedLeadGuestId;
+        }
+        return getOrCreateGroupBlockPlaceholderGuest(hotelId, group);
+    }
+
+    private UUID getOrCreateGroupBlockPlaceholderGuest(UUID hotelId, GroupBooking group) {
+        String rawNationalId = "GRP-" + group.getId().toString().replace("-", "");
+        final String nationalId =
+                rawNationalId.length() > 50 ? rawNationalId.substring(0, 50) : rawNationalId;
+        return guestRepository
+                .findByHotel_IdAndNationalIdIgnoreCase(hotelId, nationalId)
+                .map(Guest::getId)
+                .orElseGet(() -> {
+                    Hotel hotel = hotelRepository
+                            .findById(hotelId)
+                            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Hotel not found"));
+                    Guest g = new Guest();
+                    g.setHotel(hotel);
+                    String contact = group.getContactPerson() != null ? group.getContactPerson().trim() : "";
+                    String fullName;
+                    String firstName;
+                    String lastName;
+                    if (!contact.isEmpty()) {
+                        fullName = contact;
+                        String[] parts = contact.split("\\s+", 2);
+                        firstName = parts[0];
+                        lastName = parts.length > 1 ? parts[1] : "Contact";
+                    } else if (group.getCompanyName() != null && !group.getCompanyName().isBlank()) {
+                        fullName = group.getCompanyName().trim() + " — group contact";
+                        firstName = "Group";
+                        lastName = group.getCompanyName().trim();
+                        if (lastName.length() > 120) {
+                            lastName = lastName.substring(0, 120);
+                        }
+                    } else {
+                        fullName = group.getGroupName().trim() + " — coordinator";
+                        firstName = "Group";
+                        lastName = "Coordinator";
+                    }
+                    g.setFirstName(firstName);
+                    g.setLastName(lastName);
+                    g.setFullName(fullName.length() > 200 ? fullName.substring(0, 200) : fullName);
+                    g.setNationalId(nationalId);
+                    g.setDateOfBirth(LocalDate.of(1990, 1, 1));
+                    if (group.getContactEmail() != null && !group.getContactEmail().isBlank()) {
+                        g.setEmail(group.getContactEmail().trim());
+                    }
+                    if (group.getContactPhone() != null && !group.getContactPhone().isBlank()) {
+                        g.setPhone(group.getContactPhone().trim());
+                    }
+                    g.setNotes(
+                            "Auto-created placeholder lead guest for group block reservations. Group id: "
+                                    + group.getId());
+                    g.setGuestType("RETURNING");
+                    g.setMarketingConsent(false);
+                    GuestProfileDefaults.ensureRequiredForPersistence(g, hotel);
+                    guestRepository.save(g);
+                    log.info("Created group block placeholder guest id={} for groupId={}", g.getId(), group.getId());
+                    return g.getId();
+                });
     }
 
     @Transactional
@@ -251,5 +327,34 @@ public class GroupBookingService {
                 corp,
                 masterFolio,
                 rows);
+    }
+
+    /**
+     * Removes a group booking row when it has no linked reservations. Reservations keep their folios; only the
+     * grouping row is removed.
+     */
+    @Transactional
+    public void deleteGroup(UUID hotelId, String hotelHeader, UUID groupId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        GroupBooking g = groupBookingRepository
+                .findByIdAndHotel_Id(groupId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Group not found"));
+        long linked = reservationRepository.countByGroupBooking_Id(groupId);
+        if (linked > 0) {
+            String detail =
+                    linked == 1
+                            ? "This group still has 1 reservation on the books. Cancel or check out that stay first "
+                                    + "(from Reservations), then you can delete the group."
+                            : "This group still has "
+                                    + linked
+                                    + " reservations on the books. Cancel or check out those stays first "
+                                    + "(from Reservations), then you can delete the group.";
+            throw new ApiException(HttpStatus.CONFLICT, "GROUP_HAS_RESERVATIONS", detail);
+        }
+        g.setMasterReservation(null);
+        g.setCorporateAccount(null);
+        groupBookingRepository.save(g);
+        groupBookingRepository.delete(g);
+        log.info("Deleted group booking id={} hotelId={}", groupId, hotelId);
     }
 }

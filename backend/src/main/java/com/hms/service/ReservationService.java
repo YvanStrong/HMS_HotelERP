@@ -1820,6 +1820,12 @@ public class ReservationService {
             timeline.add(new GuestDtos.ReservationTimelineStep("NO_SHOW", r.getNoShowAt()));
         }
         String folioPath = "/api/v1/hotels/" + hotelId + "/folios/" + reservationId;
+        GuestDtos.StaffReservationGroupSummary groupSummary = null;
+        if (r.getGroupBooking() != null) {
+            GroupBooking gb = r.getGroupBooking();
+            groupSummary = new GuestDtos.StaffReservationGroupSummary(
+                    gb.getId(), gb.getGroupName(), gb.getGroupCode());
+        }
         return new GuestDtos.StaffReservationDetailResponse(
                 r.getId(),
                 r.getBookingReference(),
@@ -1833,7 +1839,8 @@ public class ReservationService {
                 address,
                 roomDto,
                 timeline,
-                folioPath);
+                folioPath,
+                groupSummary);
     }
 
     private static GuestDtos.StaffGuestProfileDto toStaffGuestProfileDto(Guest g) {

@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
+import { formatMoney } from "@/lib/money";
 import { staffAppPath } from "@/lib/staffAppRoutes";
+import { useHotelContext } from "@/lib/useHotelContext";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -15,6 +17,7 @@ import {
   Sparkles,
   Users,
   Zap,
+  ChevronDown,
 } from "lucide-react";
 
 type GroupDetail = {
@@ -32,6 +35,15 @@ type GroupDetail = {
   roomMixSummary?: string | null;
   billingPreference?: string | null;
   notes?: string | null;
+  preferredRoomTypeId?: string | null;
+};
+
+type CatalogRoomType = {
+  id: string;
+  name: string;
+  code?: string;
+  baseRate?: number;
+  maxOccupancy?: number;
 };
 
 type AvailType = {
@@ -82,10 +94,16 @@ function addDays(ymd: string, n: number) {
 
 export default function GroupReserveBlockPage() {
   const params = useParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const hotelId = String(params.hotelId);
   const groupId = String(params.groupId);
+  const { hotel } = useHotelContext(hotelId);
+  const defaultCurrency = hotel.currency || "RWF";
 
   const [group, setGroup] = useState<GroupDetail | null>(null);
+  const [catalogTypes, setCatalogTypes] = useState<CatalogRoomType[]>([]);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
   const [checkIn, setCheckIn] = useState(localYmd());
@@ -104,6 +122,23 @@ export default function GroupReserveBlockPage() {
   const [submitting, setSubmitting] = useState(false);
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [blockResult, setBlockResult] = useState<BlockRes | null>(null);
+  const [showAllRoomTypes, setShowAllRoomTypes] = useState(false);
+
+  const compactReserve = useMemo(() => {
+    if (searchParams.get("advanced") === "1") return false;
+    return searchParams.get("from_create") === "1" || !!searchParams.get("room_type_id");
+  }, [searchParams]);
+
+  const fullTypePicker = !compactReserve || showAllRoomTypes;
+
+  const selectedCatalog = useMemo(
+    () => catalogTypes.find((t) => t.id === roomTypeId),
+    [catalogTypes, roomTypeId],
+  );
+
+  useEffect(() => {
+    if (!compactReserve) setShowAllRoomTypes(true);
+  }, [compactReserve]);
 
   useEffect(() => {
     let c = false;
@@ -113,9 +148,14 @@ export default function GroupReserveBlockPage() {
         return;
       }
       try {
-        const g = await apiFetch<GroupDetail>(`/api/v1/hotels/${hotelId}/groups/${groupId}`);
+        const [g, types] = await Promise.all([
+          apiFetch<GroupDetail>(`/api/v1/hotels/${hotelId}/groups/${groupId}`),
+          apiFetch<CatalogRoomType[]>(`/api/v1/hotels/${hotelId}/room-types`).catch(() => [] as CatalogRoomType[]),
+        ]);
         if (!c) {
           setGroup(g);
+          setCatalogTypes(Array.isArray(types) ? types : []);
+          const fromUrl = searchParams.get("room_type_id");
           const ymd = (v: unknown) => {
             if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
             if (Array.isArray(v) && v.length >= 3) {
@@ -128,6 +168,8 @@ export default function GroupReserveBlockPage() {
           if (ti) setCheckIn(ti);
           if (to) setCheckOut(to);
           if (g.roomsNeeded != null && g.roomsNeeded > 0) setRoomCount(g.roomsNeeded);
+          if (fromUrl) setRoomTypeId(fromUrl);
+          else if (g.preferredRoomTypeId) setRoomTypeId(g.preferredRoomTypeId);
           if (g.expectedGuests != null && g.expectedGuests > 0) {
             const rooms = g.roomsNeeded && g.roomsNeeded > 0 ? g.roomsNeeded : 1;
             const per = Math.max(1, Math.ceil(g.expectedGuests / rooms));
@@ -141,10 +183,9 @@ export default function GroupReserveBlockPage() {
     return () => {
       c = true;
     };
-  }, [hotelId, groupId]);
+  }, [hotelId, groupId, searchParams.toString()]);
 
   const loadAvailability = useCallback(async () => {
-    setAvail(null);
     if (!checkIn || !checkOut || checkOut <= checkIn) return;
     setAvailLoading(true);
     try {
@@ -155,28 +196,68 @@ export default function GroupReserveBlockPage() {
       });
       const data = await apiFetch<AvailResponse>(`/api/v1/hotels/${hotelId}/rooms/availability?${p}`);
       setAvail(data);
-      if (data.available_room_types.length && !roomTypeId) {
-        setRoomTypeId(data.available_room_types[0].room_type_id);
+      const urlPref = searchParams.get("room_type_id");
+      const preferred = group?.preferredRoomTypeId;
+      if (data.available_room_types.length) {
+        const pick =
+          (urlPref && data.available_room_types.some((t) => t.room_type_id === urlPref)
+            ? urlPref
+            : preferred && data.available_room_types.some((t) => t.room_type_id === preferred)
+              ? preferred
+              : roomTypeId && data.available_room_types.some((t) => t.room_type_id === roomTypeId)
+                ? roomTypeId
+                : data.available_room_types[0].room_type_id) ?? "";
+        if (pick) setRoomTypeId(pick);
       }
     } catch {
       setAvail({ available_room_types: [] });
     } finally {
       setAvailLoading(false);
     }
-  }, [hotelId, checkIn, checkOut, adultsPerRoom, roomTypeId]);
+  }, [hotelId, checkIn, checkOut, adultsPerRoom, roomTypeId, group?.preferredRoomTypeId, searchParams.toString()]);
 
   useEffect(() => {
     void loadAvailability();
   }, [loadAvailability]);
+
+  const availByTypeId = useMemo(() => {
+    const m = new Map<string, AvailType>();
+    for (const t of avail?.available_room_types ?? []) {
+      m.set(t.room_type_id, t);
+    }
+    return m;
+  }, [avail]);
 
   const selectedType = useMemo(
     () => avail?.available_room_types.find((t) => t.room_type_id === roomTypeId),
     [avail, roomTypeId],
   );
 
+  const plannedTypeName = useMemo(() => {
+    const id = group?.preferredRoomTypeId;
+    if (!id) return null;
+    return catalogTypes.find((t) => t.id === id)?.name ?? null;
+  }, [group?.preferredRoomTypeId, catalogTypes]);
+
+  /** Room types that have at least one sellable room for the current date range + party size. */
+  const availableCatalogTypes = useMemo(
+    () =>
+      catalogTypes.filter((rt) => {
+        const a = availByTypeId.get(rt.id);
+        return !!(a && a.nights > 0 && a.available_count > 0);
+      }),
+    [catalogTypes, availByTypeId],
+  );
+
   const capacity = selectedType?.available_count ?? 0;
   const shortfall = Math.max(0, roomCount - capacity);
-  const canBookAll = capacity >= roomCount && roomCount > 0;
+  const canBookAll = capacity >= roomCount && roomCount > 0 && !!roomTypeId;
+
+  const quoteCurrency = selectedType?.currency ?? defaultCurrency;
+  const perRoomTotal = selectedType?.total_price ?? 0;
+  const perRoomPerNight = selectedType?.base_price_per_night ?? 0;
+  const blockStayTotal = perRoomTotal * roomCount;
+  const nights = selectedType?.nights ?? 0;
 
   async function searchGuests() {
     const q = guestQ.trim();
@@ -197,12 +278,12 @@ export default function GroupReserveBlockPage() {
   async function submitBlock() {
     setBanner(null);
     setBlockResult(null);
-    if (!leadGuestId) {
-      setBanner({ kind: "err", text: "Select a lead guest (coordinator or master account holder)." });
+    if (!roomTypeId) {
+      setBanner({ kind: "err", text: "Pick a room type." });
       return;
     }
-    if (!roomTypeId) {
-      setBanner({ kind: "err", text: "Pick a room type with availability." });
+    if (!selectedType || capacity < 1) {
+      setBanner({ kind: "err", text: "No availability for this room type on the selected dates." });
       return;
     }
     if (roomCount < 1) {
@@ -219,7 +300,7 @@ export default function GroupReserveBlockPage() {
           roomTypeId,
           roomCount,
           adultsPerRoom,
-          leadGuestId,
+          ...(leadGuestId ? { leadGuestId } : {}),
         }),
       });
       setBlockResult(res);
@@ -230,13 +311,15 @@ export default function GroupReserveBlockPage() {
       setBanner({
         kind: "err",
         text: raw.includes("No VACANT_CLEAN") || raw.toLowerCase().includes("conflict")
-          ? `${raw} — Inventory changed while booking; refresh availability and try a smaller block or different dates.`
+          ? `${raw} — Refresh availability and try fewer rooms or different dates.`
           : raw,
       });
     } finally {
       setSubmitting(false);
     }
   }
+
+  const newReservationHref = `${staffAppPath("reservations", "new")}?groupId=${encodeURIComponent(groupId)}&check_in=${encodeURIComponent(checkIn)}&check_out=${encodeURIComponent(checkOut)}${roomTypeId ? `&room_type_id=${encodeURIComponent(roomTypeId)}` : ""}&adults=${adultsPerRoom}`;
 
   if (loadErr) {
     return (
@@ -258,8 +341,74 @@ export default function GroupReserveBlockPage() {
     );
   }
 
+  const reserveFinished =
+    !!compactReserve && !!blockResult?.reservations?.length;
+
+  if (reserveFinished) {
+    return (
+      <div className="mx-auto max-w-lg space-y-6 px-4 py-8 pb-20 sm:px-6">
+        <Link
+          href={staffAppPath("groups")}
+          className="inline-flex items-center gap-1 text-sm font-semibold text-indigo-600 hover:text-indigo-800"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Groups
+        </Link>
+        <div className="rounded-2xl border border-emerald-200 bg-gradient-to-b from-emerald-50 to-white p-6 shadow-sm">
+          <div className="flex items-center gap-2 text-emerald-800">
+            <CheckCircle2 className="h-8 w-8 shrink-0" />
+            <div>
+              <h1 className="text-2xl font-black tracking-tight text-emerald-950">Rooms are booked</h1>
+              <p className="mt-1 text-sm font-medium text-emerald-900/90">
+                {blockResult.message ?? "Your group block is on the books."}
+              </p>
+            </div>
+          </div>
+          <ul className="mt-5 space-y-2 border-t border-emerald-100/80 pt-4">
+            {blockResult.reservations!.map((r) => (
+              <li
+                key={r.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/90 px-3 py-2.5 text-sm shadow-sm ring-1 ring-emerald-100"
+              >
+                <span className="font-mono text-xs text-slate-700">
+                  {r.booking_reference ?? r.bookingReference ?? r.confirmationCode} · Room{" "}
+                  {r.room?.roomNumber ?? r.room?.room_number ?? "—"}
+                </span>
+                <Link href={staffAppPath("reservations", r.id)} className="text-xs font-bold text-indigo-600">
+                  Open folio →
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <Link
+              href={staffAppPath("groups")}
+              className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-800"
+            >
+              Back to groups
+            </Link>
+            <button
+              type="button"
+              className="inline-flex flex-1 items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white shadow-md"
+              onClick={() => {
+                setBlockResult(null);
+                setBanner(null);
+                setLeadGuestId(null);
+                router.replace(pathname);
+              }}
+            >
+              Book another block
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-4xl space-y-8 p-6 pb-16">
+    <div
+      className={`mx-auto space-y-5 px-4 py-6 pb-28 sm:px-6 sm:pb-16 ${compactReserve ? "max-w-xl" : "max-w-4xl"}`}
+    >
       <div>
         <Link
           href={staffAppPath("groups")}
@@ -268,178 +417,483 @@ export default function GroupReserveBlockPage() {
           <ArrowLeft className="h-4 w-4" />
           Groups
         </Link>
-        <h1 className="text-3xl font-black tracking-tight text-slate-900">Rooming radar</h1>
-        <p className="mt-1 text-slate-600">
-          Lock <strong>{roomCount}</strong> parallel stays for{" "}
-          <span className="font-semibold text-indigo-700">{group.groupName}</span> — one lead guest, one room type,
-          instant keys on the folio. If inventory is shy, use the playbook below before you commit.
+        <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
+          {compactReserve ? "Confirm group stay" : "Book group block"}
+        </h1>
+        <p className="mt-1 text-sm leading-relaxed text-slate-600 sm:text-base">
+          {compactReserve ? (
+            <>
+              <span className="font-semibold text-slate-800">{group.groupName}</span> — dates and room type are
+              already set. Search the lead guest, then book.{" "}
+              <Link href={`${pathname}?advanced=1`} className="font-semibold text-indigo-600 underline">
+                Full editor
+              </Link>{" "}
+              if you need every option.
+            </>
+          ) : (
+            <>
+              Reserve rooms for <span className="font-semibold text-indigo-700">{group.groupName}</span>
+              {plannedTypeName ? (
+                <>
+                  {" "}
+                  · planned: <span className="font-semibold text-indigo-700">{plannedTypeName}</span>
+                </>
+              ) : null}
+            </>
+          )}
         </p>
       </div>
 
-      {(group.roomMixSummary || group.eventType || group.billingPreference) && (
-        <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5 text-sm text-indigo-950 space-y-1">
+      {!compactReserve &&
+        (group.roomMixSummary || group.eventType || group.billingPreference || plannedTypeName) && (
+        <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm text-indigo-950 space-y-1">
           <div className="flex items-center gap-2 font-bold text-indigo-900">
             <Building2 className="h-4 w-4" />
-            Brief from group record
+            Group plan
           </div>
-          {group.eventType ? <p>Event vibe: {group.eventType.replaceAll("_", " ")}</p> : null}
-          {group.roomMixSummary ? <p>Room wish-list: {group.roomMixSummary}</p> : null}
+          {plannedTypeName ? <p>Primary room type: {plannedTypeName}</p> : null}
+          {group.roomsNeeded != null ? <p>Target rooms: {group.roomsNeeded}</p> : null}
+          {group.eventType ? <p>Event: {group.eventType.replaceAll("_", " ")}</p> : null}
+          {group.roomMixSummary ? <p>Notes: {group.roomMixSummary}</p> : null}
           {group.billingPreference ? (
-            <p>Billing intent: {group.billingPreference.replaceAll("_", " ").toLowerCase()}</p>
+            <p>Billing: {group.billingPreference.replaceAll("_", " ").toLowerCase()}</p>
           ) : null}
         </div>
       )}
 
-      <section className="grid gap-6 md:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-          <div className="flex items-center gap-2 font-bold text-slate-800">
-            <CalendarRange className="h-5 w-5 text-indigo-600" />
-            Stay window & density
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs font-bold uppercase text-slate-500">
-              Check-in
-              <input
-                type="date"
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                value={checkIn}
-                onChange={(e) => setCheckIn(e.target.value)}
-              />
-            </label>
-            <label className="text-xs font-bold uppercase text-slate-500">
-              Check-out
-              <input
-                type="date"
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                value={checkOut}
-                onChange={(e) => setCheckOut(e.target.value)}
-              />
-            </label>
-          </div>
-          <label className="text-xs font-bold uppercase text-slate-500">
-            Adults per room (occupancy filter)
-            <input
-              type="number"
-              min={1}
-              max={12}
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-              value={adultsPerRoom}
-              onChange={(e) => setAdultsPerRoom(Number(e.target.value) || 1)}
-            />
-          </label>
-          <label className="text-xs font-bold uppercase text-slate-500">
-            Room type
-            <select
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-              value={roomTypeId}
-              onChange={(e) => setRoomTypeId(e.target.value)}
-            >
-              <option value="">— pick a type —</option>
-              {(avail?.available_room_types ?? []).map((t) => (
-                <option key={t.room_type_id} value={t.room_type_id}>
-                  {t.name} · {t.available_count} ready @ {t.currency} {t.total_price} total
-                </option>
-              ))}
-            </select>
-          </label>
-          {availLoading && <p className="text-xs text-slate-500">Scanning vacant-clean inventory…</p>}
-        </div>
+      {compactReserve ? (
+        <>
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 space-y-4">
+            <h2 className="text-xs font-black uppercase tracking-wider text-slate-500">Your stay</h2>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="text-xs font-bold uppercase text-slate-500">
+                Check-in
+                <input
+                  type="date"
+                  className="mt-1 w-full min-h-[44px] rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                  value={checkIn}
+                  onChange={(e) => setCheckIn(e.target.value)}
+                />
+              </label>
+              <label className="text-xs font-bold uppercase text-slate-500">
+                Check-out
+                <input
+                  type="date"
+                  className="mt-1 w-full min-h-[44px] rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                  value={checkOut}
+                  onChange={(e) => setCheckOut(e.target.value)}
+                />
+              </label>
+              <label className="text-xs font-bold uppercase text-slate-500">
+                Adults / room
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  className="mt-1 w-full min-h-[44px] rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                  value={adultsPerRoom}
+                  onChange={(e) => setAdultsPerRoom(Number(e.target.value) || 1)}
+                />
+              </label>
+            </div>
+            {availLoading && <p className="text-xs text-slate-500">Checking availability…</p>}
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-          <div className="flex items-center gap-2 font-bold text-slate-800">
-            <Layers className="h-5 w-5 text-indigo-600" />
-            How many keys tonight?
-          </div>
-          <label className="text-xs font-bold uppercase text-slate-500">
-            Rooms to create (same type, same lead guest)
-            <input
-              type="number"
-              min={1}
-              max={40}
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono"
-              value={roomCount}
-              onChange={(e) => setRoomCount(Math.max(1, Math.min(40, Number(e.target.value) || 1)))}
-            />
-          </label>
-          {selectedType ? (
-            <div
-              className={`rounded-xl p-4 text-sm ${
-                canBookAll ? "bg-emerald-50 text-emerald-900 border border-emerald-100" : "bg-amber-50 text-amber-950 border border-amber-100"
-              }`}
-            >
-              <div className="flex items-start gap-2">
-                {canBookAll ? (
-                  <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
-                ) : (
-                  <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
-                )}
-                <div>
-                  <p className="font-bold">
-                    {capacity} sellable {selectedType.name} rooms match this window & party size.
+            {!fullTypePicker && (
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-4">
+                <p className="text-[10px] font-black uppercase tracking-wide text-indigo-800">Selected room type</p>
+                <p className="mt-1 text-lg font-bold leading-snug text-slate-900 break-words">
+                  {selectedCatalog?.name ?? selectedType?.name ?? "Room type"}
+                </p>
+                {selectedCatalog?.code ? (
+                  <p className="text-xs font-mono text-slate-500">{selectedCatalog.code}</p>
+                ) : null}
+                {selectedType && selectedType.nights > 0 ? (
+                  <p className="mt-2 text-sm text-slate-700">
+                    <strong className={capacity > 0 ? "text-emerald-700" : "text-amber-700"}>{capacity}</strong>{" "}
+                    available · {formatMoney(selectedType.base_price_per_night, selectedType.currency)}/ night ·{" "}
+                    {formatMoney(selectedType.total_price, selectedType.currency)} per room (
+                    {selectedType.nights} nights)
                   </p>
-                  <p className="mt-1">
-                    You asked for <strong>{roomCount}</strong>.{" "}
-                    {canBookAll
-                      ? "Green light — backend will atomically create every reservation or roll all back if one room cannot be pinned."
-                      : `Short by ${shortfall}. You can still book ${capacity} now, then remix dates or types for the remainder.`}
+                ) : roomTypeId ? (
+                  <p className="mt-2 text-sm text-amber-800">
+                    No sellable rooms for these dates — change dates or open all room types below.
                   </p>
-                </div>
-              </div>
-              {!canBookAll && capacity > 0 && (
+                ) : null}
+                <label className="mt-3 block text-xs font-bold uppercase text-slate-500">
+                  Rooms to book
+                  <input
+                    type="number"
+                    min={1}
+                    max={40}
+                    className="mt-1 w-full max-w-[12rem] min-h-[44px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-mono"
+                    value={roomCount}
+                    onChange={(e) => setRoomCount(Math.max(1, Math.min(40, Number(e.target.value) || 1)))}
+                  />
+                </label>
+                {selectedType && nights > 0 ? (
+                  <div className="mt-3 rounded-lg border border-white/80 bg-white/90 px-3 py-2 text-sm">
+                    <span className="font-semibold text-indigo-900">Total </span>
+                    <span className="font-black text-slate-900">{formatMoney(blockStayTotal, quoteCurrency)}</span>
+                    <span className="text-slate-500"> for {roomCount} room{roomCount === 1 ? "" : "s"}</span>
+                  </div>
+                ) : null}
+                {selectedType ? (
+                  <div
+                    className={`mt-3 rounded-xl p-3 text-sm ${
+                      canBookAll
+                        ? "bg-emerald-50 text-emerald-900 border border-emerald-100"
+                        : "bg-amber-50 text-amber-950 border border-amber-100"
+                    }`}
+                  >
+                    {canBookAll ? (
+                      <p className="font-semibold">Inventory OK for {roomCount} room(s).</p>
+                    ) : capacity > 0 ? (
+                      <p>
+                        Short by {shortfall}. Max now: <strong>{capacity}</strong>.
+                      </p>
+                    ) : (
+                      <p>No rooms free for this type on these dates.</p>
+                    )}
+                    {!canBookAll && capacity > 0 && (
+                      <button
+                        type="button"
+                        className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white"
+                        onClick={() => setRoomCount(capacity)}
+                      >
+                        Set to {capacity} rooms
+                      </button>
+                    )}
+                  </div>
+                ) : null}
                 <button
                   type="button"
-                  className="mt-3 w-full rounded-xl bg-amber-600 py-2 text-xs font-black uppercase tracking-wide text-white shadow hover:bg-amber-700"
-                  onClick={() => setRoomCount(capacity)}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                  onClick={() => setShowAllRoomTypes(true)}
                 >
-                  Clip target to {capacity} (book what fits)
+                  <ChevronDown className="h-4 w-4" />
+                  Compare all room types
                 </button>
-              )}
+              </div>
+            )}
+
+            {fullTypePicker && (
+              <div className="border-t border-slate-100 pt-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-black uppercase tracking-wide text-slate-600">Available room types</h3>
+                  <div className="flex items-center gap-2">
+                    {compactReserve && (
+                      <button
+                        type="button"
+                        className="text-xs font-bold text-indigo-600 underline"
+                        onClick={() => setShowAllRoomTypes(false)}
+                      >
+                        Collapse list
+                      </button>
+                    )}
+                    <Link href={staffAppPath("room-types")} className="text-xs font-semibold text-indigo-600 underline">
+                      Manage types
+                    </Link>
+                  </div>
+                </div>
+                {catalogTypes.length === 0 ? (
+                  <p className="text-sm text-amber-800">
+                    No room types configured.{" "}
+                    <Link href={staffAppPath("room-types")} className="font-semibold underline">
+                      Add room types
+                    </Link>
+                  </p>
+                ) : availableCatalogTypes.length === 0 ? (
+                  <p className="text-sm text-amber-800">
+                    No room types with availability for these dates and party size. Change dates, adults per room, or
+                    check room types.
+                  </p>
+                ) : (
+                  <div className="max-h-[min(50vh,420px)] space-y-2 overflow-y-auto pr-1">
+                    {availableCatalogTypes.map((rt) => {
+                      const a = availByTypeId.get(rt.id);
+                      const selected = roomTypeId === rt.id;
+                      const ready = a?.available_count ?? 0;
+                      const isPlanned = group.preferredRoomTypeId === rt.id;
+                      return (
+                        <button
+                          key={rt.id}
+                          type="button"
+                          onClick={() => setRoomTypeId(rt.id)}
+                          className={`w-full rounded-xl border p-3 text-left transition sm:p-4 ${
+                            selected
+                              ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200"
+                              : "border-slate-200 bg-slate-50/80 hover:border-indigo-200 hover:bg-white"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-900">{rt.name}</p>
+                              {rt.code ? <p className="text-xs text-slate-500">{rt.code}</p> : null}
+                            </div>
+                            {isPlanned ? (
+                              <span className="shrink-0 rounded-full bg-indigo-600 px-2 py-0.5 text-[9px] font-black uppercase text-white">
+                                Planned
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="mt-2 text-sm text-slate-600">
+                            {a && a.nights > 0 ? (
+                              <p>
+                                {formatMoney(a.base_price_per_night, a.currency)}/night ·{" "}
+                                {formatMoney(a.total_price, a.currency)} / room ({a.nights} nights)
+                              </p>
+                            ) : rt.baseRate != null ? (
+                              <p>From {formatMoney(rt.baseRate, defaultCurrency)}/night (base)</p>
+                            ) : null}
+                            <p className="mt-1">
+                              {a ? (
+                                <strong className={ready > 0 ? "text-emerald-700" : "text-amber-700"}>{ready}</strong>
+                              ) : (
+                                <span className="text-slate-400">No availability</span>
+                              )}{" "}
+                              available
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </>
+      ) : (
+        <>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+            <div className="flex items-center gap-2 font-bold text-slate-800">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-xs font-black text-white">
+                1
+              </span>
+              <CalendarRange className="h-5 w-5 text-indigo-600" />
+              Dates & occupancy
             </div>
-          ) : (
-            <p className="text-xs text-slate-500">Pick dates + adults to load types.</p>
-          )}
-        </div>
-      </section>
+            <div className="grid gap-4 md:grid-cols-3">
+              <label className="text-xs font-bold uppercase text-slate-500">
+                Check-in
+                <input
+                  type="date"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                  value={checkIn}
+                  onChange={(e) => setCheckIn(e.target.value)}
+                />
+              </label>
+              <label className="text-xs font-bold uppercase text-slate-500">
+                Check-out
+                <input
+                  type="date"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                  value={checkOut}
+                  onChange={(e) => setCheckOut(e.target.value)}
+                />
+              </label>
+              <label className="text-xs font-bold uppercase text-slate-500">
+                Adults per room
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                  value={adultsPerRoom}
+                  onChange={(e) => setAdultsPerRoom(Number(e.target.value) || 1)}
+                />
+              </label>
+            </div>
+            {availLoading && <p className="text-xs text-slate-500">Checking availability…</p>}
+          </section>
 
-      <section className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 p-5">
-        <div className="flex items-center gap-2 font-black text-slate-800">
-          <Zap className="h-5 w-5 text-amber-500" />
-          When you do not have enough identical rooms
-        </div>
-        <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-700">
-          <li>
-            <strong>Stagger waves:</strong> book the {capacity || "…"} ready rooms now, nudge check-in/out by a night
-            for the tail, or mix a second room type via another pass.
-          </li>
-          <li>
-            <strong>Release inventory:</strong> housekeeping marks rooms inspected faster, or move OOO repairs behind
-            lower-priority floors.
-          </li>
-          <li>
-            <strong>Partner property:</strong> overflow guests onto a sister hotel and shuttle — note it in group
-            notes.
-          </li>
-          <li>
-            <strong>Single-room wizard:</strong>{" "}
-            <Link
-              className="font-semibold text-indigo-600 underline"
-              href={`${staffAppPath("reservations", "new")}?groupId=${encodeURIComponent(groupId)}&check_in=${encodeURIComponent(checkIn)}&check_out=${encodeURIComponent(checkOut)}${roomTypeId ? `&room_type_id=${encodeURIComponent(roomTypeId)}` : ""}&adults=${adultsPerRoom}`}
-            >
-              open the classic reservation form
-            </Link>{" "}
-            for bespoke guest profiles per room.
-          </li>
-        </ul>
-      </section>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 font-bold text-slate-800">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-xs font-black text-white">
+                  2
+                </span>
+                Room type
+              </div>
+              <Link href={staffAppPath("room-types")} className="text-xs font-semibold text-indigo-600 underline">
+                Manage room types
+              </Link>
+            </div>
+            <p className="text-xs text-slate-500">Only types with at least one available room for these dates are listed.</p>
+            {catalogTypes.length === 0 ? (
+              <p className="text-sm text-amber-800">
+                No room types configured.{" "}
+                <Link href={staffAppPath("room-types")} className="font-semibold underline">
+                  Add room types
+                </Link>{" "}
+                first.
+              </p>
+            ) : availableCatalogTypes.length === 0 ? (
+              <p className="text-sm text-amber-800">
+                No room types with availability for these dates and party size. Adjust dates or adults per room, then
+                try again.
+              </p>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {availableCatalogTypes.map((rt) => {
+                  const a = availByTypeId.get(rt.id);
+                  const selected = roomTypeId === rt.id;
+                  const ready = a?.available_count ?? 0;
+                  const isPlanned = group.preferredRoomTypeId === rt.id;
+                  return (
+                    <button
+                      key={rt.id}
+                      type="button"
+                      onClick={() => setRoomTypeId(rt.id)}
+                      className={`rounded-xl border p-4 text-left transition ${
+                        selected
+                          ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200"
+                          : "border-slate-200 bg-slate-50/50 hover:border-indigo-200 hover:bg-white"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-bold text-slate-900">{rt.name}</p>
+                          {rt.code ? <p className="text-xs text-slate-500">{rt.code}</p> : null}
+                        </div>
+                        {isPlanned ? (
+                          <span className="shrink-0 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-black uppercase text-white">
+                            Planned
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-2 space-y-1 text-sm">
+                        {a && a.nights > 0 ? (
+                          <p className="font-semibold text-slate-900">
+                            {formatMoney(a.base_price_per_night, a.currency)}/night ·{" "}
+                            {formatMoney(a.total_price, a.currency)} per room ({a.nights} nights)
+                          </p>
+                        ) : rt.baseRate != null ? (
+                          <p className="text-slate-600">
+                            From {formatMoney(rt.baseRate, defaultCurrency)}/night (base rate)
+                          </p>
+                        ) : null}
+                        <p className="text-slate-600">
+                          {a ? (
+                            <>
+                              <strong className={ready > 0 ? "text-emerald-700" : "text-amber-700"}>{ready}</strong>{" "}
+                              available
+                            </>
+                          ) : (
+                            <span className="text-slate-400">No availability for these dates</span>
+                          )}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+            <div className="flex items-center gap-2 font-bold text-slate-800">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-xs font-black text-white">
+                3
+              </span>
+              <Layers className="h-5 w-5 text-indigo-600" />
+              How many rooms?
+            </div>
+            <label className="text-xs font-bold uppercase text-slate-500">
+              Rooms to book
+              <input
+                type="number"
+                min={1}
+                max={40}
+                className="mt-1 w-full max-w-xs rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono"
+                value={roomCount}
+                onChange={(e) => setRoomCount(Math.max(1, Math.min(40, Number(e.target.value) || 1)))}
+              />
+            </label>
+            {selectedType && nights > 0 ? (
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/80 p-4 text-sm text-indigo-950">
+                <p className="text-[10px] font-black uppercase tracking-wider text-indigo-700">Price estimate</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  <div>
+                    <p className="text-xs text-slate-600">Per room / night</p>
+                    <p className="text-lg font-black">{formatMoney(perRoomPerNight, quoteCurrency)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-600">Per room (stay)</p>
+                    <p className="text-lg font-black">{formatMoney(perRoomTotal, quoteCurrency)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-600">Block total ({roomCount} rooms)</p>
+                    <p className="text-lg font-black text-indigo-800">{formatMoney(blockStayTotal, quoteCurrency)}</p>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-slate-600">
+                  {nights} night{nights === 1 ? "" : "s"} · taxes/fees may apply at folio
+                </p>
+              </div>
+            ) : null}
+            {selectedType ? (
+              <div
+                className={`rounded-xl p-4 text-sm ${
+                  canBookAll
+                    ? "bg-emerald-50 text-emerald-900 border border-emerald-100"
+                    : "bg-amber-50 text-amber-950 border border-amber-100"
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  {canBookAll ? (
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+                  ) : (
+                    <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
+                  )}
+                  <div>
+                    <p className="font-bold">
+                      {capacity} {selectedType.name} room{capacity === 1 ? "" : "s"} available.
+                    </p>
+                    <p className="mt-1">
+                      Booking <strong>{roomCount}</strong>.{" "}
+                      {canBookAll
+                        ? nights > 0
+                          ? `Ready to book · ${formatMoney(blockStayTotal, quoteCurrency)} estimated stay total.`
+                          : "Ready to book."
+                        : capacity > 0
+                          ? `Short by ${shortfall}. Book ${capacity} now or change dates/type.`
+                          : "Pick different dates or another room type."}
+                    </p>
+                  </div>
+                </div>
+                {!canBookAll && capacity > 0 && (
+                  <button
+                    type="button"
+                    className="mt-3 rounded-xl bg-amber-600 px-4 py-2 text-xs font-black uppercase tracking-wide text-white shadow hover:bg-amber-700"
+                    onClick={() => setRoomCount(capacity)}
+                  >
+                    Book {capacity} rooms (max available)
+                  </button>
+                )}
+              </div>
+            ) : roomTypeId ? (
+              <p className="text-xs text-amber-700">This room type has no availability for the selected dates.</p>
+            ) : (
+              <p className="text-xs text-slate-500">Select a room type above.</p>
+            )}
+          </section>
+        </>
+      )}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 space-y-4">
         <div className="flex items-center gap-2 font-bold text-slate-800">
+          {!compactReserve && (
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-xs font-black text-white">
+              4
+            </span>
+          )}
           <Users className="h-5 w-5 text-indigo-600" />
-          Lead guest (re-used on every room)
+          Lead guest
         </div>
         <p className="text-xs text-slate-500">
-          Perfect for a tour leader, wedding planner, or corporate booker. Each reservation still gets its own room &
-          folio — only the profile is shared for speed.
+          Optional — search a coordinator to attach to every folio. If you skip this, the system creates a placeholder
+          guest from the group&apos;s contact / name for billing.
         </p>
         <div className="flex flex-wrap gap-2">
           <input
@@ -455,7 +909,7 @@ export default function GroupReserveBlockPage() {
             disabled={guestSearchLoading}
             onClick={() => void searchGuests()}
           >
-            {guestSearchLoading ? "Searching…" : "Search guests"}
+            {guestSearchLoading ? "Searching…" : "Search"}
           </button>
         </div>
         {guestHits.length > 0 && (
@@ -480,17 +934,35 @@ export default function GroupReserveBlockPage() {
             ))}
           </ul>
         )}
-        {leadGuestId && (
-          <p className="text-xs font-semibold text-emerald-700">
-            Lead guest locked in — ready to blast {roomCount} reservations.
-          </p>
+        {leadGuestId ? (
+          <p className="text-xs font-semibold text-emerald-700">Lead guest selected — used for every room in this block.</p>
+        ) : (
+          <p className="text-xs text-slate-500">No lead guest selected — booking will use the group placeholder profile.</p>
         )}
       </section>
+
+      {!compactReserve && (
+      <section className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 p-4 text-sm text-slate-700">
+        <div className="flex items-center gap-2 font-bold text-slate-800">
+          <Zap className="h-4 w-4 text-amber-500" />
+          Need a different mix?
+        </div>
+        <p className="mt-2">
+          Book what fits now, then run another pass for a second room type. Or{" "}
+          <Link href={newReservationHref} className="font-semibold text-indigo-600 underline">
+            book one room at a time
+          </Link>{" "}
+          with individual guest profiles.
+        </p>
+      </section>
+      )}
 
       {banner && (
         <div
           className={`rounded-xl px-4 py-3 text-sm font-semibold ${
-            banner.kind === "ok" ? "bg-emerald-50 text-emerald-900 border border-emerald-100" : "bg-rose-50 text-rose-800 border border-rose-100"
+            banner.kind === "ok"
+              ? "bg-emerald-50 text-emerald-900 border border-emerald-100"
+              : "bg-rose-50 text-rose-800 border border-rose-100"
           }`}
         >
           {banner.text}
@@ -500,23 +972,27 @@ export default function GroupReserveBlockPage() {
       <div className="flex flex-wrap gap-3">
         <button
           type="button"
-          disabled={submitting || !canBookAll || !leadGuestId}
+          disabled={submitting || !canBookAll}
           onClick={() => void submitBlock()}
           className="rounded-2xl bg-indigo-600 px-8 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-indigo-200 disabled:opacity-40"
         >
-          {submitting ? "Creating block…" : `Create ${roomCount} reservations`}
+          {submitting
+            ? "Booking…"
+            : selectedType && nights > 0
+              ? `Book ${roomCount} room${roomCount === 1 ? "" : "s"} · ${formatMoney(blockStayTotal, quoteCurrency)}`
+              : `Book ${roomCount} room${roomCount === 1 ? "" : "s"}`}
         </button>
         <Link
-          href={`${staffAppPath("reservations", "new")}?groupId=${encodeURIComponent(groupId)}&check_in=${encodeURIComponent(checkIn)}&check_out=${encodeURIComponent(checkOut)}${roomTypeId ? `&room_type_id=${encodeURIComponent(roomTypeId)}` : ""}&adults=${adultsPerRoom}`}
+          href={newReservationHref}
           className="inline-flex items-center rounded-2xl border border-slate-200 px-6 py-3 text-sm font-bold text-slate-700"
         >
-          Hand-build one room
+          Book one room
         </Link>
       </div>
 
       {blockResult && blockResult.reservations?.length > 0 && (
         <section className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-5">
-          <h3 className="font-black text-emerald-900">Block live</h3>
+          <h3 className="font-black text-emerald-900">Block booked</h3>
           <ul className="mt-3 space-y-2 text-sm">
             {blockResult.reservations.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/80 px-3 py-2">

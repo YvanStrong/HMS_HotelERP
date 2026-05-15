@@ -435,14 +435,18 @@ public final class ApiDtos {
     public record ReservationReassignRoomResponse(
             UUID reservationId, UUID roomId, String roomNumber, Integer floor, String message) {}
 
-    /** Staff: create N confirmed reservations for one group in one transaction (same lead guest, same room type). */
+    /**
+     * Staff: create N confirmed reservations for one group in one transaction (same lead guest, same room type).
+     * When {@code leadGuestId} is omitted, a stable placeholder guest is created from the group contact / name for
+     * billing (reservations still require a guest row).
+     */
     public record GroupBlockReserveRequest(
             @NotNull LocalDate checkInDate,
             @NotNull LocalDate checkOutDate,
             @NotNull UUID roomTypeId,
             @Min(1) @Max(40) int roomCount,
             @Min(1) @Max(20) int adultsPerRoom,
-            @NotNull UUID leadGuestId) {}
+            @JsonProperty("lead_guest_id") @JsonAlias("leadGuestId") UUID leadGuestId) {}
 
     public record GroupBlockReserveResponse(
             UUID groupId,

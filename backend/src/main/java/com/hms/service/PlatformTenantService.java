@@ -486,6 +486,26 @@ public class PlatformTenantService {
                 auditMap);
     }
 
+    /**
+     * Persists a row in {@code platform_audit_logs} for cross-hotel / console activity (super admin sign-in,
+     * tenant onboarding, impersonation, etc.). {@code targetTenantId} may be null when the event is not scoped to
+     * one tenant.
+     */
+    @Transactional
+    public void recordCrossPlatformAudit(
+            UUID actorUserId,
+            String action,
+            UUID targetTenantId,
+            Map<String, Object> changes,
+            HttpServletRequest request) {
+        auditRecord(
+                actorUserId,
+                action,
+                targetTenantId,
+                changes != null ? changes : Map.of(),
+                request);
+    }
+
     private PlatformAuditLog auditRecord(UUID actorId, String action, UUID tenantId, Map<String, Object> changes, HttpServletRequest req) {
         PlatformAuditLog log = new PlatformAuditLog();
         log.setActorUserId(actorId);

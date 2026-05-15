@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -34,6 +35,16 @@ public class GroupController {
             @PathVariable UUID groupId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         return groupBookingService.getGroup(hotelId, hotelHeader, groupId);
+    }
+
+    @DeleteMapping("/{groupId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public void deleteGroup(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID groupId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        groupBookingService.deleteGroup(hotelId, hotelHeader, groupId);
     }
 
     @PostMapping

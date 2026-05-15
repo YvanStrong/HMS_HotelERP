@@ -19,8 +19,24 @@ type AuditLog = {
 
 const PAGE_SIZE = 10;
 
+function displayUsername(row: Record<string, unknown>): string {
+  const direct = row.username;
+  if (typeof direct === "string" && direct.trim() !== "") return direct;
+  const raw = row.changes;
+  if (typeof raw === "string" && raw.trim().startsWith("{")) {
+    try {
+      const o = JSON.parse(raw) as { username?: string };
+      if (typeof o.username === "string" && o.username.trim() !== "") return o.username;
+    } catch {
+      /* ignore */
+    }
+  }
+  const id = row.actorUserId;
+  return typeof id === "string" && id ? id : "—";
+}
+
 export default function PlatformAuditPage() {
-  const [logs, setLogs] = useState<AuditLog[] | null>(null);
+  const [logs, setLogs] = useState<AuditLog[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -33,29 +49,35 @@ export default function PlatformAuditPage() {
     (async () => {
       if (!getToken()) {
         setError("Not signed in.");
+        setLogs([]);
         setLoading(false);
         return;
       }
       try {
-        // Try to fetch audit logs, fallback to empty if API doesn't exist
-        const data = await apiFetch<Record<string, unknown>[]>("/api/v1/platform/audit/logs");
+        const data = await apiFetch<Record<string, unknown>[]>("/api/v1/platform/audit/logs", { quiet: true });
         if (!cancelled) {
           const normalized: AuditLog[] = (data ?? []).map((row, index) => ({
             id: String(row.id ?? index),
             action: String(row.action ?? "UNKNOWN"),
-            entityType: String(row.entityType ?? row.targetTenantId ?? "TENANT"),
-            entityId: String(row.entityId ?? row.targetResourceId ?? ""),
+            entityType: String(
+              row.entityType ??
+                (row.targetTenantId ? `Tenant ${String(row.targetTenantId).slice(0, 8)}…` : "Platform"),
+            ),
+            entityId: String(row.entityId ?? row.targetResourceId ?? row.targetTenantId ?? ""),
             userId: String(row.userId ?? row.actorUserId ?? ""),
-            username: String(row.username ?? row.actorUserId ?? "system"),
+            username: displayUsername(row),
             timestamp: String(row.timestamp ?? new Date().toISOString()),
             details: String(row.details ?? row.notes ?? row.changes ?? ""),
             ipAddress: row.ipAddress ? String(row.ipAddress) : undefined,
           }));
           setLogs(normalized);
+          setError(null);
         }
       } catch (e) {
-        // API might not exist, show empty state
-        if (!cancelled) setLogs([]);
+        if (!cancelled) {
+          setLogs([]);
+          setError(e instanceof Error ? e.message : "Could not load platform audit logs.");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -65,7 +87,7 @@ export default function PlatformAuditPage() {
     };
   }, []);
 
-  const filtered = logs?.filter((log) => {
+  const filtered = logs.filter((log) => {
     const needle = filter.toLowerCase();
     const baseMatch =
       !filter ||
@@ -83,18 +105,29 @@ export default function PlatformAuditPage() {
       if (ts > to) return false;
     }
     return true;
-  }) ?? [];
+  });
 
   const { slice, total, totalPages } = paginateSlice(filtered, page, PAGE_SIZE);
-  const loginEvents = logs?.filter((log) => log.action?.toUpperCase() === "LOGIN").length ?? 0;
-  const destructiveEvents = logs?.filter((log) => log.action?.toUpperCase() === "DELETE").length ?? 0;
+  const loginEvents =
+    logs.filter((log) => {
+      const a = log.action?.toUpperCase() ?? "";
+      return a === "LOGIN" || a === "SUPER_ADMIN_LOGIN";
+    }).length;
+  const destructiveEvents = logs.filter((log) => log.action?.toUpperCase() === "DELETE").length;
 
   const getActionColor = (action: string) => {
     switch (action.toUpperCase()) {
-      case "CREATE": return "bg-green-100 text-green-700";
+      case "TENANT_CREATED":
+        return "bg-emerald-100 text-emerald-800";
+      case "IMPERSONATE_TENANT":
+        return "bg-amber-100 text-amber-800";
+      case "CREATE":
+        return "bg-green-100 text-green-700";
       case "UPDATE": return "bg-blue-100 text-blue-700";
       case "DELETE": return "bg-red-100 text-red-700";
-      case "LOGIN": return "bg-purple-100 text-purple-700";
+      case "LOGIN":
+      case "SUPER_ADMIN_LOGIN":
+        return "bg-purple-100 text-purple-700";
       default: return "bg-gray-100 text-gray-700";
     }
   };
@@ -108,9 +141,7 @@ export default function PlatformAuditPage() {
             System audit trail and activity monitoring
           </p>
         </div>
-        <div className="text-sm text-muted-foreground">
-          {logs?.length ?? 0} total events
-        </div>
+        <div className="text-sm text-muted-foreground">{logs.length} total events</div>
       </div>
 
       {error && (
@@ -166,15 +197,28 @@ export default function PlatformAuditPage() {
             ))}
           </div>
         </div>
-      ) : logs?.length === 0 ? (
-        <div className="text-center py-12 bg-muted/50 rounded-xl">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
-            <svg className="w-8 h-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      ) : error ? (
+        <div className="rounded-xl border border-border/80 bg-muted/30 px-6 py-10 text-center text-sm text-muted-foreground">
+          Events could not be loaded. Check the message above, confirm you are signed in as{" "}
+          <strong className="text-foreground">super admin</strong>, then refresh the page.
+        </div>
+      ) : logs.length === 0 ? (
+        <div className="rounded-xl bg-muted/50 py-12 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+            <svg className="h-8 w-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
             </svg>
           </div>
-          <h3 className="text-lg font-semibold mb-1">No audit logs</h3>
-          <p className="text-muted-foreground">Audit logging may not be enabled on this server</p>
+          <h3 className="mb-2 text-lg font-semibold">No platform events yet</h3>
+          <p className="mx-auto max-w-lg px-4 text-sm text-muted-foreground leading-relaxed">
+            This page lists <strong>platform-level</strong> actions only — for example{" "}
+            <strong>super admin sign-in</strong>, <strong>creating a tenant / hotel</strong>, and{" "}
+            <strong>impersonating</strong> a property. Staff logins and day-to-day hotel operations are recorded under{" "}
+            <strong className="text-foreground">Hotel → Audit Logs</strong> in each property.
+          </p>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Sign out and sign in again as super admin, or create a tenant / use impersonation, then refresh this page.
+          </p>
         </div>
       ) : (
         <>

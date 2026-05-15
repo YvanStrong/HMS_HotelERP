@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Users } from "lucide-react";
 import { API_BASE, apiFetch, getToken } from "@/lib/api";
 import { loadAuthUser } from "@/lib/auth";
 import { staffAppPath } from "@/lib/staffAppRoutes";
@@ -292,6 +293,11 @@ type StaffReservationDetail = {
   } | null;
   timeline: { phase: string; at: string }[];
   folio_api_path: string;
+  group_booking?: {
+    id: string;
+    group_name: string;
+    group_code?: string | null;
+  } | null;
 };
 
 type FeePolicy = {
@@ -358,6 +364,35 @@ function checkoutAmountCoversDue(due: number, pay: number): boolean {
 }
 
 const MIN_OVERRIDE_BALANCE_REASON_LEN = 10;
+
+type GroupBookingSummary = NonNullable<StaffReservationDetail["group_booking"]>;
+
+function ReservationGroupCard({ group }: { group: GroupBookingSummary }) {
+  return (
+    <div className="rounded-2xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50 via-white to-violet-50/60 p-4 shadow-sm ring-1 ring-indigo-100/80 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-200">
+            <Users className="h-5 w-5" aria-hidden />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-700">Group block</p>
+            <p className="truncate text-lg font-bold tracking-tight text-slate-900">{group.group_name}</p>
+            {group.group_code ? (
+              <p className="font-mono text-xs text-slate-600">Code {group.group_code}</p>
+            ) : null}
+          </div>
+        </div>
+        <Link
+          href={staffAppPath("groups", group.id)}
+          className="inline-flex shrink-0 items-center justify-center rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-indigo-700 shadow-sm ring-1 ring-indigo-200 transition hover:bg-indigo-50"
+        >
+          View group →
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 export default function StaffReservationDetailPage() {
   const params = useParams();
@@ -928,6 +963,17 @@ export default function StaffReservationDetailPage() {
     <div class="row"><span class="label">Booking reference:</span>${esc(folio.booking_reference ?? "—")}</div>
     <div class="row"><span class="label">Confirmation code:</span>${esc(folio.confirmationCode ?? "—")}</div>
     <div class="row"><span class="label">Booking source:</span>${esc(staffDetail?.booking_source?.replaceAll("_", " ") ?? "—")}</div>
+    ${
+      staffDetail?.group_booking
+        ? `<div class="row"><span class="label">Group block:</span>${esc(staffDetail.group_booking.group_name)}${
+            staffDetail.group_booking.group_code
+              ? ` <span class="muted">(${esc(staffDetail.group_booking.group_code)})</span>`
+              : ""
+          }</div><div class="row"><span class="label">Group ID:</span><span class="value" style="font-family:ui-monospace,monospace;font-size:12px">${esc(
+            staffDetail.group_booking.id,
+          )}</span></div>`
+        : ""
+    }
     <div class="row"><span class="label">Guest:</span>${esc(folio.guest.name)}</div>
     <div class="row"><span class="label">Email:</span>${esc(folio.guest.email ?? "—")}</div>
     <div class="row"><span class="label">Phone:</span>${esc(staffDetail?.guest.phone ?? "—")}</div>
@@ -1054,39 +1100,63 @@ export default function StaffReservationDetailPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4">
-      <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-        <p className="text-sm mb-2">
-          <Link href={staffAppPath("reservations")} className="text-primary">
-            ← Reservations
-          </Link>
-        </p>
-        <h1 className="text-3xl font-bold tracking-tight">Reservation</h1>
-        <p className="text-sm text-muted-foreground mt-1">Front desk reservation overview, actions, and folio.</p>
-      </div>
+    <div className="min-h-screen bg-gradient-to-b from-slate-100/90 via-background to-muted/30 pb-16">
+      <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6">
+        <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-card shadow-md ring-1 ring-slate-200/40">
+          <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-indigo-50/30 px-5 py-4 sm:px-6 sm:py-5">
+            <p className="text-sm font-medium text-indigo-700">
+              <Link href={staffAppPath("reservations")} className="hover:text-indigo-900 hover:underline">
+                ← Reservations
+              </Link>
+            </p>
+            <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight text-slate-900">Reservation</h1>
+                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                  Front desk overview, folio, and actions for this stay.
+                </p>
+              </div>
+              {folio ? (
+                <div className="flex items-center gap-2">{statusChip(folio.stay.reservationStatus)}</div>
+              ) : null}
+            </div>
+          </div>
+        </div>
       {staffDetail && (
-        <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm space-y-4">
-          <h2 className="text-lg font-semibold" style={{ marginTop: 0 }}>Booking</h2>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div className="rounded-xl border border-border/60 bg-background p-3">
-              <p className="text-xs text-muted-foreground mb-1">Reference</p>
-              <p style={{ margin: 0 }}>
+        <div className="space-y-4 rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm sm:p-6">
+          <h2 className="text-lg font-semibold text-slate-900">Booking</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Reference</p>
+              <p className="m-0">
                 <code
-                  style={{ fontSize: "1.05rem", fontWeight: 700, cursor: "copy" }}
+                  className="cursor-copy text-base font-bold text-slate-900"
                   title="Click to copy"
                   onClick={() => void navigator.clipboard.writeText(staffDetail.booking_reference)}
                 >
                   {staffDetail.booking_reference}
                 </code>
               </p>
-              <p className="text-sm text-muted-foreground mt-2">
+              <p className="mt-2 text-sm text-muted-foreground">
                 Confirmation <span className="font-mono">{staffDetail.confirmation_code}</span> · Source{" "}
                 <strong>{staffDetail.booking_source.replace(/_/g, " ")}</strong>
               </p>
+              {staffDetail.group_booking ? (
+                <p className="mt-2 text-xs text-slate-600">
+                  <span className="font-semibold text-slate-500">Group: </span>
+                  <Link
+                    href={staffAppPath("groups", staffDetail.group_booking.id)}
+                    className="font-semibold text-indigo-600 hover:text-indigo-800 hover:underline"
+                  >
+                    {staffDetail.group_booking.group_name}
+                    {staffDetail.group_booking.group_code ? ` (${staffDetail.group_booking.group_code})` : ""} →
+                  </Link>
+                </p>
+              ) : null}
             </div>
-            <div className="rounded-xl border border-border/60 bg-background p-3">
-              <p className="text-xs text-muted-foreground mb-1">Guest</p>
-              <p style={{ margin: 0, fontWeight: 700 }}>{staffDetail.guest.full_name}</p>
+            <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Guest</p>
+              <p className="m-0 font-bold text-slate-900">{staffDetail.guest.full_name}</p>
               <p className="text-sm text-muted-foreground">
                 National ID {staffDetail.guest.national_id} · DOB {staffDetail.guest.date_of_birth}
               </p>
@@ -1095,10 +1165,10 @@ export default function StaffReservationDetailPage() {
               </p>
             </div>
           </div>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div className="rounded-xl border border-border/60 bg-background p-3">
-              <p className="text-xs text-muted-foreground mb-1">Guest address</p>
-              <p className="text-sm" style={{ margin: 0 }}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Guest address</p>
+              <p className="m-0 text-sm text-slate-800">
                 {[
                   staffDetail.guest_address.street_number,
                   staffDetail.guest_address.village,
@@ -1115,96 +1185,120 @@ export default function StaffReservationDetailPage() {
                 <p className="text-xs text-muted-foreground mt-2">{staffDetail.guest_address.address_notes}</p>
               )}
             </div>
-            <div className="rounded-xl border border-border/60 bg-background p-3">
-              <p className="text-xs text-muted-foreground mb-1">Room status</p>
+            <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Room status</p>
               {staffDetail.room ? (
-                <p className="text-sm" style={{ margin: 0 }}>
+                <p className="m-0 text-sm text-slate-800">
                   Room <strong>{staffDetail.room.roomNumber}</strong> · status{" "}
                   <strong>{staffDetail.room.room_status ?? "—"}</strong> · cleanliness{" "}
                   <strong>{staffDetail.room.cleanliness}</strong>
                 </p>
               ) : (
-                <p className="text-sm text-muted-foreground" style={{ margin: 0 }}>No room assigned.</p>
+                <p className="m-0 text-sm text-muted-foreground">No room assigned.</p>
               )}
             </div>
           </div>
-          <div className="rounded-xl border border-border/60 bg-background p-3">
-            <p className="text-xs text-muted-foreground mb-2">Timeline</p>
-            <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.9rem" }}>
+          <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Timeline</p>
+            <ul className="m-0 list-none space-y-1.5 pl-0 text-sm text-slate-700">
               {staffDetail.timeline.map((t) => (
-                <li key={t.phase + t.at}>
-                  <strong>{t.phase}</strong> — {t.at ? t.at.slice(0, 19).replace("T", " ") : "—"}
+                <li key={t.phase + t.at} className="flex flex-wrap gap-x-2 border-b border-slate-100 pb-1.5 last:border-0 last:pb-0">
+                  <strong className="text-slate-900">{t.phase}</strong>
+                  <span className="text-muted-foreground">{t.at ? t.at.slice(0, 19).replace("T", " ") : "—"}</span>
                 </li>
               ))}
             </ul>
           </div>
         </div>
       )}
-      {error && <div className="error panel">{error}</div>}
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-900 shadow-sm">
+          {error}
+        </div>
+      )}
       {banner && (
         <div
-          className="panel"
-          style={{
-            marginTop: "0.5rem",
-            borderColor: banner.kind === "ok" ? "var(--success, #16a34a)" : "var(--destructive, #b91c1c)",
-            color: banner.kind === "ok" ? "var(--success, #166534)" : "var(--destructive, #991b1b)",
-          }}
+          className={`rounded-xl border px-4 py-3 text-sm font-semibold shadow-sm ${
+            banner.kind === "ok"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+              : "border-rose-200 bg-rose-50 text-rose-900"
+          }`}
         >
           {banner.text}
         </div>
       )}
       {folio && (
         <>
-          <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-            <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>Guest &amp; stay</h2>
-            {(folio.booking_reference || folio.confirmationCode) && (
-              <p style={{ margin: "0 0 0.5rem", fontSize: "0.9rem" }}>
-                Ref <span className="font-mono font-semibold">{folio.booking_reference ?? folio.confirmationCode}</span>
-              </p>
-            )}
-            <p style={{ margin: "0.25rem 0" }}>
-              <strong>{folio.guest.name}</strong> · {folio.guest.email}
-            </p>
-            <p style={{ margin: "0.25rem 0", color: "var(--muted)" }}>
-              {folio.stay.checkIn} → {folio.stay.checkOut} · {folio.stay.totalNights} nights ·{" "}
-              {statusChip(folio.stay.reservationStatus)}
-            </p>
-            <p style={{ margin: "0.25rem 0" }}>
-              Room <strong>{folio.roomNumber || "—"}</strong> ({folio.roomTypeName || "—"})
-            </p>
-            <p style={{ margin: "0.75rem 0 0", fontSize: "1.1rem" }}>
-              Balance due:{" "}
-              <strong>
-                {balance} {folio.summary.currency}
-              </strong>
-            </p>
-            <div style={{ marginTop: "1rem", display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+          <div className="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm sm:p-6">
+            <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0 space-y-1">
+                <h2 className="text-xl font-bold tracking-tight text-slate-900">Guest &amp; stay</h2>
+                {(folio.booking_reference || folio.confirmationCode) && (
+                  <p className="text-sm text-muted-foreground">
+                    Ref{" "}
+                    <span className="font-mono font-semibold text-slate-800">
+                      {folio.booking_reference ?? folio.confirmationCode}
+                    </span>
+                  </p>
+                )}
+                <p className="text-base font-semibold text-slate-900">
+                  {folio.guest.name}
+                  <span className="font-normal text-muted-foreground"> · </span>
+                  <span className="break-all text-sm font-normal text-slate-600">{folio.guest.email}</span>
+                </p>
+                <p className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                  <span>
+                    {folio.stay.checkIn} → {folio.stay.checkOut}
+                  </span>
+                  <span className="text-slate-300">·</span>
+                  <span>{folio.stay.totalNights} nights</span>
+                  <span className="text-slate-300">·</span>
+                  {statusChip(folio.stay.reservationStatus)}
+                </p>
+                <p className="text-sm text-slate-700">
+                  Room <strong className="text-slate-900">{folio.roomNumber || "—"}</strong>{" "}
+                  <span className="text-muted-foreground">({folio.roomTypeName || "—"})</span>
+                </p>
+                {staffDetail?.group_booking ? (
+                  <div className="pt-2">
+                    <ReservationGroupCard group={staffDetail.group_booking} />
+                  </div>
+                ) : null}
+              </div>
+              <div className="shrink-0 rounded-xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 text-right shadow-inner">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Balance due</p>
+                <p className="text-2xl font-black tabular-nums text-emerald-950">
+                  {balance} <span className="text-base font-bold text-emerald-800">{folio.summary.currency}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-5">
               <button
                 type="button"
-                className="secondary"
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
                 onClick={() => document.getElementById("folio-block")?.scrollIntoView({ behavior: "smooth" })}
               >
                 View Folio
               </button>
               <button
                 type="button"
+                className="inline-flex items-center justify-center rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800"
                 onClick={printReservationDoc}
-                style={{
-                  background: "#0f766e",
-                  color: "#fff",
-                  border: "1px solid #0f766e",
-                  fontWeight: 700,
-                  boxShadow: "0 1px 0 rgba(0,0,0,.05)",
-                }}
                 title="Print full staff copy"
               >
                 Print Staff Copy
               </button>
-              <button type="button" onClick={() => setChargeOpen(true)}>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-100"
+                onClick={() => setChargeOpen(true)}
+              >
                 + Add Charge
               </button>
               <button
                 type="button"
+                className="inline-flex items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-100"
                 onClick={() => {
                   setPaymentOpenedFromCheckout(false);
                   setFolioPaymentAmount("");
@@ -1216,28 +1310,44 @@ export default function StaffReservationDetailPage() {
               >
                 + Record Payment
               </button>
-              <button type="button" className="secondary" onClick={() => void printInvoicePdf()}>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+                onClick={() => void printInvoicePdf()}
+              >
                 Print Invoice
               </button>
               {st === "CONFIRMED" && (
-                <button type="button" onClick={() => void openCheckInModal()}>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+                  onClick={() => void openCheckInModal()}
+                >
                   Check in
                 </button>
               )}
               {st === "CHECKED_IN" && (
-                <button type="button" onClick={() => void openCheckOutModal()}>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+                  onClick={() => void openCheckOutModal()}
+                >
                   Check out &amp; invoice
                 </button>
               )}
               {st === "CONFIRMED" && (
-                <button type="button" className="secondary" onClick={() => void doCancel()}>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-800 shadow-sm transition hover:bg-rose-50"
+                  onClick={() => void doCancel()}
+                >
                   Cancel reservation
                 </button>
               )}
               {(st === "CONFIRMED" || st === "CHECKED_IN") && (
                 <button
                   type="button"
-                  className="secondary"
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
                   disabled={prefsLoading}
                   onClick={() => void applyGuestPreferences()}
                 >
@@ -1246,166 +1356,191 @@ export default function StaffReservationDetailPage() {
               )}
             </div>
           </div>
-          <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm" id="folio-block">
-            <h2 style={{ marginTop: 0, fontSize: "1.05rem" }}>
-              FOLIO — {folio.booking_reference ?? folio.confirmationCode ?? folio.reservationId}
+          <div
+            className="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm sm:p-6"
+            id="folio-block"
+          >
+            <h2 className="border-b border-slate-100 pb-3 text-lg font-bold tracking-tight text-slate-900">
+              Folio — {folio.booking_reference ?? folio.confirmationCode ?? folio.reservationId}
             </h2>
             {folio.billing_route_note ? (
-              <p
-                style={{
-                  margin: "0 0 0.75rem",
-                  padding: "0.5rem 0.65rem",
-                  fontSize: "0.8rem",
-                  borderRadius: 8,
-                  background: "var(--muted)",
-                  color: "var(--foreground)",
-                }}
-              >
+              <div className="mb-4 mt-4 rounded-xl border border-slate-200 bg-muted/40 px-3 py-2.5 text-sm text-foreground">
                 {folio.billing_route_note}
                 {folio.billing_routed_from_reservation_id && folio.billing_routed_to_reservation_id ? (
-                  <span className="block mt-1 font-mono text-[11px] text-muted-foreground">
+                  <span className="mt-1 block font-mono text-[11px] text-muted-foreground">
                     Routed from {folio.billing_routed_from_reservation_id.slice(0, 8)}… → this folio (
                     {folio.billing_routed_to_reservation_id.slice(0, 8)}…)
                   </span>
                 ) : null}
-              </p>
+              </div>
             ) : null}
-            <h3 style={{ marginBottom: "0.4rem" }}>Charges</h3>
+            <h3 className="mb-2 mt-2 text-sm font-bold uppercase tracking-wide text-teal-800">Charges</h3>
             {folio.charges.length === 0 ? (
-              <p style={{ color: "var(--muted)", margin: 0 }}>No incidental charges yet.</p>
+              <p className="m-0 text-sm text-muted-foreground">No incidental charges yet.</p>
             ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>When</th>
-                    <th>Description</th>
-                    <th>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {folio.charges.map((c) => (
-                    <tr key={c.id}>
-                      <td style={{ fontSize: "0.8rem", whiteSpace: "nowrap" }}>
-                        {typeof c.date === "string"
-                          ? c.date.slice(0, 16)
-                          : c.date != null
-                            ? JSON.stringify(c.date)
-                            : "—"}
-                      </td>
-                      <td>
-                        <div>{c.description}</div>
-                        {c.originating_reservation_id ? (
-                          <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
-                            Incurred on stay {c.originating_reservation_id.slice(0, 8)}…
-                          </div>
-                        ) : null}
-                      </td>
-                      <td>
-                        {c.amount} {folio.summary.currency}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            <div style={{ marginTop: "0.8rem", borderTop: "1px solid var(--border)", paddingTop: "0.6rem" }}>
-              <p style={{ margin: "0.15rem 0" }}>
-                Room charges: <strong>{folio.summary.room_charges_total ?? 0}</strong> {folio.summary.currency}
-              </p>
-              <p style={{ margin: "0.15rem 0" }}>
-                Other charges: <strong>{folio.summary.other_charges_total ?? 0}</strong> {folio.summary.currency}
-              </p>
-              <p style={{ margin: "0.15rem 0" }}>
-                Subtotal (pre-tax): <strong>{folio.summary.gross_total ?? 0}</strong> {folio.summary.currency}
-              </p>
-              <p style={{ margin: "0.15rem 0" }}>
-                {folioTaxLabel(folio.summary)}: <strong>{folio.summary.tax_total ?? 0}</strong> {folio.summary.currency}
-              </p>
-              {Number(folio.summary.discount_total ?? 0) > 0 ? (
-                <p style={{ margin: "0.15rem 0" }}>
-                  Discount: <strong>{folio.summary.discount_total ?? 0}</strong> {folio.summary.currency}
-                </p>
-              ) : null}
-              <p style={{ margin: "0.15rem 0" }}>
-                Total (after tax): <strong>{folio.summary.grand_total ?? 0}</strong> {folio.summary.currency}
-              </p>
-              {Number(folio.summary.deposit_credit ?? 0) > 0 ? (
-                <p style={{ margin: "0.15rem 0" }}>
-                  Deposit credit: <strong>{folio.summary.deposit_credit ?? 0}</strong> {folio.summary.currency}
-                </p>
-              ) : null}
-              <p style={{ margin: "0.15rem 0" }}>
-                Payments total (incl. deposit): <strong>{folio.summary.payments_total ?? 0}</strong>{" "}
-                {folio.summary.currency}
-              </p>
-            </div>
-            <h3 style={{ margin: "0.9rem 0 0.35rem" }}>Payments</h3>
-            {folio.payments?.length ? (
-              <table>
-                <thead>
-                  <tr>
-                    <th>When</th>
-                    <th>Method</th>
-                    <th>Reference</th>
-                    <th>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {folio.payments.map((p, i) => (
-                    <tr key={p.id ?? `${p.postedAt}-${i}`}>
-                      <td>{p.postedAt?.slice(0, 16).replace("T", " ")}</td>
-                      <td>{p.method}</td>
-                      <td>{p.reference ?? "—"}</td>
-                      <td>
-                        {p.amount} {folio.summary.currency}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p style={{ color: "var(--muted)" }}>No payments recorded yet.</p>
-            )}
-            <p style={{ marginTop: "0.7rem", fontSize: "1.05rem" }}>
-              Balance Due:{" "}
-              <strong>
-                {balance} {folio.summary.currency}
-              </strong>
-            </p>
-            {folio.ledger && folio.ledger.length > 0 ? (
-              <>
-                <h3 style={{ margin: "1rem 0 0.35rem" }}>Ledger</h3>
-                <table>
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full min-w-[320px] border-collapse text-sm">
                   <thead>
-                    <tr>
-                      <th>When</th>
-                      <th>Type</th>
-                      <th>Description</th>
-                      <th>D/C</th>
-                      <th>Amount</th>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      <th className="px-3 py-2">When</th>
+                      <th className="px-3 py-2">Description</th>
+                      <th className="px-3 py-2 text-right">Amount</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {folio.ledger.map((row) => (
-                      <tr key={row.id}>
-                        <td style={{ fontSize: "0.8rem", whiteSpace: "nowrap" }}>
-                          {row.createdAt ? String(row.createdAt).slice(0, 16).replace("T", " ") : "—"}
+                    {folio.charges.map((c) => (
+                      <tr key={c.id} className="border-b border-slate-100 last:border-0">
+                        <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-slate-600">
+                          {typeof c.date === "string"
+                            ? c.date.slice(0, 16)
+                            : c.date != null
+                              ? JSON.stringify(c.date)
+                              : "—"}
                         </td>
-                        <td style={{ fontSize: "0.8rem" }}>
-                          {row.type}
-                          {row.category ? (
-                            <span className="text-muted-foreground"> · {row.category}</span>
+                        <td className="px-3 py-2 align-top">
+                          <div className="text-slate-800">{c.description}</div>
+                          {c.originating_reservation_id ? (
+                            <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                              Incurred on stay {c.originating_reservation_id.slice(0, 8)}…
+                            </div>
                           ) : null}
                         </td>
-                        <td>{row.description ?? "—"}</td>
-                        <td style={{ fontSize: "0.8rem" }}>{row.debit_credit}</td>
-                        <td>
-                          {row.amount} {folio.summary.currency}
+                        <td className="whitespace-nowrap px-3 py-2 text-right align-top font-medium tabular-nums text-slate-900">
+                          {c.amount} {folio.summary.currency}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+            <div className="mt-6 space-y-1.5 rounded-xl border border-slate-100 bg-slate-50/80 p-4 text-sm text-slate-800">
+              <p className="m-0 flex justify-between gap-2">
+                <span className="text-muted-foreground">Room charges</span>
+                <strong className="tabular-nums">
+                  {folio.summary.room_charges_total ?? 0} {folio.summary.currency}
+                </strong>
+              </p>
+              <p className="m-0 flex justify-between gap-2">
+                <span className="text-muted-foreground">Other charges</span>
+                <strong className="tabular-nums">
+                  {folio.summary.other_charges_total ?? 0} {folio.summary.currency}
+                </strong>
+              </p>
+              <p className="m-0 flex justify-between gap-2">
+                <span className="text-muted-foreground">Subtotal (pre-tax)</span>
+                <strong className="tabular-nums">
+                  {folio.summary.gross_total ?? 0} {folio.summary.currency}
+                </strong>
+              </p>
+              <p className="m-0 flex justify-between gap-2">
+                <span className="text-muted-foreground">{folioTaxLabel(folio.summary)}</span>
+                <strong className="tabular-nums">
+                  {folio.summary.tax_total ?? 0} {folio.summary.currency}
+                </strong>
+              </p>
+              {Number(folio.summary.discount_total ?? 0) > 0 ? (
+                <p className="m-0 flex justify-between gap-2">
+                  <span className="text-muted-foreground">Discount</span>
+                  <strong className="tabular-nums">
+                    {folio.summary.discount_total ?? 0} {folio.summary.currency}
+                  </strong>
+                </p>
+              ) : null}
+              <p className="m-0 flex justify-between gap-2 border-t border-slate-200/80 pt-2">
+                <span className="font-semibold text-slate-900">Total (after tax)</span>
+                <strong className="tabular-nums text-slate-900">
+                  {folio.summary.grand_total ?? 0} {folio.summary.currency}
+                </strong>
+              </p>
+              {Number(folio.summary.deposit_credit ?? 0) > 0 ? (
+                <p className="m-0 flex justify-between gap-2">
+                  <span className="text-muted-foreground">Deposit credit</span>
+                  <strong className="tabular-nums">
+                    {folio.summary.deposit_credit ?? 0} {folio.summary.currency}
+                  </strong>
+                </p>
+              ) : null}
+              <p className="m-0 flex justify-between gap-2">
+                <span className="text-muted-foreground">Payments total (incl. deposit)</span>
+                <strong className="tabular-nums">
+                  {folio.summary.payments_total ?? 0} {folio.summary.currency}
+                </strong>
+              </p>
+            </div>
+            <h3 className="mb-2 mt-8 text-sm font-bold uppercase tracking-wide text-teal-800">Payments</h3>
+            {folio.payments?.length ? (
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full min-w-[360px] border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      <th className="px-3 py-2">When</th>
+                      <th className="px-3 py-2">Method</th>
+                      <th className="px-3 py-2">Reference</th>
+                      <th className="px-3 py-2 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {folio.payments.map((p, i) => (
+                      <tr key={p.id ?? `${p.postedAt}-${i}`} className="border-b border-slate-100 last:border-0">
+                        <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-600">
+                          {p.postedAt?.slice(0, 16).replace("T", " ")}
+                        </td>
+                        <td className="px-3 py-2">{p.method}</td>
+                        <td className="px-3 py-2 font-mono text-xs">{p.reference ?? "—"}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums">
+                          {p.amount} {folio.summary.currency}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+            )}
+            <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-lg font-bold text-emerald-950">
+              Balance due:{" "}
+              <span className="tabular-nums">
+                {balance} {folio.summary.currency}
+              </span>
+            </p>
+            {folio.ledger && folio.ledger.length > 0 ? (
+              <>
+                <h3 className="mb-2 mt-8 text-sm font-bold uppercase tracking-wide text-teal-800">Ledger</h3>
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full min-w-[480px] border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        <th className="px-3 py-2">When</th>
+                        <th className="px-3 py-2">Type</th>
+                        <th className="px-3 py-2">Description</th>
+                        <th className="px-3 py-2">D/C</th>
+                        <th className="px-3 py-2 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {folio.ledger.map((row) => (
+                        <tr key={row.id} className="border-b border-slate-100 last:border-0">
+                          <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-slate-600">
+                            {row.createdAt ? String(row.createdAt).slice(0, 16).replace("T", " ") : "—"}
+                          </td>
+                          <td className="px-3 py-2 align-top text-xs">
+                            {row.type}
+                            {row.category ? (
+                              <span className="text-muted-foreground"> · {row.category}</span>
+                            ) : null}
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-800">{row.description ?? "—"}</td>
+                          <td className="px-3 py-2 align-top text-xs">{row.debit_credit}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right align-top font-medium tabular-nums">
+                            {row.amount} {folio.summary.currency}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </>
             ) : null}
           </div>
@@ -2054,6 +2189,7 @@ export default function StaffReservationDetailPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

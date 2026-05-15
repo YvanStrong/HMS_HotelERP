@@ -174,6 +174,12 @@ public final class GuestDtos {
 
     public record ReservationTimelineStep(String phase, Instant at) {}
 
+    /** Present when this reservation is linked to a group / event block. */
+    public record StaffReservationGroupSummary(
+            UUID id,
+            @JsonProperty("group_name") String groupName,
+            @JsonProperty("group_code") String groupCode) {}
+
     public record StaffReservationDetailResponse(
             @JsonProperty("reservation_id") UUID reservationId,
             @JsonProperty("booking_reference") String bookingReference,
@@ -187,7 +193,8 @@ public final class GuestDtos {
             @JsonProperty("guest_address") GuestAddressCard guestAddress,
             StaffReservationRoomDto room,
             List<ReservationTimelineStep> timeline,
-            @JsonProperty("folio_api_path") String folioApiPath) {}
+            @JsonProperty("folio_api_path") String folioApiPath,
+            @JsonProperty("group_booking") StaffReservationGroupSummary groupBooking) {}
 
     /** Guest search / pre-fill for walk-in booking. */
     public record GuestSearchHit(StaffGuestProfileDto guest, GuestAddressCard address) {}
