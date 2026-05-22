@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { PaginationBar } from "@/components/PaginationBar";
 import { API_BASE, apiFetch, getToken } from "@/lib/api";
 import { paginateSlice } from "@/lib/pagination";
@@ -33,6 +33,19 @@ type AvailabilityResponse = {
   pricing: { baseRate: number; taxes: number; fees: number; totalPerNight: number };
 };
 
+type ReservationQueueItem = {
+  id: string;
+  type: string;
+  severity: string;
+  title: string;
+  detail: string;
+  reservationId?: string | null;
+  groupId?: string | null;
+  waitlistEntryId?: string | null;
+  dueDate?: string | null;
+  href?: string | null;
+};
+
 function localYmd(d = new Date()) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -47,8 +60,10 @@ function ymdOnly(s: string) {
 
 export default function ReservationsOperationsPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const hotelId = String(params.hotelId);
   const [rows, setRows] = useState<ReservationRow[]>([]);
+  const [queue, setQueue] = useState<ReservationQueueItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [stayStart, setStayStart] = useState("");
   const [stayEnd, setStayEnd] = useState("");
@@ -69,6 +84,9 @@ export default function ReservationsOperationsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [confirmNoShowId, setConfirmNoShowId] = useState<string | null>(null);
   const [isNoShowSubmitting, setIsNoShowSubmitting] = useState(false);
+  const [smartView, setSmartView] = useState<"all" | "confirmed" | "checkedIn" | "arrivalsToday" | "overdue">(
+    searchParams.get("view") === "overdue" ? "overdue" : "all",
+  );
   const PAGE_SIZE = 12;
   const STATUS_OPTIONS = [
     { key: "CONFIRMED", label: "Confirmed" },
@@ -105,6 +123,11 @@ export default function ReservationsOperationsPage() {
       if (q.trim()) p.set("q", q.trim());
       const data = await apiFetch<ReservationRow[]>(`/api/v1/hotels/${hotelId}/reservations?${p.toString()}`);
       setRows(data);
+      const queueRows = await apiFetch<ReservationQueueItem[]>(
+        `/api/v1/hotels/${hotelId}/reservations/operations-queue`,
+        { quiet: true },
+      ).catch(() => [] as ReservationQueueItem[]);
+      setQueue(queueRows);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load reservations");
     } finally {
@@ -117,9 +140,52 @@ export default function ReservationsOperationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- manual reload via button
   }, [hotelId]);
 
+  useEffect(() => {
+    if (searchParams.get("view") !== "overdue") return;
+    setSmartView("overdue");
+    setStatuses({
+      CONFIRMED: false,
+      CHECKED_IN: true,
+      CHECKED_OUT: false,
+      CANCELLED: false,
+      NO_SHOW: false,
+      PENDING: false,
+    });
+  }, [searchParams]);
+
+  function isOverdueReservation(r: ReservationRow) {
+    return String(r.status || "").toUpperCase() === "CHECKED_IN" && ymdOnly(r.checkOutDate) < localYmd();
+  }
+
+  function smartViewTitle() {
+    switch (smartView) {
+      case "overdue":
+        return "Overdue checkouts";
+      case "confirmed":
+        return "Confirmed reservations";
+      case "checkedIn":
+        return "Checked-in guests";
+      case "arrivalsToday":
+        return "Arrivals today";
+      default:
+        return "Reservations";
+    }
+  }
+
+  const overdueRows = useMemo(() => rows.filter(isOverdueReservation), [rows]);
+  const displayRows = useMemo(() => {
+    if (smartView === "overdue") return overdueRows;
+    if (smartView === "confirmed") return rows.filter((r) => r.status === "CONFIRMED");
+    if (smartView === "checkedIn") return rows.filter((r) => r.status === "CHECKED_IN");
+    if (smartView === "arrivalsToday") {
+      return rows.filter((r) => r.checkInDate === localYmd() && r.status === "CONFIRMED");
+    }
+    return rows;
+  }, [overdueRows, rows, smartView]);
+
   const { slice: pageRows, total, totalPages } = useMemo(
-    () => paginateSlice(rows, page, PAGE_SIZE),
-    [rows, page],
+    () => paginateSlice(displayRows, page, PAGE_SIZE),
+    [displayRows, page],
   );
   const stats = useMemo(() => {
     const by = (s: string) => rows.filter((r) => r.status === s).length;
@@ -128,6 +194,7 @@ export default function ReservationsOperationsPage() {
       confirmed: by("CONFIRMED"),
       inHouse: by("CHECKED_IN"),
       arrivalsToday: rows.filter((r) => r.checkInDate === localYmd() && r.status === "CONFIRMED").length,
+      overdue: rows.filter(isOverdueReservation).length,
     };
   }, [rows]);
 
@@ -215,6 +282,7 @@ export default function ReservationsOperationsPage() {
   }
 
   function applyPreset(preset: "arrivals" | "inhouse" | "departures" | "all") {
+    setSmartView("all");
     const today = localYmd();
     const tomorrow = localYmd(new Date(new Date(today + "T12:00:00").getTime() + 24 * 60 * 60 * 1000));
     if (preset === "arrivals") {
@@ -293,24 +361,134 @@ export default function ReservationsOperationsPage() {
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Total</p>
-          <p className="mt-1 text-2xl font-bold">{stats.total}</p>
-        </div>
-        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Confirmed</p>
-          <p className="mt-1 text-2xl font-bold">{stats.confirmed}</p>
-        </div>
-        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Checked in</p>
-          <p className="mt-1 text-2xl font-bold">{stats.inHouse}</p>
-        </div>
-        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Arrivals today</p>
-          <p className="mt-1 text-2xl font-bold">{stats.arrivalsToday}</p>
-        </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <button
+          type="button"
+          onClick={() => {
+            setSmartView("all");
+            setPage(1);
+          }}
+          className={`group rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md ${
+            smartView === "all" ? "border-slate-400 ring-2 ring-slate-100" : "border-slate-200"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <span className="min-w-0">
+              <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Total</span>
+              <span className="mt-1 block text-xs font-semibold text-slate-500">All active records</span>
+            </span>
+            <span className="shrink-0 text-3xl font-black leading-none text-slate-950">{stats.total}</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setSmartView("confirmed");
+            setPage(1);
+          }}
+          className={`group rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md ${
+            smartView === "confirmed" ? "border-slate-400 ring-2 ring-slate-100" : "border-slate-200"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <span className="min-w-0">
+              <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Confirmed</span>
+              <span className="mt-1 block text-xs font-semibold text-slate-500">Waiting check-in</span>
+            </span>
+            <span className="shrink-0 text-3xl font-black leading-none text-slate-950">{stats.confirmed}</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setSmartView("checkedIn");
+            setPage(1);
+          }}
+          className={`group rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md ${
+            smartView === "checkedIn" ? "border-slate-400 ring-2 ring-slate-100" : "border-slate-200"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <span className="min-w-0">
+              <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Checked in</span>
+              <span className="mt-1 block text-xs font-semibold text-slate-500">In-house guests</span>
+            </span>
+            <span className="shrink-0 text-3xl font-black leading-none text-slate-950">{stats.inHouse}</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setSmartView("arrivalsToday");
+            setPage(1);
+          }}
+          className={`group rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md ${
+            smartView === "arrivalsToday" ? "border-slate-400 ring-2 ring-slate-100" : "border-slate-200"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <span className="min-w-0">
+              <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Arrivals today</span>
+              <span className="mt-1 block text-xs font-semibold text-slate-500">Due to arrive</span>
+            </span>
+            <span className="shrink-0 text-3xl font-black leading-none text-slate-950">{stats.arrivalsToday}</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setSmartView("overdue");
+            setPage(1);
+          }}
+          className={`group rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md ${
+            smartView === "overdue" ? "border-rose-300 ring-2 ring-rose-100" : "border-slate-200"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <span className="min-w-0">
+              <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Overdue</span>
+              <span className="mt-1 block text-xs font-semibold text-slate-500">Needs action</span>
+            </span>
+            <span className="shrink-0 text-3xl font-black leading-none text-rose-600">{stats.overdue}</span>
+          </div>
+        </button>
       </div>
+
+      {queue.length > 0 && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-700">Reservation operations queue</p>
+              <h2 className="mt-1 text-lg font-black text-amber-950">
+                {queue.length} task{queue.length === 1 ? "" : "s"} need staff attention
+              </h2>
+              <p className="mt-1 text-sm text-amber-900">
+                Deposit, arrival, overdue checkout, waitlist, and group cutoff warnings generated by the PMS engine.
+              </p>
+            </div>
+            <button type="button" className="hms-btn-outline bg-white text-sm" onClick={() => void loadList()}>
+              Refresh queue
+            </button>
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {queue.slice(0, 6).map((item) => (
+              <Link
+                key={item.id}
+                href={item.href || staffAppPath("reservations")}
+                className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm shadow-sm transition hover:border-amber-300 hover:bg-amber-50"
+              >
+                <span className="flex items-start justify-between gap-2">
+                  <strong className="text-slate-950">{item.title}</strong>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase text-slate-600">
+                    {item.severity}
+                  </span>
+                </span>
+                <span className="mt-1 block text-xs text-slate-600">{item.detail}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!getToken() && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
@@ -327,10 +505,20 @@ export default function ReservationsOperationsPage() {
             <p className="text-xs text-muted-foreground">Refine by stay window, booking status, and guest/reference search</p>
           </div>
           <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-            {rows.length} result{rows.length === 1 ? "" : "s"}
+            {displayRows.length} result{displayRows.length === 1 ? "" : "s"}
           </span>
         </div>
         <div className="mb-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={smartView === "overdue" ? "hms-btn-solid text-xs" : "hms-btn-outline text-xs"}
+            onClick={() => {
+              setSmartView("overdue");
+              setPage(1);
+            }}
+          >
+            Overdue checkouts
+          </button>
           <button type="button" className="hms-btn-outline text-xs" onClick={() => applyPreset("arrivals")}>
             Arrivals today
           </button>
@@ -396,6 +584,7 @@ export default function ReservationsOperationsPage() {
           <button 
             type="button" 
             onClick={() => {
+              setSmartView("all");
               setStayStart("");
               setStayEnd("");
               setStatuses({
@@ -415,6 +604,30 @@ export default function ReservationsOperationsPage() {
           </button>
         </div>
       </div>
+
+      {smartView === "overdue" && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-950 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-rose-600">Notification view</p>
+              <h2 className="mt-1 text-lg font-bold">Overdue checkouts only</h2>
+              <p className="mt-1 text-sm text-rose-800">
+                Showing checked-in guests whose checkout date has passed. Use checkout, extend stay, or overstay handling.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="hms-btn-outline bg-white text-sm"
+              onClick={() => {
+                setSmartView("all");
+                setPage(1);
+              }}
+            >
+              Show all reservations
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Availability Preview */}
       <div className="bg-card rounded-2xl border border-border/60 p-5 shadow-soft">
@@ -460,7 +673,7 @@ export default function ReservationsOperationsPage() {
       {/* Reservations List */}
       <div className="bg-card rounded-2xl border border-border/60 p-5 shadow-soft">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Reservations ({rows.length})</h2>
+          <h2 className="text-lg font-semibold">{smartViewTitle()} ({displayRows.length})</h2>
         </div>
         
         <div className="overflow-x-auto">
@@ -493,8 +706,17 @@ export default function ReservationsOperationsPage() {
                     <td><div className="h-4 w-12 rounded bg-muted" /></td>
                   </tr>
                 ))}
-              {pageRows.map((r) => (
-                <tr key={r.id} className="border-t border-border/50 hover:bg-muted/20 transition-colors">
+              {pageRows.map((r) => {
+                const overdue = isOverdueReservation(r);
+                return (
+                <tr
+                  key={r.id}
+                  className={`border-t transition-colors ${
+                    overdue
+                      ? "border-rose-100 bg-rose-50/50 hover:bg-rose-50"
+                      : "border-border/50 hover:bg-muted/20"
+                  }`}
+                >
                   <td>
                     <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded block">
                       {r.booking_reference || "—"}
@@ -514,6 +736,11 @@ export default function ReservationsOperationsPage() {
                     {r.checkInDate} → {r.checkOutDate}
                     {typeof r.nights === "number" && (
                       <span className="text-muted-foreground"> · {r.nights}n</span>
+                    )}
+                    {overdue && (
+                      <span className="ml-2 inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold uppercase text-rose-700">
+                        Overdue
+                      </span>
                     )}
                   </td>
                   <td>{getStatusBadge(r.status)}</td>
@@ -554,7 +781,8 @@ export default function ReservationsOperationsPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
+              );
+              })}
               {!isLoading && pageRows.length === 0 && (
                 <tr className="border-t border-border/50">
                   <td colSpan={9} className="py-10 text-center text-muted-foreground">

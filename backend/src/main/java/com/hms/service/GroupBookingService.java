@@ -3,16 +3,23 @@ package com.hms.service;
 import com.hms.api.dto.ApiDtos;
 import com.hms.domain.GroupBillingPreference;
 import com.hms.entity.CorporateAccount;
+import com.hms.entity.GroupAllotment;
 import com.hms.entity.GroupBooking;
+import com.hms.entity.GroupRoomingListEntry;
 import com.hms.entity.Guest;
 import com.hms.entity.Hotel;
 import com.hms.entity.Reservation;
+import com.hms.entity.Room;
+import com.hms.entity.RoomType;
 import com.hms.repository.CorporateAccountRepository;
+import com.hms.repository.GroupAllotmentRepository;
 import com.hms.repository.GroupBookingRepository;
+import com.hms.repository.GroupRoomingListEntryRepository;
 import com.hms.repository.GuestRepository;
 import com.hms.repository.HotelRepository;
 import com.hms.repository.PaymentRepository;
 import com.hms.repository.ReservationRepository;
+import com.hms.repository.RoomRepository;
 import com.hms.repository.RoomChargeRepository;
 import com.hms.repository.RoomTypeRepository;
 import com.hms.security.TenantAccessService;
@@ -50,6 +57,9 @@ public class GroupBookingService {
     private final FolioLedgerService folioLedgerService;
     private final CorporateAccountRepository corporateAccountRepository;
     private final RoomTypeRepository roomTypeRepository;
+    private final RoomRepository roomRepository;
+    private final GroupAllotmentRepository groupAllotmentRepository;
+    private final GroupRoomingListEntryRepository groupRoomingListEntryRepository;
 
     @Transactional
     public GroupBooking createGroup(UUID hotelId, String hotelHeader, GroupBooking group) {
@@ -327,6 +337,179 @@ public class GroupBookingService {
                 corp,
                 masterFolio,
                 rows);
+    }
+
+    @Transactional
+    public ApiDtos.GroupPickupDashboardResponse upsertAllotments(
+            UUID hotelId, String hotelHeader, UUID groupId, ApiDtos.GroupAllotmentUpsertRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        GroupBooking group = groupBookingRepository
+                .findByIdAndHotel_Id(groupId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Group not found"));
+        Hotel hotel = group.getHotel();
+        RoomType roomType = roomTypeRepository
+                .findByIdAndHotel_Id(req.roomTypeId(), hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Room type not found"));
+        LocalDate day = req.fromDate();
+        if (!day.isBefore(req.toDate())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "toDate must be after fromDate");
+        }
+        List<GroupAllotment> existingAllotments =
+                groupAllotmentRepository.findByGroupBooking_IdOrderByAllotmentDateAsc(groupId);
+        while (day.isBefore(req.toDate())) {
+            GroupAllotment allotment = null;
+            for (GroupAllotment candidate : existingAllotments) {
+                if (candidate.getRoomType() != null
+                        && candidate.getRoomType().getId().equals(roomType.getId())
+                        && candidate.getAllotmentDate().equals(day)) {
+                    allotment = candidate;
+                    break;
+                }
+            }
+            if (allotment == null) {
+                allotment = new GroupAllotment();
+            }
+            if (allotment.getId() == null) {
+                allotment.setHotel(hotel);
+                allotment.setGroupBooking(group);
+                allotment.setRoomType(roomType);
+                allotment.setAllotmentDate(day);
+            }
+            allotment.setContractedRooms(req.contractedRooms());
+            allotment.setRateAmount(req.rateAmount());
+            allotment.setReleaseDate(req.releaseDate());
+            allotment.setStatus("ACTIVE");
+            groupAllotmentRepository.save(allotment);
+            day = day.plusDays(1);
+        }
+        return getPickupDashboard(hotelId, hotelHeader, groupId);
+    }
+
+    @Transactional(readOnly = true)
+    public ApiDtos.GroupPickupDashboardResponse getPickupDashboard(UUID hotelId, String hotelHeader, UUID groupId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        GroupBooking group = groupBookingRepository
+                .findByIdAndHotel_Id(groupId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Group not found"));
+        List<GroupAllotment> allotments = groupAllotmentRepository.findByGroupBooking_IdOrderByAllotmentDateAsc(groupId);
+        int contracted = 0;
+        int picked = 0;
+        int released = 0;
+        int washed = 0;
+        List<ApiDtos.GroupAllotmentRow> rows = new ArrayList<>();
+        for (GroupAllotment a : allotments) {
+            int pickedForDay = reservationRepository.findByGroupBooking_Id(groupId).stream()
+                    .filter(r -> r.getRoom() != null
+                            && a.getRoomType() != null
+                            && r.getRoom().getRoomType().getId().equals(a.getRoomType().getId())
+                            && !r.getCheckInDate().isAfter(a.getAllotmentDate())
+                            && r.getCheckOutDate().isAfter(a.getAllotmentDate()))
+                    .toList()
+                    .size();
+            a.setPickedUpRooms(pickedForDay);
+            contracted += a.getContractedRooms();
+            picked += pickedForDay;
+            released += a.getReleasedRooms();
+            washed += a.getWashedRooms();
+            rows.add(toAllotmentRow(a));
+        }
+        int remaining = Math.max(0, contracted - picked - released - washed);
+        BigDecimal pickupPct = contracted > 0
+                ? BigDecimal.valueOf(picked * 100.0 / contracted).setScale(2, java.math.RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+        return new ApiDtos.GroupPickupDashboardResponse(
+                group.getId(), group.getGroupName(), contracted, picked, remaining, released, washed, pickupPct, rows);
+    }
+
+    @Transactional
+    public List<ApiDtos.GroupRoomingListEntryRow> addRoomingListEntry(
+            UUID hotelId, String hotelHeader, UUID groupId, ApiDtos.GroupRoomingListEntryRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        GroupBooking group = groupBookingRepository
+                .findByIdAndHotel_Id(groupId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Group not found"));
+        GroupRoomingListEntry entry = new GroupRoomingListEntry();
+        entry.setHotel(group.getHotel());
+        entry.setGroupBooking(group);
+        entry.setGuestName(req.guestName().trim());
+        entry.setGuestEmail(req.guestEmail());
+        entry.setGuestPhone(req.guestPhone());
+        entry.setCheckInDate(req.checkInDate());
+        entry.setCheckOutDate(bookingDateNormalizer.toStorageCheckOutExclusive(req.checkInDate(), req.checkOutDate()));
+        if (!entry.getCheckInDate().isBefore(entry.getCheckOutDate())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "checkOutDate must be after checkInDate");
+        }
+        if (req.roomTypeId() != null) {
+            entry.setRoomType(roomTypeRepository
+                    .findByIdAndHotel_Id(req.roomTypeId(), hotelId)
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Room type not found")));
+        }
+        if (req.roomId() != null) {
+            entry.setRoom(roomRepository
+                    .findByIdAndHotel_Id(req.roomId(), hotelId)
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Room not found")));
+        }
+        entry.setAdults(req.adults() != null ? req.adults() : 1);
+        entry.setChildren(req.children() != null ? req.children() : 0);
+        entry.setPaymentResponsibility(req.paymentResponsibility());
+        entry.setSharingKey(req.sharingKey());
+        entry.setStatus(req.status() != null && !req.status().isBlank() ? req.status().trim().toUpperCase() : "DRAFT");
+        groupRoomingListEntryRepository.save(entry);
+        return listRoomingListEntries(hotelId, hotelHeader, groupId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ApiDtos.GroupRoomingListEntryRow> listRoomingListEntries(UUID hotelId, String hotelHeader, UUID groupId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (!groupBookingRepository.existsByIdAndHotel_Id(groupId, hotelId)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Group not found");
+        }
+        return groupRoomingListEntryRepository.findByGroupBooking_IdOrderByCheckInDateAscGuestNameAsc(groupId)
+                .stream()
+                .map(this::toRoomingRow)
+                .toList();
+    }
+
+    private ApiDtos.GroupAllotmentRow toAllotmentRow(GroupAllotment a) {
+        RoomType rt = a.getRoomType();
+        return new ApiDtos.GroupAllotmentRow(
+                a.getId(),
+                rt != null ? rt.getId() : null,
+                rt != null ? rt.getName() : null,
+                a.getAllotmentDate(),
+                a.getContractedRooms(),
+                a.getPickedUpRooms(),
+                a.getReleasedRooms(),
+                a.getWashedRooms(),
+                a.getRateAmount(),
+                a.getReleaseDate(),
+                a.getStatus());
+    }
+
+    private ApiDtos.GroupRoomingListEntryRow toRoomingRow(GroupRoomingListEntry e) {
+        RoomType rt = e.getRoomType();
+        Room room = e.getRoom();
+        Guest guest = e.getGuest();
+        Reservation reservation = e.getReservation();
+        return new ApiDtos.GroupRoomingListEntryRow(
+                e.getId(),
+                reservation != null ? reservation.getId() : null,
+                guest != null ? guest.getId() : null,
+                e.getGuestName(),
+                e.getGuestEmail(),
+                e.getGuestPhone(),
+                e.getCheckInDate(),
+                e.getCheckOutDate(),
+                rt != null ? rt.getId() : null,
+                rt != null ? rt.getName() : null,
+                room != null ? room.getId() : null,
+                room != null ? room.getRoomNumber() : null,
+                e.getAdults(),
+                e.getChildren(),
+                e.getPaymentResponsibility(),
+                e.getSharingKey(),
+                e.getStatus(),
+                e.getValidationErrors());
     }
 
     /**

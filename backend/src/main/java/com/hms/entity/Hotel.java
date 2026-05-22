@@ -21,6 +21,9 @@ public class Hotel {
     @Column(nullable = false)
     private String name;
 
+    @Column(name = "company_name", length = 255)
+    private String companyName;
+
     @Column(nullable = false, unique = true, length = 64)
     private String code;
 
@@ -67,6 +70,9 @@ public class Hotel {
     @Column(length = 255)
     private String email;
 
+    @Column(name = "tin_number", length = 64)
+    private String tinNumber;
+
     /** Large values (e.g. base64 {@code data:} URLs from the admin image uploader) exceed {@code varchar(2048)}. */
     @Column(name = "image_url", columnDefinition = "TEXT")
     private String imageUrl;
@@ -85,6 +91,30 @@ public class Hotel {
 
     @Column(name = "no_show_default_fee", precision = 12, scale = 2)
     private BigDecimal noShowDefaultFee = new BigDecimal("50.00");
+
+    @Column(name = "overstay_auto_post_enabled", nullable = false)
+    private boolean overstayAutoPostEnabled = false;
+
+    @Column(name = "overstay_grace_minutes", nullable = false)
+    private Integer overstayGraceMinutes = 60;
+
+    @Column(name = "overstay_hourly_percent", precision = 5, scale = 2, nullable = false)
+    private BigDecimal overstayHourlyPercent = new BigDecimal("1.50");
+
+    @Column(name = "overstay_half_day_cap_percent", precision = 5, scale = 2, nullable = false)
+    private BigDecimal overstayHalfDayCapPercent = new BigDecimal("50.00");
+
+    @Column(name = "overstay_full_day_after_hours", nullable = false)
+    private Integer overstayFullDayAfterHours = 6;
+
+    @Column(name = "overstay_max_daily_percent", precision = 5, scale = 2, nullable = false)
+    private BigDecimal overstayMaxDailyPercent = new BigDecimal("100.00");
+
+    @Column(name = "overstay_apply_tax", nullable = false)
+    private boolean overstayApplyTax = true;
+
+    @Column(name = "overstay_post_timing", nullable = false, length = 32)
+    private String overstayPostTiming = "AT_CHECKOUT";
 
     /**
      * When set, the public kitchen board requires query {@code ?key=<this value>} (constant-time compare).

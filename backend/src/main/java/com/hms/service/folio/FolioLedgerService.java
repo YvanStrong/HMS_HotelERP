@@ -155,19 +155,21 @@ public class FolioLedgerService {
     public void onRoomChargePosted(RoomCharge charge) {
         Reservation r = charge.getReservation();
         GuestFolio gf = ensureGuestFolio(r);
-        if (!folioTransactionRepository.existsByRoomCharge_Id(charge.getId())) {
-            FolioTransaction t = new FolioTransaction();
-            t.setGuestFolio(gf);
-            t.setTxnType("CHARGE");
-            t.setCategory(charge.getChargeType() != null ? charge.getChargeType().name() : "CHARGE");
-            t.setDescription(charge.getDescription());
-            t.setAmount(charge.getAmount().setScale(2, RoundingMode.HALF_UP));
-            t.setDebitCredit("DEBIT");
-            t.setReference(charge.getId().toString());
-            t.setCreatedAt(charge.getChargedAt() != null ? charge.getChargedAt() : charge.getCreatedAt());
-            t.setRoomCharge(charge);
-            folioTransactionRepository.save(t);
-        }
+        FolioTransaction t = folioTransactionRepository.findByRoomCharge_Id(charge.getId()).orElseGet(() -> {
+            FolioTransaction row = new FolioTransaction();
+            row.setGuestFolio(gf);
+            row.setTxnType("CHARGE");
+            row.setDebitCredit("DEBIT");
+            row.setReference(charge.getId().toString());
+            row.setCreatedAt(charge.getChargedAt() != null ? charge.getChargedAt() : charge.getCreatedAt());
+            row.setRoomCharge(charge);
+            return row;
+        });
+        t.setGuestFolio(gf);
+        t.setCategory(charge.getChargeType() != null ? charge.getChargeType().name() : "CHARGE");
+        t.setDescription(charge.getDescription());
+        t.setAmount(charge.getAmount().setScale(2, RoundingMode.HALF_UP));
+        folioTransactionRepository.save(t);
         refreshGuestFolioSnapshot(r);
     }
 

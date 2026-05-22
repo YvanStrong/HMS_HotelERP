@@ -21,17 +21,15 @@ public class ApiException extends RuntimeException {
     }
 
     private static String defaultCode(HttpStatus status) {
-        return switch (status) {
-            case BAD_REQUEST -> "BAD_REQUEST";
-            case UNAUTHORIZED -> "UNAUTHORIZED";
-            case FORBIDDEN -> "FORBIDDEN";
-            case NOT_FOUND -> "NOT_FOUND";
-            case CONFLICT -> "CONFLICT";
-            case UNPROCESSABLE_ENTITY -> "UNPROCESSABLE_ENTITY";
-            case PAYMENT_REQUIRED -> "PAYMENT_REQUIRED";
-            case SERVICE_UNAVAILABLE -> "SERVICE_UNAVAILABLE";
-            case TOO_MANY_REQUESTS -> "TOO_MANY_REQUESTS";
-            default -> status.name();
-        };
+        if (status == HttpStatus.BAD_REQUEST) return "BAD_REQUEST";
+        if (status == HttpStatus.UNAUTHORIZED) return "UNAUTHORIZED";
+        if (status == HttpStatus.FORBIDDEN) return "FORBIDDEN";
+        if (status == HttpStatus.NOT_FOUND) return "NOT_FOUND";
+        if (status == HttpStatus.CONFLICT) return "CONFLICT";
+        if (status == HttpStatus.UNPROCESSABLE_ENTITY) return "UNPROCESSABLE_ENTITY";
+        if (status == HttpStatus.PAYMENT_REQUIRED) return "PAYMENT_REQUIRED";
+        if (status == HttpStatus.SERVICE_UNAVAILABLE) return "SERVICE_UNAVAILABLE";
+        if (status == HttpStatus.TOO_MANY_REQUESTS) return "TOO_MANY_REQUESTS";
+        return status.name();
     }
 }

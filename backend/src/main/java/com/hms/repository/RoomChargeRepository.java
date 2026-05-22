@@ -5,6 +5,7 @@ import com.hms.entity.RoomCharge;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -15,6 +16,9 @@ public interface RoomChargeRepository extends JpaRepository<RoomCharge, UUID> {
     List<RoomCharge> findByReservation_IdOrderByChargedAtDesc(UUID reservationId);
 
     List<RoomCharge> findByReservation_IdAndChargeType(UUID reservationId, ChargeType chargeType);
+
+    Optional<RoomCharge> findFirstByReservation_IdAndChargeTypeAndMetadataJsonContainingOrderByChargedAtDesc(
+            UUID reservationId, ChargeType chargeType, String marker);
 
     @Query("select coalesce(sum(c.amount), 0) from RoomCharge c where c.reservation.id = :rid")
     BigDecimal sumAmountForReservation(@Param("rid") UUID reservationId);

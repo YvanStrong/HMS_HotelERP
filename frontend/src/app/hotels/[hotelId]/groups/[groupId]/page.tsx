@@ -70,6 +70,55 @@ type GroupBookingDetail = {
   notes?: string | null;
 };
 
+type RoomTypeOption = {
+  id: string;
+  name: string;
+  code?: string;
+  baseRate?: number;
+};
+
+type PickupDashboard = {
+  groupId: string;
+  groupName: string;
+  contractedRooms: number;
+  pickedUpRooms: number;
+  remainingRooms: number;
+  releasedRooms: number;
+  washedRooms: number;
+  pickupPercent: number;
+  allotments: Array<{
+    id: string;
+    roomTypeId: string;
+    roomTypeName: string;
+    allotmentDate: string;
+    contractedRooms: number;
+    pickedUpRooms: number;
+    releasedRooms: number;
+    washedRooms: number;
+    rateAmount: number | null;
+    releaseDate: string | null;
+    status: string;
+  }>;
+};
+
+type RoomingEntry = {
+  id: string;
+  reservationId?: string | null;
+  guestName: string;
+  guestEmail?: string | null;
+  guestPhone?: string | null;
+  checkInDate: string;
+  checkOutDate: string;
+  roomTypeId?: string | null;
+  roomTypeName?: string | null;
+  roomNumber?: string | null;
+  adults: number;
+  children: number;
+  paymentResponsibility?: string | null;
+  sharingKey?: string | null;
+  status: string;
+};
+
 function toMoney(v: unknown): number {
   if (v == null) return 0;
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -100,6 +149,9 @@ export default function GroupBillingDashboardPage() {
   const [dash, setDash] = useState<BillingDashboard | null>(null);
   const [group, setGroup] = useState<GroupBookingDetail | null>(null);
   const [corporate, setCorporate] = useState<CorporateRow[]>([]);
+  const [pickup, setPickup] = useState<PickupDashboard | null>(null);
+  const [roomingEntries, setRoomingEntries] = useState<RoomingEntry[]>([]);
+  const [roomTypes, setRoomTypes] = useState<RoomTypeOption[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [masterId, setMasterId] = useState("");
@@ -115,6 +167,14 @@ export default function GroupBillingDashboardPage() {
   const [newCorpTerms, setNewCorpTerms] = useState("");
   const [newCorpStatus, setNewCorpStatus] = useState("ACTIVE");
   const [creatingCorp, setCreatingCorp] = useState(false);
+  const [allotmentRoomTypeId, setAllotmentRoomTypeId] = useState("");
+  const [allotmentFrom, setAllotmentFrom] = useState("");
+  const [allotmentTo, setAllotmentTo] = useState("");
+  const [allotmentRooms, setAllotmentRooms] = useState("");
+  const [allotmentRate, setAllotmentRate] = useState("");
+  const [allotmentRelease, setAllotmentRelease] = useState("");
+  const [roomingGuestName, setRoomingGuestName] = useState("");
+  const [roomingGuestEmail, setRoomingGuestEmail] = useState("");
 
   const load = useCallback(async () => {
     setError(null);
@@ -125,14 +185,26 @@ export default function GroupBillingDashboardPage() {
     }
     setLoading(true);
     try {
-      const [d, g, c] = await Promise.all([
+      const [d, g, c, p, r, types] = await Promise.all([
         apiFetch<BillingDashboard>(`/api/v1/hotels/${hotelId}/groups/${groupId}/billing-dashboard`),
         apiFetch<GroupBookingDetail>(`/api/v1/hotels/${hotelId}/groups/${groupId}`),
         apiFetch<CorporateRow[]>(`/api/v1/hotels/${hotelId}/corporate-accounts`).catch(() => [] as CorporateRow[]),
+        apiFetch<PickupDashboard>(`/api/v1/hotels/${hotelId}/groups/${groupId}/pickup-dashboard`).catch(() => null),
+        apiFetch<RoomingEntry[]>(`/api/v1/hotels/${hotelId}/groups/${groupId}/rooming-list-entries`).catch(
+          () => [] as RoomingEntry[],
+        ),
+        apiFetch<RoomTypeOption[]>(`/api/v1/hotels/${hotelId}/room-types`).catch(() => [] as RoomTypeOption[]),
       ]);
       setDash(d);
       setGroup(g);
       setCorporate(Array.isArray(c) ? c : []);
+      setPickup(p);
+      setRoomingEntries(Array.isArray(r) ? r : []);
+      setRoomTypes(Array.isArray(types) ? types : []);
+      setAllotmentRoomTypeId((prev) => prev || g.preferredRoomTypeId || types?.[0]?.id || "");
+      setAllotmentFrom((prev) => prev || formatYmd(g.targetCheckIn));
+      setAllotmentTo((prev) => prev || formatYmd(g.targetCheckOut));
+      setAllotmentRooms((prev) => prev || (g.roomsNeeded != null ? String(g.roomsNeeded) : ""));
       const billing =
         d.billing_preference?.trim() ||
         (typeof g.billingPreference === "string" ? g.billingPreference.trim() : "") ||
@@ -308,6 +380,70 @@ export default function GroupBillingDashboardPage() {
     }
   }
 
+  async function saveAllotment() {
+    if (!allotmentRoomTypeId || !allotmentFrom || !allotmentTo || !allotmentRooms) {
+      setError("Room type, date range, and contracted rooms are required for an allotment.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setBanner(null);
+    try {
+      const rate = allotmentRate.trim() ? Number(allotmentRate) : null;
+      const updated = await apiFetch<PickupDashboard>(`/api/v1/hotels/${hotelId}/groups/${groupId}/allotments`, {
+        method: "POST",
+        body: JSON.stringify({
+          roomTypeId: allotmentRoomTypeId,
+          fromDate: allotmentFrom,
+          toDate: allotmentTo,
+          contractedRooms: Number(allotmentRooms) || 0,
+          rateAmount: Number.isFinite(rate) ? rate : null,
+          releaseDate: allotmentRelease || null,
+        }),
+      });
+      setPickup(updated);
+      setBanner("Group allotment saved.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save allotment");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addRoomingEntry() {
+    if (!roomingGuestName.trim()) {
+      setError("Guest name is required for rooming list.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setBanner(null);
+    try {
+      const rows = await apiFetch<RoomingEntry[]>(`/api/v1/hotels/${hotelId}/groups/${groupId}/rooming-list-entries`, {
+        method: "POST",
+        body: JSON.stringify({
+          guestName: roomingGuestName.trim(),
+          guestEmail: roomingGuestEmail.trim() || null,
+          checkInDate: allotmentFrom || formatYmd(group?.targetCheckIn),
+          checkOutDate: allotmentTo || formatYmd(group?.targetCheckOut),
+          roomTypeId: allotmentRoomTypeId || null,
+          adults: 1,
+          children: 0,
+          paymentResponsibility: "GUEST",
+          status: "DRAFT",
+        }),
+      });
+      setRoomingEntries(rows);
+      setRoomingGuestName("");
+      setRoomingGuestEmail("");
+      setBanner("Rooming list entry added.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add rooming list entry");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const displayPref =
     dash?.billing_preference?.trim() ||
     group?.billingPreference?.trim() ||
@@ -418,6 +554,120 @@ export default function GroupBillingDashboardPage() {
                 {group.notes}
               </div>
             ) : null}
+          </div>
+        )}
+
+        {!loading && group && (
+          <div className="grid gap-4 lg:grid-cols-[1fr_0.95fr]">
+            <section className="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Allotment pickup</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Contract rooms by date and room type, then track picked-up, remaining, released, and washed rooms.
+                  </p>
+                </div>
+                <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-right">
+                  <p className="text-[11px] font-bold uppercase text-indigo-700">Pickup</p>
+                  <p className="text-xl font-black text-indigo-950">{Number(pickup?.pickupPercent ?? 0).toFixed(1)}%</p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-5">
+                {[
+                  ["Contracted", pickup?.contractedRooms ?? 0],
+                  ["Picked up", pickup?.pickedUpRooms ?? 0],
+                  ["Remaining", pickup?.remainingRooms ?? 0],
+                  ["Released", pickup?.releasedRooms ?? 0],
+                  ["Washed", pickup?.washedRooms ?? 0],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                    <p className="text-[11px] font-bold uppercase text-slate-500">{label}</p>
+                    <p className="text-xl font-black text-slate-950">{value}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Room type
+                  <select className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" value={allotmentRoomTypeId} onChange={(e) => setAllotmentRoomTypeId(e.target.value)}>
+                    <option value="">Select type</option>
+                    {roomTypes.map((rt) => (
+                      <option key={rt.id} value={rt.id}>{rt.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                  From
+                  <input className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" type="date" value={allotmentFrom === "—" ? "" : allotmentFrom} onChange={(e) => setAllotmentFrom(e.target.value)} />
+                </label>
+                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                  To
+                  <input className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" type="date" value={allotmentTo === "—" ? "" : allotmentTo} onChange={(e) => setAllotmentTo(e.target.value)} />
+                </label>
+                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Contracted rooms
+                  <input className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" type="number" min={0} value={allotmentRooms} onChange={(e) => setAllotmentRooms(e.target.value)} />
+                </label>
+                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Group rate
+                  <input className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" type="number" min={0} value={allotmentRate} onChange={(e) => setAllotmentRate(e.target.value)} />
+                </label>
+                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Release date
+                  <input className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" type="date" value={allotmentRelease} onChange={(e) => setAllotmentRelease(e.target.value)} />
+                </label>
+              </div>
+              <button type="button" className="mt-4 hms-btn-solid text-sm" disabled={saving} onClick={() => void saveAllotment()}>
+                Save allotment
+              </button>
+              {pickup?.allotments?.length ? (
+                <div className="mt-4 max-h-72 overflow-auto rounded-xl border border-slate-100">
+                  {pickup.allotments.slice(0, 12).map((a) => (
+                    <div key={a.id} className="grid gap-2 border-b border-slate-100 px-3 py-2 text-sm last:border-0 sm:grid-cols-4">
+                      <strong>{a.allotmentDate}</strong>
+                      <span>{a.roomTypeName}</span>
+                      <span>{a.pickedUpRooms}/{a.contractedRooms} picked</span>
+                      <span className="text-slate-500">Release {a.releaseDate ?? "—"}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+
+            <section className="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm sm:p-6">
+              <h3 className="text-lg font-black text-slate-900">Rooming list</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Draft attendee rows before turning them into individual reservations.
+              </p>
+              <div className="mt-4 grid gap-3">
+                <input className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" value={roomingGuestName} onChange={(e) => setRoomingGuestName(e.target.value)} placeholder="Guest name" />
+                <input className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" value={roomingGuestEmail} onChange={(e) => setRoomingGuestEmail(e.target.value)} placeholder="Guest email" />
+                <button type="button" className="hms-btn-outline text-sm" disabled={saving} onClick={() => void addRoomingEntry()}>
+                  Add draft rooming entry
+                </button>
+              </div>
+              <div className="mt-4 space-y-2">
+                {roomingEntries.slice(0, 8).map((entry) => (
+                  <div key={entry.id} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
+                    <div className="flex flex-wrap justify-between gap-2">
+                      <strong className="text-slate-900">{entry.guestName}</strong>
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-slate-500">{entry.status}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {entry.checkInDate} → {entry.checkOutDate} · {entry.roomTypeName ?? "Room type TBD"}
+                    </p>
+                    {entry.reservationId ? (
+                      <Link className="mt-2 inline-flex text-xs font-bold text-indigo-600 underline" href={staffAppPath("reservations", entry.reservationId)}>
+                        Open reservation
+                      </Link>
+                    ) : null}
+                  </div>
+                ))}
+                {!roomingEntries.length ? (
+                  <p className="text-sm text-muted-foreground">No rooming list rows yet.</p>
+                ) : null}
+              </div>
+            </section>
           </div>
         )}
 

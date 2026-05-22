@@ -56,10 +56,12 @@ public class HotelSettingsController {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         Hotel h = mustHotel(hotelId);
         h.setName(trimOrNull(body.name()));
+        h.setCompanyName(trimOrNull(body.companyName()));
         h.setLogoUrl(trimOrNull(body.logoUrl()));
         h.setPhone(trimOrNull(body.phone()));
         h.setEmail(trimOrNull(body.email()));
         h.setAddress(trimOrNull(body.address()));
+        h.setTinNumber(trimOrNull(body.tinNumber()));
         h.setDefaultCountry(trimOrNull(body.defaultCountry()));
         h.setDefaultIdType(trimOrNull(body.defaultIdType()));
         h.setPhoneCountryCode(trimOrNull(body.phoneCountryCode()));
@@ -88,44 +90,66 @@ public class HotelSettingsController {
         return new HotelContextResponse(
                 h.getId(),
                 h.getName(),
+                h.getCompanyName(),
                 h.getLogoUrl(),
                 h.getCurrency(),
                 h.getDefaultCountry(),
                 h.getPhone(),
                 h.getEmail(),
                 h.getAddress(),
+                h.getTinNumber(),
                 h.getTimezone(),
                 h.getCheckInTime(),
                 h.getCheckOutTime(),
                 h.getInvoicePrefix(),
                 h.getDefaultIdType(),
                 h.getPhoneCountryCode(),
-                h.getTaxRate());
+                h.getTaxRate(),
+                h.isOverstayAutoPostEnabled(),
+                h.getOverstayGraceMinutes(),
+                h.getOverstayHourlyPercent(),
+                h.getOverstayHalfDayCapPercent(),
+                h.getOverstayFullDayAfterHours(),
+                h.getOverstayMaxDailyPercent(),
+                h.isOverstayApplyTax(),
+                h.getOverstayPostTiming());
     }
 
     public record HotelContextResponse(
             UUID id,
             String name,
+            String companyName,
             String logoUrl,
             String currency,
             String defaultCountry,
             String phone,
             String email,
             String address,
+            String tinNumber,
             String timezone,
             String checkInTime,
             String checkOutTime,
             String invoicePrefix,
             String defaultIdType,
             String phoneCountryCode,
-            BigDecimal taxRate) {}
+            BigDecimal taxRate,
+            Boolean overstayAutoPostEnabled,
+            Integer overstayGraceMinutes,
+            BigDecimal overstayHourlyPercent,
+            BigDecimal overstayHalfDayCapPercent,
+            Integer overstayFullDayAfterHours,
+            BigDecimal overstayMaxDailyPercent,
+            Boolean overstayApplyTax,
+            String overstayPostTiming) {}
 
     public record UpdateHotelSettingsRequest(
             String name,
+            String companyName,
             String logoUrl,
             String phone,
             String email,
             String address,
+            String tinNumber,
             String defaultCountry,
             String defaultIdType,
             String phoneCountryCode,

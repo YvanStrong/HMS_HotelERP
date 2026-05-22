@@ -312,7 +312,7 @@ public class GuestService {
                 req.type() != null && !req.type().isBlank()
                         ? LoyaltyTxnType.valueOf(req.type().trim().toUpperCase())
                         : LoyaltyTxnType.EARNED;
-        long prev = g.getLoyaltyPoints();
+        long prev = currentPostedLoyaltyPoints(g.getId());
         long next = prev + req.points();
         g.setLoyaltyPoints(next);
         g.setLoyaltyTier(tierFromPoints(next));
@@ -359,7 +359,7 @@ public class GuestService {
         Guest g = guestRepository.findById(guestId).orElse(null);
         if (g == null || points <= 0) return;
 
-        long prev = g.getLoyaltyPoints();
+        long prev = currentPostedLoyaltyPoints(g.getId());
         long next = prev + points;
         g.setLoyaltyPoints(next);
         g.setLoyaltyTier(tierFromPoints(next));
@@ -389,11 +389,13 @@ public class GuestService {
         if (req.pointsToRedeem() <= 0) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "pointsToRedeem must be positive");
         }
-        if (g.getLoyaltyPoints() < req.pointsToRedeem()) {
+        long prev = currentPostedLoyaltyPoints(g.getId());
+        g.setLoyaltyPoints(prev);
+        g.setLoyaltyTier(tierFromPoints(prev));
+        if (prev < req.pointsToRedeem()) {
             throw new ApiException(HttpStatus.CONFLICT, "Insufficient loyalty points");
         }
         RedemptionType rtype = RedemptionType.valueOf(req.redemptionType().trim().toUpperCase());
-        long prev = g.getLoyaltyPoints();
         long next = prev - req.pointsToRedeem();
         g.setLoyaltyPoints(next);
         g.setLoyaltyTier(tierFromPoints(next));
@@ -435,9 +437,12 @@ public class GuestService {
 
     private Map<String, Object> loyaltyBlock(Guest g) {
         Map<String, Object> m = new HashMap<>();
-        m.put("tier", g.getLoyaltyTier().name());
-        m.put("points", g.getLoyaltyPoints());
-        long p = g.getLoyaltyPoints();
+        long p = currentPostedLoyaltyPoints(g.getId());
+        LoyaltyTier tier = tierFromPoints(p);
+        m.put("tier", tier.name());
+        m.put("points", p);
+        m.put("source", "posted_loyalty_transactions");
+        m.put("calculation", "Automatic from checked-out stay invoices, staff-posted ledger rows, and redemptions");
         if (p < SILVER_AT) {
             m.put("nextTier", "SILVER");
             m.put("pointsToNextTier", SILVER_AT - p);
@@ -453,6 +458,10 @@ public class GuestService {
         }
         m.put("tierBenefits", List.of("late_checkout", "welcome_amenity"));
         return m;
+    }
+
+    private long currentPostedLoyaltyPoints(UUID guestId) {
+        return Math.max(0L, loyaltyTransactionRepository.sumPostedPointsByGuestId(guestId));
     }
 
     private static String progressToNextTier(long points) {

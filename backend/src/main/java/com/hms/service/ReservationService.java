@@ -18,23 +18,33 @@ import com.hms.entity.Invoice;
 import com.hms.entity.InvoiceLineItem;
 import com.hms.entity.Payment;
 import com.hms.entity.Reservation;
+import com.hms.entity.ReservationEvent;
+import com.hms.entity.ReservationGuest;
+import com.hms.entity.ReservationPolicySnapshot;
+import com.hms.entity.ReservationSegment;
 import com.hms.entity.Room;
 import com.hms.entity.RoomCharge;
 import com.hms.entity.RoomType;
 import com.hms.events.RoomCheckedOutEvent;
 import com.hms.entity.RoomTypeNightlyRate;
+import com.hms.entity.WaitlistEntry;
 import com.hms.repository.AppUserRepository;
 import com.hms.repository.GroupBookingRepository;
 import com.hms.repository.GuestRepository;
 import com.hms.repository.HotelRepository;
 import com.hms.repository.InvoiceRepository;
 import com.hms.repository.PaymentRepository;
+import com.hms.repository.ReservationEventRepository;
+import com.hms.repository.ReservationGuestRepository;
+import com.hms.repository.ReservationPolicySnapshotRepository;
 import com.hms.repository.ReservationRepository;
+import com.hms.repository.ReservationSegmentRepository;
 import com.hms.repository.RoomBlockRepository;
 import com.hms.repository.RoomChargeRepository;
 import com.hms.repository.RoomRepository;
 import com.hms.repository.RoomTypeNightlyRateRepository;
 import com.hms.repository.RoomTypeRepository;
+import com.hms.repository.WaitlistEntryRepository;
 import com.hms.config.HmsPublicUrlProperties;
 import com.hms.service.folio.FolioLedgerService;
 import com.hms.service.folio.FolioTax;
@@ -46,6 +56,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.Year;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
@@ -97,6 +108,12 @@ public class ReservationService {
     private final GuestService guestService;
     private final FolioLedgerService folioLedgerService;
     private final GroupBillingRouter groupBillingRouter;
+    private final OverstayChargeService overstayChargeService;
+    private final ReservationGuestRepository reservationGuestRepository;
+    private final ReservationSegmentRepository reservationSegmentRepository;
+    private final ReservationPolicySnapshotRepository reservationPolicySnapshotRepository;
+    private final ReservationEventRepository reservationEventRepository;
+    private final WaitlistEntryRepository waitlistEntryRepository;
 
     public ReservationService(
             HotelRepository hotelRepository,
@@ -126,7 +143,13 @@ public class ReservationService {
             GroupBookingRepository groupBookingRepository,
             GuestService guestService,
             FolioLedgerService folioLedgerService,
-            GroupBillingRouter groupBillingRouter) {
+            GroupBillingRouter groupBillingRouter,
+            OverstayChargeService overstayChargeService,
+            ReservationGuestRepository reservationGuestRepository,
+            ReservationSegmentRepository reservationSegmentRepository,
+            ReservationPolicySnapshotRepository reservationPolicySnapshotRepository,
+            ReservationEventRepository reservationEventRepository,
+            WaitlistEntryRepository waitlistEntryRepository) {
         this.hotelRepository = hotelRepository;
         this.roomRepository = roomRepository;
         this.roomTypeRepository = roomTypeRepository;
@@ -155,6 +178,12 @@ public class ReservationService {
         this.guestService = guestService;
         this.folioLedgerService = folioLedgerService;
         this.groupBillingRouter = groupBillingRouter;
+        this.overstayChargeService = overstayChargeService;
+        this.reservationGuestRepository = reservationGuestRepository;
+        this.reservationSegmentRepository = reservationSegmentRepository;
+        this.reservationPolicySnapshotRepository = reservationPolicySnapshotRepository;
+        this.reservationEventRepository = reservationEventRepository;
+        this.waitlistEntryRepository = waitlistEntryRepository;
     }
 
     @Transactional(readOnly = true)
@@ -279,6 +308,294 @@ public class ReservationService {
         return createReservationWithActor(hotelId, req, auditActor(), false, Optional.empty());
     }
 
+    @Transactional(readOnly = true)
+    public ApiDtos.ReservationPreviewResponse previewWizardReservation(
+            UUID hotelId, String hotelHeader, ApiDtos.WizardReservationRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        LocalDate checkIn = req.checkInDate();
+        LocalDate checkOut = bookingDateNormalizer.toStorageCheckOutExclusive(checkIn, req.checkOutDate());
+        validateDates(checkIn, checkOut);
+        int adults = req.adults() != null ? req.adults() : 1;
+        int children = req.children() != null ? req.children() : 0;
+        RoomType roomType = resolveRoomType(hotelId, req.roomTypeId(), req.roomTypeCode());
+        long nights = ChronoUnit.DAYS.between(checkIn, checkOut);
+        BigDecimal nightly = req.manualRateOverride() != null
+                ? req.manualRateOverride()
+                : averageNightlyForStay(hotelId, roomType.getId(), checkIn, checkOut, roomType.getBaseRate());
+        if (nightly == null || nightly.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "ROOM_RATE_REQUIRED",
+                    "Room nightly rate must be greater than zero. Configure the room type/rate plan or enter a manual nightly rate before booking.");
+        }
+        BigDecimal roomSubtotal = nightly.multiply(BigDecimal.valueOf(nights)).setScale(2, RoundingMode.HALF_UP);
+        Hotel hotel = hotelRepository
+                .findById(hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Hotel not found"));
+        BigDecimal taxes = FolioTax.taxOnSubtotal(roomSubtotal, hotel);
+        BigDecimal fees = FEE_PER_NIGHT.multiply(BigDecimal.valueOf(nights)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal estimatedTotal = roomSubtotal.add(taxes).add(fees).setScale(2, RoundingMode.HALF_UP);
+        List<Room> assignable = findAssignableRooms(hotelId, roomType.getId(), adults + children, checkIn, checkOut);
+        boolean available = assignable.stream()
+                .anyMatch(room -> reservationRepository.countOverlapping(room.getId(), checkIn, checkOut, null) == 0);
+        List<ApiDtos.ReservationWarning> warnings = new ArrayList<>();
+        if (!available) {
+            warnings.add(new ApiDtos.ReservationWarning(
+                    "NO_INVENTORY",
+                    "critical",
+                    "No clean assignable room is available for this room type and stay window."));
+        }
+        if (Boolean.TRUE.equals(req.guarantee() != null ? req.guarantee().depositRequired() : null)
+                && (req.guarantee().depositAmount() == null || req.guarantee().depositAmount().signum() <= 0)) {
+            warnings.add(new ApiDtos.ReservationWarning(
+                    "DEPOSIT_AMOUNT_MISSING", "warning", "Deposit is required but no deposit amount was entered."));
+        }
+        if (req.manualRateOverride() != null && (req.rateOverrideReason() == null || req.rateOverrideReason().isBlank())) {
+            warnings.add(new ApiDtos.ReservationWarning(
+                    "RATE_OVERRIDE_REASON_MISSING", "warning", "Manual rate overrides should include a reason."));
+        }
+        BigDecimal depositDue = req.guarantee() != null && req.guarantee().depositAmount() != null
+                ? req.guarantee().depositAmount()
+                : BigDecimal.ZERO;
+        List<String> policySummaries = List.of(
+                "Cancellation: " + defaultText(req.policy() != null ? req.policy().cancellationPolicyId() : null, "property default"),
+                "Deposit: " + defaultText(req.policy() != null ? req.policy().depositPolicyId() : null, "property default"),
+                "No-show: " + defaultText(req.policy() != null ? req.policy().noShowPolicyId() : null, "property default"));
+        return new ApiDtos.ReservationPreviewResponse(
+                available,
+                nightly,
+                roomSubtotal,
+                taxes,
+                fees,
+                estimatedTotal,
+                depositDue,
+                hotel.getCurrency(),
+                warnings,
+                policySummaries);
+    }
+
+    @Transactional
+    public ApiDtos.CreateReservationResponse createWizardReservation(
+            UUID hotelId, String hotelHeader, ApiDtos.WizardReservationRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        ApiDtos.CreateReservationRequest core = toCoreCreateRequest(req);
+        ApiDtos.CreateReservationResponse response =
+                createReservationWithActor(hotelId, core, auditActor(), false, Optional.empty());
+        Reservation reservation = reservationRepository
+                .findDetailedByIdAndHotel_Id(response.id(), hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found after create"));
+        applyWizardFields(reservation, req);
+        reservationRepository.save(reservation);
+        persistWizardChildren(reservation, req);
+        addReservationEvent(
+                reservation,
+                "WIZARD_CREATED",
+                "Reservation created from PMS wizard",
+                "Created with source/market, guarantee, policy, guests, and segment details.",
+                auditActor(),
+                Map.of("bookingReference", reservation.getBookingReference()));
+        return response;
+    }
+
+    @Transactional(readOnly = true)
+    public List<ApiDtos.ReservationEventRow> reservationTimeline(UUID hotelId, String hotelHeader, UUID reservationId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (!reservationRepository.findByIdAndHotel_Id(reservationId, hotelId).isPresent()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Reservation not found");
+        }
+        return reservationEventRepository.findByReservation_IdOrderByCreatedAtDesc(reservationId).stream()
+                .map(e -> new ApiDtos.ReservationEventRow(
+                        e.getId(),
+                        e.getEventType(),
+                        e.getTitle(),
+                        e.getDetail(),
+                        e.getActor(),
+                        e.getCreatedAt(),
+                        e.getMetadataJson()))
+                .toList();
+    }
+
+    @Transactional
+    public ApiDtos.WaitlistEntryResponse createWaitlistEntry(
+            UUID hotelId, String hotelHeader, ApiDtos.WaitlistCreateRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Hotel hotel = hotelRepository
+                .findById(hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Hotel not found"));
+        LocalDate checkOut = bookingDateNormalizer.toStorageCheckOutExclusive(req.checkInDate(), req.checkOutDate());
+        validateDates(req.checkInDate(), checkOut);
+        Guest guest = null;
+        if (req.guestId() != null) {
+            guest = guestRepository
+                    .findByIdAndHotel_Id(req.guestId(), hotelId)
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Guest not found"));
+        } else if (req.guest() != null) {
+            GuestDtos.GuestSearchHit created = guestService.createGuestForStaff(hotelId, hotelHeader, req.guest());
+            guest = guestRepository
+                    .findByIdAndHotel_Id(created.guest().id(), hotelId)
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Guest not found after create"));
+        }
+        WaitlistEntry entry = new WaitlistEntry();
+        entry.setHotel(hotel);
+        entry.setGuest(guest);
+        if (req.groupBookingId() != null) {
+            entry.setGroupBooking(groupBookingRepository
+                    .findByIdAndHotel_Id(req.groupBookingId(), hotelId)
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Group booking not found")));
+        }
+        entry.setRequestedCheckIn(req.checkInDate());
+        entry.setRequestedCheckOut(checkOut);
+        if (req.roomTypeId() != null) {
+            entry.setRoomType(roomTypeRepository
+                    .findByIdAndHotel_Id(req.roomTypeId(), hotelId)
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Room type not found")));
+        }
+        entry.setAdults(req.adults() != null ? req.adults() : 1);
+        entry.setChildren(req.children() != null ? req.children() : 0);
+        entry.setChildAgesJson(toJson(req.childAges()));
+        entry.setFlexibleDates(Boolean.TRUE.equals(req.flexibleDates()));
+        entry.setSourceCode(trimToNull(req.sourceCode()));
+        entry.setMarketCode(trimToNull(req.marketCode()));
+        entry.setPriority(trimUpper(req.priority(), "NORMAL"));
+        entry.setNotes(trimToNull(req.notes()));
+        WaitlistEntry saved = waitlistEntryRepository.save(entry);
+        String guestName = guest != null ? displayName(guest) : "Unassigned guest";
+        return new ApiDtos.WaitlistEntryResponse(
+                saved.getId(),
+                saved.getStatus(),
+                saved.getRequestedCheckIn(),
+                saved.getRequestedCheckOut(),
+                saved.getRoomType() != null ? saved.getRoomType().getId() : null,
+                guestName,
+                saved.getPriority(),
+                "Waitlist request created. Convert it when inventory opens.");
+    }
+
+    @Transactional(readOnly = true)
+    public List<ApiDtos.ReservationQueueItem> operationalQueue(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        List<ApiDtos.ReservationQueueItem> items = new ArrayList<>();
+        List<Reservation> active = reservationRepository.findByHotel_IdAndStatusIn(
+                hotelId, List.of(ReservationStatus.CONFIRMED, ReservationStatus.CHECKED_IN));
+        for (Reservation r : active) {
+            String guest = displayName(r.getGuest());
+            String href = "/app/reservations/" + r.getId();
+            if (r.getStatus() == ReservationStatus.CHECKED_IN && r.getCheckOutDate().isBefore(today)) {
+                items.add(new ApiDtos.ReservationQueueItem(
+                        "overdue-" + r.getId(),
+                        "OVERDUE_CHECKOUT",
+                        "critical",
+                        "Guest past checkout",
+                        guest + " is past scheduled checkout. Extend stay, check out, or post overstay.",
+                        r.getId(),
+                        null,
+                        null,
+                        r.getCheckOutDate(),
+                        href));
+            }
+            if (r.getStatus() == ReservationStatus.CONFIRMED && r.getCheckInDate().equals(today)) {
+                items.add(new ApiDtos.ReservationQueueItem(
+                        "arrival-" + r.getId(),
+                        "ARRIVAL_TODAY",
+                        r.isDepositRequired() && !r.isDepositPaid() ? "warning" : "info",
+                        "Arrival today",
+                        guest + " arrives today. Verify ID, room readiness, and guarantee.",
+                        r.getId(),
+                        null,
+                        null,
+                        r.getCheckInDate(),
+                        href));
+            }
+            if (r.isDepositRequired() && !r.isDepositPaid()) {
+                items.add(new ApiDtos.ReservationQueueItem(
+                        "deposit-" + r.getId(),
+                        "DEPOSIT_MISSING",
+                        r.getCheckInDate().isBefore(today.plusDays(2)) ? "warning" : "info",
+                        "Deposit missing",
+                        guest + " has a required deposit that is not marked paid.",
+                        r.getId(),
+                        null,
+                        null,
+                        r.getDepositDueDate() != null ? r.getDepositDueDate() : r.getCheckInDate(),
+                        href));
+            }
+        }
+        for (WaitlistEntry w : waitlistEntryRepository.findByHotel_IdAndStatusOrderByRequestedCheckInAsc(hotelId, "OPEN")) {
+            items.add(new ApiDtos.ReservationQueueItem(
+                    "waitlist-" + w.getId(),
+                    "WAITLIST_OPEN",
+                    "info",
+                    "Open waitlist request",
+                    "Waitlist request for " + w.getRequestedCheckIn() + " to " + w.getRequestedCheckOut() + ".",
+                    null,
+                    w.getGroupBooking() != null ? w.getGroupBooking().getId() : null,
+                    w.getId(),
+                    w.getRequestedCheckIn(),
+                    "/app/reservations/new"));
+        }
+        for (GroupBooking group : groupBookingRepository.findByHotel_IdOrderByCreatedAtDesc(hotelId)) {
+            LocalDate cutoff = group.getCutoffDate() != null ? group.getCutoffDate() : group.getReleaseDate();
+            if (cutoff != null && !cutoff.isBefore(today) && !cutoff.isAfter(today.plusDays(3))) {
+                items.add(new ApiDtos.ReservationQueueItem(
+                        "group-cutoff-" + group.getId(),
+                        "GROUP_CUTOFF_SOON",
+                        "warning",
+                        "Group cutoff approaching",
+                        group.getGroupName() + " cutoff/release date is " + cutoff + ". Review pickup and release unused rooms.",
+                        null,
+                        group.getId(),
+                        null,
+                        cutoff,
+                        "/app/groups/" + group.getId()));
+            }
+        }
+        items.sort(Comparator.comparing(ApiDtos.ReservationQueueItem::dueDate, Comparator.nullsLast(Comparator.naturalOrder())));
+        return items;
+    }
+
+    @Transactional(readOnly = true)
+    public ApiDtos.ReservationPmsReportResponse pmsReservationReport(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        List<Reservation> rows = reservationRepository.findByHotel_IdAndStatusIn(
+                hotelId, List.of(ReservationStatus.CONFIRMED, ReservationStatus.CHECKED_IN));
+        List<ApiDtos.ReservationQueueItem> queue = operationalQueue(hotelId, hotelHeader);
+        long depositMissing = rows.stream().filter(r -> r.isDepositRequired() && !r.isDepositPaid()).count();
+        long waitlistOpen = waitlistEntryRepository.findByHotel_IdAndStatusOrderByRequestedCheckInAsc(hotelId, "OPEN").size();
+        return new ApiDtos.ReservationPmsReportResponse(
+                rows.size(),
+                depositMissing,
+                waitlistOpen,
+                groupCount(rows, Reservation::getSourceCode, Reservation::getSource),
+                groupCount(rows, Reservation::getMarketCode, r -> "UNSEGMENTED"),
+                groupCount(rows, Reservation::getChannelCode, r -> "DIRECT"),
+                groupQueue(queue, ApiDtos.ReservationQueueItem::severity),
+                groupQueue(queue, ApiDtos.ReservationQueueItem::type));
+    }
+
+    private static Map<String, Long> groupCount(
+            List<Reservation> rows,
+            java.util.function.Function<Reservation, String> primary,
+            java.util.function.Function<Reservation, String> fallback) {
+        Map<String, Long> out = new LinkedHashMap<>();
+        for (Reservation r : rows) {
+            String key = defaultText(primary.apply(r), defaultText(fallback.apply(r), "UNKNOWN")).toUpperCase();
+            out.put(key, out.getOrDefault(key, 0L) + 1);
+        }
+        return out;
+    }
+
+    private static Map<String, Long> groupQueue(
+            List<ApiDtos.ReservationQueueItem> rows,
+            java.util.function.Function<ApiDtos.ReservationQueueItem, String> classifier) {
+        Map<String, Long> out = new LinkedHashMap<>();
+        for (ApiDtos.ReservationQueueItem item : rows) {
+            String key = defaultText(classifier.apply(item), "UNKNOWN").toUpperCase();
+            out.put(key, out.getOrDefault(key, 0L) + 1);
+        }
+        return out;
+    }
+
     /**
      * Direct web booking — optional JWT for {@link Role#GUEST}. Pricing is always computed server-side; payment from
      * client is ignored.
@@ -397,6 +714,12 @@ public class ReservationService {
                             req.checkOutDate(),
                             roomType.getBaseRate());
         }
+        if (nightly == null || nightly.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "ROOM_RATE_REQUIRED",
+                    "Room nightly rate must be greater than zero. Configure the room type/rate plan or enter a manual nightly rate before booking.");
+        }
         BigDecimal total = nightly.multiply(BigDecimal.valueOf(nights)).setScale(2, RoundingMode.HALF_UP);
 
         Room room = pickRoom(hotelId, roomType.getId(), req.preferredRoomId(), req.checkInDate(), req.checkOutDate(), guests);
@@ -437,10 +760,15 @@ public class ReservationService {
                 r.setDepositPaymentMethod(req.payment().paymentMethod().trim().toUpperCase());
             }
         }
-        portalBooker
-                .filter(up -> up.getRole() == Role.GUEST)
-                .ifPresent(up -> r.setBookedByAppUser(appUserRepository.getReferenceById(up.getId())));
+        stampReservationActor(r, portalBooker);
         Reservation persisted = reservationRepository.save(r);
+        addReservationEvent(
+                persisted,
+                "CREATED",
+                "Reservation created",
+                "Reservation created and confirmed.",
+                actor,
+                Map.of("bookingReference", persisted.getBookingReference(), "source", persisted.getBookingSource()));
 
         RoomStatus roomPrevStatus = room.getStatus();
         CleanlinessStatus roomPrevClean = room.getCleanliness();
@@ -636,6 +964,289 @@ public class ReservationService {
         return new ApiDtos.CancellationHint(code, summary, hint);
     }
 
+    private ApiDtos.CreateReservationRequest toCoreCreateRequest(ApiDtos.WizardReservationRequest req) {
+        ApiDtos.RatePlanInput ratePlan = new ApiDtos.RatePlanInput(
+                req.manualRateOverride(),
+                req.packages() != null && req.packages().stream().anyMatch(p -> p != null && p.toLowerCase().contains("breakfast")),
+                req.policy() != null ? req.policy().cancellationPolicyId() : null);
+        ApiDtos.PaymentInput payment = req.guarantee() == null
+                ? null
+                : new ApiDtos.PaymentInput(
+                        req.guarantee().depositRequired(),
+                        req.guarantee().depositAmount(),
+                        req.guarantee().paymentMethod());
+        return new ApiDtos.CreateReservationRequest(
+                req.guestId(),
+                req.guest(),
+                req.roomTypeId(),
+                req.roomTypeCode(),
+                req.preferredRoomId(),
+                req.checkInDate(),
+                req.checkOutDate(),
+                req.adults() != null ? req.adults() : 1,
+                req.children() != null ? req.children() : 0,
+                req.specialRequests(),
+                defaultText(req.source(), "FRONT_DESK"),
+                ratePlan,
+                payment,
+                req.groupBookingId());
+    }
+
+    private void applyWizardFields(Reservation r, ApiDtos.WizardReservationRequest req) {
+        r.setArrivalTime(req.arrivalTime());
+        r.setDepartureTime(req.departureTime());
+        r.setRoomsRequested(req.roomsRequested() != null ? req.roomsRequested() : 1);
+        r.setChildAgesJson(toJson(req.childAges()));
+        r.setStayPurpose(trimToNull(req.stayPurpose()));
+        r.setBookingIntent(trimUpper(req.bookingIntent(), "NORMAL"));
+        r.setWaitlistAllowed(Boolean.TRUE.equals(req.waitlistAllowed()));
+        r.setFlexibleDates(Boolean.TRUE.equals(req.flexibleDates()));
+        r.setRatePlanId(req.ratePlanId());
+        r.setRateCode(trimToNull(req.rateCode()));
+        r.setRoomTypeToChargeId(req.roomTypeToChargeId());
+        r.setManualRateOverride(req.manualRateOverride());
+        r.setRateOverrideReason(trimToNull(req.rateOverrideReason()));
+        r.setPackagesJson(toJson(req.packages()));
+        r.setAddOnsJson(toJson(req.addOns()));
+        r.setRoomFeaturesJson(toJson(req.roomFeatures()));
+        r.setUpgradeReason(trimToNull(req.upgradeReason()));
+        if (req.sales() != null) {
+            r.setMarketCode(trimUpper(req.sales().marketCode(), null));
+            r.setSourceCode(trimUpper(req.sales().sourceCode(), null));
+            r.setOriginCode(trimUpper(req.sales().originCode(), null));
+            r.setChannelCode(trimUpper(req.sales().channelCode(), null));
+            r.setCompanyId(req.sales().companyId());
+            r.setTravelAgentId(req.sales().travelAgentId());
+            r.setCommissionable(Boolean.TRUE.equals(req.sales().commissionable()));
+            r.setCommissionPercent(req.sales().commissionPercent());
+            r.setPromoCode(trimUpper(req.sales().promoCode(), null));
+            r.setCampaignCode(trimUpper(req.sales().campaignCode(), null));
+        }
+        if (req.guarantee() != null) {
+            r.setReservationType(trimUpper(req.guarantee().reservationType(), null));
+            r.setGuaranteeType(trimUpper(req.guarantee().guaranteeType(), null));
+            r.setDeductInventory(!Boolean.FALSE.equals(req.guarantee().deductInventory()));
+            r.setDepositRequired(Boolean.TRUE.equals(req.guarantee().depositRequired()));
+            r.setDepositDueDate(req.guarantee().depositDueDate());
+            r.setPaymentStatus(trimUpper(req.guarantee().paymentStatus(), null));
+            r.setPaymentTokenId(trimToNull(req.guarantee().paymentTokenId()));
+            r.setAuthorizationCode(trimToNull(req.guarantee().authorizationCode()));
+            r.setDirectBillCompanyId(req.guarantee().directBillCompanyId());
+            r.setTaxExempt(Boolean.TRUE.equals(req.guarantee().taxExempt()));
+            r.setTaxExemptReason(trimToNull(req.guarantee().taxExemptReason()));
+            r.setGuaranteeOverrideReason(trimToNull(req.guarantee().guaranteeOverrideReason()));
+        }
+        if (req.policy() != null) {
+            r.setCancellationPolicyId(trimToNull(req.policy().cancellationPolicyId()));
+            r.setDepositPolicyId(trimToNull(req.policy().depositPolicyId()));
+            r.setNoShowPolicyId(trimToNull(req.policy().noShowPolicyId()));
+            r.setTermsAccepted(Boolean.TRUE.equals(req.policy().termsAccepted()));
+            r.setTermsAcceptedAt(req.policy().termsAcceptedAt());
+            r.setRegistrationCardSigned(Boolean.TRUE.equals(req.policy().registrationCardSigned()));
+            r.setPolicySnapshotJson(toJson(req.policy()));
+        }
+        if (req.operations() != null) {
+            r.setArrivalTransportType(trimUpper(req.operations().arrivalTransportType(), null));
+            r.setFlightNumber(trimToNull(req.operations().flightNumber()));
+            r.setPickupRequired(Boolean.TRUE.equals(req.operations().pickupRequired()));
+            r.setPickupTime(req.operations().pickupTime());
+            r.setLateCheckoutRequested(Boolean.TRUE.equals(req.operations().lateCheckoutRequested()));
+            r.setHousekeepingInstructions(trimToNull(req.operations().housekeepingInstructions()));
+            r.setAmenityInstructions(trimToNull(req.operations().amenityInstructions()));
+            r.setInternalNotes(trimToNull(req.operations().internalNotes()));
+            r.setGuestFacingNotes(trimToNull(req.operations().guestFacingNotes()));
+        }
+    }
+
+    private void persistWizardChildren(Reservation reservation, ApiDtos.WizardReservationRequest req) {
+        persistPrimaryReservationGuest(reservation, req);
+        for (ApiDtos.ReservationCompanionInput companion : req.companions() != null ? req.companions() : List.<ApiDtos.ReservationCompanionInput>of()) {
+            ReservationGuest rg = new ReservationGuest();
+            rg.setHotel(reservation.getHotel());
+            rg.setReservation(reservation);
+            rg.setGuest(resolveOptionalGuest(reservation.getHotel().getId(), companion.guestId()));
+            rg.setRole("COMPANION");
+            rg.setFullName(companion.fullName().trim());
+            rg.setPreferredName(trimToNull(companion.preferredName()));
+            rg.setEmail(trimToNull(companion.email()));
+            rg.setPhone(trimToNull(companion.phone()));
+            rg.setNationality(trimToNull(companion.nationality()));
+            rg.setIdDocumentType(trimToNull(companion.idDocumentType()));
+            rg.setIdDocumentNumber(trimToNull(companion.idDocumentNumber()));
+            rg.setIdExpiryDate(companion.idExpiryDate());
+            rg.setPreferredLanguage(trimToNull(companion.preferredLanguage()));
+            rg.setCommunicationPreference(trimUpper(companion.communicationPreference(), null));
+            rg.setOperationalMessageConsent(Boolean.TRUE.equals(companion.operationalMessageConsent()));
+            rg.setAccessibilityNeeds(trimToNull(companion.accessibilityNeeds()));
+            rg.setDietaryRestrictions(trimToNull(companion.dietaryRestrictions()));
+            rg.setAllergies(trimToNull(companion.allergies()));
+            rg.setRoomFeaturePreferences(toJson(companion.roomFeaturePreferences()));
+            rg.setNotes(trimToNull(companion.notes()));
+            reservationGuestRepository.save(rg);
+        }
+        List<ApiDtos.ReservationSegmentInput> segments = req.segments();
+        if (segments == null || segments.isEmpty()) {
+            persistDefaultSegment(reservation, req);
+        } else {
+            for (ApiDtos.ReservationSegmentInput input : segments) {
+                persistSegment(reservation, input);
+            }
+        }
+        persistPolicySnapshot(reservation, req);
+    }
+
+    private void persistPrimaryReservationGuest(Reservation reservation, ApiDtos.WizardReservationRequest req) {
+        Guest guest = reservation.getGuest();
+        ReservationGuest rg = new ReservationGuest();
+        rg.setHotel(reservation.getHotel());
+        rg.setReservation(reservation);
+        rg.setGuest(guest);
+        rg.setRole("PRIMARY");
+        rg.setFullName(displayName(guest));
+        rg.setPreferredName(req.guest() != null ? trimToNull(req.guest().fullName()) : null);
+        rg.setEmail(guest.getEmail());
+        rg.setPhone(guest.getPhone());
+        rg.setNationality(guest.getNationality());
+        rg.setIdDocumentType(guest.getIdDocumentType());
+        rg.setIdDocumentNumber(guest.getIdDocumentNumber());
+        rg.setIdExpiryDate(guest.getIdExpiryDate());
+        reservationGuestRepository.save(rg);
+    }
+
+    private void persistDefaultSegment(Reservation reservation, ApiDtos.WizardReservationRequest req) {
+        ApiDtos.ReservationSegmentInput input = new ApiDtos.ReservationSegmentInput(
+                reservation.getRoom() != null ? reservation.getRoom().getId() : null,
+                reservation.getRoom() != null ? reservation.getRoom().getRoomType().getId() : req.roomTypeId(),
+                req.roomTypeToChargeId(),
+                reservation.getCheckInDate(),
+                reservation.getCheckOutDate(),
+                reservation.getAdults(),
+                reservation.getChildren(),
+                req.ratePlanId(),
+                req.rateCode(),
+                reservation.getNightlyRate(),
+                req.packages(),
+                req.addOns(),
+                req.roomFeatures(),
+                req.upgradeReason());
+        persistSegment(reservation, input);
+    }
+
+    private void persistSegment(Reservation reservation, ApiDtos.ReservationSegmentInput input) {
+        ReservationSegment segment = new ReservationSegment();
+        segment.setHotel(reservation.getHotel());
+        segment.setReservation(reservation);
+        if (input.roomId() != null) {
+            segment.setRoom(roomRepository.findById(input.roomId()).orElse(null));
+        }
+        UUID roomTypeId = input.roomTypeId();
+        if (roomTypeId != null) {
+            segment.setRoomType(roomTypeRepository.findById(roomTypeId).orElse(null));
+        }
+        if (input.roomTypeToChargeId() != null) {
+            segment.setRoomTypeToCharge(roomTypeRepository.findById(input.roomTypeToChargeId()).orElse(null));
+        }
+        LocalDate start = input.segmentStart() != null ? input.segmentStart() : reservation.getCheckInDate();
+        LocalDate end = input.segmentEnd() != null ? input.segmentEnd() : reservation.getCheckOutDate();
+        segment.setSegmentStart(start);
+        segment.setSegmentEnd(end);
+        segment.setAdults(input.adults() != null ? input.adults() : reservation.getAdults());
+        segment.setChildren(input.children() != null ? input.children() : reservation.getChildren());
+        segment.setRatePlanId(input.ratePlanId());
+        segment.setRateCode(trimToNull(input.rateCode()));
+        BigDecimal nightly = input.nightlyRate() != null ? input.nightlyRate() : reservation.getNightlyRate();
+        long nights = Math.max(1, ChronoUnit.DAYS.between(start, end));
+        segment.setNightlyRate(nightly);
+        segment.setTotalAmount(nightly.multiply(BigDecimal.valueOf(nights)).setScale(2, RoundingMode.HALF_UP));
+        segment.setPackagesJson(toJson(input.packages()));
+        segment.setAddOnsJson(toJson(input.addOns()));
+        segment.setRoomFeaturesJson(toJson(input.roomFeatures()));
+        segment.setUpgradeReason(trimToNull(input.upgradeReason()));
+        reservationSegmentRepository.save(segment);
+    }
+
+    private void persistPolicySnapshot(Reservation reservation, ApiDtos.WizardReservationRequest req) {
+        ApiDtos.ReservationPolicyInput policy = req.policy();
+        ReservationPolicySnapshot snapshot = new ReservationPolicySnapshot();
+        snapshot.setHotel(reservation.getHotel());
+        snapshot.setReservation(reservation);
+        snapshot.setCancellationPolicyId(policy != null ? trimToNull(policy.cancellationPolicyId()) : null);
+        snapshot.setDepositPolicyId(policy != null ? trimToNull(policy.depositPolicyId()) : null);
+        snapshot.setNoShowPolicyId(policy != null ? trimToNull(policy.noShowPolicyId()) : null);
+        snapshot.setCancellationSummary("Cancellation policy captured at booking: "
+                + defaultText(snapshot.getCancellationPolicyId(), "property default"));
+        snapshot.setDepositSummary("Deposit policy captured at booking: "
+                + defaultText(snapshot.getDepositPolicyId(), "property default"));
+        snapshot.setNoShowSummary("No-show policy captured at booking: "
+                + defaultText(snapshot.getNoShowPolicyId(), "property default"));
+        Map<String, Object> snapshotMeta = new LinkedHashMap<>();
+        snapshotMeta.put("policy", policy);
+        snapshotMeta.put("guarantee", req.guarantee());
+        snapshotMeta.put("createdFrom", "reservation-wizard");
+        snapshot.setPolicySnapshotJson(toJson(snapshotMeta));
+        snapshot.setTermsAccepted(policy != null && Boolean.TRUE.equals(policy.termsAccepted()));
+        snapshot.setTermsAcceptedAt(policy != null ? policy.termsAcceptedAt() : null);
+        snapshot.setRegistrationCardSigned(policy != null && Boolean.TRUE.equals(policy.registrationCardSigned()));
+        reservationPolicySnapshotRepository.save(snapshot);
+    }
+
+    private Guest resolveOptionalGuest(UUID hotelId, UUID guestId) {
+        if (guestId == null) {
+            return null;
+        }
+        return guestRepository
+                .findByIdAndHotel_Id(guestId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Companion guest not found"));
+    }
+
+    private void addReservationEvent(
+            Reservation reservation, String eventType, String title, String detail, String actor, Map<String, Object> metadata) {
+        ReservationEvent event = new ReservationEvent();
+        event.setHotel(reservation.getHotel());
+        event.setReservation(reservation);
+        event.setEventType(eventType);
+        event.setTitle(title);
+        event.setDetail(detail);
+        event.setActor(actor);
+        event.setMetadataJson(toJson(metadata));
+        reservationEventRepository.save(event);
+    }
+
+    private String toJson(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception ignored) {
+            return String.valueOf(value);
+        }
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private static String trimUpper(String value, String fallback) {
+        String trimmed = trimToNull(value);
+        return trimmed != null ? trimmed.toUpperCase().replace('-', '_') : fallback;
+    }
+
+    private static String defaultText(String value, String fallback) {
+        String trimmed = trimToNull(value);
+        return trimmed != null ? trimmed : fallback;
+    }
+
+    private static String displayName(Guest guest) {
+        if (guest.getFullName() != null && !guest.getFullName().isBlank()) {
+            return guest.getFullName().trim();
+        }
+        return (guest.getFirstName() + " " + guest.getLastName()).trim();
+    }
+
     private Guest resolveGuest(Hotel hotel, ApiDtos.CreateReservationRequest req, Optional<UserPrincipal> portalBooker) {
         if (portalBooker.isPresent() && portalBooker.get().getRole() == Role.GUEST) {
             Guest linked = guestRepository
@@ -790,6 +1401,14 @@ public class ReservationService {
             LocalDate currentDay = d;
             BigDecimal night = override.orElseGet(() -> 
                 dynamicPricingService.calculateDynamicRate(hotelId, base, currentDay));
+            if ((night == null || night.compareTo(BigDecimal.ZERO) <= 0)
+                    && base != null
+                    && base.compareTo(BigDecimal.ZERO) > 0) {
+                night = base;
+            }
+            if (night == null) {
+                night = BigDecimal.ZERO;
+            }
                 
             sum = sum.add(night);
         }
@@ -801,6 +1420,27 @@ public class ReservationService {
 
     private String auditActor() {
         return tenantAccessService.currentUser().getUsername();
+    }
+
+    private void stampReservationActor(Reservation reservation, Optional<UserPrincipal> portalBooker) {
+        if (portalBooker.isPresent()) {
+            UserPrincipal user = portalBooker.get();
+            reservation.setBookedByAppUser(appUserRepository.getReferenceById(user.getId()));
+            if (user.getRole() != Role.GUEST) {
+                reservation.setLastModifiedBy(appUserRepository.getReferenceById(user.getId()));
+            }
+            return;
+        }
+        try {
+            UserPrincipal actor = tenantAccessService.currentUser();
+            if (actor.getRole() != Role.GUEST) {
+                var ref = appUserRepository.getReferenceById(actor.getId());
+                reservation.setBookedByAppUser(ref);
+                reservation.setLastModifiedBy(ref);
+            }
+        } catch (ApiException ignored) {
+            // Anonymous/public booking: no staff actor exists to attach.
+        }
     }
 
     @Transactional(readOnly = true)
@@ -1029,6 +1669,7 @@ public class ReservationService {
         r.setActualCheckIn(checkInTime);
         r.setStatus(ReservationStatus.CHECKED_IN);
         r.setCheckedInBy(appUserRepository.getReferenceById(staff.getId()));
+        r.setLastModifiedBy(appUserRepository.getReferenceById(staff.getId()));
         r.setGuestIdVerified(true);
         r.setGuestIdVerifiedBy(appUserRepository.getReferenceById(staff.getId()));
         r.setFolioStatus(FolioStatus.OPEN);
@@ -1041,6 +1682,13 @@ public class ReservationService {
             guestRepository.save(g);
         }
         reservationRepository.save(r);
+        addReservationEvent(
+                r,
+                "CHECKED_IN",
+                "Guest checked in",
+                "Reservation moved to in-house and folio opened.",
+                staff.getUsername(),
+                Map.of("roomNumber", room.getRoomNumber(), "guestIdVerified", true));
 
         if (Boolean.TRUE.equals(req.isEarlyCheckin())
                 && hotel.getEarlyCheckinFee() != null
@@ -1161,6 +1809,8 @@ public class ReservationService {
         if (invoiceRepository.existsByReservation_Id(r.getId())) {
             throw new ApiException(HttpStatus.CONFLICT, "Invoice already generated for this reservation");
         }
+        Instant checkoutTime = b.actualCheckOutTime() != null ? b.actualCheckOutTime() : Instant.now();
+        overstayChargeService.ensurePosted(r, checkoutTime, staff.getUsername());
         List<RoomCharge> chargesPreview = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId());
         ApiDtos.FolioSummary folioBefore = folioLedgerService.toSummary(
                 r, chargesPreview, paymentRepository.findByReservation_IdOrderByProcessedAtDesc(r.getId()));
@@ -1231,7 +1881,8 @@ public class ReservationService {
                             "reason", overrideReason));
         }
         Hotel hotel = r.getHotel();
-        if (Boolean.TRUE.equals(b.isLateCheckout())
+        if (!hotel.isOverstayAutoPostEnabled()
+                && Boolean.TRUE.equals(b.isLateCheckout())
                 && hotel.getLateCheckoutFee() != null
                 && hotel.getLateCheckoutFee().compareTo(BigDecimal.ZERO) > 0) {
             chargeService.postFolioCharge(
@@ -1247,13 +1898,20 @@ public class ReservationService {
             reservationRepository.save(r);
         }
 
-        Instant checkoutTime = b.actualCheckOutTime() != null ? b.actualCheckOutTime() : Instant.now();
         r.setActualCheckOut(checkoutTime);
         r.setStatus(ReservationStatus.CHECKED_OUT);
         r.setCheckedOutBy(appUserRepository.getReferenceById(staff.getId()));
+        r.setLastModifiedBy(appUserRepository.getReferenceById(staff.getId()));
         r.setFolioStatus(FolioStatus.CLOSED);
         r.setFolioClosedAt(Instant.now());
         reservationRepository.save(r);
+        addReservationEvent(
+                r,
+                "CHECKED_OUT",
+                "Guest checked out",
+                "Reservation completed and final folio/invoice flow executed.",
+                staff.getUsername(),
+                Map.of("balanceDueBeforeCheckout", due, "finalPayment", paymentAmount));
 
         Room room = r.getRoom();
         if (room == null) {
@@ -1366,7 +2024,15 @@ public class ReservationService {
         }
         r.setStatus(ReservationStatus.NO_SHOW);
         r.setNoShowAt(Instant.now());
+        r.setLastModifiedBy(appUserRepository.getReferenceById(actor.getId()));
         reservationRepository.save(r);
+        addReservationEvent(
+                r,
+                "NO_SHOW",
+                "Reservation marked no-show",
+                "Front desk marked this reservation as no-show.",
+                actor.getUsername(),
+                Map.of("reservationId", r.getId()));
         return new ApiDtos.NoShowResponse(r.getId(), r.getStatus().name(), "Marked as no-show");
     }
 
@@ -1404,8 +2070,17 @@ public class ReservationService {
         if (r.getStatus() != ReservationStatus.CONFIRMED) {
             throw new ApiException(HttpStatus.CONFLICT, "Reservation cannot be cancelled in its current state");
         }
+        UserPrincipal actor = tenantAccessService.currentUser();
         r.setStatus(ReservationStatus.CANCELLED);
+        r.setLastModifiedBy(appUserRepository.getReferenceById(actor.getId()));
         reservationRepository.save(r);
+        addReservationEvent(
+                r,
+                "CANCELLED",
+                "Reservation cancelled",
+                req != null && req.reason() != null ? req.reason() : "Reservation cancelled.",
+                actor.getUsername(),
+                Map.of("reservationId", r.getId()));
         Room room = r.getRoom();
         if (room != null) {
             if (room.getCurrentBooking() != null && room.getCurrentBooking().getId().equals(r.getId())) {
@@ -1416,13 +2091,97 @@ public class ReservationService {
             room.setStatus(RoomStatus.VACANT_CLEAN);
             roomRepository.save(room);
             roomStatusAuditService.logTransition(
-                    hotelId, room, cx, RoomStatus.VACANT_CLEAN, cc, cc, auditActor(), "Reservation cancelled");
+                    hotelId, room, cx, RoomStatus.VACANT_CLEAN, cc, cc, actor.getUsername(), "Reservation cancelled");
         }
         String msg = "Reservation cancelled";
         if (req != null && req.reason() != null && !req.reason().isBlank()) {
             msg = msg + " (" + req.reason().trim() + ")";
         }
         return new ApiDtos.CancelReservationResponse(r.getId(), r.getStatus().name(), msg);
+    }
+
+    @Transactional
+    public ApiDtos.ExtendStayResponse extendStay(
+            UUID hotelId, String hotelHeader, UUID reservationId, ApiDtos.ExtendStayRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        UserPrincipal staff = tenantAccessService.currentUser();
+        Reservation r = reservationRepository
+                .findForCheckoutWithGroupBilling(reservationId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
+        if (r.getStatus() != ReservationStatus.CONFIRMED && r.getStatus() != ReservationStatus.CHECKED_IN) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "EXTEND_STAY_WRONG_STATUS",
+                    "Only CONFIRMED or CHECKED_IN reservations can be extended.");
+        }
+        if (r.getRoom() == null) {
+            throw new ApiException(HttpStatus.CONFLICT, "NO_ROOM_ASSIGNED", "Assign a room before extending the stay.");
+        }
+        LocalDate currentCheckOut = r.getCheckOutDate();
+        LocalDate newCheckOut = req.newCheckOutDate();
+        if (newCheckOut == null || !newCheckOut.isAfter(currentCheckOut)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "EXTEND_STAY_DATE_REQUIRED",
+                    "Choose a new checkout date after the current checkout date.");
+        }
+        Room room = r.getRoom();
+        if (room.isOutOfOrder() || room.getStatus() == RoomStatus.OUT_OF_ORDER || room.getStatus() == RoomStatus.BLOCKED) {
+            throw new ApiException(HttpStatus.CONFLICT, "Room is not available for extension");
+        }
+        if (reservationRepository.countOverlapping(room.getId(), currentCheckOut, newCheckOut, r.getId()) > 0) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "ROOM_ALREADY_RESERVED",
+                    "This room has another reservation during the extension dates. Reassign or choose another room first.");
+        }
+        if (roomBlockRepository.countActiveOverlapping(room.getId(), currentCheckOut, newCheckOut) > 0) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "ROOM_BLOCKED",
+                    "This room has an active block during the extension dates.");
+        }
+
+        long previousNights = ChronoUnit.DAYS.between(r.getCheckInDate(), currentCheckOut);
+        long newNights = ChronoUnit.DAYS.between(r.getCheckInDate(), newCheckOut);
+        long addedNights = newNights - previousNights;
+        BigDecimal nightly = r.getNightlyRate() != null ? r.getNightlyRate() : BigDecimal.ZERO;
+        BigDecimal previousTotal = r.getTotalAmount() != null ? r.getTotalAmount() : BigDecimal.ZERO;
+        BigDecimal addedCharge = nightly.multiply(BigDecimal.valueOf(addedNights)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal newTotal = previousTotal.add(addedCharge).setScale(2, RoundingMode.HALF_UP);
+
+        r.setCheckOutDate(newCheckOut);
+        r.setTotalAmount(newTotal);
+        r.setLateCheckout(false);
+        r.setLateCheckoutFeeApplied(null);
+        r.setLastModifiedBy(appUserRepository.getReferenceById(staff.getId()));
+        reservationRepository.save(r);
+
+        boolean removedOverstay = overstayChargeService.removePostedOverstayCharge(r);
+        folioLedgerService.refreshGuestFolioSnapshot(r);
+        securityAuditService.logEvent(
+                "RESERVATION_EXTENDED",
+                staff.getId(),
+                hotelId,
+                Map.of(
+                        "reservationId", r.getId(),
+                        "previousCheckOutDate", currentCheckOut.toString(),
+                        "newCheckOutDate", newCheckOut.toString(),
+                        "addedNights", addedNights,
+                        "addedRoomCharge", addedCharge,
+                        "reason", req.reason() != null ? req.reason() : ""));
+        return new ApiDtos.ExtendStayResponse(
+                r.getId(),
+                r.getStatus().name(),
+                currentCheckOut,
+                newCheckOut,
+                addedNights,
+                addedCharge,
+                newTotal,
+                removedOverstay,
+                removedOverstay
+                        ? "Stay extended and automatic overstay charge removed."
+                        : "Stay extended. Extra night added to room total.");
     }
 
     private Invoice buildInvoice(
@@ -1642,13 +2401,15 @@ public class ReservationService {
         CleanlinessStatus oldPc = oldR.getCleanliness();
         RoomStatus newPs = newR.getStatus();
         CleanlinessStatus newPc = newR.getCleanliness();
-        String actor = auditActor();
+        UserPrincipal actorUser = tenantAccessService.currentUser();
+        String actor = actorUser.getUsername();
 
         oldR.setStatus(RoomStatus.VACANT_CLEAN);
         oldR.setCurrentBooking(null);
         newR.setStatus(RoomStatus.RESERVED);
         newR.setCurrentBooking(r);
         r.setRoom(newR);
+        r.setLastModifiedBy(appUserRepository.getReferenceById(actorUser.getId()));
         reservationRepository.save(r);
         roomRepository.save(oldR);
         roomRepository.save(newR);
@@ -1874,6 +2635,15 @@ public class ReservationService {
     @Transactional(readOnly = true)
     public ApiDtos.FolioResponse getFolio(UUID hotelId, String hotelHeader, UUID reservationId) {
         return getFolio(hotelId, hotelHeader, reservationId, null, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public ApiDtos.OverstayStatus getOverstayStatus(UUID hotelId, String hotelHeader, UUID reservationId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Reservation r = reservationRepository
+                .findForCheckoutWithGroupBilling(reservationId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
+        return overstayChargeService.preview(r, Instant.now());
     }
 
     @Transactional(readOnly = true)

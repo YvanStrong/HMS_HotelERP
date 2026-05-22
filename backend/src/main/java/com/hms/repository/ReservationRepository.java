@@ -79,6 +79,18 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 
     List<Reservation> findByHotel_IdAndStatusIn(UUID hotelId, List<ReservationStatus> statuses);
 
+    @Query(
+            """
+            select r from Reservation r
+            join fetch r.hotel
+            left join fetch r.room
+            left join fetch r.groupBooking gb
+            left join fetch gb.masterReservation
+            left join fetch gb.corporateAccount
+            where r.status = :status
+            """)
+    List<Reservation> findByStatusForOverstayScan(@Param("status") ReservationStatus status);
+
     List<Reservation> findByRoom_IdAndStatusInOrderByCheckInDateDesc(
             UUID roomId, java.util.Collection<ReservationStatus> statuses);
 
@@ -87,6 +99,18 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
     List<Reservation> findByRoom_IdInAndStatusIn(
             @Param("roomIds") java.util.List<UUID> roomIds,
             @Param("statuses") java.util.Collection<ReservationStatus> statuses);
+
+    @Query(
+            """
+            select r from Reservation r
+            left join fetch r.bookedByAppUser
+            left join fetch r.checkedInBy
+            left join fetch r.checkedOutBy
+            left join fetch r.lastModifiedBy
+            where r.hotel.id = :hotelId
+            order by r.updatedAt desc
+            """)
+    List<Reservation> findTop20ActivityByHotelId(@Param("hotelId") UUID hotelId, org.springframework.data.domain.Pageable pageable);
 
     @Query(
             """
