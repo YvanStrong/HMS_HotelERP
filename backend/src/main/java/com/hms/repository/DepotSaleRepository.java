@@ -1,6 +1,8 @@
 package com.hms.repository;
 
 import com.hms.entity.DepotSale;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -12,6 +14,32 @@ public interface DepotSaleRepository extends JpaRepository<DepotSale, UUID> {
 
     @Query("select count(s) from DepotSale s where s.hotel.id = :hotelId")
     long countByHotelId(@Param("hotelId") UUID hotelId);
+
+    @Query(
+            """
+            select coalesce(sum(s.totalAmount), 0)
+            from DepotSale s
+            where s.hotel.id = :hotelId
+              and s.createdAt >= :from
+              and s.createdAt < :to
+            """)
+    BigDecimal sumSalesBetween(
+            @Param("hotelId") UUID hotelId,
+            @Param("from") Instant from,
+            @Param("to") Instant to);
+
+    @Query(
+            """
+            select count(s)
+            from DepotSale s
+            where s.hotel.id = :hotelId
+              and s.createdAt >= :from
+              and s.createdAt < :to
+            """)
+    long countSalesBetween(
+            @Param("hotelId") UUID hotelId,
+            @Param("from") Instant from,
+            @Param("to") Instant to);
 
     @Query(
             """

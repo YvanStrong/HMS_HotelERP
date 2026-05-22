@@ -3,7 +3,7 @@ import { swaggerUiUrl } from "@/lib/api";
 
 export default function SetupDocPage() {
   return (
-    <div className="min-h-screen flex items-start justify-center pt-20 px-4 bg-gradient-to-br from-[hsl(40,33%,96%)] via-[hsl(30,20%,94%)] to-[hsl(31,28%,92%)]">
+    <div className="min-h-screen flex items-start justify-center pt-20 px-4 bg-gradient-to-br from-[hsl(140,40%,98%)] via-[hsl(140,30%,96%)] to-[hsl(140,25%,93%)]">
       <div className="w-full max-w-2xl">
         <div className="bg-white rounded-2xl shadow-card border border-border/50 overflow-hidden">
           {/* Header */}

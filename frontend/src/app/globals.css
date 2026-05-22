@@ -4,52 +4,51 @@
 
 @layer base {
   :root {
-    /* Soft “nude” hotel palette — warm neutrals (#F1EDE6 … #3A2D28), accent rosewood (#A48374) */
-    --background: 40 28% 94%;
-    --foreground: 15 18% 19%;
-    --card: 40 22% 99%;
-    --card-foreground: 15 18% 19%;
-    --popover: 40 22% 99%;
-    --popover-foreground: 15 18% 19%;
-    --primary: 18 21% 52%;
-    --primary-foreground: 40 35% 97%;
-    /** Slightly deeper rosewood for hover (replaces cold gray primary/90). */
-    --primary-hover: 18 26% 44%;
-    --secondary: 30 16% 92%;
-    --secondary-foreground: 15 18% 20%;
-    --muted: 30 18% 93%;
-    --muted-foreground: 18 12% 40%;
-    --accent: 31 26% 90%;
-    --accent-foreground: 15 18% 20%;
-    --destructive: 8 65% 48%;
-    --destructive-foreground: 40 35% 98%;
-    --border: 30 14% 86%;
-    --input: 30 14% 86%;
-    --ring: 18 21% 52%;
+    /* Green & white hotel palette — mint canvas, forest primary (#16A34A) */
+    --background: 140 35% 98%;
+    --foreground: 150 25% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 150 25% 14%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 150 25% 14%;
+    --primary: 142 71% 37%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 142 72% 29%;
+    --secondary: 140 25% 95%;
+    --secondary-foreground: 150 20% 18%;
+    --muted: 140 22% 94%;
+    --muted-foreground: 150 10% 40%;
+    --accent: 140 40% 92%;
+    --accent-foreground: 150 20% 18%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 140 18% 88%;
+    --input: 140 18% 88%;
+    --ring: 142 71% 37%;
     --radius: 0.75rem;
 
     /* Hotel brand — aligned with palette */
-    --hotel-gold: 31 37% 62%;
-    --hotel-navy: 15 18% 19%;
-    --hotel-slate: 18 14% 38%;
+    --hotel-gold: 142 55% 45%;
+    --hotel-navy: 150 30% 12%;
+    --hotel-slate: 150 12% 38%;
 
     /* Legacy vars for backward compat */
-    --canvas: #f1ede6;
+    --canvas: #f0fdf4;
     --panel: #ffffff;
-    --surface: #ebe3db;
-    --bg: #f1ede6;
-    --text: #3a2d28;
-    --muted-legacy: #8a7a72;
-    --accent-legacy: #a48374;
-    --accent-contrast: #f1ede6;
-    --border-legacy: #d1c7bd;
-    --error: #b4534a;
+    --surface: #ecfdf5;
+    --bg: #f0fdf4;
+    --text: #14532d;
+    --muted-legacy: #6b7280;
+    --accent-legacy: #16a34a;
+    --accent-contrast: #ffffff;
+    --border-legacy: #bbf7d0;
+    --error: #dc2626;
 
-    /* Shadows — warm brown ink */
-    --shadow-soft: 0 2px 16px rgba(58, 45, 40, 0.06);
-    --shadow-card: 0 20px 50px rgba(58, 45, 40, 0.08);
-    --shadow-float: 0 8px 28px rgba(58, 45, 40, 0.08);
-    --shadow-glow: 0 0 24px rgba(164, 131, 116, 0.22);
+    /* Shadows — soft green ink */
+    --shadow-soft: 0 2px 16px rgba(20, 83, 45, 0.06);
+    --shadow-card: 0 20px 50px rgba(20, 83, 45, 0.08);
+    --shadow-float: 0 8px 28px rgba(20, 83, 45, 0.08);
+    --shadow-glow: 0 0 24px rgba(22, 163, 74, 0.22);
 
     /* Radius */
     --radius-sm: 0.5rem;
@@ -61,26 +60,26 @@
   }
 
   .dark {
-    --background: 15 12% 11%;
-    --foreground: 40 28% 94%;
-    --card: 15 10% 14%;
-    --card-foreground: 40 28% 94%;
-    --popover: 15 10% 14%;
-    --popover-foreground: 40 28% 94%;
-    --primary: 18 24% 58%;
-    --primary-foreground: 15 12% 10%;
-    --primary-hover: 18 28% 50%;
-    --secondary: 15 8% 18%;
-    --secondary-foreground: 40 25% 92%;
-    --muted: 15 8% 20%;
-    --muted-foreground: 30 12% 68%;
-    --accent: 18 10% 22%;
-    --accent-foreground: 40 28% 94%;
-    --destructive: 8 55% 40%;
-    --destructive-foreground: 40 35% 98%;
-    --border: 15 8% 22%;
-    --input: 15 8% 22%;
-    --ring: 18 24% 58%;
+    --background: 150 20% 8%;
+    --foreground: 140 25% 96%;
+    --card: 150 18% 11%;
+    --card-foreground: 140 25% 96%;
+    --popover: 150 18% 11%;
+    --popover-foreground: 140 25% 96%;
+    --primary: 142 60% 45%;
+    --primary-foreground: 150 25% 8%;
+    --primary-hover: 142 65% 38%;
+    --secondary: 150 12% 16%;
+    --secondary-foreground: 140 25% 92%;
+    --muted: 150 12% 18%;
+    --muted-foreground: 140 12% 65%;
+    --accent: 150 14% 20%;
+    --accent-foreground: 140 25% 96%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 150 12% 22%;
+    --input: 150 12% 22%;
+    --ring: 142 60% 45%;
   }
 }
 
@@ -96,7 +95,7 @@
   body {
     @apply bg-background text-foreground font-sans;
     font-feature-settings: "rlig" 1, "calt" 1;
-    background-image: radial-gradient(circle at 0% 0%, hsl(40 40% 98%), transparent 45%);
+    background-image: radial-gradient(circle at 0% 0%, hsl(140 45% 99%), transparent 45%);
   }
 
   a:focus-visible,
@@ -267,7 +266,7 @@
 
   /* Guest shell */
   .guest-shell {
-    @apply min-h-screen flex flex-col bg-gradient-to-br from-[hsl(40,33%,96%)] to-[hsl(31,30%,92%)];
+    @apply min-h-screen flex flex-col bg-gradient-to-br from-[hsl(140,40%,98%)] to-[hsl(140,25%,94%)];
   }
 
   .guest-shell-main {
@@ -293,7 +292,7 @@
 
   .app-shell-main {
     @apply flex-1 p-6 min-w-0;
-    background-color: hsl(40 26% 96% / 0.85);
+    background-color: hsl(140 30% 97% / 0.85);
   }
 
   .app-shell-nav {
@@ -512,7 +511,7 @@
   }
 
   .landing-hero-image-wrap {
-    @apply relative w-full min-h-[50vh] max-h-[600px] bg-gradient-to-br from-[hsl(30,16%,88%)] to-[hsl(31,22%,82%)];
+    @apply relative w-full min-h-[50vh] max-h-[600px] bg-gradient-to-br from-[hsl(140,25%,90%)] to-[hsl(142,30%,78%)];
   }
 
   .landing-hero-img {
@@ -604,7 +603,7 @@
 
   /* Steps section */
   .landing-band {
-    @apply mb-8 p-6 rounded-xl border border-border bg-gradient-to-br from-white to-[hsl(40,28%,96%)] shadow-soft;
+    @apply mb-8 p-6 rounded-xl border border-border bg-gradient-to-br from-white to-[hsl(140,35%,97%)] shadow-soft;
   }
 
   .landing-feature-strip {
@@ -703,7 +702,7 @@
 
   /* Footer */
   .landing-site-footer {
-    @apply mt-auto py-10 px-6 border-t bg-gradient-to-b from-[hsl(40,30%,96%)] to-[hsl(30,18%,90%)];
+    @apply mt-auto py-10 px-6 border-t bg-gradient-to-b from-[hsl(140,35%,98%)] to-[hsl(140,22%,92%)];
   }
 
   .landing-site-footer-inner {
@@ -749,7 +748,7 @@
   }
 
   .book-search-hero {
-    @apply bg-gradient-to-br from-[hsl(15,18%,16%)] via-[hsl(18,16%,20%)] to-[hsl(15,18%,14%)] text-white p-6 sm:p-10;
+    @apply bg-gradient-to-br from-[hsl(150,35%,12%)] via-[hsl(142,40%,18%)] to-[hsl(150,30%,10%)] text-white p-6 sm:p-10;
   }
 
   .book-search-headline {
@@ -872,7 +871,7 @@
 
   .book-hotel-card-thumb {
     @apply relative h-36 -mx-5 -mt-5 mb-4 rounded-t-xl overflow-hidden;
-    background: linear-gradient(135deg, hsl(18 26% 32%) 0%, hsl(24 22% 42%) 50%, hsl(31 28% 52%) 100%);
+    background: linear-gradient(135deg, hsl(150 35% 18%) 0%, hsl(142 40% 28%) 50%, hsl(142 50% 42%) 100%);
   }
 
   .book-hotel-card-thumb::after {
@@ -967,7 +966,7 @@
   /* Auth shell */
   .hms-auth-shell {
     @apply min-h-screen flex items-start justify-center pt-20 px-4;
-    background: linear-gradient(135deg, hsl(40 30% 97%) 0%, hsl(35 24% 94%) 50%, hsl(30 22% 90%) 100%);
+    background: linear-gradient(135deg, hsl(140 40% 98%) 0%, hsl(140 30% 96%) 50%, hsl(140 25% 93%) 100%);
   }
 
   /* Staff sidebar */

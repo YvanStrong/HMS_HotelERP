@@ -41,7 +41,7 @@ export function HmsDonutChart({
               contentStyle={{
                 fontSize: 12,
                 borderRadius: 6,
-                border: "1px solid rgba(58,45,40,0.12)",
+                border: "1px solid rgba(20,83,45,0.12)",
                 background: "#fff",
               }}
               formatter={(value: number, name) => {

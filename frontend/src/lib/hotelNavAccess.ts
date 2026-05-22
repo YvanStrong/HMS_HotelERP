@@ -9,6 +9,7 @@ import { userHasAnyPermission, userHasPermission, userHasRole } from "./permissi
 export type HotelNavKey =
   | "dashboard"
   | "reports"
+  | "accounting"
   | "guestAnalytics"
   | "roomTypes"
   | "rooms"
@@ -171,12 +172,29 @@ function canReports(user: AuthUser | null): boolean {
   return userHasRole(user, REPORTS_ROLES) || userHasPermission(user, "report:*");
 }
 
+function canAccounting(user: AuthUser | null): boolean {
+  if (!user) return false;
+  if (isSuperAdmin(user)) return true;
+  return userHasRole(user, [
+    "HOTEL_ADMIN",
+    "MANAGER",
+    "FINANCE",
+    "RECEPTIONIST",
+    "HOUSEKEEPING",
+    "HOUSEKEEPING_SUPERVISOR",
+    "MAINTENANCE",
+    "FNB_STAFF",
+  ]) || userHasAnyPermission(user, ["billing:*", "report:*", "hotel:*"]);
+}
+
 export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): boolean {
   switch (key) {
     case "dashboard":
       return canDashboard(user);
     case "reports":
       return canReports(user);
+    case "accounting":
+      return canAccounting(user);
     case "guestAnalytics":
       return canReports(user);
     case "roomTypes":
@@ -236,6 +254,7 @@ export function navHint(key: HotelNavKey): string {
   const hints: Record<HotelNavKey, string> = {
     dashboard: "Room status board + occupancy grid; also staff with housekeeping or room read access.",
     reports: "Permissions: report:* or roles hotel admin, manager, finance.",
+    accounting: "Petty cash requests for staff; sales analytics and expenses for manager/finance/admin.",
     guestAnalytics:
       "Guest stay analytics (nationality, repeat, VIP, no-show, LTV): same access as Reports (finance/manager/admin).",
     roomTypes: "GET /room-types: hotel admin, manager, receptionist, maintenance, finance.",

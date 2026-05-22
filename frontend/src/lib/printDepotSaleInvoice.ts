@@ -114,7 +114,7 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
     font-size: 20px;
     letter-spacing: 0.02em;
     font-weight: 800;
-    color: #3a2d28;
+    color: #14532d;
   }
   .tagline { margin: 0; font-size: 11px; color: #7a6a62; letter-spacing: 0.12em; text-transform: uppercase; }
   .meta {
@@ -126,7 +126,7 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
   }
   .meta div { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px dashed #e3d8ce; padding-bottom: 6px; }
   .muted { color: #7a6a62; }
-  .strong { font-weight: 700; color: #3a2d28; }
+  .strong { font-weight: 700; color: #14532d; }
   table.lines {
     width: 100%;
     table-layout: fixed;
@@ -189,7 +189,7 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
     border-top: 1px solid #e8dfd4;
     font-weight: 800;
     font-size: 15px;
-    color: #3a2d28;
+    color: #14532d;
   }
   .invoice-totals .note {
     margin-top: 8px;

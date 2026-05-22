@@ -345,7 +345,7 @@ export default function PlatformHotelsPage() {
                         />
                       )
                     ) : (
-                      <div className="absolute inset-0 flex items-center justify-center" style={{ background: "linear-gradient(135deg, hsl(40 22% 93%) 0%, hsl(30 18% 88%) 100%)" }}>
+                      <div className="absolute inset-0 flex items-center justify-center" style={{ background: "linear-gradient(135deg, hsl(140 35% 96%) 0%, hsl(142 30% 88%) 100%)" }}>
                         {hotel.logoUrl ? (
                           hotel.logoUrl.startsWith("data:") ? (
                             <img

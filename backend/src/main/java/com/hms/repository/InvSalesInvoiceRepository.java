@@ -17,6 +17,12 @@ public interface InvSalesInvoiceRepository extends JpaRepository<InvSalesInvoice
     @Query("select coalesce(sum(i.totalAmount), 0) from InvSalesInvoice i where i.hotel.id = :hotelId and i.invoiceDate >= :from and i.invoiceDate <= :to and i.status <> 'CANCELLED'")
     BigDecimal sumRevenue(@Param("hotelId") UUID hotelId, @Param("from") LocalDate from, @Param("to") LocalDate to);
 
+    @Query("select coalesce(sum(i.amountPaid), 0) from InvSalesInvoice i where i.hotel.id = :hotelId and i.invoiceDate >= :from and i.invoiceDate <= :to and i.status <> 'CANCELLED'")
+    BigDecimal sumPaid(@Param("hotelId") UUID hotelId, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    @Query("select count(i) from InvSalesInvoice i where i.hotel.id = :hotelId and i.invoiceDate >= :from and i.invoiceDate <= :to and i.status <> 'CANCELLED'")
+    long countInvoices(@Param("hotelId") UUID hotelId, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
     @Query("select coalesce(sum(i.totalAmount), 0) from InvSalesInvoice i where i.hotel.id = :hotelId and i.invoiceDate = :today and i.status <> 'CANCELLED'")
     BigDecimal sumTodaySales(@Param("hotelId") UUID hotelId, @Param("today") LocalDate today);
 

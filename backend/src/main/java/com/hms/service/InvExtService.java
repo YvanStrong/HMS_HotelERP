@@ -147,6 +147,9 @@ public class InvExtService {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         InventoryItem item = itemRepository.findByIdAndHotel_Id(req.itemId(), hotelId)
                 .orElseThrow(() -> notFound("Item"));
+        if ("NON_STOCK".equalsIgnoreCase(item.getStockType())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Non-stock products cannot be adjusted");
+        }
         BigDecimal before = item.getCurrentStock();
         BigDecimal after;
         String typeLabel = req.adjustmentType().trim().toUpperCase();

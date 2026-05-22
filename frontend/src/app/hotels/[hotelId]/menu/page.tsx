@@ -50,6 +50,7 @@ type ErpInventoryRow = {
   sellingPrice?: number | string | null;
   imageUrl?: string | null;
   active?: boolean;
+  stockType?: "STOCK" | "NON_STOCK";
 };
 
 type InventoryItemsPayload = { data?: ErpInventoryRow[] };
@@ -362,7 +363,8 @@ export default function MenuPage() {
     try {
       const cost = Number(item.unitCost ?? 0);
       const stockN = Number(item.currentStock ?? 0);
-      const stockQty = Number.isFinite(stockN) && stockN >= 0 ? stockN : 0;
+      const stockType = item.stockType === "NON_STOCK" ? "NON_STOCK" : "STOCK";
+      const stockQty = stockType === "NON_STOCK" ? 0 : Number.isFinite(stockN) && stockN >= 0 ? stockN : 0;
       const menuTag = (selectedMenu || "GENERAL").trim() || "GENERAL";
       await apiFetch<CreateDepotProductApiResponse>(`/api/v1/hotels/${hotelId}/inventory/depot-products`, {
         method: "POST",
@@ -374,7 +376,7 @@ export default function MenuPage() {
           costPrice: Number.isFinite(cost) && cost >= 0 ? cost : 0,
           sellingPrice: selling,
           stockQty,
-          stockType: "STOCK",
+          stockType,
           photoUrl: item.imageUrl?.trim() || null,
           menuName: menuTag,
           inventoryItemId: item.id,

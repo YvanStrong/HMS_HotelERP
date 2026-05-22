@@ -7,7 +7,7 @@
  */
 
 export const HMS_CHART_PALETTE = [
-  "#a48374", // primary rosewood
+  "#16a34a", // primary green
   "#3b82f6", // sky 500
   "#10b981", // emerald 500
   "#f59e0b", // amber 500
@@ -28,12 +28,12 @@ export const HMS_CHART_TONE: Record<
   red: "#ef4444",
   blue: "#3b82f6",
   violet: "#8b5cf6",
-  muted: "#a48374",
+  muted: "#16a34a",
 };
 
-export const HMS_CHART_GRID = "rgba(58, 45, 40, 0.08)";
-export const HMS_CHART_AXIS = "rgba(58, 45, 40, 0.55)";
-export const HMS_CHART_TICK = "rgba(58, 45, 40, 0.7)";
+export const HMS_CHART_GRID = "rgba(20, 83, 45, 0.08)";
+export const HMS_CHART_AXIS = "rgba(20, 83, 45, 0.55)";
+export const HMS_CHART_TICK = "rgba(20, 83, 45, 0.7)";
 
 export function tonedColor(tone: string | undefined | null): string {
   if (!tone) return HMS_CHART_TONE.muted;

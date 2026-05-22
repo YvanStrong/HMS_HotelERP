@@ -39,8 +39,8 @@ function LoginPageInner() {
   }
 
   return (
-    <div className="min-h-svh max-h-svh flex flex-col overflow-hidden bg-gradient-to-br from-[hsl(40_30%_97%)] via-[hsl(35_24%_94%)] to-[hsl(30_22%_88%)] p-3 sm:p-4">
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-1 flex-col overflow-hidden rounded-2xl border border-[hsl(var(--primary))]/20 bg-white shadow-[0_20px_50px_rgba(58,45,40,0.12)] md:flex-row">
+    <div className="min-h-svh max-h-svh flex flex-col overflow-hidden bg-gradient-to-br from-[hsl(140_40%_98%)] via-[hsl(140_30%_96%)] to-[hsl(140_25%_92%)] p-3 sm:p-4">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-1 flex-col overflow-hidden rounded-2xl border border-[hsl(var(--primary))]/20 bg-white shadow-[0_20px_50px_rgba(20,83,45,0.12)] md:flex-row">
         <aside className="relative hidden shrink-0 flex-col justify-center overflow-hidden bg-[hsl(var(--primary))] px-8 py-8 text-[hsl(var(--primary-foreground))] md:flex md:w-[40%] lg:px-10">
           <div
             className="pointer-events-none absolute inset-0 opacity-[0.12]"
@@ -60,7 +60,7 @@ function LoginPageInner() {
               </p>
             </div>
             <p className="max-w-xs text-sm leading-relaxed text-white/85">
-              Staff sign-in for reservations, rooms, housekeeping, and billing — in warm chocolate and
+              Staff sign-in for reservations, rooms, housekeeping, and billing — clean green and
               white, built to fit your screen.
             </p>
             <ul className="space-y-2 text-sm text-white/80">
@@ -118,7 +118,7 @@ function LoginPageInner() {
                     onChange={(e) => setUsername(e.target.value)}
                     autoComplete="username"
                     placeholder="e.g. hoteladmin"
-                    className="h-11 rounded-xl border border-[hsl(var(--primary))]/25 bg-[hsl(40_28%_99%)] px-3.5 text-[hsl(var(--foreground))] placeholder:text-muted-foreground/70 focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary))]/25"
+                    className="h-11 rounded-xl border border-[hsl(var(--primary))]/25 bg-white px-3.5 text-[hsl(var(--foreground))] placeholder:text-muted-foreground/70 focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary))]/25"
                   />
                 </div>
                 <div>
@@ -135,7 +135,7 @@ function LoginPageInner() {
                     onChange={(e) => setPassword(e.target.value)}
                     autoComplete="current-password"
                     placeholder="Your password"
-                    className="h-11 rounded-xl border border-[hsl(var(--primary))]/25 bg-[hsl(40_28%_99%)] px-3.5 text-[hsl(var(--foreground))] placeholder:text-muted-foreground/70 focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary))]/25"
+                    className="h-11 rounded-xl border border-[hsl(var(--primary))]/25 bg-white px-3.5 text-[hsl(var(--foreground))] placeholder:text-muted-foreground/70 focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary))]/25"
                   />
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
@@ -189,7 +189,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-svh items-center justify-center bg-gradient-to-br from-[hsl(40_30%_97%)] to-[hsl(30_22%_88%)]">
+        <div className="flex min-h-svh items-center justify-center bg-gradient-to-br from-[hsl(140_40%_98%)] to-[hsl(140_25%_92%)]">
           <div className="text-sm text-muted-foreground">Loading…</div>
         </div>
       }
