@@ -38,6 +38,7 @@ type ItemRow = {
   valuationMethod?: string | null;
   imageUrl?: string | null;
   unitOfMeasure?: string | null;
+  stockType?: "STOCK" | "NON_STOCK";
 };
 
 type SalesReportPayload = {
@@ -265,6 +266,7 @@ export function InventoryErpClient() {
   const [itemForm, setItemForm] = useState({
     name: "",
     categoryId: "",
+    stockType: "STOCK" as "STOCK" | "NON_STOCK",
     currentStock: "",
     reorderPoint: "",
     unitCost: "",
@@ -331,6 +333,7 @@ export function InventoryErpClient() {
     sellingPrice: "",
     unitCost: "",
     reorderPoint: "",
+    stockType: "STOCK" as "STOCK" | "NON_STOCK",
     imageUrl: "",
     expiryDate: "",
     active: true,
@@ -427,6 +430,10 @@ export function InventoryErpClient() {
   }, [tab, loadExtensions, loadAlerts]);
 
   const items = useMemo(() => payload?.data ?? [], [payload?.data]);
+  const stockItems = useMemo(
+    () => items.filter((item) => item.stockType !== "NON_STOCK"),
+    [items],
+  );
   const { slice, total, totalPages } = useMemo(
     () => paginateSlice(items, page, PAGE_SIZE),
     [items, page],
@@ -472,8 +479,9 @@ export function InventoryErpClient() {
           name: itemForm.name.trim(),
           sku: null,
           categoryId: itemForm.categoryId,
-          currentStock: itemForm.currentStock ? Number(itemForm.currentStock) : 0,
-          reorderPoint: itemForm.reorderPoint ? Number(itemForm.reorderPoint) : 0,
+          stockType: itemForm.stockType,
+          currentStock: itemForm.stockType === "NON_STOCK" ? 0 : itemForm.currentStock ? Number(itemForm.currentStock) : 0,
+          reorderPoint: itemForm.stockType === "NON_STOCK" ? 0 : itemForm.reorderPoint ? Number(itemForm.reorderPoint) : 0,
           unitCost: itemForm.unitCost ? Number(itemForm.unitCost) : 0,
           unitOfMeasure: itemForm.unitOfMeasure || "piece",
           isMinibarItem: false,
@@ -489,6 +497,7 @@ export function InventoryErpClient() {
       setItemForm((f) => ({
         ...f,
         name: "",
+        stockType: "STOCK",
         currentStock: "",
         reorderPoint: "",
         unitCost: "",
@@ -860,6 +869,7 @@ export function InventoryErpClient() {
       sellingPrice: it.sellingPrice != null ? String(it.sellingPrice) : "",
       unitCost: it.unitCost != null ? String(it.unitCost) : "",
       reorderPoint: it.reorderPoint != null ? String(it.reorderPoint) : "",
+      stockType: it.stockType === "NON_STOCK" ? "NON_STOCK" : "STOCK",
       imageUrl: (it.imageUrl as string) ?? "",
       expiryDate: (it.expiryDate as string) ?? "",
       active: it.active !== false,
@@ -880,7 +890,8 @@ export function InventoryErpClient() {
           barcode: editForm.barcode.trim() || null,
           sellingPrice: editForm.sellingPrice ? Number(editForm.sellingPrice) : null,
           unitCost: editForm.unitCost ? Number(editForm.unitCost) : null,
-          reorderPoint: editForm.reorderPoint ? Number(editForm.reorderPoint) : null,
+          stockType: editForm.stockType,
+          reorderPoint: editForm.stockType === "NON_STOCK" ? 0 : editForm.reorderPoint ? Number(editForm.reorderPoint) : null,
           imageUrl: editForm.imageUrl.trim() || null,
           expiryDate: editForm.expiryDate || null,
           active: editForm.active,
@@ -1090,21 +1101,47 @@ export function InventoryErpClient() {
                   </select>
                 </div>
                 <div>
-                  <label>Opening stock</label>
-                  <input
-                    type="number"
-                    value={itemForm.currentStock}
-                    onChange={(e) => setItemForm((f) => ({ ...f, currentStock: e.target.value }))}
-                  />
+                  <label>Product type</label>
+                  <select
+                    value={itemForm.stockType}
+                    onChange={(e) =>
+                      setItemForm((f) => ({
+                        ...f,
+                        stockType: e.target.value as "STOCK" | "NON_STOCK",
+                        currentStock: e.target.value === "NON_STOCK" ? "" : f.currentStock,
+                        reorderPoint: e.target.value === "NON_STOCK" ? "" : f.reorderPoint,
+                      }))
+                    }
+                  >
+                    <option value="STOCK">STOCK (manage quantity)</option>
+                    <option value="NON_STOCK">NON STOCK (no quantity)</option>
+                  </select>
                 </div>
-                <div>
-                  <label>Reorder point</label>
-                  <input
-                    type="number"
-                    value={itemForm.reorderPoint}
-                    onChange={(e) => setItemForm((f) => ({ ...f, reorderPoint: e.target.value }))}
-                  />
-                </div>
+                {itemForm.stockType === "STOCK" ? (
+                  <>
+                    <div>
+                      <label>Opening stock</label>
+                      <input
+                        type="number"
+                        value={itemForm.currentStock}
+                        onChange={(e) => setItemForm((f) => ({ ...f, currentStock: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label>Reorder point</label>
+                      <input
+                        type="number"
+                        value={itemForm.reorderPoint}
+                        onChange={(e) => setItemForm((f) => ({ ...f, reorderPoint: e.target.value }))}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="col-span-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+                    Non-stock products do not need opening stock or reorder point. They can be sold without stock
+                    quantity checks.
+                  </div>
+                )}
                 <div>
                   <label>Unit cost</label>
                   <input
@@ -1197,6 +1234,7 @@ export function InventoryErpClient() {
                   <th>Name</th>
                   <th>SKU</th>
                   <th>Barcode</th>
+                  <th>Type</th>
                   <th>Qty</th>
                   <th>Consume</th>
                   <th />
@@ -1208,25 +1246,32 @@ export function InventoryErpClient() {
                     <td>{r.name}</td>
                     <td>{r.sku ?? "—"}</td>
                     <td className="text-xs">{r.barcode ?? "—"}</td>
-                    <td>{r.currentStock ?? "—"}</td>
                     <td>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          value={consume[r.id] ?? ""}
-                          onChange={(e) => setConsume((m) => ({ ...m, [r.id]: e.target.value }))}
-                          style={{ width: 90 }}
-                          placeholder="qty"
-                        />
-                        <button
-                          type="button"
-                          className="hms-btn-outline text-xs"
-                          disabled={consumeId === r.id}
-                          onClick={() => void consumeStock(r.id)}
-                        >
-                          {consumeId === r.id ? "..." : "Consume"}
-                        </button>
-                      </div>
+                      <span className="badge badge-neutral">{r.stockType === "NON_STOCK" ? "NON STOCK" : "STOCK"}</span>
+                    </td>
+                    <td>{r.stockType === "NON_STOCK" ? "—" : r.currentStock ?? "—"}</td>
+                    <td>
+                      {r.stockType === "NON_STOCK" ? (
+                        <span className="text-xs text-muted-foreground">No stock movement</span>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            value={consume[r.id] ?? ""}
+                            onChange={(e) => setConsume((m) => ({ ...m, [r.id]: e.target.value }))}
+                            style={{ width: 90 }}
+                            placeholder="qty"
+                          />
+                          <button
+                            type="button"
+                            className="hms-btn-outline text-xs"
+                            disabled={consumeId === r.id}
+                            onClick={() => void consumeStock(r.id)}
+                          >
+                            {consumeId === r.id ? "..." : "Consume"}
+                          </button>
+                        </div>
+                      )}
                     </td>
                     <td>
                       <button type="button" className="hms-btn-outline text-xs" onClick={() => openEdit(r)}>
@@ -1351,6 +1396,27 @@ export function InventoryErpClient() {
                     </select>
                   </div>
                   <div>
+                    <label>Product type</label>
+                    <select
+                      value={editForm.stockType}
+                      onChange={(e) =>
+                        setEditForm((f) => ({
+                          ...f,
+                          stockType: e.target.value as "STOCK" | "NON_STOCK",
+                          reorderPoint: e.target.value === "NON_STOCK" ? "" : f.reorderPoint,
+                        }))
+                      }
+                    >
+                      <option value="STOCK">STOCK (manage quantity)</option>
+                      <option value="NON_STOCK">NON STOCK (no quantity)</option>
+                    </select>
+                    {editForm.stockType === "NON_STOCK" ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Saving as non-stock will set inventory quantity and reorder point to 0.
+                      </p>
+                    ) : null}
+                  </div>
+                  <div>
                     <label>Description</label>
                     <input
                       value={editForm.description}
@@ -1382,14 +1448,16 @@ export function InventoryErpClient() {
                       />
                     </div>
                   </div>
-                  <div>
-                    <label>Reorder point</label>
-                    <input
-                      type="number"
-                      value={editForm.reorderPoint}
-                      onChange={(e) => setEditForm((f) => ({ ...f, reorderPoint: e.target.value }))}
-                    />
-                  </div>
+                  {editForm.stockType === "STOCK" ? (
+                    <div>
+                      <label>Reorder point</label>
+                      <input
+                        type="number"
+                        value={editForm.reorderPoint}
+                        onChange={(e) => setEditForm((f) => ({ ...f, reorderPoint: e.target.value }))}
+                      />
+                    </div>
+                  ) : null}
                   <div>
                     <label>Expiry</label>
                     <input
@@ -1436,12 +1504,17 @@ export function InventoryErpClient() {
                 <label>Item</label>
                 <select value={adjust.itemId} onChange={(e) => setAdjust((a) => ({ ...a, itemId: e.target.value }))}>
                   <option value="">Select…</option>
-                  {items.map((i) => (
+                  {stockItems.map((i) => (
                     <option key={i.id} value={i.id}>
                       {i.name} ({i.sku})
                     </option>
                   ))}
                 </select>
+                {stockItems.length === 0 ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    No stock products available. Non-stock products are not shown here.
+                  </p>
+                ) : null}
               </div>
               <div>
                 <label>Type</label>

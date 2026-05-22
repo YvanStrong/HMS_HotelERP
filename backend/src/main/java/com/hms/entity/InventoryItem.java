@@ -51,6 +51,9 @@ public class InventoryItem {
     @Column(name = "current_stock", nullable = false, precision = 14, scale = 4)
     private BigDecimal currentStock = BigDecimal.ZERO;
 
+    @Column(name = "stock_type", nullable = false, length = 16)
+    private String stockType = "STOCK";
+
     @Column(name = "minimum_stock", precision = 14, scale = 4)
     private BigDecimal minimumStock = BigDecimal.ZERO;
 

@@ -26,6 +26,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { key: "dashboard", segment: "dashboard", label: "Dashboard", icon: "M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" },
       { key: "reports", segment: "reports", label: "Reports", icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" },
+      { key: "accounting", segment: "accounting", label: "Accounting", icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 12v-2m8-4a8 8 0 11-16 0 8 8 0 0116 0z" },
       { key: "guestAnalytics", segment: "guest-analytics", label: "Guest analytics", icon: "M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z M20.488 9H15V3.512A9.025 9.025 0 0120.488 9zM9 7H5V3h4v4zm0 10H5v-4h4v4zm10 0h-4v-4h4v4z" },
     ]
   },
@@ -127,7 +128,7 @@ export function HotelStaffShell({
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-gradient-to-br from-[hsl(40,33%,97%)] to-[hsl(31,24%,93%)] flex">
+    <div className="h-screen overflow-hidden bg-gradient-to-br from-[hsl(140,40%,98%)] to-[hsl(140,25%,94%)] flex">
       {/* Mobile sidebar overlay */}
       {isSidebarOpen && (
         <div
@@ -138,13 +139,13 @@ export function HotelStaffShell({
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:sticky lg:top-0 inset-y-0 left-0 z-50 w-64 h-screen bg-white/97 backdrop-blur-sm border-r border-border/80 shadow-[2px_0_16px_rgba(58,45,40,0.06)] transform transition-transform duration-200 ease-in-out ${
+        className={`fixed lg:sticky lg:top-0 inset-y-0 left-0 z-50 w-64 h-screen bg-white/97 backdrop-blur-sm border-r border-border/80 shadow-[2px_0_16px_rgba(20,83,45,0.06)] transform transition-transform duration-200 ease-in-out ${
           isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
         <div className="h-full flex flex-col">
           {/* Brand + Hotel area */}
-          <div className="p-4 border-b border-border/70" style={{ background: "linear-gradient(to bottom right, hsl(40 22% 99%), hsl(30 18% 96%))" }}>
+          <div className="p-4 border-b border-border/70" style={{ background: "linear-gradient(to bottom right, hsl(0 0% 100%), hsl(140 35% 97%))" }}>
             <Link href="/" className="flex items-center gap-2.5 no-underline group">
               {hotel.logoUrl ? (
                 <img

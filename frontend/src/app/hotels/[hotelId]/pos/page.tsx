@@ -12,16 +12,56 @@ type DepotRow = {
   active: boolean;
   warehouseId?: string | null;
 };
+
+type InventoryItemRow = {
+  id: string;
+  name: string;
+  sku?: string;
+  category?: string;
+  currentStock?: number | string;
+  sellingPrice?: number | string | null;
+  imageUrl?: string | null;
+  active?: boolean;
+  unitCost?: number | string | null;
+  stockType?: "STOCK" | "NON_STOCK";
+};
+
+type InventoryItemsPayload = { data?: InventoryItemRow[] };
+
 type DepotProductRow = {
   id: string;
   depotId: string;
   productName: string;
   productCode: string;
   sellingPrice: number;
+  stockQty?: number | string;
   photoUrl?: string | null;
   menuName: string;
   active: boolean;
   taxable?: boolean;
+  inventoryItemId?: string | null;
+  stockType?: "STOCK" | "NON_STOCK";
+};
+
+/** Unified row for the POS product grid (inventory-wide or single-outlet). */
+type PosCatalogItem = {
+  /** Inventory item id when linked; else depot-product id for outlet-only rows. */
+  key: string;
+  inventoryItemId: string | null;
+  depotProductId: string | null;
+  name: string;
+  sku: string;
+  category: string;
+  currentStock: number | string | null | undefined;
+  stockType: "STOCK" | "NON_STOCK";
+  sellingPrice: number;
+  imageUrl: string | null;
+  onOutlet: boolean;
+};
+
+type CreateDepotProductApiResponse = {
+  id: string;
+  product: DepotProductRow;
 };
 
 type CreateSaleResponse = {
@@ -45,48 +85,28 @@ const ORDER_TYPES = ["Dine In", "Take Away", "Delivery", "Table"] as const;
 type OrderType = (typeof ORDER_TYPES)[number];
 
 const DRAFT_KEY = (hotelId: string) => `hms_pos_draft_${hotelId}`;
-
-/** Outlet selector: show products from every active depot. Checkout still uses one depot (from cart). */
 const ALL_DEPOTS = "__ALL_DEPOTS__";
-
-/** Sidebar presets (after “All”). `menuKeys` are normalized depot `menuName` values (underscores OK). */
-const POS_CATEGORY_PRESETS: { label: string; menuKeys: string[] }[] = [
-  { label: "Beverages", menuKeys: ["BEVERAGES", "BEV", "DRINK", "DRINKS"] },
-  { label: "Starters", menuKeys: ["STARTERS", "STARTER"] },
-  { label: "Main Meals", menuKeys: ["MAIN_MEALS", "MAIN", "MAINS", "MAIN_MEAL"] },
-  { label: "Fast Food", menuKeys: ["FAST_FOOD", "FASTFOOD", "SNACK", "SNACKS"] },
-  { label: "BEV", menuKeys: ["BEV", "BEVERAGES", "DRINK", "DRINKS"] },
-  { label: "BAR", menuKeys: ["BAR"] },
-  { label: "VEG", menuKeys: ["VEG", "VEGETARIAN", "VEGGIE"] },
-];
-
-function menuNorm(raw: string | undefined): string {
-  return (raw ?? "GENERAL").trim().toUpperCase().replace(/\s+/g, "_");
-}
-
-function displayMenuLabel(raw: string | undefined): string {
-  const s = (raw ?? "GENERAL").trim() || "GENERAL";
-  return s.replace(/_/g, " ");
-}
-
-function productMatchesPreset(p: DepotProductRow, presetLabel: string): boolean {
-  const def = POS_CATEGORY_PRESETS.find((x) => x.label === presetLabel);
-  if (!def) return false;
-  const n = menuNorm(p.menuName);
-  return def.menuKeys.includes(n);
-}
-
-function productMatchesCategory(p: DepotProductRow, cat: string): boolean {
-  if (cat === "All") return true;
-  if (POS_CATEGORY_PRESETS.some((x) => x.label === cat)) {
-    return productMatchesPreset(p, cat);
-  }
-  const n = menuNorm(p.menuName);
-  return n === menuNorm(cat) || displayMenuLabel(p.menuName) === cat;
-}
+const UNCATEGORIZED = "Uncategorized";
 
 function formatMoney(n: number) {
   return (Number.isFinite(n) ? n : 0).toFixed(2);
+}
+
+function formatStock(v: number | string | null | undefined): string {
+  if (v === null || v === undefined) return "—";
+  const n = typeof v === "string" ? Number(v) : v;
+  if (!Number.isFinite(n)) return String(v);
+  return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+function categoryLabel(raw: string | undefined | null): string {
+  const s = (raw ?? "").trim();
+  return s || UNCATEGORIZED;
+}
+
+function menuTagFromCategory(cat: string): string {
+  if (!cat || cat === UNCATEGORIZED) return "GENERAL";
+  return cat.toUpperCase().replace(/\s+/g, "_");
 }
 
 export default function PosPage() {
@@ -94,7 +114,8 @@ export default function PosPage() {
   const hotelId = String(params.hotelId);
 
   const [depots, setDepots] = useState<DepotRow[]>([]);
-  const [products, setProducts] = useState<DepotProductRow[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItemRow[]>([]);
+  const [depotProducts, setDepotProducts] = useState<DepotProductRow[]>([]);
   const [depotId, setDepotId] = useState(ALL_DEPOTS);
   const [orderType, setOrderType] = useState<OrderType>("Dine In");
   const [locationLabel, setLocationLabel] = useState("Outlet / table");
@@ -104,6 +125,7 @@ export default function PosPage() {
   const [cart, setCart] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [placing, setPlacing] = useState(false);
+  const [addingItemId, setAddingItemId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -116,13 +138,15 @@ export default function PosPage() {
     setLoading(true);
     setError(null);
     try {
-      const [d, p] = await Promise.all([
+      const [d, inv, dp] = await Promise.all([
         apiFetch<DepotRow[]>(`/api/v1/hotels/${hotelId}/inventory/depots`),
+        apiFetch<InventoryItemsPayload>(`/api/v1/hotels/${hotelId}/inventory/items`),
         apiFetch<DepotProductRow[]>(`/api/v1/hotels/${hotelId}/inventory/depot-products`),
       ]);
       const activeDepots = (d ?? []).filter((x) => x.active);
       setDepots(activeDepots);
-      setProducts((p ?? []).filter((x) => x.active));
+      setInventoryItems((inv?.data ?? []).filter((x) => x.active !== false));
+      setDepotProducts((dp ?? []).filter((x) => x.active));
       setDepotId((prev) => {
         if (prev === ALL_DEPOTS) return ALL_DEPOTS;
         if (prev && activeDepots.some((x) => x.id === prev)) return prev;
@@ -140,86 +164,221 @@ export default function PosPage() {
     void load();
   }, [load]);
 
-  const depotProducts = useMemo(() => {
+  function depotProductForItem(itemId: string, targetDepotId: string): DepotProductRow | undefined {
+    return depotProducts.find(
+      (p) => p.inventoryItemId === itemId && p.depotId === targetDepotId && p.active,
+    );
+  }
+
+  /** Default outlet for sales when “All” is selected (Principal depot if present, else first active outlet). */
+  function defaultSaleDepotId(): string | null {
+    if (depots.length === 0) return null;
+    const principal = depots.find(
+      (d) =>
+        d.code.toUpperCase() === "PRINC" ||
+        d.code.toUpperCase() === "PRINCIPAL" ||
+        d.name.toLowerCase().includes("principal"),
+    );
+    return principal?.id ?? depots[0].id;
+  }
+
+  const catalogItems = useMemo((): PosCatalogItem[] => {
     if (depotId === ALL_DEPOTS) {
-      const allowed = new Set(depots.map((d) => d.id));
-      return products.filter((p) => allowed.has(p.depotId));
+      const saleDepot = defaultSaleDepotId();
+      return inventoryItems.map((inv) => {
+        const linked = saleDepot ? depotProductForItem(inv.id, saleDepot) : undefined;
+        return {
+          key: inv.id,
+          inventoryItemId: inv.id,
+          depotProductId: linked?.id ?? null,
+          name: inv.name,
+          sku: inv.sku ?? "",
+          category: categoryLabel(inv.category),
+          currentStock: inv.currentStock,
+          stockType: inv.stockType === "NON_STOCK" ? "NON_STOCK" : "STOCK",
+          sellingPrice: Number(inv.sellingPrice ?? 0),
+          imageUrl: inv.imageUrl?.trim() || null,
+          onOutlet: Boolean(linked),
+        };
+      });
     }
-    return products.filter((p) => p.depotId === depotId);
-  }, [products, depotId, depots]);
+
+    return depotProducts
+      .filter((p) => p.depotId === depotId && p.active)
+      .map((dp) => {
+        const inv = dp.inventoryItemId
+          ? inventoryItems.find((x) => x.id === dp.inventoryItemId)
+          : undefined;
+        return {
+          key: inv?.id ?? dp.id,
+          inventoryItemId: inv?.id ?? null,
+          depotProductId: dp.id,
+          name: inv?.name ?? dp.productName,
+          sku: inv?.sku ?? dp.productCode,
+          category: categoryLabel(inv?.category),
+          currentStock: inv?.currentStock ?? dp.stockQty,
+          stockType: dp.stockType === "NON_STOCK" || inv?.stockType === "NON_STOCK" ? "NON_STOCK" : "STOCK",
+          sellingPrice: Number(dp.sellingPrice),
+          imageUrl: (inv?.imageUrl?.trim() || dp.photoUrl?.trim() || null) as string | null,
+          onOutlet: true,
+        };
+      });
+  }, [depotId, inventoryItems, depotProducts, depots]);
 
   const categories = useMemo(() => {
-    const presetLabels = POS_CATEGORY_PRESETS.map((x) => x.label);
-    const coveredNorms = new Set<string>();
-    for (const pr of POS_CATEGORY_PRESETS) {
-      for (const k of pr.menuKeys) coveredNorms.add(k);
+    const set = new Set<string>();
+    for (const item of catalogItems) {
+      set.add(item.category);
     }
-    const extras: string[] = [];
-    const seenExtraNorm = new Set<string>();
-    for (const p of depotProducts) {
-      const n = menuNorm(p.menuName);
-      if (coveredNorms.has(n)) continue;
-      if (seenExtraNorm.has(n)) continue;
-      seenExtraNorm.add(n);
-      extras.push(displayMenuLabel(p.menuName));
-    }
-    extras.sort((a, b) => a.localeCompare(b));
-    return ["All", ...presetLabels, ...extras];
-  }, [depotProducts]);
+    return ["All", ...Array.from(set).sort((a, b) => a.localeCompare(b))];
+  }, [catalogItems]);
 
-  const filteredProducts = useMemo(() => {
+  const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return depotProducts.filter((p) => {
-      if (!productMatchesCategory(p, category)) return false;
+    return catalogItems.filter((item) => {
+      if (category !== "All" && item.category !== category) return false;
       if (!q) return true;
-      const catLabel = displayMenuLabel(p.menuName);
       return (
-        p.productName.toLowerCase().includes(q) ||
-        p.productCode.toLowerCase().includes(q) ||
-        catLabel.toLowerCase().includes(q) ||
-        menuNorm(p.menuName).toLowerCase().includes(q)
+        item.name.toLowerCase().includes(q) ||
+        item.sku.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q)
       );
     });
-  }, [depotProducts, search, category]);
+  }, [catalogItems, search, category]);
+
+  const selectedOutlet = useMemo(
+    () => (depotId === ALL_DEPOTS ? null : depots.find((d) => d.id === depotId) ?? null),
+    [depotId, depots],
+  );
+
+  function resolveSaleDepotId(): string | null {
+    if (depotId !== ALL_DEPOTS) return depotId;
+    const cartProductIds = Object.keys(cart).filter((id) => (cart[id] ?? 0) > 0);
+    if (cartProductIds.length > 0) {
+      const first = depotProducts.find((p) => p.id === cartProductIds[0]);
+      if (first) return first.depotId;
+    }
+    return defaultSaleDepotId();
+  }
+
+  const activeSaleDepot = useMemo(() => {
+    const id = resolveSaleDepotId();
+    if (!id) return null;
+    return depots.find((d) => d.id === id) ?? null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cart + depotId drive sale outlet
+  }, [depotId, depots, cart, depotProducts]);
 
   const cartRows = useMemo(() => {
     return Object.entries(cart)
-      .map(([productId, qty]) => {
-        const p = depotProducts.find((x) => x.id === productId);
-        if (!p || qty <= 0) return null;
-        const unit = Number(p.sellingPrice);
-        const lineTotal = unit * qty;
-        const dep = depots.find((d) => d.id === p.depotId);
+      .map(([depotProductId, qty]) => {
+        const dp = depotProducts.find((x) => x.id === depotProductId);
+        if (!dp || qty <= 0) return null;
+        const inv = dp.inventoryItemId
+          ? inventoryItems.find((x) => x.id === dp.inventoryItemId)
+          : undefined;
+        const unit = Number(dp.sellingPrice);
+        const dep = depots.find((d) => d.id === dp.depotId);
         return {
-          productId,
-          name: p.productName,
-          code: p.productCode,
+          productId: depotProductId,
+          inventoryItemId: dp.inventoryItemId,
+          name: inv?.name ?? dp.productName,
+          code: dp.productCode,
+          category: categoryLabel(inv?.category),
+          stock: inv?.currentStock,
           unit,
           qty,
-          lineTotal,
-          taxable: p.taxable,
+          lineTotal: unit * qty,
+          taxable: dp.taxable,
           outletLabel: dep ? `${dep.name} (${dep.code})` : "",
         };
       })
       .filter((x): x is NonNullable<typeof x> => Boolean(x));
-  }, [cart, depotProducts, depots]);
+  }, [cart, depotProducts, inventoryItems, depots]);
 
   const totalPayable = useMemo(() => cartRows.reduce((s, r) => s + r.lineTotal, 0), [cartRows]);
 
-  function addLine(productId: string) {
-    const p = depotProducts.find((x) => x.id === productId);
-    if (!p) return;
-    const existingIds = Object.keys(cart).filter((id) => (cart[id] ?? 0) > 0);
-    if (existingIds.length > 0 && depotId === ALL_DEPOTS) {
-      const first = depotProducts.find((x) => x.id === existingIds[0]);
-      if (first && first.depotId !== p.depotId) {
-        setError("One order can only use one outlet. Clear the cart to add items from another outlet.");
+  async function ensureDepotProduct(item: InventoryItemRow, targetDepotId: string): Promise<DepotProductRow> {
+    const existing = depotProductForItem(item.id, targetDepotId);
+    if (existing) return existing;
+
+    const selling = Number(item.sellingPrice ?? 0);
+    if (!Number.isFinite(selling) || selling < 0) {
+      throw new Error(`Set a selling price on “${item.name}” in Inventory before selling at POS.`);
+    }
+    const cost = Number(item.unitCost ?? 0);
+    const stockN = Number(item.currentStock ?? 0);
+    const stockType = item.stockType === "NON_STOCK" ? "NON_STOCK" : "STOCK";
+    const stockQty = stockType === "NON_STOCK" ? 0 : Number.isFinite(stockN) && stockN >= 0 ? stockN : 0;
+
+    const res = await apiFetch<CreateDepotProductApiResponse>(
+      `/api/v1/hotels/${hotelId}/inventory/depot-products`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          depotId: targetDepotId,
+          productName: item.name,
+          batchNo: null,
+          expiryDate: null,
+          costPrice: Number.isFinite(cost) && cost >= 0 ? cost : 0,
+          sellingPrice: selling,
+          stockQty,
+          stockType,
+          photoUrl: item.imageUrl?.trim() || null,
+          menuName: menuTagFromCategory(categoryLabel(item.category)),
+          inventoryItemId: item.id,
+          taxable: true,
+        }),
+      },
+    );
+    const created = res.product;
+    setDepotProducts((prev) => {
+      const without = prev.filter((p) => p.id !== created.id);
+      return [...without, created];
+    });
+    return created;
+  }
+
+  async function addLine(catalogKey: string) {
+    const row = catalogItems.find((x) => x.key === catalogKey);
+    if (!row) return;
+
+    const saleDepot = resolveSaleDepotId();
+    if (!saleDepot) {
+      setError("No active outlet found. Create outlets under Menu first.");
+      return;
+    }
+
+    const existingCartIds = Object.keys(cart).filter((id) => (cart[id] ?? 0) > 0);
+    if (existingCartIds.length > 0) {
+      const firstDp = depotProducts.find((p) => p.id === existingCartIds[0]);
+      if (firstDp && firstDp.depotId !== saleDepot) {
+        setError("One order can only use one outlet. Clear the cart to switch outlets.");
         return;
       }
     }
-    setCart((prev) => ({ ...prev, [productId]: (prev[productId] ?? 0) + 1 }));
-    setMsg(null);
+
+    setAddingItemId(catalogKey);
     setError(null);
+    try {
+      if (depotId !== ALL_DEPOTS && row.depotProductId) {
+        setCart((prev) => ({ ...prev, [row.depotProductId!]: (prev[row.depotProductId!] ?? 0) + 1 }));
+        setMsg(null);
+        return;
+      }
+
+      const item = inventoryItems.find((x) => x.id === row.inventoryItemId);
+      if (!item) {
+        setError("Product not found in inventory.");
+        return;
+      }
+      const dp = await ensureDepotProduct(item, saleDepot);
+      setCart((prev) => ({ ...prev, [dp.id]: (prev[dp.id] ?? 0) + 1 }));
+      setMsg(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add item");
+    } finally {
+      setAddingItemId(null);
+    }
   }
 
   function bumpQty(productId: string, delta: number) {
@@ -310,15 +469,12 @@ export default function PosPage() {
       setError("Add at least one item to the order.");
       return;
     }
-    const saleDepotId =
-      depotId === ALL_DEPOTS
-        ? products.find((x) => x.id === cartRows[0].productId)?.depotId
-        : depotId;
+    const saleDepotId = resolveSaleDepotId() ?? depotProducts.find((p) => p.id === cartRows[0].productId)?.depotId;
     if (!saleDepotId) {
       setError("Could not determine outlet for this sale.");
       return;
     }
-    const mixed = cartRows.some((r) => products.find((x) => x.id === r.productId)?.depotId !== saleDepotId);
+    const mixed = cartRows.some((r) => depotProducts.find((p) => p.id === r.productId)?.depotId !== saleDepotId);
     if (mixed) {
       setError("All items must be from the same outlet.");
       return;
@@ -383,15 +539,17 @@ export default function PosPage() {
 
   return (
     <div className="flex min-h-[calc(100dvh-10rem)] max-w-full min-w-0 flex-col gap-3">
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">POS</h1>
-          <p className="text-sm text-muted-foreground">Running order and catalog — same depot sales as Menu.</p>
+          <p className="text-sm text-muted-foreground">
+            Catalog from Inventory products — categories and stock match the products table.
+          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <label className="text-xs text-muted-foreground sr-only">Outlet</label>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <label className="sr-only text-xs text-muted-foreground">Outlet</label>
           <select
-            className="hms-input min-w-0 max-w-full flex-1 text-sm sm:max-w-[20rem] sm:flex-none sm:min-w-[10rem]"
+            className="hms-input min-w-0 max-w-full flex-1 text-sm sm:min-w-[10rem] sm:max-w-[20rem] sm:flex-none"
             value={depotId}
             onChange={(e) => {
               setDepotId(e.target.value);
@@ -414,6 +572,17 @@ export default function PosPage() {
           </button>
         </div>
       </div>
+      {depotId === ALL_DEPOTS && activeSaleDepot ? (
+        <p className="text-xs text-muted-foreground">
+          Selling via <strong className="text-foreground">{activeSaleDepot.name}</strong> ({activeSaleDepot.code})
+          — all inventory products; same outlet for the whole order.
+        </p>
+      ) : selectedOutlet ? (
+        <p className="text-xs text-muted-foreground">
+          Showing products on <strong className="text-foreground">{selectedOutlet.name}</strong> ({selectedOutlet.code})
+          only.
+        </p>
+      ) : null}
 
       {error && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -421,21 +590,22 @@ export default function PosPage() {
         </div>
       )}
       {msg && (
-        <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground">{msg}</div>
+        <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground">
+          {msg}
+        </div>
       )}
 
-      <div className="flex flex-col gap-4 flex-1 min-h-0 min-w-0 lg:flex-row">
-        {/* Left — running order */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 lg:flex-row">
         <section className="flex min-h-[min(380px,55dvh)] w-full min-w-0 shrink-0 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft lg:max-w-xl lg:basis-[40%] xl:max-w-none xl:basis-[40%]">
-          <div className="p-3 border-b border-border/60 bg-muted/20">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Running order</p>
+          <div className="border-b border-border/60 bg-muted/20 p-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Running order</p>
             <div className="flex flex-wrap gap-1.5">
               {ORDER_TYPES.map((t) => (
                 <button
                   key={t}
                   type="button"
                   onClick={() => setOrderType(t)}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors border ${
+                  className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
                     orderType === t
                       ? "border-primary bg-primary text-primary-foreground shadow-sm"
                       : "border-border/80 bg-background text-muted-foreground hover:bg-accent"
@@ -445,11 +615,11 @@ export default function PosPage() {
                 </button>
               ))}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div>
                 <label className="text-[11px] text-muted-foreground">Location / table</label>
                 <input
-                  className="hms-input w-full text-sm mt-0.5"
+                  className="hms-input mt-0.5 w-full text-sm"
                   value={locationLabel}
                   onChange={(e) => setLocationLabel(e.target.value)}
                   placeholder="e.g. Nanzige, Table 4"
@@ -458,7 +628,7 @@ export default function PosPage() {
               <div>
                 <label className="text-[11px] text-muted-foreground">Customer</label>
                 <input
-                  className="hms-input w-full text-sm mt-0.5"
+                  className="hms-input mt-0.5 w-full text-sm"
                   value={customerLabel}
                   onChange={(e) => setCustomerLabel(e.target.value)}
                   placeholder="Walk-in Customer"
@@ -469,83 +639,80 @@ export default function PosPage() {
 
           <div className="flex-1 overflow-auto p-2 sm:p-3">
             {cartRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">No items yet — add from the catalog.</p>
+              <p className="py-8 text-center text-sm text-muted-foreground">No items yet — add from the catalog.</p>
             ) : (
-              <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 sm:px-0">
-                <table className="w-full min-w-[32rem] text-sm">
-                <thead>
-                  <tr className="text-left text-xs text-muted-foreground border-b border-border/60">
-                    <th className="pb-2 pr-2">Item</th>
-                    <th className="pb-2 w-16">Price</th>
-                    <th className="pb-2 w-28">Qty</th>
-                    <th className="pb-2 w-14">Disc.</th>
-                    <th className="pb-2 w-16 text-right">Total</th>
-                    <th className="pb-2 w-8" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {cartRows.map((r) => (
-                    <tr key={r.productId} className="border-b border-border/40 align-middle">
-                      <td className="py-2 pr-2">
-                        <div className="font-medium">{r.name}</div>
-                        {depotId === ALL_DEPOTS && r.outletLabel ? (
-                          <div className="text-[10px] text-muted-foreground mt-0.5">{r.outletLabel}</div>
-                        ) : null}
-                      </td>
-                      <td className="py-2 text-muted-foreground">{formatMoney(r.unit)}</td>
-                      <td className="py-2">
-                        <div className="inline-flex items-center rounded-lg border border-border/80 overflow-hidden">
-                          <button
-                            type="button"
-                            className="px-2 py-1 hover:bg-muted text-lg leading-none"
-                            onClick={() => bumpQty(r.productId, -1)}
-                            aria-label="Decrease"
-                          >
-                            −
-                          </button>
-                          <span className="px-2 min-w-[2rem] text-center tabular-nums">{r.qty}</span>
-                          <button
-                            type="button"
-                            className="px-2 py-1 hover:bg-muted text-lg leading-none"
-                            onClick={() => bumpQty(r.productId, 1)}
-                            aria-label="Increase"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </td>
-                      <td className="py-2">
-                        <span className="text-xs text-muted-foreground" title="Line discounts are not stored yet">
-                          —
-                        </span>
-                      </td>
-                      <td className="py-2 text-right font-medium tabular-nums">{formatMoney(r.lineTotal)}</td>
-                      <td className="py-2">
-                        <button
-                          type="button"
-                          className="text-destructive hover:underline text-xs"
-                          onClick={() => removeLine(r.productId)}
-                        >
-                          ✕
-                        </button>
-                      </td>
+              <div className="-mx-1 overflow-x-auto px-1 sm:mx-0 sm:px-0">
+                <table className="w-full min-w-[36rem] text-sm">
+                  <thead>
+                    <tr className="border-b border-border/60 text-left text-xs text-muted-foreground">
+                      <th className="pb-2 pr-2">Item</th>
+                      <th className="pb-2 w-14">Stock</th>
+                      <th className="pb-2 w-16">Price</th>
+                      <th className="pb-2 w-28">Qty</th>
+                      <th className="pb-2 w-16 text-right">Total</th>
+                      <th className="pb-2 w-8" />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {cartRows.map((r) => (
+                      <tr key={r.productId} className="border-b border-border/40 align-middle">
+                        <td className="py-2 pr-2">
+                          <div className="font-medium">{r.name}</div>
+                          <div className="text-[10px] text-muted-foreground">{r.category}</div>
+                          {depotId === ALL_DEPOTS && r.outletLabel ? (
+                            <div className="mt-0.5 text-[10px] text-muted-foreground">{r.outletLabel}</div>
+                          ) : null}
+                        </td>
+                        <td className="py-2 tabular-nums text-muted-foreground">{formatStock(r.stock)}</td>
+                        <td className="py-2 text-muted-foreground">{formatMoney(r.unit)}</td>
+                        <td className="py-2">
+                          <div className="inline-flex items-center overflow-hidden rounded-lg border border-border/80">
+                            <button
+                              type="button"
+                              className="px-2 py-1 text-lg leading-none hover:bg-muted"
+                              onClick={() => bumpQty(r.productId, -1)}
+                              aria-label="Decrease"
+                            >
+                              −
+                            </button>
+                            <span className="min-w-[2rem] px-2 text-center tabular-nums">{r.qty}</span>
+                            <button
+                              type="button"
+                              className="px-2 py-1 text-lg leading-none hover:bg-muted"
+                              onClick={() => bumpQty(r.productId, 1)}
+                              aria-label="Increase"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </td>
+                        <td className="py-2 text-right font-medium tabular-nums">{formatMoney(r.lineTotal)}</td>
+                        <td className="py-2">
+                          <button
+                            type="button"
+                            className="text-xs text-destructive hover:underline"
+                            onClick={() => removeLine(r.productId)}
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
 
-          <div className="p-3 border-t border-border/60 bg-muted/10 space-y-3">
-            <div className="flex justify-between items-baseline">
+          <div className="space-y-3 border-t border-border/60 bg-muted/10 p-3">
+            <div className="flex items-baseline justify-between">
               <span className="text-sm font-medium text-muted-foreground">Total payable</span>
-              <span className="text-xl font-bold text-primary tabular-nums">{formatMoney(totalPayable)}</span>
+              <span className="text-xl font-bold tabular-nums text-primary">{formatMoney(totalPayable)}</span>
             </div>
             <div className="grid grid-cols-2 gap-2 max-[380px]:grid-cols-1 sm:grid-cols-4">
               <button
                 type="button"
-                className="rounded-xl py-2.5 text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                className="rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                 disabled={placing}
                 onClick={clearCart}
               >
@@ -553,7 +720,7 @@ export default function PosPage() {
               </button>
               <button
                 type="button"
-                className="rounded-xl py-2.5 text-sm font-semibold bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50"
+                className="rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
                 disabled={placing}
                 onClick={saveDraft}
               >
@@ -561,7 +728,7 @@ export default function PosPage() {
               </button>
               <button
                 type="button"
-                className="rounded-xl py-2.5 text-sm font-semibold bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"
+                className="rounded-xl bg-sky-600 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
                 disabled={placing || cartRows.length === 0}
                 onClick={() => void submitSale(true)}
               >
@@ -569,7 +736,7 @@ export default function PosPage() {
               </button>
               <button
                 type="button"
-                className="rounded-xl py-2.5 text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                 disabled={placing || cartRows.length === 0}
                 onClick={() => void submitSale(false)}
               >
@@ -579,12 +746,11 @@ export default function PosPage() {
           </div>
         </section>
 
-        {/* Right — catalog */}
         <section className="flex min-h-[min(420px,60dvh)] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft">
           <div className="shrink-0 border-b border-border/60 p-2 sm:p-3">
             <input
               className="hms-input w-full min-w-0 text-sm"
-              placeholder="Search name, code, category…"
+              placeholder="Search name, SKU, category…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -592,7 +758,7 @@ export default function PosPage() {
           <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
             <nav
               className="scrollbar-thin flex shrink-0 gap-1.5 overflow-x-auto overflow-y-hidden border-b border-border/60 bg-muted/15 p-2 lg:w-44 lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden lg:border-b-0 lg:border-r"
-              aria-label="Product categories"
+              aria-label="Inventory categories"
             >
               {categories.map((c) => (
                 <button
@@ -610,52 +776,61 @@ export default function PosPage() {
               ))}
             </nav>
             <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-2 sm:p-3">
-              {depots.length === 0 ? (
+              {catalogItems.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No active outlets. Create depots under Menu → default outlets, then return here.
+                  {selectedOutlet
+                    ? `No products on ${selectedOutlet.name}. Add them via Menu → Add to menu, or use All to sell from inventory.`
+                    : "No active products in Inventory. Add products under Inventory → Products, then return here."}
                 </p>
-              ) : filteredProducts.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No products match this filter{depotId === ALL_DEPOTS ? " across outlets" : " for this outlet"}.
-                </p>
+              ) : filteredItems.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No products match this filter.</p>
               ) : (
                 <div className="grid w-full min-w-0 grid-cols-1 gap-2 min-[380px]:grid-cols-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                  {filteredProducts.map((p) => {
-                    const outletName = depots.find((d) => d.id === p.depotId)?.name ?? "Outlet";
+                  {filteredItems.map((item) => {
+                    const stockN = Number(item.currentStock ?? 0);
+                    const lowStock = item.stockType !== "NON_STOCK" && Number.isFinite(stockN) && stockN <= 0;
+                    const busy = addingItemId === item.key;
+
                     return (
                       <button
-                        key={p.id}
+                        key={item.key}
                         type="button"
-                        onClick={() => addLine(p.id)}
-                        className="flex h-full min-h-0 min-w-0 flex-col rounded-xl border border-border/70 bg-background p-2 text-left shadow-sm transition-all hover:border-primary/50 hover:shadow-md sm:p-3"
+                        disabled={busy}
+                        onClick={() => void addLine(item.key)}
+                        className="flex h-full min-h-0 min-w-0 flex-col rounded-xl border border-border/70 bg-background p-2 text-left shadow-sm transition-all hover:border-primary/50 hover:shadow-md disabled:opacity-60 sm:p-3"
                       >
                         <div className="relative aspect-[4/3] w-full shrink-0 overflow-hidden rounded-lg bg-muted/40">
-                          {p.photoUrl ? (
+                          {item.imageUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={p.photoUrl}
-                              alt=""
-                              className="h-full w-full object-cover"
-                            />
+                            <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
                           ) : (
                             <span className="flex h-full w-full items-center justify-center text-2xl text-muted-foreground">
                               ◇
                             </span>
                           )}
+                          {item.onOutlet && depotId === ALL_DEPOTS ? (
+                            <span className="absolute right-1 top-1 rounded bg-emerald-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                              On outlet
+                            </span>
+                          ) : null}
                         </div>
-                        {depotId === ALL_DEPOTS ? (
-                          <p className="mt-2 max-w-full truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                            {outletName}
-                          </p>
-                        ) : null}
-                        <div className="mt-1 flex min-h-0 min-w-0 flex-1 flex-col gap-1">
-                          <p className="line-clamp-2 break-words text-sm font-semibold leading-snug">{p.productName}</p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {(p.menuName || "").replace(/_/g, " ")}
+                        <div className="mt-2 flex min-h-0 min-w-0 flex-1 flex-col gap-0.5">
+                          <p className="line-clamp-2 break-words text-sm font-semibold leading-snug">{item.name}</p>
+                          {item.sku ? (
+                            <p className="truncate text-[10px] text-muted-foreground">{item.sku}</p>
+                          ) : null}
+                          <p className="truncate text-xs text-muted-foreground">{item.category}</p>
+                          <p
+                            className={`text-xs font-medium tabular-nums ${
+                              lowStock ? "text-destructive" : "text-foreground"
+                            }`}
+                          >
+                            {item.stockType === "NON_STOCK" ? "Non stock" : `Stock: ${formatStock(item.currentStock)}`}
                           </p>
                           <p className="mt-auto pt-1 text-sm font-bold tabular-nums text-primary">
-                            {formatMoney(Number(p.sellingPrice))}
+                            {formatMoney(item.sellingPrice)}
                           </p>
+                          {busy ? <p className="text-[10px] text-muted-foreground">Adding…</p> : null}
                         </div>
                       </button>
                     );

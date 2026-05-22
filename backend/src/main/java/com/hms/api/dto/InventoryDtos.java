@@ -41,7 +41,8 @@ public final class InventoryDtos {
             LocalDate expiryDate,
             LocalDate manufactureDate,
             String valuationMethod,
-            String imageUrl) {}
+            String imageUrl,
+            String stockType) {}
 
     public record InventoryListSummary(
             long totalItems, long lowStockCount, long outOfStockCount, BigDecimal totalValue) {}
@@ -131,6 +132,7 @@ public final class InventoryDtos {
             @NotBlank String name,
             String sku,
             @NotNull UUID categoryId,
+            String stockType,
             BigDecimal currentStock,
             BigDecimal reorderPoint,
             BigDecimal unitCost,
@@ -160,7 +162,8 @@ public final class InventoryDtos {
             LocalDate expiryDate,
             LocalDate manufactureDate,
             Boolean active,
-            String valuationMethod) {}
+            String valuationMethod,
+            String stockType) {}
 
     public record CreatedIdResponse(UUID id) {}
 

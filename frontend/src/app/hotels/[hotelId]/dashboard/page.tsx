@@ -59,6 +59,17 @@ type ExecutiveDashboard = {
   recentActivity: ActivityRow[];
 };
 
+type SalesAnalytics = {
+  fromDate: string;
+  toDate: string;
+  inventoryInvoiceSales: number;
+  posSales: number;
+  totalSales: number;
+  totalExpenses: number;
+  netAfterExpenses: number;
+  pendingPettyCashCount: number;
+};
+
 type RoomDashboard = {
   hotelId: string;
   bucketCounts: Record<string, number>;
@@ -88,7 +99,7 @@ function defaultDateRange(): { from: string; to: string } {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  OCCUPIED: "#a48374",
+  OCCUPIED: "#16a34a",
   VACANT_CLEAN: "#10b981",
   VACANT_DIRTY: "#f59e0b",
   CLEAN: "#10b981",
@@ -144,6 +155,7 @@ export default function HotelDashboardPage() {
   const [board, setBoard] = useState<RoomDashboard | null>(null);
   const [grid, setGrid] = useState<OccupancyGrid | null>(null);
   const [kpi, setKpi] = useState<RealtimeDashboard | null>(null);
+  const [salesAnalytics, setSalesAnalytics] = useState<SalesAnalytics | null>(null);
   const [roomError, setRoomError] = useState<string | null>(null);
   const [boardLoading, setBoardLoading] = useState(true);
   const [gridLoading, setGridLoading] = useState(true);
@@ -212,6 +224,18 @@ export default function HotelDashboardPage() {
       } finally {
         if (!cancelled) setKpiLoading(false);
       }
+      try {
+        const now = new Date();
+        const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+        const to = now.toISOString().slice(0, 10);
+        const a = await apiFetch<SalesAnalytics>(
+          `/api/v1/hotels/${hotelId}/accounting/sales-analytics?from=${from}&to=${to}`,
+          { quiet: true },
+        );
+        if (!cancelled) setSalesAnalytics(a);
+      } catch {
+        /* manager/finance only */
+      }
     })();
     return () => {
       cancelled = true;
@@ -240,6 +264,15 @@ export default function HotelDashboardPage() {
       color: tonedColor(c.tone),
     }));
   }, [dash]);
+
+  const accountingSalesBars = useMemo(() => {
+    if (!salesAnalytics) return [];
+    return [
+      { label: "POS", value: Number(salesAnalytics.posSales) || 0, color: "#16a34a" },
+      { label: "Invoices", value: Number(salesAnalytics.inventoryInvoiceSales) || 0, color: "#0ea5e9" },
+      { label: "Expenses", value: Number(salesAnalytics.totalExpenses) || 0, color: "#f59e0b" },
+    ];
+  }, [salesAnalytics]);
 
   const alertsBars = useMemo(() => {
     if (!dash) return [];
@@ -458,6 +491,66 @@ export default function HotelDashboardPage() {
             </div>
           </section>
 
+          {salesAnalytics ? (
+            <section>
+              <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">Sales analytics</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Month-to-date POS and invoice sales against recorded expenses.
+                  </p>
+                </div>
+                <Link href={staffAppPath("accounting")} className="hms-btn-outline hms-btn-sm">
+                  Open Accounting
+                </Link>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                <SparkKpiCard
+                  title="Total sales"
+                  valueDisplay={`$${Number(salesAnalytics.totalSales).toLocaleString()}`}
+                  subtext={`${salesAnalytics.fromDate} → ${salesAnalytics.toDate}`}
+                  tone="green"
+                  href={staffAppPath("accounting")}
+                />
+                <SparkKpiCard
+                  title="POS sales"
+                  valueDisplay={`$${Number(salesAnalytics.posSales).toLocaleString()}`}
+                  subtext="Menu / outlet sales"
+                  tone="blue"
+                  href={staffAppPath("pos")}
+                />
+                <SparkKpiCard
+                  title="Expenses"
+                  valueDisplay={`$${Number(salesAnalytics.totalExpenses).toLocaleString()}`}
+                  subtext="Recorded expenses"
+                  tone="amber"
+                  href={staffAppPath("accounting")}
+                />
+                <SparkKpiCard
+                  title="Net after expenses"
+                  valueDisplay={`$${Number(salesAnalytics.netAfterExpenses).toLocaleString()}`}
+                  subtext={`${salesAnalytics.pendingPettyCashCount} petty cash pending`}
+                  tone={salesAnalytics.netAfterExpenses >= 0 ? "green" : "red"}
+                  href={staffAppPath("accounting")}
+                />
+              </div>
+              <ChartCard
+                title="Sales vs expenses"
+                subtitle="POS, inventory invoices, and expenses"
+                bodyHeight={240}
+                empty={accountingSalesBars.length === 0}
+                className="mt-4"
+              >
+                <HmsBarChart
+                  data={accountingSalesBars}
+                  layout="horizontal"
+                  showValues
+                  formatValue={(n) => `$${Number(n).toLocaleString()}`}
+                />
+              </ChartCard>
+            </section>
+          ) : null}
+
           <section>
             <h2 className="mb-2 text-lg font-semibold">Operations Alerts</h2>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -597,7 +690,7 @@ export default function HotelDashboardPage() {
             leftAxisLabel="Rooms"
             rightAxisLabel="%"
             series={[
-              { key: "Occupied", label: "Occupied", type: "bar", color: "#a48374" },
+              { key: "Occupied", label: "Occupied", type: "bar", color: "#16a34a" },
               { key: "Available", label: "Available", type: "bar", color: "#d2bab0" },
               {
                 key: "Occupancy",

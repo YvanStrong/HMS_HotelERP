@@ -196,14 +196,24 @@ public class InventoryService {
                     .orElseThrow(() -> notFound("Category"));
             i.setCategory(cat);
         }
+        if (req.stockType() != null && !req.stockType().isBlank()) {
+            String stockType = normalizeStockType(req.stockType());
+            i.setStockType(stockType);
+            if ("NON_STOCK".equals(stockType)) {
+                i.setCurrentStock(BigDecimal.ZERO);
+                i.setReorderPoint(BigDecimal.ZERO);
+                i.setMinimumStock(BigDecimal.ZERO);
+                i.setMaximumStock(null);
+            }
+        }
         if (req.reorderPoint() != null) {
-            i.setReorderPoint(req.reorderPoint());
+            i.setReorderPoint("NON_STOCK".equals(normalizeStockType(i.getStockType())) ? BigDecimal.ZERO : req.reorderPoint());
         }
         if (req.minimumStock() != null) {
-            i.setMinimumStock(req.minimumStock());
+            i.setMinimumStock("NON_STOCK".equals(normalizeStockType(i.getStockType())) ? BigDecimal.ZERO : req.minimumStock());
         }
         if (req.maximumStock() != null) {
-            i.setMaximumStock(req.maximumStock());
+            i.setMaximumStock("NON_STOCK".equals(normalizeStockType(i.getStockType())) ? null : req.maximumStock());
         }
         if (req.unitCost() != null) {
             i.setUnitCost(req.unitCost());
@@ -271,7 +281,8 @@ public class InventoryService {
                 i.getExpiryDate(),
                 i.getManufactureDate(),
                 val,
-                i.getImageUrl());
+                i.getImageUrl(),
+                normalizeStockType(i.getStockType()));
     }
 
     private static String stockStatus(InventoryItem i) {
@@ -654,8 +665,15 @@ public class InventoryService {
         i.setCategory(cat);
         i.setName(req.name().trim());
         i.setSku(sku);
-        i.setCurrentStock(req.currentStock() != null ? req.currentStock() : BigDecimal.ZERO);
-        i.setReorderPoint(req.reorderPoint() != null ? req.reorderPoint() : BigDecimal.ZERO);
+        String stockType = normalizeStockType(req.stockType());
+        i.setStockType(stockType);
+        if ("NON_STOCK".equals(stockType)) {
+            i.setCurrentStock(BigDecimal.ZERO);
+            i.setReorderPoint(BigDecimal.ZERO);
+        } else {
+            i.setCurrentStock(req.currentStock() != null ? req.currentStock() : BigDecimal.ZERO);
+            i.setReorderPoint(req.reorderPoint() != null ? req.reorderPoint() : BigDecimal.ZERO);
+        }
         i.setUnitCost(req.unitCost() != null ? req.unitCost() : BigDecimal.ZERO);
         i.setMinibarItem(Boolean.TRUE.equals(req.isMinibarItem()));
         i.setMinibarReorderThreshold(req.minibarReorderThreshold());
@@ -683,6 +701,14 @@ public class InventoryService {
         i = inventoryItemRepository.save(i);
         recordOpeningStockAtPrincipalWarehouse(hotelId, i);
         return new InventoryDtos.CreatedIdResponse(i.getId());
+    }
+
+    private static String normalizeStockType(String raw) {
+        if (raw == null || raw.isBlank()) return "STOCK";
+        String v = raw.trim().toUpperCase(Locale.ROOT).replace("-", "_").replace(" ", "_");
+        if ("NON_STOCK".equals(v) || "NONSTOCK".equals(v)) return "NON_STOCK";
+        if ("STOCK".equals(v)) return "STOCK";
+        throw new ApiException(HttpStatus.BAD_REQUEST, "stockType must be STOCK or NON_STOCK");
     }
 
     private void recordOpeningStockAtPrincipalWarehouse(UUID hotelId, InventoryItem i) {

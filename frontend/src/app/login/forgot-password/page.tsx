@@ -33,9 +33,9 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-svh flex flex-col bg-gradient-to-br from-[hsl(40_30%_97%)] via-[hsl(35_24%_94%)] to-[hsl(30_22%_88%)] p-3 sm:p-4">
+    <div className="min-h-svh flex flex-col bg-gradient-to-br from-[hsl(140_40%_98%)] via-[hsl(140_30%_96%)] to-[hsl(140_25%_92%)] p-3 sm:p-4">
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center">
-        <div className="rounded-2xl border border-[hsl(var(--primary))]/20 bg-white p-6 shadow-[0_20px_50px_rgba(58,45,40,0.12)] sm:p-8">
+        <div className="rounded-2xl border border-[hsl(var(--primary))]/20 bg-white p-6 shadow-[0_20px_50px_rgba(20,83,45,0.12)] sm:p-8">
           <div className="mb-6">
             <Link
               href="/login"
@@ -88,7 +88,7 @@ export default function ForgotPasswordPage() {
                   autoComplete="username"
                   placeholder="e.g. hoteladmin or you@hotel.com"
                   required
-                  className="h-11 w-full rounded-xl border border-[hsl(var(--primary))]/25 bg-[hsl(40_28%_99%)] px-3.5 text-[hsl(var(--foreground))] placeholder:text-muted-foreground/70 focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary))]/25"
+                  className="h-11 w-full rounded-xl border border-[hsl(var(--primary))]/25 bg-white px-3.5 text-[hsl(var(--foreground))] placeholder:text-muted-foreground/70 focus:border-[hsl(var(--primary))] focus:ring-2 focus:ring-[hsl(var(--primary))]/25"
                 />
               </div>
               {error && <div className="text-sm text-destructive">{error}</div>}

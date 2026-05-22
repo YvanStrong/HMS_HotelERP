@@ -67,11 +67,11 @@ export function HmsBarChart({
             tick={{ fontSize: 11, fill: HMS_CHART_TICK }}
           />
           <Tooltip
-            cursor={{ fill: "rgba(58,45,40,0.04)" }}
+            cursor={{ fill: "rgba(20,83,45,0.04)" }}
             contentStyle={{
               fontSize: 12,
               borderRadius: 6,
-              border: "1px solid rgba(58,45,40,0.12)",
+              border: "1px solid rgba(20,83,45,0.12)",
               background: "#fff",
             }}
             formatter={(value) => [formatValue(Number(value)), yAxisLabel ?? "Value"]}
@@ -113,11 +113,11 @@ export function HmsBarChart({
           tickFormatter={(n) => formatValue(Number(n))}
         />
         <Tooltip
-          cursor={{ fill: "rgba(58,45,40,0.04)" }}
+          cursor={{ fill: "rgba(20,83,45,0.04)" }}
           contentStyle={{
             fontSize: 12,
             borderRadius: 6,
-            border: "1px solid rgba(58,45,40,0.12)",
+            border: "1px solid rgba(20,83,45,0.12)",
             background: "#fff",
           }}
           formatter={(value) => [formatValue(Number(value)), yAxisLabel ?? "Value"]}
