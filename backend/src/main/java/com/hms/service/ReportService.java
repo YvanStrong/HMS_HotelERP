@@ -42,7 +42,6 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -573,7 +572,7 @@ public class ReportService {
                 .toList();
 
         List<ReportDtos.ExecutiveActivityRow> activity = Stream.concat(
-                        reservationRepository.findTop20ActivityByHotelId(hotelId, PageRequest.of(0, 20)).stream()
+                        reservationRepository.findTop20ByHotel_IdOrderByUpdatedAtDesc(hotelId).stream()
                                 .map(r -> new ReportDtos.ExecutiveActivityRow(
                                         r.getUpdatedAt(),
                                         actorNameForReservation(r),
@@ -689,13 +688,13 @@ public class ReportService {
     }
 
     private ReportDtos.ExecutiveActivityRow toPaymentActivity(Payment p) {
-        String staff = p.getProcessedBy() != null ? p.getProcessedBy().getUsername() : "No staff recorded";
+        String staff = p.getProcessedBy() != null ? p.getProcessedBy().getUsername() : "System";
         String ref = p.getReservation() != null ? p.getReservation().getBookingReference() : "PAYMENT";
         return new ReportDtos.ExecutiveActivityRow(p.getProcessedAt(), staff, "Payment posted", ref);
     }
 
     private ReportDtos.ExecutiveActivityRow toChargeActivity(RoomCharge c) {
-        String staff = c.getPostedBy() != null && !c.getPostedBy().isBlank() ? c.getPostedBy() : "No staff recorded";
+        String staff = c.getPostedBy() != null && !c.getPostedBy().isBlank() ? c.getPostedBy() : "System";
         String ref = c.getReservation() != null ? c.getReservation().getBookingReference() : "CHARGE";
         return new ReportDtos.ExecutiveActivityRow(c.getChargedAt(), staff, "Charge posted", ref);
     }
@@ -707,16 +706,10 @@ public class ReportService {
         if (r.getStatus() == ReservationStatus.CHECKED_IN && r.getCheckedInBy() != null) {
             return r.getCheckedInBy().getUsername();
         }
-        if (r.getLastModifiedBy() != null) {
-            return r.getLastModifiedBy().getUsername();
-        }
         if (r.getBookedByAppUser() != null) {
             return r.getBookedByAppUser().getUsername();
         }
-        if ("GUEST_PORTAL".equalsIgnoreCase(r.getBookingSource()) || "web".equalsIgnoreCase(r.getSource())) {
-            return "Guest web booking";
-        }
-        return "No staff recorded";
+        return "System";
     }
 
     private String actionForReservation(Reservation r) {

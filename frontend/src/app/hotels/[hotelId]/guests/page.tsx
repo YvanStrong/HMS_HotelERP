@@ -768,12 +768,17 @@ export default function GuestsPage() {
                       />
                     </div>
                   )}
-                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
-                    <p className="text-[11px] font-black uppercase tracking-wider text-emerald-900">Loyalty is automatic</p>
-                    <p className="mt-1 text-xs leading-relaxed text-emerald-800">
-                      New guests start at Bronze with 0 points. Points and tier are calculated from checked-out stays
-                      and posted loyalty transactions, so staff do not choose the tier manually.
-                    </p>
+                  <div>
+                    <label className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1.5 block ml-1">Loyalty Tier</label>
+                    <select 
+                      value={newGuest.vipLevel} 
+                      onChange={e => setNewGuest({...newGuest, vipLevel: e.target.value})}
+                      className="w-full bg-slate-50 border-slate-200 focus:border-primary focus:bg-white rounded-2xl h-12 transition-all font-medium px-4"
+                    >
+                      <option value="NONE">Standard</option>
+                      <option value="SILVER">Silver Tier</option>
+                      <option value="GOLD">Gold Tier</option>
+                    </select>
                   </div>
                   <div className="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100 transition-all hover:bg-slate-100/50">
                     <div>

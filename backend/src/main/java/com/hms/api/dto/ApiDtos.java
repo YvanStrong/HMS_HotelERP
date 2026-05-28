@@ -15,7 +15,6 @@ import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -241,203 +240,6 @@ public final class ApiDtos {
             /** Optional: link reservation to an existing group master booking. */
             @JsonProperty("group_booking_id") UUID groupBookingId) {}
 
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ReservationCompanionInput(
-            UUID guestId,
-            @NotBlank String fullName,
-            String preferredName,
-            String email,
-            String phone,
-            String nationality,
-            String idDocumentType,
-            String idDocumentNumber,
-            LocalDate idExpiryDate,
-            String preferredLanguage,
-            String communicationPreference,
-            Boolean operationalMessageConsent,
-            String accessibilityNeeds,
-            String dietaryRestrictions,
-            String allergies,
-            List<String> roomFeaturePreferences,
-            String notes) {}
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ReservationSegmentInput(
-            UUID roomId,
-            UUID roomTypeId,
-            UUID roomTypeToChargeId,
-            LocalDate segmentStart,
-            LocalDate segmentEnd,
-            Integer adults,
-            Integer children,
-            UUID ratePlanId,
-            String rateCode,
-            BigDecimal nightlyRate,
-            List<String> packages,
-            List<String> addOns,
-            List<String> roomFeatures,
-            String upgradeReason) {}
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ReservationPolicyInput(
-            String cancellationPolicyId,
-            String depositPolicyId,
-            String noShowPolicyId,
-            Boolean termsAccepted,
-            Instant termsAcceptedAt,
-            Boolean registrationCardSigned) {}
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ReservationGuaranteeInput(
-            String reservationType,
-            String guaranteeType,
-            Boolean deductInventory,
-            Boolean depositRequired,
-            BigDecimal depositAmount,
-            LocalDate depositDueDate,
-            String paymentMethod,
-            String paymentStatus,
-            String paymentTokenId,
-            String authorizationCode,
-            UUID directBillCompanyId,
-            Boolean taxExempt,
-            String taxExemptReason,
-            String guaranteeOverrideReason) {}
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ReservationSalesInput(
-            String marketCode,
-            String sourceCode,
-            String originCode,
-            String channelCode,
-            UUID companyId,
-            UUID travelAgentId,
-            Boolean commissionable,
-            BigDecimal commissionPercent,
-            String promoCode,
-            String campaignCode) {}
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ReservationOperationsInput(
-            String arrivalTransportType,
-            String flightNumber,
-            Boolean pickupRequired,
-            Instant pickupTime,
-            Boolean lateCheckoutRequested,
-            String housekeepingInstructions,
-            String amenityInstructions,
-            String internalNotes,
-            String guestFacingNotes) {}
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record WizardReservationRequest(
-            UUID guestId,
-            GuestInput guest,
-            List<ReservationCompanionInput> companions,
-            LocalDate checkInDate,
-            LocalDate checkOutDate,
-            LocalTime arrivalTime,
-            LocalTime departureTime,
-            Integer roomsRequested,
-            Integer adults,
-            Integer children,
-            List<Integer> childAges,
-            String stayPurpose,
-            String bookingIntent,
-            Boolean waitlistAllowed,
-            Boolean flexibleDates,
-            UUID roomTypeId,
-            String roomTypeCode,
-            UUID preferredRoomId,
-            UUID roomTypeToChargeId,
-            UUID ratePlanId,
-            String rateCode,
-            BigDecimal manualRateOverride,
-            String rateOverrideReason,
-            List<String> packages,
-            List<String> addOns,
-            List<String> roomFeatures,
-            String upgradeReason,
-            String specialRequests,
-            String source,
-            ReservationSalesInput sales,
-            ReservationGuaranteeInput guarantee,
-            ReservationPolicyInput policy,
-            ReservationOperationsInput operations,
-            List<ReservationSegmentInput> segments,
-            @JsonProperty("group_booking_id") UUID groupBookingId) {}
-
-    public record ReservationWarning(String code, String tone, String message) {}
-
-    public record ReservationPreviewResponse(
-            boolean available,
-            BigDecimal nightlyRate,
-            BigDecimal roomSubtotal,
-            BigDecimal estimatedTaxes,
-            BigDecimal estimatedFees,
-            BigDecimal estimatedTotal,
-            BigDecimal depositDue,
-            String currency,
-            List<ReservationWarning> warnings,
-            List<String> policySummaries) {}
-
-    public record ReservationEventRow(
-            UUID id,
-            String eventType,
-            String title,
-            String detail,
-            String actor,
-            Instant createdAt,
-            String metadataJson) {}
-
-    public record WaitlistCreateRequest(
-            UUID guestId,
-            GuestInput guest,
-            @NotNull LocalDate checkInDate,
-            @NotNull LocalDate checkOutDate,
-            UUID roomTypeId,
-            Integer adults,
-            Integer children,
-            List<Integer> childAges,
-            Boolean flexibleDates,
-            String sourceCode,
-            String marketCode,
-            String priority,
-            String notes,
-            @JsonProperty("group_booking_id") UUID groupBookingId) {}
-
-    public record WaitlistEntryResponse(
-            UUID id,
-            String status,
-            LocalDate checkInDate,
-            LocalDate checkOutDate,
-            UUID roomTypeId,
-            String guestName,
-            String priority,
-            String message) {}
-
-    public record ReservationQueueItem(
-            String id,
-            String type,
-            String severity,
-            String title,
-            String detail,
-            UUID reservationId,
-            UUID groupId,
-            UUID waitlistEntryId,
-            LocalDate dueDate,
-            String href) {}
-
-    public record ReservationPmsReportResponse(
-            long activeReservations,
-            long depositMissing,
-            long waitlistOpen,
-            Map<String, Long> bySourceCode,
-            Map<String, Long> byMarketCode,
-            Map<String, Long> byChannelCode,
-            Map<String, Long> queueBySeverity,
-            Map<String, Long> queueByType) {}
-
     public record GuestBrief(UUID id, String name, String email) {}
 
     public record ReservationStayDates(LocalDate checkIn, LocalDate checkOut, int nights) {}
@@ -622,35 +424,9 @@ public final class ApiDtos {
             Integer loyaltyPointsEarned,
             String message) {}
 
-    public record OverstayStatus(
-            UUID reservationId,
-            boolean enabled,
-            boolean overdue,
-            String scheduledCheckout,
-            String evaluatedAt,
-            long lateMinutes,
-            long billableHours,
-            BigDecimal estimatedCharge,
-            BigDecimal postedCharge,
-            String currency,
-            String policySummary) {}
-
     public record CancelReservationRequest(String reason) {}
 
     public record CancelReservationResponse(UUID reservationId, String status, String message) {}
-
-    public record ExtendStayRequest(@NotNull LocalDate newCheckOutDate, String reason) {}
-
-    public record ExtendStayResponse(
-            UUID reservationId,
-            String status,
-            LocalDate previousCheckOutDate,
-            LocalDate newCheckOutDate,
-            long addedNights,
-            BigDecimal addedRoomCharge,
-            BigDecimal newRoomTotal,
-            boolean removedOverstayCharge,
-            String message) {}
 
     /** Staff: move a CONFIRMED reservation from its current physical room to another same-type vacant-ready room. */
     public record ReservationReassignRoomRequest(
@@ -729,90 +505,10 @@ public final class ApiDtos {
             GroupBillingDashboardMasterFolio masterFolio,
             List<GroupBillingDashboardMember> members) {}
 
-    public record GroupAllotmentUpsertRequest(
-            @NotNull UUID roomTypeId,
-            @NotNull LocalDate fromDate,
-            @NotNull LocalDate toDate,
-            @Min(0) int contractedRooms,
-            BigDecimal rateAmount,
-            LocalDate releaseDate) {}
-
-    public record GroupAllotmentRow(
-            UUID id,
-            UUID roomTypeId,
-            String roomTypeName,
-            LocalDate allotmentDate,
-            int contractedRooms,
-            int pickedUpRooms,
-            int releasedRooms,
-            int washedRooms,
-            BigDecimal rateAmount,
-            LocalDate releaseDate,
-            String status) {}
-
-    public record GroupPickupDashboardResponse(
-            UUID groupId,
-            String groupName,
-            int contractedRooms,
-            int pickedUpRooms,
-            int remainingRooms,
-            int releasedRooms,
-            int washedRooms,
-            BigDecimal pickupPercent,
-            List<GroupAllotmentRow> allotments) {}
-
-    public record GroupRoomingListEntryRequest(
-            @NotBlank String guestName,
-            String guestEmail,
-            String guestPhone,
-            @NotNull LocalDate checkInDate,
-            @NotNull LocalDate checkOutDate,
-            UUID roomTypeId,
-            UUID roomId,
-            Integer adults,
-            Integer children,
-            String paymentResponsibility,
-            String sharingKey,
-            String status) {}
-
-    public record GroupRoomingListEntryRow(
-            UUID id,
-            UUID reservationId,
-            UUID guestId,
-            String guestName,
-            String guestEmail,
-            String guestPhone,
-            LocalDate checkInDate,
-            LocalDate checkOutDate,
-            UUID roomTypeId,
-            String roomTypeName,
-            UUID roomId,
-            String roomNumber,
-            int adults,
-            int children,
-            String paymentResponsibility,
-            String sharingKey,
-            String status,
-            String validationErrors) {}
-
     public record NoShowResponse(UUID reservationId, String status, String message) {}
 
-    public record OverstayPolicy(
-            Boolean autoPostEnabled,
-            Integer graceMinutes,
-            BigDecimal hourlyPercent,
-            BigDecimal halfDayCapPercent,
-            Integer fullDayAfterHours,
-            BigDecimal maxDailyPercent,
-            Boolean applyTax,
-            String postTiming) {}
-
     public record HotelFeePolicy(
-            BigDecimal earlyCheckinFee,
-            BigDecimal lateCheckoutFee,
-            BigDecimal noShowDefaultFee,
-            String currency,
-            OverstayPolicy overstayPolicy) {}
+            BigDecimal earlyCheckinFee, BigDecimal lateCheckoutFee, BigDecimal noShowDefaultFee, String currency) {}
 
     public record HousekeepingPatchRequest(
             String status,

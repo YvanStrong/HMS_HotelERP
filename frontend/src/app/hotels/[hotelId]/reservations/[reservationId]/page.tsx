@@ -3,20 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import {
-  CalendarPlus,
-  CreditCard,
-  FileText,
-  LogIn,
-  LogOut,
-  PlusCircle,
-  Printer,
-  Receipt,
-  Sparkles,
-  Users,
-  XCircle,
-  type LucideIcon,
-} from "lucide-react";
+import { Users } from "lucide-react";
 import { API_BASE, apiFetch, getToken } from "@/lib/api";
 import { loadAuthUser } from "@/lib/auth";
 import { staffAppPath } from "@/lib/staffAppRoutes";
@@ -29,67 +16,6 @@ import {
 } from "@/lib/taxInvoiceHtml";
 
 type PreferenceMoveActions = { onMove: (roomId: string) => void; movingRoomId: string | null };
-
-type ReservationActionButtonVariant = "documents" | "billing" | "success" | "primary" | "danger";
-
-function ReservationActionButton({
-  icon: Icon,
-  children,
-  description,
-  variant = "documents",
-  disabled,
-  title,
-  onClick,
-}: {
-  icon: LucideIcon;
-  children: ReactNode;
-  description?: string;
-  variant?: ReservationActionButtonVariant;
-  disabled?: boolean;
-  title?: string;
-  onClick: () => void;
-}) {
-  const styles: Record<ReservationActionButtonVariant, { button: string; icon: string }> = {
-    documents: {
-      button: "border-blue-300 bg-white text-blue-950 hover:border-blue-500 hover:bg-blue-50",
-      icon: "bg-blue-600 text-white shadow-sm shadow-blue-200 group-hover:bg-blue-700",
-    },
-    billing: {
-      button: "border-teal-700 bg-gradient-to-br from-teal-600 to-teal-800 text-white hover:border-teal-800 hover:from-teal-500 hover:to-teal-800",
-      icon: "bg-white/15 text-white shadow-sm group-hover:bg-white/20",
-    },
-    success: {
-      button: "border-emerald-300 bg-white text-emerald-950 hover:border-emerald-500 hover:bg-emerald-50",
-      icon: "bg-emerald-600 text-white shadow-sm shadow-emerald-200 group-hover:bg-emerald-700",
-    },
-    primary: {
-      button: "border-indigo-700 bg-gradient-to-br from-indigo-600 via-indigo-700 to-slate-950 text-white hover:border-indigo-500 hover:from-indigo-500 hover:to-slate-900",
-      icon: "bg-white/15 text-white shadow-sm group-hover:bg-white/20",
-    },
-    danger: {
-      button: "border-rose-100 bg-rose-50/90 text-rose-950 hover:border-rose-200 hover:bg-rose-100",
-      icon: "bg-rose-600 text-white shadow-sm shadow-rose-200 group-hover:bg-rose-700",
-    },
-  };
-
-  return (
-    <button
-      type="button"
-      className={`group inline-flex min-h-14 w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left text-xs font-bold leading-tight shadow-[0_1px_2px_rgba(15,23,42,0.08)] transition hover:-translate-y-0.5 hover:shadow-[0_8px_18px_rgba(15,23,42,0.10)] disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:translate-y-0 ${styles[variant].button}`}
-      disabled={disabled}
-      onClick={onClick}
-      title={title}
-    >
-      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition ${styles[variant].icon}`}>
-        <Icon className="h-3.5 w-3.5" aria-hidden />
-      </span>
-      <span className="min-w-0">
-        <span className="block whitespace-normal break-words">{children}</span>
-        {description ? <span className="mt-0.5 block text-[10px] font-semibold opacity-70">{description}</span> : null}
-      </span>
-    </button>
-  );
-}
 
 function renderSuggestedAlternativesBlock(
   m: Record<string, unknown>,
@@ -374,45 +300,11 @@ type StaffReservationDetail = {
   } | null;
 };
 
-type ReservationEventRow = {
-  id: string;
-  eventType: string;
-  title: string;
-  detail?: string | null;
-  actor?: string | null;
-  createdAt: string;
-  metadataJson?: string | null;
-};
-
 type FeePolicy = {
   earlyCheckinFee: number;
   lateCheckoutFee: number;
   noShowDefaultFee: number;
   currency: string;
-  overstayPolicy?: {
-    autoPostEnabled: boolean;
-    graceMinutes: number;
-    hourlyPercent: number;
-    halfDayCapPercent: number;
-    fullDayAfterHours: number;
-    maxDailyPercent: number;
-    applyTax: boolean;
-    postTiming: "AT_CHECKOUT" | "SCHEDULED_AUTO";
-  };
-};
-
-type OverstayStatus = {
-  reservationId: string;
-  enabled: boolean;
-  overdue: boolean;
-  scheduledCheckout: string;
-  evaluatedAt: string;
-  lateMinutes: number;
-  billableHours: number;
-  estimatedCharge: number;
-  postedCharge: number;
-  currency: string;
-  policySummary: string;
 };
 
 type PagedRooms = {
@@ -447,18 +339,6 @@ type CheckOutResponse = {
   };
 };
 
-type ExtendStayResponse = {
-  reservationId: string;
-  status: string;
-  previousCheckOutDate: string;
-  newCheckOutDate: string;
-  addedNights: number;
-  addedRoomCharge: number;
-  newRoomTotal: number;
-  removedOverstayCharge: boolean;
-  message: string;
-};
-
 type FinalInvoiceDto = {
   id: string;
   invoiceNumber: string;
@@ -481,14 +361,6 @@ function canOverrideBalance(role: string | undefined) {
 function checkoutAmountCoversDue(due: number, pay: number): boolean {
   if (due <= 0.01) return true;
   return pay >= due - 0.02;
-}
-
-function addDays(dateText: string | undefined, days: number): string {
-  if (!dateText) return "";
-  const d = new Date(`${dateText}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return "";
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
 }
 
 const MIN_OVERRIDE_BALANCE_REASON_LEN = 10;
@@ -529,19 +401,16 @@ export default function StaffReservationDetailPage() {
   const { hotel } = useHotelContext(hotelId);
   const [folio, setFolio] = useState<Folio | null>(null);
   const [staffDetail, setStaffDetail] = useState<StaffReservationDetail | null>(null);
-  const [reservationEvents, setReservationEvents] = useState<ReservationEventRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const [checkInOpen, setCheckInOpen] = useState(false);
   const [checkOutOpen, setCheckOutOpen] = useState(false);
-  const [extendOpen, setExtendOpen] = useState(false);
   const [roomChoices, setRoomChoices] = useState<{ id: string; roomNumber: string }[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState<string>("");
   const [guestIdOk, setGuestIdOk] = useState(false);
   const [earlyIn, setEarlyIn] = useState(false);
   const [fees, setFees] = useState<FeePolicy | null>(null);
-  const [overstayStatus, setOverstayStatus] = useState<OverstayStatus | null>(null);
 
   const [minibarOk, setMinibarOk] = useState(false);
   const [lateOut, setLateOut] = useState(false);
@@ -568,8 +437,6 @@ export default function StaffReservationDetailPage() {
   const [checkoutPayTypesUsed, setCheckoutPayTypesUsed] = useState("");
   const [checkoutPayRef, setCheckoutPayRef] = useState("");
   const [checkoutPayNotes, setCheckoutPayNotes] = useState("");
-  const [extendCheckoutDate, setExtendCheckoutDate] = useState("");
-  const [extendReason, setExtendReason] = useState("");
   const [chargeAmount, setChargeAmount] = useState("");
   const [chargeType, setChargeType] = useState("MINIBAR");
   const [chargeDesc, setChargeDesc] = useState("");
@@ -586,30 +453,12 @@ export default function StaffReservationDetailPage() {
       const f = await apiFetch<Folio>(`/api/v1/hotels/${hotelId}/folios/${reservationId}`);
       setFolio(f);
       try {
-        const status = await apiFetch<OverstayStatus>(
-          `/api/v1/hotels/${hotelId}/reservations/${reservationId}/overstay-status`,
-          { quiet: true },
-        );
-        setOverstayStatus(status);
-      } catch {
-        setOverstayStatus(null);
-      }
-      try {
         const d = await apiFetch<StaffReservationDetail>(
           `/api/v1/hotels/${hotelId}/reservations/${reservationId}/staff-detail`,
         );
         setStaffDetail(d);
       } catch {
         setStaffDetail(null);
-      }
-      try {
-        const events = await apiFetch<ReservationEventRow[]>(
-          `/api/v1/hotels/${hotelId}/reservations/${reservationId}/timeline`,
-          { quiet: true },
-        );
-        setReservationEvents(events ?? []);
-      } catch {
-        setReservationEvents([]);
       }
       return f;
     } catch (e) {
@@ -686,60 +535,13 @@ export default function StaffReservationDetailPage() {
         : typeof folio?.summary.balance_due === "number"
           ? folio.summary.balance_due
           : 0;
+    setCheckoutPayAmount(due > 0.01 ? String(Math.round(due * 100) / 100) : "0");
     try {
-      const [policy, status] = await Promise.all([
-        apiFetch<FeePolicy>(`/api/v1/hotels/${hotelId}/fee-policy`),
-        apiFetch<OverstayStatus>(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/overstay-status`, {
-          quiet: true,
-        }),
-      ]);
+      const policy = await apiFetch<FeePolicy>(`/api/v1/hotels/${hotelId}/fee-policy`);
       setFees(policy);
-      setOverstayStatus(status);
-      const extraDue = Math.max(0, Number(status.estimatedCharge ?? 0) - Number(status.postedCharge ?? 0));
-      const projectedDue = Math.max(0, due + extraDue);
-      setCheckoutPayAmount(projectedDue > 0.01 ? String(Math.round(projectedDue * 100) / 100) : "0");
       setCheckOutOpen(true);
-    } catch {
-      try {
-        const policy = await apiFetch<FeePolicy>(`/api/v1/hotels/${hotelId}/fee-policy`);
-        setFees(policy);
-        setCheckoutPayAmount(due > 0.01 ? String(Math.round(due * 100) / 100) : "0");
-        setCheckOutOpen(true);
-      } catch (e) {
-        setBanner({ kind: "err", text: e instanceof Error ? e.message : "Could not load checkout policy" });
-      }
-    }
-  }
-
-  function openExtendStayModal() {
-    setBanner(null);
-    setExtendCheckoutDate(addDays(folio?.stay.checkOut, 1));
-    setExtendReason("");
-    setExtendOpen(true);
-  }
-
-  async function submitExtendStay() {
-    if (!extendCheckoutDate) return;
-    setBanner(null);
-    try {
-      const result = await apiFetch<ExtendStayResponse>(
-        `/api/v1/hotels/${hotelId}/reservations/${reservationId}/extend-stay`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            newCheckOutDate: extendCheckoutDate,
-            reason: extendReason.trim() || null,
-          }),
-        },
-      );
-      setExtendOpen(false);
-      setBanner({
-        kind: "ok",
-        text: `${result.message} Added ${result.addedNights} night(s): ${result.addedRoomCharge}.`,
-      });
-      await load();
     } catch (e) {
-      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Could not extend stay" });
+      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Could not load fee policy" });
     }
   }
 
@@ -750,8 +552,8 @@ export default function StaffReservationDetailPage() {
     const checkoutPayParsedSubmit = Number.isFinite(paid) ? paid : 0;
     const waivedByOverride =
       overrideBal &&
-      projectedCheckoutBalance > 0.01 &&
-      !checkoutAmountCoversDue(projectedCheckoutBalance, checkoutPayParsedSubmit);
+      balance > 0.01 &&
+      !checkoutAmountCoversDue(balance, checkoutPayParsedSubmit);
     if (waivedByOverride && overrideBalReason.trim().length < MIN_OVERRIDE_BALANCE_REASON_LEN) {
       setBanner({
         kind: "err",
@@ -764,7 +566,7 @@ export default function StaffReservationDetailPage() {
         method: "POST",
         body: JSON.stringify({
           minibar_inspected: minibarOk,
-          is_late_checkout: !fees?.overstayPolicy?.autoPostEnabled && lateOut,
+          is_late_checkout: lateOut,
           override_balance_warning: overrideBal,
           ...(waivedByOverride
             ? { override_balance_reason: overrideBalReason.trim() }
@@ -1261,23 +1063,18 @@ export default function StaffReservationDetailPage() {
   const statusOkForCheckout = st === "CHECKED_IN";
   const checkoutPayNum = Number(checkoutPayAmount);
   const checkoutPayParsed = Number.isFinite(checkoutPayNum) ? checkoutPayNum : 0;
-  const pendingOverstayCharge =
-    overstayStatus?.enabled && overstayStatus.overdue
-      ? Math.max(0, Number(overstayStatus.estimatedCharge ?? 0) - Number(overstayStatus.postedCharge ?? 0))
-      : 0;
-  const projectedCheckoutBalance = Math.max(0, balance + pendingOverstayCharge);
   const balanceOk =
-    projectedCheckoutBalance <= 0.01 ||
+    balance <= 0.01 ||
     (canOverride && overrideBal) ||
-    checkoutAmountCoversDue(projectedCheckoutBalance, checkoutPayParsed);
+    checkoutAmountCoversDue(balance, checkoutPayParsed);
   const blockedByBalance =
-    projectedCheckoutBalance > 0.01 &&
+    balance > 0.01 &&
     !(canOverride && overrideBal) &&
-    !checkoutAmountCoversDue(projectedCheckoutBalance, checkoutPayParsed);
+    !checkoutAmountCoversDue(balance, checkoutPayParsed);
   const checkoutWaivedByOverride =
     overrideBal &&
-    projectedCheckoutBalance > 0.01 &&
-    !checkoutAmountCoversDue(projectedCheckoutBalance, checkoutPayParsed);
+    balance > 0.01 &&
+    !checkoutAmountCoversDue(balance, checkoutPayParsed);
   const overrideReasonOk =
     !checkoutWaivedByOverride ||
     overrideBalReason.trim().length >= MIN_OVERRIDE_BALANCE_REASON_LEN;
@@ -1412,42 +1209,6 @@ export default function StaffReservationDetailPage() {
               ))}
             </ul>
           </div>
-          <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">PMS event stream</p>
-                <p className="text-xs text-muted-foreground">
-                  Rich reservation audit events from the new booking engine.
-                </p>
-              </div>
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-600">
-                {reservationEvents.length} event{reservationEvents.length === 1 ? "" : "s"}
-              </span>
-            </div>
-            {reservationEvents.length ? (
-              <ul className="m-0 list-none space-y-2 pl-0 text-sm">
-                {reservationEvents.slice(0, 8).map((event) => (
-                  <li key={event.id} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <p className="font-bold text-slate-900">{event.title}</p>
-                        {event.detail ? <p className="mt-0.5 text-xs text-slate-600">{event.detail}</p> : null}
-                      </div>
-                      <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-500 shadow-sm">
-                        {event.eventType.replaceAll("_", " ")}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                      {event.createdAt ? event.createdAt.slice(0, 19).replace("T", " ") : "—"}
-                      {event.actor ? ` · ${event.actor}` : ""}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">No rich PMS events have been recorded yet.</p>
-            )}
-          </div>
         </div>
       )}
       {error && (
@@ -1512,142 +1273,88 @@ export default function StaffReservationDetailPage() {
               </div>
             </div>
 
-            <div className="mt-5 rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50/70 to-white p-2.5 shadow-[0_14px_34px_rgba(15,23,42,0.07)]">
-              <div className="mb-2.5 flex flex-col gap-2 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-2.5 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.24em] text-indigo-500">Smart reservation actions</p>
-                  <p className="mt-0.5 text-xs text-slate-500">Fast actions grouped by intent: review, bill, then move the stay forward.</p>
-                </div>
-                <span className="inline-flex w-fit items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-black text-emerald-800 shadow-sm">
-                  {st.replaceAll("_", " ")}
-                </span>
-              </div>
-
-              <div className="grid gap-2.5 2xl:grid-cols-[0.95fr_1.1fr_0.95fr]">
-                <section className="rounded-2xl border border-blue-200 bg-blue-50/35 p-2.5 shadow-sm">
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-900">Documents</p>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-blue-600 shadow-sm">3 tools</span>
-                  </div>
-                  <div className="grid gap-2 md:grid-cols-3 2xl:grid-cols-1">
-                    <ReservationActionButton
-                      icon={FileText}
-                      description="Open ledger"
-                      onClick={() => document.getElementById("folio-block")?.scrollIntoView({ behavior: "smooth" })}
-                    >
-                      View folio
-                    </ReservationActionButton>
-                    <ReservationActionButton icon={Printer} description="Internal copy" onClick={printReservationDoc} title="Print full staff copy">
-                      Staff copy
-                    </ReservationActionButton>
-                    <ReservationActionButton icon={Receipt} description="Guest document" onClick={() => void printInvoicePdf()}>
-                      Print invoice
-                    </ReservationActionButton>
-                  </div>
-                </section>
-
-                <section className="rounded-2xl border border-teal-200 bg-white p-2.5 shadow-sm">
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-teal-950">Billing</p>
-                    <span className="rounded-full bg-teal-700 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">Folio</span>
-                  </div>
-                  <div className="grid gap-2 md:grid-cols-2">
-                    <ReservationActionButton icon={PlusCircle} variant="billing" description="Post item" onClick={() => setChargeOpen(true)}>
-                      Add charge
-                    </ReservationActionButton>
-                    <ReservationActionButton
-                      icon={CreditCard}
-                      variant="billing"
-                      description="Settle balance"
-                      onClick={() => {
-                        setPaymentOpenedFromCheckout(false);
-                        setFolioPaymentAmount("");
-                        setFolioPaymentMethod("CASH");
-                        setFolioPaymentRef("");
-                        setFolioPaymentNotes("");
-                        setPaymentOpen(true);
-                      }}
-                    >
-                      Record payment
-                    </ReservationActionButton>
-                    {(st === "CONFIRMED" || st === "CHECKED_IN") && (
-                      <div className="md:col-span-2">
-                        <ReservationActionButton
-                          icon={Sparkles}
-                          description="Room + service setup"
-                          disabled={prefsLoading}
-                          onClick={() => void applyGuestPreferences()}
-                        >
-                          {prefsLoading ? "Applying preferences..." : "Apply guest preferences"}
-                        </ReservationActionButton>
-                      </div>
-                    )}
-                  </div>
-                </section>
-
-                <section className="rounded-2xl border border-slate-900 bg-slate-950 p-2.5 text-white shadow-sm">
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/60">Stay</p>
-                    <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-white/80">Primary flow</span>
-                  </div>
-                  <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-1">
-                    {st === "CONFIRMED" && (
-                      <ReservationActionButton icon={LogIn} variant="primary" description="Start occupancy" onClick={() => void openCheckInModal()}>
-                        Check in
-                      </ReservationActionButton>
-                    )}
-                    {st === "CHECKED_IN" && (
-                      <>
-                        <ReservationActionButton icon={CalendarPlus} variant="success" description="Add nights" onClick={openExtendStayModal}>
-                          Extend stay
-                        </ReservationActionButton>
-                        <ReservationActionButton icon={LogOut} variant="primary" description="Close + bill" onClick={() => void openCheckOutModal()}>
-                          Check out &amp; invoice
-                        </ReservationActionButton>
-                      </>
-                    )}
-                    {st === "CONFIRMED" && (
-                      <ReservationActionButton icon={XCircle} variant="danger" description="Stop booking" onClick={() => void doCancel()}>
-                        Cancel reservation
-                      </ReservationActionButton>
-                    )}
-                  </div>
-                </section>
-              </div>
-            </div>
-            {overstayStatus?.enabled ? (
-              <div
-                className={`mt-5 rounded-2xl border p-4 ${
-                  overstayStatus.overdue
-                    ? "border-amber-200 bg-amber-50 text-amber-950"
-                    : "border-emerald-200 bg-emerald-50 text-emerald-950"
-                }`}
+            <div className="flex flex-wrap gap-2 pt-5">
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+                onClick={() => document.getElementById("folio-block")?.scrollIntoView({ behavior: "smooth" })}
               >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wide">
-                      {overstayStatus.overdue ? "Overstay billing active" : "Scheduled checkout on time"}
-                    </p>
-                    <p className="mt-1 text-sm">
-                      Scheduled checkout:{" "}
-                      <strong>
-                        {new Date(overstayStatus.scheduledCheckout).toLocaleString()}
-                      </strong>
-                    </p>
-                    <p className="mt-1 text-xs opacity-80">{overstayStatus.policySummary}</p>
-                  </div>
-                  <div className="rounded-xl bg-white/70 px-3 py-2 text-right shadow-sm">
-                    <p className="text-xs font-semibold uppercase tracking-wide">Auto charge</p>
-                    <p className="text-lg font-black tabular-nums">
-                      {Number(overstayStatus.estimatedCharge ?? 0).toLocaleString()} {overstayStatus.currency}
-                    </p>
-                    {overstayStatus.postedCharge > 0 ? (
-                      <p className="text-xs">Posted: {overstayStatus.postedCharge} {overstayStatus.currency}</p>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            ) : null}
+                View Folio
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800"
+                onClick={printReservationDoc}
+                title="Print full staff copy"
+              >
+                Print Staff Copy
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-100"
+                onClick={() => setChargeOpen(true)}
+              >
+                + Add Charge
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-100"
+                onClick={() => {
+                  setPaymentOpenedFromCheckout(false);
+                  setFolioPaymentAmount("");
+                  setFolioPaymentMethod("CASH");
+                  setFolioPaymentRef("");
+                  setFolioPaymentNotes("");
+                  setPaymentOpen(true);
+                }}
+              >
+                + Record Payment
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+                onClick={() => void printInvoicePdf()}
+              >
+                Print Invoice
+              </button>
+              {st === "CONFIRMED" && (
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+                  onClick={() => void openCheckInModal()}
+                >
+                  Check in
+                </button>
+              )}
+              {st === "CHECKED_IN" && (
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+                  onClick={() => void openCheckOutModal()}
+                >
+                  Check out &amp; invoice
+                </button>
+              )}
+              {st === "CONFIRMED" && (
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-800 shadow-sm transition hover:bg-rose-50"
+                  onClick={() => void doCancel()}
+                >
+                  Cancel reservation
+                </button>
+              )}
+              {(st === "CONFIRMED" || st === "CHECKED_IN") && (
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+                  disabled={prefsLoading}
+                  onClick={() => void applyGuestPreferences()}
+                >
+                  {prefsLoading ? "Applying…" : "Apply Guest Preferences"}
+                </button>
+              )}
+            </div>
           </div>
           <div
             className="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm sm:p-6"
@@ -1908,56 +1615,6 @@ export default function StaffReservationDetailPage() {
         </div>
       )}
 
-      {extendOpen && folio && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 55, padding: "1rem" }}>
-          <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm" style={{ maxWidth: 480, width: "100%" }}>
-            <p className="mb-1 text-xs font-bold uppercase tracking-wide text-emerald-700">Extend stay</p>
-            <h3 style={{ marginTop: 0, marginBottom: "0.35rem" }}>Add another night instead of overstay</h3>
-            <p style={{ margin: "0 0 0.9rem", color: "var(--muted)", fontSize: "0.9rem" }}>
-              Use this when the guest agrees to continue the reservation. HMS will update the checkout date, add the extra
-              room night to the folio, and remove any automatic overstay line.
-            </p>
-
-            <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-              Current checkout: <strong>{folio.stay.checkOut}</strong>
-              <br />
-              Room: <strong>{folio.roomNumber || "—"}</strong>
-            </div>
-
-            <label style={{ display: "block", marginBottom: "0.7rem", fontWeight: 600 }}>
-              New checkout date
-              <input
-                type="date"
-                min={addDays(folio.stay.checkOut, 1)}
-                value={extendCheckoutDate}
-                onChange={(e) => setExtendCheckoutDate(e.target.value)}
-                style={{ width: "100%", marginTop: "0.35rem" }}
-              />
-            </label>
-
-            <label style={{ display: "block", marginBottom: "0.9rem", fontWeight: 600 }}>
-              Reason / note
-              <textarea
-                rows={3}
-                value={extendReason}
-                onChange={(e) => setExtendReason(e.target.value)}
-                placeholder="e.g. Guest requested one extra night and confirmed payment at front desk."
-                style={{ width: "100%", marginTop: "0.35rem", resize: "vertical" }}
-              />
-            </label>
-
-            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-              <button type="button" className="secondary" onClick={() => setExtendOpen(false)}>
-                Cancel
-              </button>
-              <button type="button" disabled={!extendCheckoutDate} onClick={() => void submitExtendStay()}>
-                Confirm extension
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {checkInOpen && (
         <div
           style={{
@@ -2137,40 +1794,10 @@ export default function StaffReservationDetailPage() {
               <p style={{ margin: "0 0 0.75rem" }}>
                 <strong>Folio balance due:</strong> {balance} {folio.summary.currency}
               </p>
-              {overstayStatus?.enabled ? (
-                <div
-                  style={{
-                    border: `1px solid ${overstayStatus.overdue ? "#f59e0b" : "var(--border)"}`,
-                    borderRadius: "12px",
-                    padding: "10px 12px",
-                    background: overstayStatus.overdue ? "#fffbeb" : "#fff",
-                    marginBottom: "0.75rem",
-                  }}
-                >
-                  <p style={{ margin: 0, fontWeight: 700 }}>
-                    {overstayStatus.overdue ? "Overstay charge will be applied" : "No overstay charge right now"}
-                  </p>
-                  <p style={{ margin: "4px 0 0", fontSize: "0.84rem", color: "var(--muted)" }}>
-                    Scheduled checkout: {new Date(overstayStatus.scheduledCheckout).toLocaleString()}
-                  </p>
-                  <p style={{ margin: "4px 0 0", fontSize: "0.84rem" }}>
-                    {overstayStatus.billableHours} billable hour(s), estimated charge{" "}
-                    <strong>
-                      {Number(overstayStatus.estimatedCharge ?? 0).toLocaleString()} {overstayStatus.currency}
-                    </strong>
-                    {pendingOverstayCharge > 0
-                      ? ` (${pendingOverstayCharge.toLocaleString()} ${overstayStatus.currency} not yet posted)`
-                      : ""}
-                  </p>
-                  <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
-                    {overstayStatus.policySummary}
-                  </p>
-                </div>
-              ) : null}
-              {projectedCheckoutBalance > 0.01 && (
+              {balance > 0.01 && (
                 <p style={{ color: "#b91c1c", fontSize: "0.95rem", marginBottom: "0.75rem" }}>
-                  Outstanding balance after checkout charges: {projectedCheckoutBalance} {folio.summary.currency}. Collect
-                  payment before checkout (enter amount below, use <strong>Record payment</strong>, or manager override).
+                  Outstanding balance: {balance} {folio.summary.currency}. Collect payment before checkout (enter amount
+                  below, use <strong>Record payment</strong>, or manager override).
                 </p>
               )}
               {balance < -0.01 && (
@@ -2199,7 +1826,7 @@ export default function StaffReservationDetailPage() {
                 {folio.summary.currency}
               </p>
               <p style={{ fontSize: "0.9rem", marginBottom: "0.65rem" }}>
-                Remaining to collect now: <strong>{Math.max(0, projectedCheckoutBalance)}</strong> {folio.summary.currency}
+                Remaining to collect now: <strong>{Math.max(0, balance)}</strong> {folio.summary.currency}
               </p>
               <button
                 type="button"
@@ -2207,9 +1834,7 @@ export default function StaffReservationDetailPage() {
                 style={{ width: "100%", marginBottom: "0.65rem", fontWeight: 600 }}
                 onClick={() => {
                   setPaymentOpenedFromCheckout(true);
-                  setFolioPaymentAmount(
-                    projectedCheckoutBalance > 0.01 ? String(Math.round(projectedCheckoutBalance * 100) / 100) : "",
-                  );
+                  setFolioPaymentAmount(balance > 0.01 ? String(Math.round(balance * 100) / 100) : "");
                   setFolioPaymentMethod(checkoutPayMethod);
                   setFolioPaymentRef("");
                   setFolioPaymentNotes("");
@@ -2345,78 +1970,59 @@ export default function StaffReservationDetailPage() {
                 />
               </button>
             </div>
-            {fees?.overstayPolicy?.autoPostEnabled ? (
-              <p
+            <div
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: "12px",
+                padding: "10px 12px",
+                marginBottom: "0.55rem",
+                background: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "10px",
+              }}
+            >
+              <div>
+                <p style={{ margin: 0, fontWeight: 600 }}>Late checkout</p>
+                <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                  Apply if guest departs after standard time
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLateOut((v) => !v)}
+                aria-pressed={lateOut}
                 style={{
-                  margin: "0 0 0.75rem",
+                  width: "56px",
+                  height: "30px",
+                  borderRadius: "999px",
                   border: "1px solid var(--border)",
-                  borderRadius: "12px",
-                  padding: "10px 12px",
-                  background: "#fff",
-                  fontSize: "0.84rem",
-                  color: "var(--muted)",
+                  background: lateOut ? "#0f766e" : "#e5e7eb",
+                  position: "relative",
+                  cursor: "pointer",
                 }}
               >
-                Late checkout is calculated automatically from the reservation billing policy. Staff no longer need to
-                manually toggle this fee.
-              </p>
-            ) : (
-              <>
-                <div
+                <span
                   style={{
-                    border: "1px solid var(--border)",
-                    borderRadius: "12px",
-                    padding: "10px 12px",
-                    marginBottom: "0.55rem",
+                    position: "absolute",
+                    top: "3px",
+                    left: lateOut ? "29px" : "3px",
+                    width: "22px",
+                    height: "22px",
+                    borderRadius: "999px",
                     background: "#fff",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "10px",
+                    transition: "left 120ms ease",
                   }}
-                >
-                  <div>
-                    <p style={{ margin: 0, fontWeight: 600 }}>Late checkout</p>
-                    <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
-                      Apply fixed legacy fee if automatic policy is disabled
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setLateOut((v) => !v)}
-                    aria-pressed={lateOut}
-                    style={{
-                      width: "56px",
-                      height: "30px",
-                      borderRadius: "999px",
-                      border: "1px solid var(--border)",
-                      background: lateOut ? "#0f766e" : "#e5e7eb",
-                      position: "relative",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <span
-                      style={{
-                        position: "absolute",
-                        top: "3px",
-                        left: lateOut ? "29px" : "3px",
-                        width: "22px",
-                        height: "22px",
-                        borderRadius: "999px",
-                        background: "#fff",
-                        transition: "left 120ms ease",
-                      }}
-                    />
-                  </button>
-                </div>
-                {lateOut && fees && (
-                  <p style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: "0.75rem" }}>
-                    Fee: {fees.lateCheckoutFee} {fees.currency}
-                  </p>
-                )}
-              </>
+                />
+              </button>
+            </div>
+            {lateOut && fees && (
+              <p style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: "0.75rem" }}>
+                Fee: {fees.lateCheckoutFee} {fees.currency}
+              </p>
             )}
-            {projectedCheckoutBalance > 0.01 && canOverride && (
+            {balance > 0.01 && canOverride && (
               <div style={{ marginBottom: "1rem" }}>
                 <label style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                   <input

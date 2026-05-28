@@ -75,44 +75,6 @@ type ReservationRow = {
   guestEmail: string;
 };
 
-type RegistryListItem = Record<string, unknown>;
-
-function prettyLabel(key: string): string {
-  return key
-    .replace(/_/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function displayValue(value: unknown): string {
-  if (value == null || value === "") return "—";
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (typeof value === "number") return Number.isFinite(value) ? value.toLocaleString() : "—";
-  if (typeof value === "string") {
-    const date = new Date(value);
-    if (/^\d{4}-\d{2}-\d{2}/.test(value) && !Number.isNaN(date.getTime())) {
-      return date.toLocaleDateString();
-    }
-    return value.replaceAll("_", " ");
-  }
-  return "—";
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function asList(value: unknown): RegistryListItem[] {
-  return Array.isArray(value) ? value.filter((item): item is RegistryListItem => !!item && typeof item === "object") : [];
-}
-
-function loyaltyProgress(points: number, nextTier?: string | null, pointsToNextTier?: number | null): number {
-  if (!nextTier || !Number.isFinite(pointsToNextTier ?? NaN)) return 100;
-  const next = points + Number(pointsToNextTier);
-  const previous = nextTier === "SILVER" ? 0 : nextTier === "GOLD" ? 1000 : 3000;
-  return Math.min(100, Math.max(0, ((points - previous) / Math.max(1, next - previous)) * 100));
-}
-
 export default function GuestDetailPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
@@ -124,6 +86,7 @@ export default function GuestDetailPage() {
   const [activeTab, setActiveTab] = useState<
     "profile" | "stays" | "preferences" | "flags" | "feedback" | "complaints" | "registry"
   >("profile");
+  const [earnPoints, setEarnPoints] = useState("100");
   const [redeemPoints, setRedeemPoints] = useState("100");
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -155,6 +118,29 @@ export default function GuestDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function submitEarn() {
+    const points = Number(earnPoints);
+    if (!Number.isFinite(points) || points <= 0) {
+      setBanner({ kind: "err", text: "Enter a valid positive points amount." });
+      return;
+    }
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/guests/${guestId}/loyalty/earn`, {
+        method: "POST",
+        body: JSON.stringify({
+          points,
+          type: "EARNED",
+          description: "Staff loyalty adjustment",
+          notifyGuest: false,
+        }),
+      });
+      setBanner({ kind: "ok", text: "Loyalty points added." });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Failed to add points" });
+    }
+  }
 
   async function submitRedeem() {
     const points = Number(redeemPoints);
@@ -193,14 +179,6 @@ export default function GuestDetailPage() {
     const val = profile?.stayHistory?.lifetimeValue;
     return typeof val === "number" ? val : typeof val === "string" ? val : "—";
   }, [profile]);
-
-  const registry = useMemo(() => asRecord(profile?.registry), [profile?.registry]);
-  const emergencyContact = useMemo(() => asRecord(registry.emergencyContact), [registry]);
-  const corporate = useMemo(() => asRecord(registry.corporate), [registry]);
-  const activeStay = useMemo(() => asRecord(registry.activeStay), [registry]);
-  const registryDocuments = useMemo(() => asList(registry.documents), [registry]);
-  const registryComms = useMemo(() => asList(registry.communications), [registry]);
-  const sensitiveIncidents = useMemo(() => asList(registry.sensitiveIncidents), [registry]);
 
   return (
     <div className="space-y-4">
@@ -324,23 +302,17 @@ export default function GuestDetailPage() {
                       <span className="text-xs font-normal text-muted-foreground">{profile.loyalty?.points} pts</span>
                     </h3>
                     <div className="w-full bg-slate-100 h-2 rounded-full mb-3 overflow-hidden">
-                      <div
-                        className="bg-primary h-full rounded-full"
-                        style={{
-                          width: `${loyaltyProgress(
-                            Number(profile.loyalty?.points ?? 0),
-                            profile.loyalty?.nextTier,
-                            profile.loyalty?.pointsToNextTier,
-                          )}%`,
-                        }}
-                      />
+                      <div className="bg-primary h-full rounded-full" style={{ width: profile.loyalty?.nextTier ? '45%' : '100%' }} />
                     </div>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground mb-4">
                       {profile.loyalty?.nextTier ? `${profile.loyalty.pointsToNextTier} more points to reach ${profile.loyalty.nextTier}` : 'Highest tier reached!'}
                     </p>
-                    <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs leading-relaxed text-emerald-800">
-                      Points are calculated automatically from posted loyalty transactions, normally awarded when a
-                      checked-out stay generates an invoice. Staff do not need to add points manually.
+                    <label className="text-xs text-slate-500 uppercase font-bold">Add points</label>
+                    <div className="flex gap-2 mt-1">
+                      <input className="text-sm" value={earnPoints} type="number" min={1} onChange={(e) => setEarnPoints(e.target.value)} />
+                      <button type="button" className="hms-btn-solid text-xs whitespace-nowrap" onClick={() => void submitEarn()}>
+                        Add
+                      </button>
                     </div>
                   </div>
                   <div className="rounded-xl border border-border/60 p-4">
@@ -353,10 +325,7 @@ export default function GuestDetailPage() {
                         </li>
                       ))}
                     </ul>
-                    <div className="mt-4 pt-4 border-t border-slate-100">
-                      <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Redeem points</label>
-                    </div>
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-4 pt-4 border-t border-slate-100 flex gap-2">
                       <input className="text-sm" value={redeemPoints} type="number" min={1} onChange={(e) => setRedeemPoints(e.target.value)} />
                       <button type="button" className="hms-btn-outline text-xs whitespace-nowrap" onClick={() => void submitRedeem()}>
                         Redeem
@@ -522,161 +491,12 @@ export default function GuestDetailPage() {
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
                   Guest type, emergency contact, corporate billing pointers, document index, communication log, active
-                  stay summary, and sensitive incidents (managers only).
+                  stay summary, and sensitive incidents (managers only). Update fields via{" "}
+                  <code className="rounded bg-muted px-1">PATCH /guests/{"{guestId}"}</code> with the staff guest payload.
                 </p>
-                <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                  <section className="rounded-xl border border-border/60 bg-slate-50/40 p-4">
-                    <p className="text-xs font-black uppercase tracking-wide text-slate-500">Guest registry</p>
-                    <dl className="mt-3 space-y-2 text-sm">
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-muted-foreground">Guest type</dt>
-                        <dd className="font-semibold">{displayValue(registry.guestType)}</dd>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-muted-foreground">Loyalty member #</dt>
-                        <dd className="font-mono text-xs">{displayValue(registry.loyaltyMemberNumber)}</dd>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-muted-foreground">Internal notes</dt>
-                        <dd className="max-w-[12rem] text-right">{displayValue(registry.internalNotes)}</dd>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-muted-foreground">Behavior notes</dt>
-                        <dd className="max-w-[12rem] text-right">{displayValue(registry.behaviorNotes)}</dd>
-                      </div>
-                    </dl>
-                  </section>
-
-                  <section className="rounded-xl border border-border/60 bg-white p-4">
-                    <p className="text-xs font-black uppercase tracking-wide text-slate-500">Emergency contact</p>
-                    <dl className="mt-3 space-y-2 text-sm">
-                      {["name", "phone", "relation"].map((key) => (
-                        <div key={key} className="flex justify-between gap-3">
-                          <dt className="text-muted-foreground">{prettyLabel(key)}</dt>
-                          <dd className="font-medium">{displayValue(emergencyContact[key])}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </section>
-
-                  <section className="rounded-xl border border-border/60 bg-white p-4">
-                    <p className="text-xs font-black uppercase tracking-wide text-slate-500">Active stay</p>
-                    {Object.keys(activeStay).length === 0 ? (
-                      <p className="mt-3 text-sm text-muted-foreground">No active in-house stay.</p>
-                    ) : (
-                      <dl className="mt-3 space-y-2 text-sm">
-                        {Object.entries(activeStay).map(([key, value]) => (
-                          <div key={key} className="flex justify-between gap-3">
-                            <dt className="text-muted-foreground">{prettyLabel(key)}</dt>
-                            <dd className="font-medium">{displayValue(value)}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                    )}
-                  </section>
-                </div>
-
-                <section className="rounded-xl border border-border/60 bg-white p-4">
-                  <p className="text-xs font-black uppercase tracking-wide text-slate-500">Corporate billing</p>
-                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-                    {["companyName", "accountCode", "billingInstructions", "creditLimit", "negotiatedRateNote"].map((key) => (
-                      <div key={key} className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{prettyLabel(key)}</p>
-                        <p className="mt-1 text-sm font-medium text-slate-800">{displayValue(corporate[key])}</p>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="rounded-xl border border-border/60 bg-white p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs font-black uppercase tracking-wide text-slate-500">Documents</p>
-                    <span className="text-xs text-muted-foreground">{registryDocuments.length} file(s)</span>
-                  </div>
-                  {registryDocuments.length === 0 ? (
-                    <p className="mt-3 text-sm text-muted-foreground">No documents uploaded for this guest.</p>
-                  ) : (
-                    <div className="mt-3 overflow-x-auto">
-                      <table className="w-full min-w-[640px] text-left text-sm">
-                        <thead className="text-xs uppercase tracking-wide text-muted-foreground">
-                          <tr>
-                            <th className="py-2">Type</th>
-                            <th className="py-2">File</th>
-                            <th className="py-2">Expiry</th>
-                            <th className="py-2">Uploaded</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border/60">
-                          {registryDocuments.map((doc, idx) => (
-                            <tr key={String(doc.id ?? idx)}>
-                              <td className="py-3 font-medium">{displayValue(doc.document_type)}</td>
-                              <td className="py-3">{displayValue(doc.file_name || doc.file_url)}</td>
-                              <td className="py-3">{displayValue(doc.expiry_date)}</td>
-                              <td className="py-3">{displayValue(doc.created_at)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </section>
-
-                <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                  <div className="rounded-xl border border-border/60 bg-white p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-black uppercase tracking-wide text-slate-500">Communication log</p>
-                      <span className="text-xs text-muted-foreground">{registryComms.length} message(s)</span>
-                    </div>
-                    {registryComms.length === 0 ? (
-                      <p className="mt-3 text-sm text-muted-foreground">No communication records yet.</p>
-                    ) : (
-                      <div className="mt-3 space-y-3">
-                        {registryComms.slice(0, 6).map((row, idx) => (
-                          <article key={String(row.id ?? idx)} className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold">{displayValue(row.subject) || "Message"}</p>
-                                <p className="text-xs text-muted-foreground">{displayValue(row.channel)}</p>
-                              </div>
-                              <span className="text-[10px] text-muted-foreground">{displayValue(row.createdAt)}</span>
-                            </div>
-                            <p className="mt-2 text-sm text-slate-700">{displayValue(row.body)}</p>
-                          </article>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="rounded-xl border border-border/60 bg-white p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-black uppercase tracking-wide text-slate-500">Sensitive incidents</p>
-                      <span className="text-xs text-muted-foreground">{sensitiveIncidents.length} record(s)</span>
-                    </div>
-                    {sensitiveIncidents.length === 0 ? (
-                      <p className="mt-3 text-sm text-muted-foreground">No visible sensitive incidents for your role.</p>
-                    ) : (
-                      <div className="mt-3 space-y-3">
-                        {sensitiveIncidents.map((row, idx) => (
-                          <article key={String(row.id ?? idx)} className="rounded-lg border border-rose-100 bg-rose-50/40 p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold text-rose-950">{displayValue(row.incident_type)}</p>
-                                <p className="text-xs font-bold uppercase tracking-wide text-rose-700">{displayValue(row.severity)}</p>
-                              </div>
-                              <span className="text-[10px] text-muted-foreground">{displayValue(row.reported_at)}</span>
-                            </div>
-                            <p className="mt-2 text-sm text-slate-700">{displayValue(row.description)}</p>
-                            {row.action_taken ? (
-                              <p className="mt-2 text-xs text-muted-foreground">
-                                <span className="font-semibold text-foreground">Action:</span> {displayValue(row.action_taken)}
-                              </p>
-                            ) : null}
-                          </article>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </section>
+                <pre className="max-h-[520px] overflow-auto rounded-lg border border-border/60 bg-muted/30 p-4 text-xs leading-relaxed">
+                  {JSON.stringify(profile.registry ?? {}, null, 2)}
+                </pre>
               </div>
             )}
           </div>

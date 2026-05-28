@@ -89,21 +89,6 @@ public class GroupBooking {
     @Column(name = "billing_preference", length = 32)
     private String billingPreference;
 
-    @Column(name = "release_date")
-    private LocalDate releaseDate;
-
-    @Column(name = "cutoff_date")
-    private LocalDate cutoffDate;
-
-    @Column(name = "attrition_percent", precision = 5, scale = 2)
-    private java.math.BigDecimal attritionPercent;
-
-    @Column(name = "attendee_booking_link_enabled", nullable = false)
-    private boolean attendeeBookingLinkEnabled;
-
-    @Column(name = "beo_required", nullable = false)
-    private boolean beoRequired;
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "master_reservation_id")
     @JsonIgnore

@@ -258,7 +258,6 @@ export default function GroupReserveBlockPage() {
   const perRoomPerNight = selectedType?.base_price_per_night ?? 0;
   const blockStayTotal = perRoomTotal * roomCount;
   const nights = selectedType?.nights ?? 0;
-  const hasPositiveRoomRate = perRoomPerNight > 0 && perRoomTotal > 0;
 
   async function searchGuests() {
     const q = guestQ.trim();
@@ -289,13 +288,6 @@ export default function GroupReserveBlockPage() {
     }
     if (roomCount < 1) {
       setBanner({ kind: "err", text: "Room count must be at least 1." });
-      return;
-    }
-    if (!hasPositiveRoomRate) {
-      setBanner({
-        kind: "err",
-        text: "This group block has no positive room rate. Configure the room type/rate plan before booking.",
-      });
       return;
     }
     setSubmitting(true);
@@ -553,10 +545,8 @@ export default function GroupReserveBlockPage() {
                         : "bg-amber-50 text-amber-950 border border-amber-100"
                     }`}
                   >
-                    {canBookAll && hasPositiveRoomRate ? (
+                    {canBookAll ? (
                       <p className="font-semibold">Inventory OK for {roomCount} room(s).</p>
-                    ) : canBookAll ? (
-                      <p>Room rate is missing. Configure a positive rate before booking this block.</p>
                     ) : capacity > 0 ? (
                       <p>
                         Short by {shortfall}. Max now: <strong>{capacity}</strong>.
@@ -845,13 +835,13 @@ export default function GroupReserveBlockPage() {
             {selectedType ? (
               <div
                 className={`rounded-xl p-4 text-sm ${
-                  canBookAll && hasPositiveRoomRate
+                  canBookAll
                     ? "bg-emerald-50 text-emerald-900 border border-emerald-100"
                     : "bg-amber-50 text-amber-950 border border-amber-100"
                 }`}
               >
                 <div className="flex items-start gap-2">
-                  {canBookAll && hasPositiveRoomRate ? (
+                  {canBookAll ? (
                     <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
                   ) : (
                     <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
@@ -862,12 +852,10 @@ export default function GroupReserveBlockPage() {
                     </p>
                     <p className="mt-1">
                       Booking <strong>{roomCount}</strong>.{" "}
-                      {canBookAll && hasPositiveRoomRate
+                      {canBookAll
                         ? nights > 0
                           ? `Ready to book · ${formatMoney(blockStayTotal, quoteCurrency)} estimated stay total.`
                           : "Ready to book."
-                        : canBookAll
-                          ? "Room rate is missing. Configure a positive room type or nightly rate before booking."
                         : capacity > 0
                           ? `Short by ${shortfall}. Book ${capacity} now or change dates/type.`
                           : "Pick different dates or another room type."}
@@ -984,7 +972,7 @@ export default function GroupReserveBlockPage() {
       <div className="flex flex-wrap gap-3">
         <button
           type="button"
-          disabled={submitting || !canBookAll || !hasPositiveRoomRate}
+          disabled={submitting || !canBookAll}
           onClick={() => void submitBlock()}
           className="rounded-2xl bg-indigo-600 px-8 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-indigo-200 disabled:opacity-40"
         >

@@ -63,24 +63,6 @@ public class ReservationController {
         return reservationService.listReservationsForHotel(hotelId, hotelHeader, from, to, status, q);
     }
 
-    @GetMapping("/operations-queue")
-    @PreAuthorize(
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE','ROLE_HOUSEKEEPING_SUPERVISOR')")
-    public List<ApiDtos.ReservationQueueItem> operationsQueue(
-            @PathVariable UUID hotelId,
-            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
-        return reservationService.operationalQueue(hotelId, hotelHeader);
-    }
-
-    @GetMapping("/pms-report")
-    @PreAuthorize(
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
-    public ApiDtos.ReservationPmsReportResponse pmsReport(
-            @PathVariable UUID hotelId,
-            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
-        return reservationService.pmsReservationReport(hotelId, hotelHeader);
-    }
-
     @PostMapping
     @PreAuthorize(
             "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_GUEST','ROLE_CORPORATE_BOOKER')")
@@ -92,38 +74,6 @@ public class ReservationController {
                 .body(reservationService.createReservation(hotelId, hotelHeader, request));
     }
 
-    @PostMapping("/preview")
-    @PreAuthorize(
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE','ROLE_CORPORATE_BOOKER')")
-    public ApiDtos.ReservationPreviewResponse previewReservation(
-            @PathVariable UUID hotelId,
-            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
-            @Valid @RequestBody ApiDtos.WizardReservationRequest request) {
-        return reservationService.previewWizardReservation(hotelId, hotelHeader, request);
-    }
-
-    @PostMapping("/wizard")
-    @PreAuthorize(
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_CORPORATE_BOOKER')")
-    public ResponseEntity<ApiDtos.CreateReservationResponse> createWizardReservation(
-            @PathVariable UUID hotelId,
-            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
-            @Valid @RequestBody ApiDtos.WizardReservationRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(reservationService.createWizardReservation(hotelId, hotelHeader, request));
-    }
-
-    @PostMapping("/waitlist")
-    @PreAuthorize(
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_CORPORATE_BOOKER')")
-    public ResponseEntity<ApiDtos.WaitlistEntryResponse> createWaitlistEntry(
-            @PathVariable UUID hotelId,
-            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
-            @Valid @RequestBody ApiDtos.WaitlistCreateRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(reservationService.createWaitlistEntry(hotelId, hotelHeader, request));
-    }
-
     @PostMapping("/{reservationId}/cancel")
     @PreAuthorize(
             "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST')")
@@ -133,17 +83,6 @@ public class ReservationController {
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
             @RequestBody(required = false) ApiDtos.CancelReservationRequest request) {
         return reservationService.cancelReservation(hotelId, hotelHeader, reservationId, request);
-    }
-
-    @PostMapping("/{reservationId}/extend-stay")
-    @PreAuthorize(
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
-    public ApiDtos.ExtendStayResponse extendStay(
-            @PathVariable UUID hotelId,
-            @PathVariable UUID reservationId,
-            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
-            @Valid @RequestBody ApiDtos.ExtendStayRequest request) {
-        return reservationService.extendStay(hotelId, hotelHeader, reservationId, request);
     }
 
     @PostMapping("/{reservationId}/apply-guest-preferences")
@@ -227,16 +166,6 @@ public class ReservationController {
         return reservationService.getStaffReservationDetail(hotelId, hotelHeader, reservationId);
     }
 
-    @GetMapping("/{reservationId}/timeline")
-    @PreAuthorize(
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
-    public List<ApiDtos.ReservationEventRow> reservationTimeline(
-            @PathVariable UUID hotelId,
-            @PathVariable UUID reservationId,
-            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
-        return reservationService.reservationTimeline(hotelId, hotelHeader, reservationId);
-    }
-
     @GetMapping("/{reservationId}/folio")
     @PreAuthorize(
             "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE','ROLE_GUEST')")
@@ -245,16 +174,6 @@ public class ReservationController {
             @PathVariable UUID reservationId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         return reservationService.getFolio(hotelId, hotelHeader, reservationId);
-    }
-
-    @GetMapping("/{reservationId}/overstay-status")
-    @PreAuthorize(
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
-    public ApiDtos.OverstayStatus overstayStatus(
-            @PathVariable UUID hotelId,
-            @PathVariable UUID reservationId,
-            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
-        return reservationService.getOverstayStatus(hotelId, hotelHeader, reservationId);
     }
 
     @PostMapping("/{reservationId}/charges")

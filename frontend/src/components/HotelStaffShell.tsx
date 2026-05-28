@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { clearToken } from "@/lib/api";
-import { GlobalNotificationBell } from "@/components/GlobalNotificationBell";
 import type { AuthUser } from "@/lib/auth";
 import { loadAuthUser } from "@/lib/auth";
 import { canAccessHotelNav, navHint, type HotelNavKey } from "@/lib/hotelNavAccess";
@@ -130,8 +129,6 @@ export function HotelStaffShell({
 
   return (
     <div className="h-screen overflow-hidden bg-gradient-to-br from-[hsl(140,40%,98%)] to-[hsl(140,25%,94%)] flex">
-      <GlobalNotificationBell hotelId={hotelId} />
-
       {/* Mobile sidebar overlay */}
       {isSidebarOpen && (
         <div

@@ -86,46 +86,6 @@ public class GroupController {
         return groupBookingService.getRoomingList(hotelId, hotelHeader, groupId);
     }
 
-    @GetMapping("/{groupId}/pickup-dashboard")
-    @PreAuthorize(
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
-    public ApiDtos.GroupPickupDashboardResponse pickupDashboard(
-            @PathVariable UUID hotelId,
-            @PathVariable UUID groupId,
-            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
-        return groupBookingService.getPickupDashboard(hotelId, hotelHeader, groupId);
-    }
-
-    @PostMapping("/{groupId}/allotments")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST')")
-    public ApiDtos.GroupPickupDashboardResponse upsertAllotments(
-            @PathVariable UUID hotelId,
-            @PathVariable UUID groupId,
-            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
-            @Valid @RequestBody ApiDtos.GroupAllotmentUpsertRequest body) {
-        return groupBookingService.upsertAllotments(hotelId, hotelHeader, groupId, body);
-    }
-
-    @GetMapping("/{groupId}/rooming-list-entries")
-    @PreAuthorize(
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
-    public List<ApiDtos.GroupRoomingListEntryRow> roomingListEntries(
-            @PathVariable UUID hotelId,
-            @PathVariable UUID groupId,
-            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
-        return groupBookingService.listRoomingListEntries(hotelId, hotelHeader, groupId);
-    }
-
-    @PostMapping("/{groupId}/rooming-list-entries")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST')")
-    public List<ApiDtos.GroupRoomingListEntryRow> addRoomingListEntry(
-            @PathVariable UUID hotelId,
-            @PathVariable UUID groupId,
-            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
-            @Valid @RequestBody ApiDtos.GroupRoomingListEntryRequest body) {
-        return groupBookingService.addRoomingListEntry(hotelId, hotelHeader, groupId, body);
-    }
-
     @PostMapping("/{groupId}/reservations/{reservationId}")
     @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST')")
     public void addReservationToGroup(
