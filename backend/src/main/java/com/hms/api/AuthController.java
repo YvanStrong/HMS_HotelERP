@@ -8,6 +8,7 @@ import com.hms.domain.Role;
 import com.hms.service.GuestPortalRegistrationService;
 import com.hms.service.PasswordResetService;
 import com.hms.service.PlatformTenantService;
+import com.hms.service.TenantSubscriptionGuard;
 import com.hms.security.LoginAttemptService;
 import com.hms.security.SecurityAuditService;
 import com.hms.security.JwtService;
@@ -44,6 +45,7 @@ public class AuthController {
     private final SecurityAuditService securityAuditService;
     private final PasswordResetService passwordResetService;
     private final PlatformTenantService platformTenantService;
+    private final TenantSubscriptionGuard tenantSubscriptionGuard;
 
     public AuthController(
             AuthenticationManager authenticationManager,
@@ -54,7 +56,8 @@ public class AuthController {
             LoginAttemptService loginAttemptService,
             SecurityAuditService securityAuditService,
             PasswordResetService passwordResetService,
-            PlatformTenantService platformTenantService) {
+            PlatformTenantService platformTenantService,
+            TenantSubscriptionGuard tenantSubscriptionGuard) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.jwtProperties = jwtProperties;
@@ -64,6 +67,7 @@ public class AuthController {
         this.securityAuditService = securityAuditService;
         this.passwordResetService = passwordResetService;
         this.platformTenantService = platformTenantService;
+        this.tenantSubscriptionGuard = tenantSubscriptionGuard;
     }
 
     @PostMapping("/register-guest")
@@ -95,6 +99,7 @@ public class AuthController {
             var auth = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(user.getUsername(), request.password()));
             UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
+            tenantSubscriptionGuard.assertLoginAllowed(user);
             loginAttemptService.onSuccess(loginKey);
             securityAuditService.logEvent(
                     "LOGIN_SUCCESS",
@@ -142,7 +147,7 @@ public class AuthController {
     public ResponseEntity<ApiDtos.LoginResponse> refresh(@Valid @RequestBody ApiDtos.RefreshTokenRequest request) {
         var userId = jwtService.parseRefreshTokenUserId(request.refreshToken());
         AppUser user = appUserRepository
-                .findById(userId)
+                .findByIdWithHotel(userId)
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_INVALID", "User no longer exists"));
         if (!user.isActive()) {
@@ -153,6 +158,7 @@ public class AuthController {
                     java.util.Map.of());
             throw new ApiException(HttpStatus.UNAUTHORIZED, "ACCOUNT_DISABLED", "This staff account is deactivated");
         }
+        tenantSubscriptionGuard.assertRefreshAllowed(user);
         return ResponseEntity.ok(buildLoginResponse(UserPrincipal.fromEntity(user)));
     }
 

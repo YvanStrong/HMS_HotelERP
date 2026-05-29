@@ -72,7 +72,14 @@ function friendlyApiErrorTitle(status: number): string {
   }
 }
 
-type ApiErrorBody = { error?: unknown; message?: unknown };
+type ApiErrorBody = { error?: unknown; message?: unknown; reason?: unknown };
+const SUBSCRIPTION_BLOCK_CODES = new Set([
+  "SUBSCRIPTION_EXPIRED",
+  "MANUALLY_BLOCKED",
+  "HOTEL_MANUALLY_BLOCKED",
+  "TENANT_NOT_CONFIGURED",
+  "TENANT_SUBSCRIPTION_NOT_CONFIGURED",
+]);
 
 function userFacingApiMessage(status: number, body: ApiErrorBody | null): string {
   const code = typeof body?.error === "string" ? body.error : null;
@@ -144,12 +151,6 @@ export async function apiFetch<T>(
   if (xHotel) headers.set("X-Hotel-ID", xHotel);
   const res = await fetch(`${API_BASE}${path}`, { ...rest, headers });
   if (!res.ok) {
-    // Session expired or token invalid — wipe stored credentials and send to login.
-    if (res.status === 401 && !AUTH_PATHS.has(path) && typeof window !== "undefined") {
-      clearToken();
-      window.location.replace("/login");
-      throw new Error("Session expired. Redirecting to login…");
-    }
     let msg = res.statusText;
     let body: ApiErrorBody | null = null;
     try {
@@ -157,6 +158,22 @@ export async function apiFetch<T>(
       msg = userFacingApiMessage(res.status, body);
     } catch {
       /* ignore */
+    }
+    const code = typeof body?.error === "string" ? body.error : "";
+    if (SUBSCRIPTION_BLOCK_CODES.has(code) && typeof window !== "undefined") {
+      const params = new URLSearchParams();
+      params.set("code", code);
+      if (typeof body?.reason === "string") params.set("reason", body.reason);
+      if (msg) params.set("message", msg);
+      clearToken();
+      window.location.replace(`/subscription-blocked?${params.toString()}`);
+      throw new Error(msg || "Subscription blocked. Redirecting…");
+    }
+    // Session expired or token invalid — wipe stored credentials and send to login.
+    if (res.status === 401 && !AUTH_PATHS.has(path) && typeof window !== "undefined") {
+      clearToken();
+      window.location.replace("/login");
+      throw new Error("Session expired. Redirecting to login…");
     }
     if (!quiet) {
       showErrorPopup({ message: msg, title: friendlyApiErrorTitle(res.status) });

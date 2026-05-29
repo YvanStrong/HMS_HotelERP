@@ -305,6 +305,39 @@ type FeePolicy = {
   lateCheckoutFee: number;
   noShowDefaultFee: number;
   currency: string;
+  overstayAutoPostEnabled?: boolean;
+  overstayGraceMinutes?: number;
+  overstayHourlyPercent?: number;
+  overstayHalfDayCapPercent?: number;
+  overstayFullNightAfterHours?: number;
+  overstayMaxDailyPercent?: number;
+  overstayApplyTax?: boolean;
+  overstayPostTiming?: string;
+};
+
+type OverstayStatus = {
+  enabled: boolean;
+  postTiming: string;
+  graceMinutes?: number;
+  hourlyPercent?: number;
+  halfDayCapPercent?: number;
+  fullNightAfterHours?: number;
+  maxDailyPercent?: number;
+  applyTax?: boolean;
+  scheduledCheckoutAt: string;
+  graceEndsAt: string;
+  evaluatedAt: string;
+  inGrace: boolean;
+  overdue: boolean;
+  minutesLate: number;
+  billableHours: number;
+  fullNight: boolean;
+  nightlyRate: number;
+  projectedCharge: number;
+  alreadyPosted: number;
+  amountToPost: number;
+  currency: string;
+  message: string;
 };
 
 type PagedRooms = {
@@ -401,6 +434,7 @@ export default function StaffReservationDetailPage() {
   const { hotel } = useHotelContext(hotelId);
   const [folio, setFolio] = useState<Folio | null>(null);
   const [staffDetail, setStaffDetail] = useState<StaffReservationDetail | null>(null);
+  const [overstayStatus, setOverstayStatus] = useState<OverstayStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -417,6 +451,11 @@ export default function StaffReservationDetailPage() {
   const [overrideBal, setOverrideBal] = useState(false);
   const [overrideBalReason, setOverrideBalReason] = useState("");
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [modifyOpen, setModifyOpen] = useState(false);
+  const [modifyCheckIn, setModifyCheckIn] = useState("");
+  const [modifyCheckOut, setModifyCheckOut] = useState("");
+  const [modifyRebookingFee, setModifyRebookingFee] = useState("");
+  const [modifyReason, setModifyReason] = useState("");
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [prefsLoading, setPrefsLoading] = useState(false);
   const [prefsResult, setPrefsResult] = useState<{
@@ -459,6 +498,13 @@ export default function StaffReservationDetailPage() {
         setStaffDetail(d);
       } catch {
         setStaffDetail(null);
+      }
+      try {
+        setOverstayStatus(
+          await apiFetch<OverstayStatus>(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/overstay-status`),
+        );
+      } catch {
+        setOverstayStatus(null);
       }
       return f;
     } catch (e) {
@@ -535,10 +581,17 @@ export default function StaffReservationDetailPage() {
         : typeof folio?.summary.balance_due === "number"
           ? folio.summary.balance_due
           : 0;
-    setCheckoutPayAmount(due > 0.01 ? String(Math.round(due * 100) / 100) : "0");
     try {
-      const policy = await apiFetch<FeePolicy>(`/api/v1/hotels/${hotelId}/fee-policy`);
+      const [policy, overstay] = await Promise.all([
+        apiFetch<FeePolicy>(`/api/v1/hotels/${hotelId}/fee-policy`),
+        apiFetch<OverstayStatus>(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/overstay-status`).catch(
+          () => null,
+        ),
+      ]);
       setFees(policy);
+      setOverstayStatus(overstay);
+      const projectedDue = due + (overstay?.amountToPost ?? 0);
+      setCheckoutPayAmount(projectedDue > 0.01 ? String(Math.round(projectedDue * 100) / 100) : "0");
       setCheckOutOpen(true);
     } catch (e) {
       setBanner({ kind: "err", text: e instanceof Error ? e.message : "Could not load fee policy" });
@@ -552,8 +605,8 @@ export default function StaffReservationDetailPage() {
     const checkoutPayParsedSubmit = Number.isFinite(paid) ? paid : 0;
     const waivedByOverride =
       overrideBal &&
-      balance > 0.01 &&
-      !checkoutAmountCoversDue(balance, checkoutPayParsedSubmit);
+      checkoutBalance > 0.01 &&
+      !checkoutAmountCoversDue(checkoutBalance, checkoutPayParsedSubmit);
     if (waivedByOverride && overrideBalReason.trim().length < MIN_OVERRIDE_BALANCE_REASON_LEN) {
       setBanner({
         kind: "err",
@@ -670,17 +723,65 @@ export default function StaffReservationDetailPage() {
   }
 
   async function doCancel() {
-    if (!confirm("Cancel this reservation?")) return;
+    const reason = window.prompt("Cancellation reason", "Guest requested cancellation");
+    if (reason == null) return;
+    if (!confirm("Cancel this reservation? The system will calculate penalty/refund according to policy.")) return;
     setBanner(null);
     try {
-      await apiFetch(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/cancel`, {
+      const res = await apiFetch<{
+        message?: string;
+        cancellationPenalty?: number;
+        refundableAmount?: number;
+        policySummary?: string;
+      }>(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/cancel`, {
         method: "POST",
-        body: JSON.stringify({ reason: "Staff cancelled via HMS UI" }),
+        body: JSON.stringify({ reason: reason.trim() || "Staff cancelled via HMS UI" }),
       });
-      setBanner({ kind: "ok", text: "Cancelled." });
+      setBanner({
+        kind: "ok",
+        text: `${res.message ?? "Cancelled."} Penalty: ${res.cancellationPenalty ?? 0}. Refundable: ${
+          res.refundableAmount ?? 0
+        }. ${res.policySummary ?? ""}`,
+      });
       await load();
     } catch (e) {
       setBanner({ kind: "err", text: e instanceof Error ? e.message : "Cancel failed" });
+    }
+  }
+
+  function openModifyModal() {
+    setModifyCheckIn(folio?.stay.checkIn ?? "");
+    setModifyCheckOut(folio?.stay.checkOut ?? "");
+    setModifyRebookingFee("");
+    setModifyReason("");
+    setModifyOpen(true);
+  }
+
+  async function submitModifyReservation() {
+    if (!modifyCheckIn || !modifyCheckOut || modifyCheckOut <= modifyCheckIn) {
+      setBanner({ kind: "err", text: "Check-out must be after check-in." });
+      return;
+    }
+    setBanner(null);
+    try {
+      const fee = modifyRebookingFee.trim() ? Number(modifyRebookingFee) : 0;
+      const res = await apiFetch<{ message?: string; pricing?: { balanceDue?: number } }>(
+        `/api/v1/hotels/${hotelId}/reservations/${reservationId}/modify`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            checkInDate: modifyCheckIn,
+            checkOutDate: modifyCheckOut,
+            rebookingFee: Number.isFinite(fee) && fee > 0 ? fee : 0,
+            reason: modifyReason || null,
+          }),
+        },
+      );
+      setModifyOpen(false);
+      setBanner({ kind: "ok", text: res.message ?? "Reservation updated." });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Could not modify reservation" });
     }
   }
 
@@ -1052,6 +1153,7 @@ export default function StaffReservationDetailPage() {
   }
 
   const st = folio?.stay.reservationStatus;
+  const checkedInDueToday = st === "CHECKED_IN" && folio?.stay.checkOut === new Date().toISOString().slice(0, 10);
   const balance =
     typeof folio?.summary.balanceDue === "number"
       ? folio.summary.balanceDue
@@ -1061,20 +1163,22 @@ export default function StaffReservationDetailPage() {
   const canOverride = canOverrideBalance(user?.role);
   const hasAssignedRoom = Boolean(folio?.roomId);
   const statusOkForCheckout = st === "CHECKED_IN";
+  const projectedOverstayDue = overstayStatus?.amountToPost ?? 0;
+  const checkoutBalance = Math.round((balance + projectedOverstayDue) * 100) / 100;
   const checkoutPayNum = Number(checkoutPayAmount);
   const checkoutPayParsed = Number.isFinite(checkoutPayNum) ? checkoutPayNum : 0;
   const balanceOk =
-    balance <= 0.01 ||
+    checkoutBalance <= 0.01 ||
     (canOverride && overrideBal) ||
-    checkoutAmountCoversDue(balance, checkoutPayParsed);
+    checkoutAmountCoversDue(checkoutBalance, checkoutPayParsed);
   const blockedByBalance =
-    balance > 0.01 &&
+    checkoutBalance > 0.01 &&
     !(canOverride && overrideBal) &&
-    !checkoutAmountCoversDue(balance, checkoutPayParsed);
+    !checkoutAmountCoversDue(checkoutBalance, checkoutPayParsed);
   const checkoutWaivedByOverride =
     overrideBal &&
-    balance > 0.01 &&
-    !checkoutAmountCoversDue(balance, checkoutPayParsed);
+    checkoutBalance > 0.01 &&
+    !checkoutAmountCoversDue(checkoutBalance, checkoutPayParsed);
   const overrideReasonOk =
     !checkoutWaivedByOverride ||
     overrideBalReason.trim().length >= MIN_OVERRIDE_BALANCE_REASON_LEN;
@@ -1273,6 +1377,33 @@ export default function StaffReservationDetailPage() {
               </div>
             </div>
 
+            {st === "CHECKED_IN" &&
+              overstayStatus?.enabled &&
+              (checkedInDueToday || overstayStatus.overdue || overstayStatus.amountToPost > 0) && (
+              <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-700">Late checkout & overstay</p>
+                    <h3 className="mt-1 text-lg font-black">
+                      {overstayStatus.amountToPost > 0
+                        ? `${overstayStatus.amountToPost} ${overstayStatus.currency} ready to post`
+                        : overstayStatus.message}
+                    </h3>
+                    <p className="mt-1 text-sm text-amber-900">
+                      Scheduled checkout: {new Date(overstayStatus.scheduledCheckoutAt).toLocaleString()} · Grace ends:{" "}
+                      {new Date(overstayStatus.graceEndsAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2 text-right text-sm shadow-sm">
+                    <p className="font-bold">{overstayStatus.billableHours} billable hour{overstayStatus.billableHours === 1 ? "" : "s"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {overstayStatus.fullNight ? "Full night rule" : "Hourly policy"} · {overstayStatus.alreadyPosted} posted
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-2 pt-5">
               <button
                 type="button"
@@ -1333,6 +1464,15 @@ export default function StaffReservationDetailPage() {
                   onClick={() => void openCheckOutModal()}
                 >
                   Check out &amp; invoice
+                </button>
+              )}
+              {(st === "CONFIRMED" || st === "CHECKED_IN") && (
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+                  onClick={openModifyModal}
+                >
+                  Modify / extend stay
                 </button>
               )}
               {st === "CONFIRMED" && (
@@ -1545,6 +1685,67 @@ export default function StaffReservationDetailPage() {
             ) : null}
           </div>
         </>
+      )}
+
+      {modifyOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: "1rem" }}>
+          <div className="panel" style={{ maxWidth: 520, width: "100%" }}>
+            <h3 style={{ marginTop: 0 }}>{st === "CHECKED_IN" ? "Extend stay" : "Modify / extend stay"}</h3>
+            <p style={{ margin: "0 0 0.75rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+              {st === "CHECKED_IN"
+                ? "If the guest wants another night, extend the checkout date here. The system checks room availability, posts the extra room-night charge, and reverses any open overstay charge for the same situation."
+                : "Updates dates, recalculates room price/taxes, and can add a rebooking fee."}
+            </p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <label>
+                Check-in
+                <input
+                  type="date"
+                  value={modifyCheckIn}
+                  disabled={st === "CHECKED_IN"}
+                  onChange={(e) => setModifyCheckIn(e.target.value)}
+                />
+              </label>
+              <label>
+                Check-out
+                <input type="date" value={modifyCheckOut} onChange={(e) => setModifyCheckOut(e.target.value)} />
+              </label>
+            </div>
+            <label>
+              Rebooking fee
+              <input
+                type="number"
+                min={0}
+                step="1"
+                value={modifyRebookingFee}
+                onChange={(e) => setModifyRebookingFee(e.target.value)}
+                placeholder="0"
+              />
+            </label>
+            {st === "CHECKED_IN" && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                Extension is for a valid paid extra night. Overstay remains for late departure without a new night.
+              </div>
+            )}
+            <label>
+              Reason / notes
+              <textarea
+                rows={3}
+                value={modifyReason}
+                onChange={(e) => setModifyReason(e.target.value)}
+                placeholder="Guest changed travel dates, extended stay, upgrade approved..."
+              />
+            </label>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
+              <button type="button" className="secondary" onClick={() => setModifyOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => void submitModifyReservation()}>
+                Save changes
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {paymentOpen && (
@@ -1794,9 +1995,17 @@ export default function StaffReservationDetailPage() {
               <p style={{ margin: "0 0 0.75rem" }}>
                 <strong>Folio balance due:</strong> {balance} {folio.summary.currency}
               </p>
-              {balance > 0.01 && (
+              {projectedOverstayDue > 0 && (
+                <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                  <p className="font-bold">Policy overstay fee preview: {projectedOverstayDue} {overstayStatus?.currency}</p>
+                  <p className="mt-1 text-xs">
+                    {overstayStatus?.billableHours} billable hour{overstayStatus?.billableHours === 1 ? "" : "s"} after grace. This fee posts to the folio before checkout validation and appears on the invoice.
+                  </p>
+                </div>
+              )}
+              {checkoutBalance > 0.01 && (
                 <p style={{ color: "#b91c1c", fontSize: "0.95rem", marginBottom: "0.75rem" }}>
-                  Outstanding balance: {balance} {folio.summary.currency}. Collect payment before checkout (enter amount
+                  Outstanding balance: {checkoutBalance} {folio.summary.currency}. Collect payment before checkout (enter amount
                   below, use <strong>Record payment</strong>, or manager override).
                 </p>
               )}
@@ -1826,7 +2035,7 @@ export default function StaffReservationDetailPage() {
                 {folio.summary.currency}
               </p>
               <p style={{ fontSize: "0.9rem", marginBottom: "0.65rem" }}>
-                Remaining to collect now: <strong>{Math.max(0, balance)}</strong> {folio.summary.currency}
+                Remaining to collect now: <strong>{Math.max(0, checkoutBalance)}</strong> {folio.summary.currency}
               </p>
               <button
                 type="button"
@@ -1834,7 +2043,7 @@ export default function StaffReservationDetailPage() {
                 style={{ width: "100%", marginBottom: "0.65rem", fontWeight: 600 }}
                 onClick={() => {
                   setPaymentOpenedFromCheckout(true);
-                  setFolioPaymentAmount(balance > 0.01 ? String(Math.round(balance * 100) / 100) : "");
+                  setFolioPaymentAmount(checkoutBalance > 0.01 ? String(Math.round(checkoutBalance * 100) / 100) : "");
                   setFolioPaymentMethod(checkoutPayMethod);
                   setFolioPaymentRef("");
                   setFolioPaymentNotes("");
@@ -1868,15 +2077,15 @@ export default function StaffReservationDetailPage() {
                     width: "100%",
                     marginTop: "0.35rem",
                     boxShadow:
-                      balance > 0.01 && balanceOk
+                      checkoutBalance > 0.01 && balanceOk
                         ? "0 0 0 2px rgba(22, 101, 52, 0.35)"
-                        : balance > 0.01
+                        : checkoutBalance > 0.01
                           ? "0 0 0 1px rgba(185, 28, 28, 0.25)"
                           : undefined,
                   }}
                 />
               </label>
-              {balance > 0.01 && balanceOk && (
+              {checkoutBalance > 0.01 && balanceOk && (
                 <p style={{ margin: "0 0 0.5rem", fontSize: "0.82rem", color: "#166534", fontWeight: 600 }}>
                   Covers balance due for checkout (or use manager override).
                 </p>
@@ -1970,59 +2179,70 @@ export default function StaffReservationDetailPage() {
                 />
               </button>
             </div>
-            <div
-              style={{
-                border: "1px solid var(--border)",
-                borderRadius: "12px",
-                padding: "10px 12px",
-                marginBottom: "0.55rem",
-                background: "#fff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: "10px",
-              }}
-            >
-              <div>
-                <p style={{ margin: 0, fontWeight: 600 }}>Late checkout</p>
-                <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
-                  Apply if guest departs after standard time
+            {fees?.overstayAutoPostEnabled ? (
+              <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                <p className="font-bold text-slate-900">Policy-based late checkout is enabled</p>
+                <p className="mt-1">
+                  Grace {fees.overstayGraceMinutes ?? 60} min · {(fees.overstayHourlyPercent ?? 1.5).toFixed(2)}% per
+                  billable hour · full night after {fees.overstayFullNightAfterHours ?? 6} hours. Use{" "}
+                  <strong>Modify / extend stay</strong> when the guest is approved for another night.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setLateOut((v) => !v)}
-                aria-pressed={lateOut}
+            ) : (
+              <div
                 style={{
-                  width: "56px",
-                  height: "30px",
-                  borderRadius: "999px",
                   border: "1px solid var(--border)",
-                  background: lateOut ? "#0f766e" : "#e5e7eb",
-                  position: "relative",
-                  cursor: "pointer",
+                  borderRadius: "12px",
+                  padding: "10px 12px",
+                  marginBottom: "0.55rem",
+                  background: "#fff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "10px",
                 }}
               >
-                <span
+                <div>
+                  <p style={{ margin: 0, fontWeight: 600 }}>Manual late checkout fee</p>
+                  <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                    Legacy flat fee only; policy-based overstay can be enabled in Settings.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLateOut((v) => !v)}
+                  aria-pressed={lateOut}
                   style={{
-                    position: "absolute",
-                    top: "3px",
-                    left: lateOut ? "29px" : "3px",
-                    width: "22px",
-                    height: "22px",
+                    width: "56px",
+                    height: "30px",
                     borderRadius: "999px",
-                    background: "#fff",
-                    transition: "left 120ms ease",
+                    border: "1px solid var(--border)",
+                    background: lateOut ? "#0f766e" : "#e5e7eb",
+                    position: "relative",
+                    cursor: "pointer",
                   }}
-                />
-              </button>
-            </div>
-            {lateOut && fees && (
+                >
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: "3px",
+                      left: lateOut ? "29px" : "3px",
+                      width: "22px",
+                      height: "22px",
+                      borderRadius: "999px",
+                      background: "#fff",
+                      transition: "left 120ms ease",
+                    }}
+                  />
+                </button>
+              </div>
+            )}
+            {!fees?.overstayAutoPostEnabled && lateOut && fees && (
               <p style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: "0.75rem" }}>
                 Fee: {fees.lateCheckoutFee} {fees.currency}
               </p>
             )}
-            {balance > 0.01 && canOverride && (
+            {checkoutBalance > 0.01 && canOverride && (
               <div style={{ marginBottom: "1rem" }}>
                 <label style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                   <input

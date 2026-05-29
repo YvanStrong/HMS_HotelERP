@@ -75,6 +75,20 @@ type ReservationRow = {
   guestEmail: string;
 };
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function asArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object") : [];
+}
+
+function displayValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  return "View details";
+}
+
 export default function GuestDetailPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
@@ -86,7 +100,6 @@ export default function GuestDetailPage() {
   const [activeTab, setActiveTab] = useState<
     "profile" | "stays" | "preferences" | "flags" | "feedback" | "complaints" | "registry"
   >("profile");
-  const [earnPoints, setEarnPoints] = useState("100");
   const [redeemPoints, setRedeemPoints] = useState("100");
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -118,29 +131,6 @@ export default function GuestDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  async function submitEarn() {
-    const points = Number(earnPoints);
-    if (!Number.isFinite(points) || points <= 0) {
-      setBanner({ kind: "err", text: "Enter a valid positive points amount." });
-      return;
-    }
-    try {
-      await apiFetch(`/api/v1/hotels/${hotelId}/guests/${guestId}/loyalty/earn`, {
-        method: "POST",
-        body: JSON.stringify({
-          points,
-          type: "EARNED",
-          description: "Staff loyalty adjustment",
-          notifyGuest: false,
-        }),
-      });
-      setBanner({ kind: "ok", text: "Loyalty points added." });
-      await load();
-    } catch (e) {
-      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Failed to add points" });
-    }
-  }
 
   async function submitRedeem() {
     const points = Number(redeemPoints);
@@ -307,12 +297,9 @@ export default function GuestDetailPage() {
                     <p className="text-xs text-muted-foreground mb-4">
                       {profile.loyalty?.nextTier ? `${profile.loyalty.pointsToNextTier} more points to reach ${profile.loyalty.nextTier}` : 'Highest tier reached!'}
                     </p>
-                    <label className="text-xs text-slate-500 uppercase font-bold">Add points</label>
-                    <div className="flex gap-2 mt-1">
-                      <input className="text-sm" value={earnPoints} type="number" min={1} onChange={(e) => setEarnPoints(e.target.value)} />
-                      <button type="button" className="hms-btn-solid text-xs whitespace-nowrap" onClick={() => void submitEarn()}>
-                        Add
-                      </button>
+                    <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-blue-900">
+                      Points are calculated automatically from posted stays, invoices, and eligible guest spend. Staff should not add
+                      manual points here.
                     </div>
                   </div>
                   <div className="rounded-xl border border-border/60 p-4">
@@ -494,9 +481,98 @@ export default function GuestDetailPage() {
                   stay summary, and sensitive incidents (managers only). Update fields via{" "}
                   <code className="rounded bg-muted px-1">PATCH /guests/{"{guestId}"}</code> with the staff guest payload.
                 </p>
-                <pre className="max-h-[520px] overflow-auto rounded-lg border border-border/60 bg-muted/30 p-4 text-xs leading-relaxed">
-                  {JSON.stringify(profile.registry ?? {}, null, 2)}
-                </pre>
+                {(() => {
+                  const registry = profile.registry ?? {};
+                  const emergency = asRecord(registry.emergencyContact);
+                  const corporate = asRecord(registry.corporate);
+                  const activeStay = asRecord(registry.activeStay);
+                  const documents = asArray(registry.documents);
+                  const communications = asArray(registry.communications);
+                  const incidents = asArray(registry.sensitiveIncidents);
+                  return (
+                    <div className="space-y-4">
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
+                          <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">Guest type</p>
+                          <p className="mt-2 text-lg font-black text-foreground">{displayValue(registry.guestType)}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">Loyalty member: {displayValue(registry.loyaltyMemberNumber)}</p>
+                        </div>
+                        <KeyValueTable title="Emergency contact" rows={recordToRows(emergency)} />
+                        <KeyValueTable title="Corporate billing" rows={recordToRows(corporate)} />
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <KeyValueTable title="Active stay summary" rows={recordToRows(activeStay)} />
+                        <KeyValueTable
+                          title="Internal notes"
+                          rows={recordToRows({
+                            internalNotes: registry.internalNotes,
+                            behaviorNotes: registry.behaviorNotes,
+                          })}
+                        />
+                      </div>
+
+                      <div className="grid gap-4 lg:grid-cols-3">
+                        <div className="rounded-xl border border-border/60 p-4">
+                          <div className="mb-3 flex items-center justify-between">
+                            <h3 className="text-sm font-semibold">Documents</h3>
+                            <span className="text-xs text-muted-foreground">{documents.length}</span>
+                          </div>
+                          {documents.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">No documents indexed.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {documents.map((doc, index) => (
+                                <div key={String(doc.id ?? index)} className="rounded-lg bg-muted/30 p-3 text-xs">
+                                  <p className="font-bold text-foreground">{displayValue(doc.documentType ?? doc.type ?? doc.fileName)}</p>
+                                  <p className="text-muted-foreground">{displayValue(doc.fileName ?? doc.fileUrl)}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="rounded-xl border border-border/60 p-4">
+                          <div className="mb-3 flex items-center justify-between">
+                            <h3 className="text-sm font-semibold">Communication log</h3>
+                            <span className="text-xs text-muted-foreground">{communications.length}</span>
+                          </div>
+                          {communications.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">No communication logged.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {communications.map((item, index) => (
+                                <div key={String(item.id ?? index)} className="rounded-lg bg-muted/30 p-3 text-xs">
+                                  <p className="font-bold text-foreground">{displayValue(item.subject ?? item.channel)}</p>
+                                  <p className="text-muted-foreground">{displayValue(item.body ?? item.notes ?? item.createdAt)}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="rounded-xl border border-border/60 p-4">
+                          <div className="mb-3 flex items-center justify-between">
+                            <h3 className="text-sm font-semibold">Sensitive incidents</h3>
+                            <span className="text-xs text-muted-foreground">{incidents.length}</span>
+                          </div>
+                          {incidents.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">No manager-visible incidents.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {incidents.map((incident, index) => (
+                                <div key={String(incident.id ?? index)} className="rounded-lg border border-rose-100 bg-rose-50 p-3 text-xs text-rose-900">
+                                  <p className="font-bold">{displayValue(incident.incidentType ?? incident.type)}</p>
+                                  <p>{displayValue(incident.summary ?? incident.description)}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>

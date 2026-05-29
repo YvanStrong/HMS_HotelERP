@@ -28,11 +28,39 @@ type PlatformRevenueApi = {
   }[];
 };
 
+type SubscriptionAnalytics = {
+  summary?: {
+    totalCollected?: number;
+    monthlyDue?: number;
+    expiringSoon?: number;
+    expired?: number;
+    manuallyBlocked?: number;
+    tenantCount?: number;
+  };
+  dueTenants?: {
+    hotelId: string;
+    hotelName: string;
+    status: string;
+    daysRemaining: number | string;
+    expiryDate: string;
+    monthlyPrice: number;
+  }[];
+  recentPayments?: {
+    hotelId: string;
+    monthsPaid: number;
+    amount: number;
+    currency: string;
+    paymentReference: string;
+    confirmedAt: string;
+  }[];
+};
+
 export default function PlatformAnalyticsPage() {
   const [metrics, setMetrics] = useState<RevenueMetrics | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState("monthly");
+  const [subscriptions, setSubscriptions] = useState<SubscriptionAnalytics | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,9 +71,10 @@ export default function PlatformAnalyticsPage() {
         return;
       }
       try {
-        const raw = await apiFetch<PlatformRevenueApi>(
-          `/api/v1/platform/analytics/revenue?period=${period}&groupBy=tier`,
-        );
+        const [raw, subscriptionRaw] = await Promise.all([
+          apiFetch<PlatformRevenueApi>(`/api/v1/platform/analytics/revenue?period=${period}&groupBy=tier`),
+          apiFetch<SubscriptionAnalytics>("/api/v1/platform/analytics/subscriptions"),
+        ]);
         const byTier = raw.byTier ?? [];
         const totalTenants = byTier.reduce((sum, row) => sum + (row.tenants ?? 0), 0);
         const totalMrr = Number(raw.revenue?.mrr ?? 0);
@@ -71,6 +100,7 @@ export default function PlatformAnalyticsPage() {
         if (!cancelled) {
           setError(null);
           setMetrics(normalized);
+          setSubscriptions(subscriptionRaw);
         }
       } catch (e) {
         if (!cancelled) {
@@ -93,6 +123,13 @@ export default function PlatformAnalyticsPage() {
       notation: "compact",
       maximumFractionDigits: 1,
     }).format(value);
+  };
+
+  const formatDays = (value: number | string) => {
+    if (value === "n/a") return "n/a";
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || Math.abs(numeric) > 1000000) return "n/a";
+    return `${numeric} day${numeric === 1 ? "" : "s"}`;
   };
 
   const topHotelRevenue = useMemo(() => {
@@ -198,6 +235,65 @@ export default function PlatformAnalyticsPage() {
             </div>
           </div>
 
+          {subscriptions?.summary && (
+            <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-soft">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">Subscription collections</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Platform billing control room: collected payments, monthly dues, expiring tenants, and suspended accounts.
+                  </p>
+                </div>
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  {subscriptions.summary.tenantCount ?? 0} tenants tracked
+                </span>
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <MiniStat label="Collected" value={formatCurrency(Number(subscriptions.summary.totalCollected ?? 0))} />
+                <MiniStat label="Monthly due" value={formatCurrency(Number(subscriptions.summary.monthlyDue ?? 0))} />
+                <MiniStat label="Expiring soon" value={String(subscriptions.summary.expiringSoon ?? 0)} />
+                <MiniStat label="Expired" value={String(subscriptions.summary.expired ?? 0)} />
+                <MiniStat label="Manual blocks" value={String(subscriptions.summary.manuallyBlocked ?? 0)} />
+              </div>
+              <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-xl border border-border/60 p-4">
+                  <h3 className="text-sm font-semibold">Due / blocked watchlist</h3>
+                  <div className="mt-3 space-y-2">
+                    {(subscriptions.dueTenants ?? []).slice(0, 6).map((tenant) => (
+                      <div key={tenant.hotelId} className="flex items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2 text-sm">
+                        <div>
+                          <p className="font-medium">{tenant.hotelName}</p>
+                          <p className="text-xs text-muted-foreground">{tenant.status.replaceAll("_", " ")} | {tenant.expiryDate || "No expiry"} | {formatDays(tenant.daysRemaining)}</p>
+                        </div>
+                        <span className="font-semibold">{formatCurrency(Number(tenant.monthlyPrice ?? 0))}</span>
+                      </div>
+                    ))}
+                    {!(subscriptions.dueTenants ?? []).length && (
+                      <p className="text-sm text-muted-foreground">No expiring or blocked tenants right now.</p>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-border/60 p-4">
+                  <h3 className="text-sm font-semibold">Recent confirmed payments</h3>
+                  <div className="mt-3 space-y-2">
+                    {(subscriptions.recentPayments ?? []).slice(0, 6).map((payment) => (
+                      <div key={`${payment.hotelId}-${payment.confirmedAt}`} className="flex items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2 text-sm">
+                        <div>
+                          <p className="font-medium">{payment.monthsPaid} month renewal</p>
+                          <p className="text-xs text-muted-foreground">{new Date(payment.confirmedAt).toLocaleDateString()} {payment.paymentReference ? `| ${payment.paymentReference}` : ""}</p>
+                        </div>
+                        <span className="font-semibold">{formatCurrency(Number(payment.amount ?? 0))}</span>
+                      </div>
+                    ))}
+                    {!(subscriptions.recentPayments ?? []).length && (
+                      <p className="text-sm text-muted-foreground">No confirmed subscription payments yet.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Revenue by Hotel */}
           {metrics.revenueByHotel && metrics.revenueByHotel.length > 0 && (
             <div className="bg-card rounded-xl border border-border/60 p-5 shadow-soft">
@@ -256,6 +352,15 @@ export default function PlatformAnalyticsPage() {
           <p className="text-muted-foreground">Analytics API may not be configured on this server</p>
         </div>
       )}
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-2 text-xl font-bold">{value}</p>
     </div>
   );
 }

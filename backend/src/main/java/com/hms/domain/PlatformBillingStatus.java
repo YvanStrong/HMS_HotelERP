@@ -2,6 +2,7 @@ package com.hms.domain;
 
 public enum PlatformBillingStatus {
     ACTIVE,
-    PAST_DUE,
-    SUSPENDED
+    EXPIRING_SOON,
+    EXPIRED,
+    MANUALLY_BLOCKED
 }

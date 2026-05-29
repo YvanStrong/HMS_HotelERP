@@ -5,6 +5,7 @@ import com.hms.api.dto.InventoryDepotDtos;
 import com.hms.service.InvExtService;
 import com.hms.service.InventoryDepotService;
 import com.hms.service.InventoryService;
+import com.hms.security.CheckModuleEntitlement;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/hotels/{hotelId}/inventory")
+@CheckModuleEntitlement("INVENTORY")
 public class InventoryController {
 
     private final InventoryService inventoryService;

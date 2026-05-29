@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { PaginationBar } from "@/components/PaginationBar";
 import { API_BASE, apiFetch, getToken } from "@/lib/api";
 import { paginateSlice } from "@/lib/pagination";
@@ -47,7 +47,9 @@ function ymdOnly(s: string) {
 
 export default function ReservationsOperationsPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const hotelId = String(params.hotelId);
+  const attention = searchParams.get("attention");
   const [rows, setRows] = useState<ReservationRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [stayStart, setStayStart] = useState("");
@@ -117,9 +119,48 @@ export default function ReservationsOperationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- manual reload via button
   }, [hotelId]);
 
+  const attentionRows = useMemo(() => {
+    const today = localYmd();
+    if (attention === "overdue") {
+      return rows.filter((r) => String(r.status).toUpperCase() === "CHECKED_IN" && ymdOnly(r.checkOutDate) < today);
+    }
+    if (attention === "departures") {
+      return rows.filter((r) => String(r.status).toUpperCase() === "CHECKED_IN" && ymdOnly(r.checkOutDate) === today);
+    }
+    if (attention === "arrivals") {
+      return rows.filter((r) => String(r.status).toUpperCase() === "CONFIRMED" && ymdOnly(r.checkInDate) === today);
+    }
+    return rows;
+  }, [attention, rows]);
+
+  const attentionCopy = useMemo(() => {
+    if (attention === "overdue") {
+      return {
+        title: "Due / overdue reservations",
+        body: "Checked-in guests whose checkout date has passed. Decide whether to extend stay, checkout, or resolve folio.",
+        badge: "Overdue checkout",
+      };
+    }
+    if (attention === "departures") {
+      return {
+        title: "Departures due today",
+        body: "Checked-in guests scheduled to leave today. Review balances, checkout readiness, and housekeeping release.",
+        badge: "Due today",
+      };
+    }
+    if (attention === "arrivals") {
+      return {
+        title: "Arrivals expected today",
+        body: "Confirmed reservations checking in today. Prepare room assignment, documents, and deposits.",
+        badge: "Arriving today",
+      };
+    }
+    return null;
+  }, [attention]);
+
   const { slice: pageRows, total, totalPages } = useMemo(
-    () => paginateSlice(rows, page, PAGE_SIZE),
-    [rows, page],
+    () => paginateSlice(attentionRows, page, PAGE_SIZE),
+    [attentionRows, page],
   );
   const stats = useMemo(() => {
     const by = (s: string) => rows.filter((r) => r.status === s).length;
@@ -457,10 +498,27 @@ export default function ReservationsOperationsPage() {
         )}
       </div>
 
+      {attentionCopy && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-soft">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-700">Smart notification view</p>
+              <h2 className="mt-1 text-2xl font-black tracking-tight text-foreground">{attentionCopy.title}</h2>
+              <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{attentionCopy.body}</p>
+            </div>
+            <Link href={staffAppPath("reservations")} className="hms-btn-outline text-sm">
+              Back to all reservations
+            </Link>
+          </div>
+        </section>
+      )}
+
       {/* Reservations List */}
       <div className="bg-card rounded-2xl border border-border/60 p-5 shadow-soft">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Reservations ({rows.length})</h2>
+          <h2 className="text-lg font-semibold">
+            {attentionCopy ? attentionCopy.title : "Reservations"} ({attentionRows.length})
+          </h2>
         </div>
         
         <div className="overflow-x-auto">
@@ -514,6 +572,11 @@ export default function ReservationsOperationsPage() {
                     {r.checkInDate} → {r.checkOutDate}
                     {typeof r.nights === "number" && (
                       <span className="text-muted-foreground"> · {r.nights}n</span>
+                    )}
+                    {attentionCopy && (
+                      <span className="mt-1 block w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                        {attentionCopy.badge}
+                      </span>
                     )}
                   </td>
                   <td>{getStatusBadge(r.status)}</td>

@@ -616,33 +616,6 @@ export default function HotelDashboardPage() {
             </ChartCard>
           </section>
 
-          {dash.recentActivity.length > 0 && (
-            <section className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
-              <h3 className="mb-2 font-semibold">Recent Activity</h3>
-              <div className="hms-table-wrap">
-                <table className="hms-table">
-                  <thead>
-                    <tr>
-                      <th>Timestamp</th>
-                      <th>Staff</th>
-                      <th>Action</th>
-                      <th>Reference</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dash.recentActivity.map((a, idx) => (
-                      <tr key={`${a.reference}-${idx}`}>
-                        <td>{new Date(a.timestamp).toLocaleString()}</td>
-                        <td>{a.staffName}</td>
-                        <td>{a.action}</td>
-                        <td>{a.reference}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
         </>
       )}
 

@@ -86,6 +86,21 @@ public class PlatformTenant {
     @Column(name = "provisioning_status", nullable = false, length = 32)
     private ProvisioningStatus provisioningStatus = ProvisioningStatus.PROVISIONED;
 
+    @Column(name = "manually_blocked", nullable = false)
+    private boolean manuallyBlocked = false;
+
+    @Column(name = "manual_block_reason", columnDefinition = "TEXT")
+    private String manualBlockReason;
+
+    @Column(name = "blocked_by")
+    private UUID blockedBy;
+
+    @Column(name = "blocked_at")
+    private Instant blockedAt;
+
+    @Column(name = "last_payment_confirmed_at")
+    private Instant lastPaymentConfirmedAt;
+
     @Column(name = "database_schema", length = 128)
     private String databaseSchema;
 

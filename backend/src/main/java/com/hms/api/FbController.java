@@ -2,6 +2,7 @@ package com.hms.api;
 
 import com.hms.api.dto.FbDtos;
 import com.hms.service.FbService;
+import com.hms.security.CheckModuleEntitlement;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/hotels/{hotelId}/fb")
+@CheckModuleEntitlement("FB")
 public class FbController {
 
     private final FbService fbService;

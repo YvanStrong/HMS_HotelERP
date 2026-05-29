@@ -3,6 +3,7 @@ package com.hms.repository;
 import com.hms.domain.PlatformBillingStatus;
 import com.hms.domain.SubscriptionTier;
 import com.hms.entity.PlatformTenant;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -29,4 +30,24 @@ public interface PlatformTenantRepository extends JpaRepository<PlatformTenant, 
 
     @Query("select coalesce(sum(t.monthlyPrice), 0) from PlatformTenant t where t.billingStatus = 'ACTIVE'")
     java.math.BigDecimal sumActiveMonthlyPrice();
+
+    @Query(
+            """
+            select t from PlatformTenant t join fetch t.hotel h
+            where t.subscriptionEnd is not null
+            and t.subscriptionEnd < :instant
+            and t.billingStatus <> com.hms.domain.PlatformBillingStatus.EXPIRED
+            and t.billingStatus <> com.hms.domain.PlatformBillingStatus.MANUALLY_BLOCKED
+            """)
+    List<PlatformTenant> findTenantsToExpire(@Param("instant") Instant instant);
+
+    @Query(
+            """
+            select t from PlatformTenant t join fetch t.hotel h
+            where t.subscriptionEnd is not null
+            and t.subscriptionEnd >= :now
+            and t.subscriptionEnd <= :soon
+            and t.billingStatus = com.hms.domain.PlatformBillingStatus.ACTIVE
+            """)
+    List<PlatformTenant> findTenantsExpiringSoon(@Param("now") Instant now, @Param("soon") Instant soon);
 }

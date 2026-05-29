@@ -4,6 +4,7 @@ import com.hms.api.dto.ApiDtos;
 import com.hms.entity.GroupBooking;
 import com.hms.entity.Reservation;
 import com.hms.service.GroupBookingService;
+import com.hms.security.CheckModuleEntitlement;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/hotels/{hotelId}/groups")
+@CheckModuleEntitlement("GROUPS_EVENTS")
 @RequiredArgsConstructor
 public class GroupController {
 

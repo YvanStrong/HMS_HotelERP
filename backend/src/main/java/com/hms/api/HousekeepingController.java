@@ -2,6 +2,7 @@ package com.hms.api;
 
 import com.hms.api.dto.ApiDtos;
 import com.hms.entity.HousekeepingTask;
+import com.hms.security.CheckModuleEntitlement;
 import com.hms.security.UserPrincipal;
 import com.hms.service.HousekeepingTaskService;
 import jakarta.validation.Valid;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/hotels/{hotelId}/housekeeping")
+@CheckModuleEntitlement("HOUSEKEEPING")
 public class HousekeepingController {
 
     private final HousekeepingTaskService housekeepingTaskService;

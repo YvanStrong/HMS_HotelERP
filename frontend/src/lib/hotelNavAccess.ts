@@ -34,6 +34,7 @@ export type HotelNavKey =
   | "channels"
   | "auditLogs"
   | "serviceRequests"
+  | "subscription"
   | "settings";
 
 const REALTIME_DASHBOARD_ROLES = [
@@ -243,6 +244,8 @@ export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): bool
       return canReports(user);
     case "serviceRequests":
       return canRooms(user);
+    case "subscription":
+      return canSettings(user) || canAccounting(user);
     case "settings":
       return canSettings(user);
     default:
@@ -281,6 +284,7 @@ export function navHint(key: HotelNavKey): string {
     channels: "OTA channel manager for Booking.com, Expedia, and iCal sync.",
     auditLogs: "Durable, queryable hotel-level security and operation audit trail.",
     serviceRequests: "Guest in-stay requests for housekeeping, room service, or maintenance.",
+    subscription: "SaaS subscription billing, next renewal date, and platform payment instructions.",
     settings: "Hotel settings: hotel admin or manager.",
   };
   return hints[key];

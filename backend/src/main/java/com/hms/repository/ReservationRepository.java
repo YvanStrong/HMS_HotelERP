@@ -17,6 +17,15 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 
     long countByHotel_Id(UUID hotelId);
 
+    @Query(
+            """
+            select count(r) from Reservation r
+            where r.hotel.id = :hotelId
+            and r.status in ('CONFIRMED','CHECKED_IN')
+            and r.checkOutDate >= current_date
+            """)
+    long countFutureByHotelId(@Param("hotelId") UUID hotelId);
+
     List<Reservation> findByHotel_Id(UUID hotelId);
 
     Optional<Reservation> findFirstByGuest_IdAndHotel_IdOrderByCheckInDateDesc(UUID guestId, UUID hotelId);
@@ -78,6 +87,18 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
     long countByGroupBooking_Id(UUID groupBookingId);
 
     List<Reservation> findByHotel_IdAndStatusIn(UUID hotelId, List<ReservationStatus> statuses);
+
+    @Query(
+            """
+            select r from Reservation r
+            join fetch r.hotel h
+            left join fetch r.room rm
+            left join fetch rm.roomType
+            where r.status = 'CHECKED_IN'
+            and h.overstayAutoPostEnabled = true
+            and h.overstayPostTiming = 'SCHEDULED_AUTO'
+            """)
+    List<Reservation> findScheduledAutoPostOverstayCandidates();
 
     List<Reservation> findByRoom_IdAndStatusInOrderByCheckInDateDesc(
             UUID roomId, java.util.Collection<ReservationStatus> statuses);
@@ -266,4 +287,30 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
     List<Reservation> findByCheckInDateAndStatus(LocalDate checkInDate, ReservationStatus status);
 
     List<Reservation> findByCheckOutDateAndStatus(LocalDate checkOutDate, ReservationStatus status);
+
+    @Query(
+            """
+            select r from Reservation r
+            join fetch r.guest
+            join fetch r.hotel
+            left join fetch r.room rm
+            left join fetch rm.roomType
+            where r.checkInDate = :checkInDate
+            and r.status = :status
+            """)
+    List<Reservation> findReminderArrivals(
+            @Param("checkInDate") LocalDate checkInDate, @Param("status") ReservationStatus status);
+
+    @Query(
+            """
+            select r from Reservation r
+            join fetch r.guest
+            join fetch r.hotel
+            left join fetch r.room rm
+            left join fetch rm.roomType
+            where r.checkOutDate = :checkOutDate
+            and r.status = :status
+            """)
+    List<Reservation> findReminderDepartures(
+            @Param("checkOutDate") LocalDate checkOutDate, @Param("status") ReservationStatus status);
 }

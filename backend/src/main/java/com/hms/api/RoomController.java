@@ -4,6 +4,7 @@ import com.hms.api.dto.ApiDtos;
 import com.hms.service.ChargeService;
 import com.hms.service.RoomManagementService;
 import com.hms.service.RoomService;
+import com.hms.security.CheckModuleEntitlement;
 import com.hms.security.TenantAccessService;
 import com.hms.security.UserPrincipal;
 import jakarta.validation.Valid;
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/hotels/{hotelId}/rooms")
+@CheckModuleEntitlement("ROOMS")
 public class RoomController {
 
     private final RoomService roomService;

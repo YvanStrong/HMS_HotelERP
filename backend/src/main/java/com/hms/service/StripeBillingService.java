@@ -123,7 +123,7 @@ public class StripeBillingService {
     @Transactional
     public void applySubscriptionPastDue(UUID tenantId) {
         platformTenantRepository.findById(tenantId).ifPresent(t -> {
-            t.setBillingStatus(PlatformBillingStatus.PAST_DUE);
+            t.setBillingStatus(PlatformBillingStatus.EXPIRING_SOON);
             platformTenantRepository.save(t);
         });
     }

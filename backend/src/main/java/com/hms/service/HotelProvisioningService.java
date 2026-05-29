@@ -18,6 +18,7 @@ import com.hms.repository.HousekeepingRestockTaskRepository;
 import com.hms.repository.InventoryCategoryRepository;
 import com.hms.repository.InventoryItemRepository;
 import com.hms.repository.InvoiceRepository;
+import com.hms.repository.PlatformBusinessCategoryRepository;
 import com.hms.repository.PlatformTenantRepository;
 import com.hms.repository.PlatformUsageMetricRepository;
 import com.hms.repository.PurchaseOrderRepository;
@@ -62,6 +63,8 @@ public class HotelProvisioningService {
     private final PlatformUsageMetricRepository platformUsageMetricRepository;
     private final HotelPurgeService hotelPurgeService;
     private final PlatformStaffUserService platformStaffUserService;
+    private final PlatformBusinessCategoryRepository platformBusinessCategoryRepository;
+    private final HotelModuleEntitlementService hotelModuleEntitlementService;
 
     public HotelProvisioningService(
             HotelRepository hotelRepository,
@@ -84,7 +87,9 @@ public class HotelProvisioningService {
             RoomStatusLogRepository roomStatusLogRepository,
             PlatformUsageMetricRepository platformUsageMetricRepository,
             HotelPurgeService hotelPurgeService,
-            PlatformStaffUserService platformStaffUserService) {
+            PlatformStaffUserService platformStaffUserService,
+            PlatformBusinessCategoryRepository platformBusinessCategoryRepository,
+            HotelModuleEntitlementService hotelModuleEntitlementService) {
         this.hotelRepository = hotelRepository;
         this.platformTenantRepository = platformTenantRepository;
         this.roomTypeRepository = roomTypeRepository;
@@ -106,6 +111,8 @@ public class HotelProvisioningService {
         this.platformUsageMetricRepository = platformUsageMetricRepository;
         this.hotelPurgeService = hotelPurgeService;
         this.platformStaffUserService = platformStaffUserService;
+        this.platformBusinessCategoryRepository = platformBusinessCategoryRepository;
+        this.hotelModuleEntitlementService = hotelModuleEntitlementService;
     }
 
     @Transactional
@@ -121,6 +128,8 @@ public class HotelProvisioningService {
         h.setSubscriptionStatus(resolveSubscriptionForCreate(in));
         applyMarketingFieldsFromCreate(h, in);
         hotelRepository.save(h);
+        hotelModuleEntitlementService.applyCategory(
+                h.getId(), in.businessCategoryId() != null ? in.businessCategoryId() : defaultCategoryId(), null);
         ensureDefaultPlatformTenant(h);
         platformTenantRepository
                 .findById(h.getId())
@@ -263,6 +272,9 @@ public class HotelProvisioningService {
         }
 
         hotelRepository.save(h);
+        if (in.businessCategoryId() != null) {
+            hotelModuleEntitlementService.applyCategory(hotelId, in.businessCategoryId(), null);
+        }
 
         platformTenantRepository
                 .findById(hotelId)
@@ -280,6 +292,13 @@ public class HotelProvisioningService {
                 });
 
         return h;
+    }
+
+    private UUID defaultCategoryId() {
+        return platformBusinessCategoryRepository
+                .findByCode("FULL_HOTEL")
+                .orElseThrow(() -> new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "FULL_HOTEL category is missing"))
+                .getId();
     }
 
     @Transactional

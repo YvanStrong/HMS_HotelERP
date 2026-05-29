@@ -3,6 +3,9 @@ package com.hms.api;
 import com.hms.entity.Hotel;
 import com.hms.repository.HotelRepository;
 import com.hms.security.TenantAccessService;
+import com.hms.service.HotelModuleEntitlementService;
+import com.hms.service.PlatformTenantService;
+import com.hms.api.dto.PlatformDtos;
 import com.hms.web.ApiException;
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -22,10 +25,18 @@ public class HotelSettingsController {
 
     private final HotelRepository hotelRepository;
     private final TenantAccessService tenantAccessService;
+    private final HotelModuleEntitlementService hotelModuleEntitlementService;
+    private final PlatformTenantService platformTenantService;
 
-    public HotelSettingsController(HotelRepository hotelRepository, TenantAccessService tenantAccessService) {
+    public HotelSettingsController(
+            HotelRepository hotelRepository,
+            TenantAccessService tenantAccessService,
+            HotelModuleEntitlementService hotelModuleEntitlementService,
+            PlatformTenantService platformTenantService) {
         this.hotelRepository = hotelRepository;
         this.tenantAccessService = tenantAccessService;
+        this.hotelModuleEntitlementService = hotelModuleEntitlementService;
+        this.platformTenantService = platformTenantService;
     }
 
     @GetMapping
@@ -47,6 +58,26 @@ public class HotelSettingsController {
         return toResponse(mustHotel(hotelId));
     }
 
+    @GetMapping("/module-entitlements")
+    @PreAuthorize("isAuthenticated()")
+    public PlatformDtos.ModuleEntitlementsContextResponse moduleEntitlements(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        return new PlatformDtos.ModuleEntitlementsContextResponse(
+                hotelModuleEntitlementService.resolveEnabledModules(hotelId).stream().sorted().toList(),
+                hotelModuleEntitlementService.resolveVisibleDisabledModules(hotelId).stream().sorted().toList());
+    }
+
+    @GetMapping("/subscription-status")
+    @PreAuthorize("isAuthenticated()")
+    public PlatformDtos.TenantSubscriptionStatusResponse subscriptionStatus(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        return platformTenantService.subscriptionStatus(hotelId);
+    }
+
     @PutMapping("/settings")
     @PreAuthorize("hasAnyAuthority('ROLE_HOTEL_ADMIN','ROLE_SUPER_ADMIN')")
     public HotelContextResponse updateSettings(
@@ -55,26 +86,29 @@ public class HotelSettingsController {
             @RequestBody UpdateHotelSettingsRequest body) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         Hotel h = mustHotel(hotelId);
-        h.setName(trimOrNull(body.name()));
-        h.setLogoUrl(trimOrNull(body.logoUrl()));
-        h.setPhone(trimOrNull(body.phone()));
-        h.setEmail(trimOrNull(body.email()));
-        h.setAddress(trimOrNull(body.address()));
-        h.setDefaultCountry(trimOrNull(body.defaultCountry()));
-        h.setDefaultIdType(trimOrNull(body.defaultIdType()));
-        h.setPhoneCountryCode(trimOrNull(body.phoneCountryCode()));
-        h.setInvoicePrefix(trimOrNull(body.invoicePrefix()));
-        h.setTimezone(trimOrNull(body.timezone()));
-        h.setCurrency(trimOrNull(body.currency()));
-        h.setCheckInTime(trimOrNull(body.checkInTime()));
-        h.setCheckOutTime(trimOrNull(body.checkOutTime()));
-        h.setTaxRate(body.taxRate());
+        if (body.name() != null && trimOrNull(body.name()) != null) h.setName(trimOrNull(body.name()));
+        if (body.companyName() != null) h.setCompanyName(trimOrNull(body.companyName()));
+        if (body.logoUrl() != null) h.setLogoUrl(trimOrNull(body.logoUrl()));
+        if (body.imageUrl() != null) h.setImageUrl(trimOrNull(body.imageUrl()));
+        if (body.phone() != null) h.setPhone(trimOrNull(body.phone()));
+        if (body.email() != null) h.setEmail(trimOrNull(body.email()));
+        if (body.address() != null) h.setAddress(trimOrNull(body.address()));
+        if (body.tinNumber() != null) h.setTinNumber(trimOrNull(body.tinNumber()));
+        if (body.defaultCountry() != null) h.setDefaultCountry(trimOrNull(body.defaultCountry()));
+        if (body.defaultIdType() != null) h.setDefaultIdType(trimOrNull(body.defaultIdType()));
+        if (body.phoneCountryCode() != null) h.setPhoneCountryCode(trimOrNull(body.phoneCountryCode()));
+        if (body.invoicePrefix() != null) h.setInvoicePrefix(trimOrNull(body.invoicePrefix()));
+        if (body.timezone() != null) h.setTimezone(trimOrNull(body.timezone()));
+        if (body.currency() != null) h.setCurrency(trimOrNull(body.currency()));
+        if (body.checkInTime() != null) h.setCheckInTime(trimOrNull(body.checkInTime()));
+        if (body.checkOutTime() != null) h.setCheckOutTime(trimOrNull(body.checkOutTime()));
+        if (body.taxRate() != null) h.setTaxRate(body.taxRate());
         return toResponse(hotelRepository.save(h));
     }
 
     private Hotel mustHotel(UUID hotelId) {
         return hotelRepository
-                .findById(hotelId)
+                .findByIdWithBusinessCategory(hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Hotel not found"));
     }
 
@@ -88,44 +122,57 @@ public class HotelSettingsController {
         return new HotelContextResponse(
                 h.getId(),
                 h.getName(),
+                h.getCompanyName(),
                 h.getLogoUrl(),
+                h.getImageUrl(),
                 h.getCurrency(),
                 h.getDefaultCountry(),
                 h.getPhone(),
                 h.getEmail(),
                 h.getAddress(),
+                h.getTinNumber(),
                 h.getTimezone(),
                 h.getCheckInTime(),
                 h.getCheckOutTime(),
                 h.getInvoicePrefix(),
                 h.getDefaultIdType(),
                 h.getPhoneCountryCode(),
-                h.getTaxRate());
+                h.getTaxRate(),
+                h.getBusinessCategory() != null ? h.getBusinessCategory().getId() : null,
+                h.getBusinessCategory() != null ? h.getBusinessCategory().getCode() : null);
     }
 
     public record HotelContextResponse(
             UUID id,
             String name,
+            String companyName,
             String logoUrl,
+            String imageUrl,
             String currency,
             String defaultCountry,
             String phone,
             String email,
             String address,
+            String tinNumber,
             String timezone,
             String checkInTime,
             String checkOutTime,
             String invoicePrefix,
             String defaultIdType,
             String phoneCountryCode,
-            BigDecimal taxRate) {}
+            BigDecimal taxRate,
+            UUID businessCategoryId,
+            String businessCategoryCode) {}
 
     public record UpdateHotelSettingsRequest(
             String name,
+            String companyName,
             String logoUrl,
+            String imageUrl,
             String phone,
             String email,
             String address,
+            String tinNumber,
             String defaultCountry,
             String defaultIdType,
             String phoneCountryCode,
