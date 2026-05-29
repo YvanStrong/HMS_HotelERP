@@ -2,6 +2,7 @@ package com.hms.api;
 
 import com.hms.entity.ServiceRequest;
 import com.hms.service.ServiceRequestService;
+import com.hms.security.CheckModuleEntitlement;
 import java.util.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/v1/hotels/{hotelId}/service-requests")
+@CheckModuleEntitlement("SERVICE_REQUESTS")
 public class ServiceRequestController {
 
     private final ServiceRequestService service;

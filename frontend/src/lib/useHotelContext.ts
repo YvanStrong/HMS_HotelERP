@@ -7,46 +7,72 @@ import { loadAuthUser } from "@/lib/auth";
 export type HotelContextData = {
   hotelId: string;
   name: string;
+  companyName: string;
   logoUrl: string | null;
+  imageUrl: string | null;
   currency: string;
   country: string;
   phone: string;
   email: string;
   address: string;
+  tinNumber: string;
   timezone: string;
   checkInTime: string;
   checkOutTime: string;
   invoicePrefix: string;
+  businessCategoryId: string | null;
+  businessCategoryCode: string | null;
+  enabledModules: string[];
+  visibleDisabledModules: string[];
 };
 
 type HotelContextResponse = {
   id: string;
   name: string;
+  companyName?: string | null;
   logoUrl?: string | null;
+  imageUrl?: string | null;
   currency?: string | null;
   defaultCountry?: string | null;
   phone?: string | null;
   email?: string | null;
   address?: string | null;
+  tinNumber?: string | null;
   timezone?: string | null;
   checkInTime?: string | null;
   checkOutTime?: string | null;
   invoicePrefix?: string | null;
+  businessCategoryId?: string | null;
+  businessCategoryCode?: string | null;
 };
+
+type ModuleEntitlementsResponse = {
+  enabledModules: string[];
+  visibleDisabledModules?: string[];
+};
+
+const CORE_MODULES = new Set(["DASHBOARD", "REPORTS", "ACCOUNTING", "INVOICES", "INVENTORY", "STAFF", "AUDIT_LOGS", "SETTINGS"]);
 
 const EMPTY_CONTEXT: HotelContextData = {
   hotelId: "",
   name: "HMS",
+  companyName: "",
   logoUrl: null,
+  imageUrl: null,
   currency: "USD",
   country: "",
   phone: "",
   email: "",
   address: "",
+  tinNumber: "",
   timezone: "UTC",
   checkInTime: "14:00",
   checkOutTime: "12:00",
   invoicePrefix: "HMS",
+  businessCategoryId: null,
+  businessCategoryCode: null,
+  enabledModules: Array.from(CORE_MODULES),
+  visibleDisabledModules: [],
 };
 
 export function useHotelContext(explicitHotelId?: string) {
@@ -61,29 +87,56 @@ export function useHotelContext(explicitHotelId?: string) {
     refetchOnWindowFocus: false,
     queryFn: () => apiFetch<HotelContextResponse>(`/api/v1/hotels/${hotelId}`),
   });
+  const modulesQuery = useQuery({
+    queryKey: ["hotel-modules", hotelId],
+    enabled: Boolean(hotelId),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    queryFn: () => apiFetch<ModuleEntitlementsResponse>(`/api/v1/hotels/${hotelId}/module-entitlements`),
+  });
 
   const raw = query.data;
   const hotel: HotelContextData = raw
     ? {
         hotelId: raw.id,
         name: raw.name,
+        companyName: raw.companyName ?? raw.name,
         logoUrl: raw.logoUrl ?? null,
+        imageUrl: raw.imageUrl ?? null,
         currency: raw.currency ?? "USD",
         country: raw.defaultCountry ?? "",
         phone: raw.phone ?? "",
         email: raw.email ?? "",
         address: raw.address ?? "",
+        tinNumber: raw.tinNumber ?? "",
         timezone: raw.timezone ?? "UTC",
         checkInTime: raw.checkInTime ?? "14:00",
         checkOutTime: raw.checkOutTime ?? "12:00",
         invoicePrefix: raw.invoicePrefix ?? "HMS",
+        businessCategoryId: raw.businessCategoryId ?? null,
+        businessCategoryCode: raw.businessCategoryCode ?? null,
+        enabledModules: modulesQuery.data?.enabledModules ?? Array.from(CORE_MODULES),
+        visibleDisabledModules: modulesQuery.data?.visibleDisabledModules ?? [],
       }
     : { ...EMPTY_CONTEXT, hotelId };
+
+  function hasModule(key: string): boolean {
+    const normalized = key.trim().toUpperCase();
+    return CORE_MODULES.has(normalized) || hotel.enabledModules.includes(normalized);
+  }
+
+  function isModuleVisibleWhenDisabled(key: string): boolean {
+    const normalized = key.trim().toUpperCase();
+    return hotel.visibleDisabledModules.includes(normalized);
+  }
 
   return {
     ...query,
     hotel,
-    loading: query.isLoading,
+    hasModule,
+    isModuleVisibleWhenDisabled,
+    loading: query.isLoading || modulesQuery.isLoading,
   };
 }
 

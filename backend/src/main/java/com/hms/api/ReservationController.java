@@ -4,6 +4,7 @@ import com.hms.api.dto.ApiDtos;
 import com.hms.api.dto.GuestDtos;
 import com.hms.service.InvoiceService;
 import com.hms.service.ReservationService;
+import com.hms.security.CheckModuleEntitlement;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/hotels/{hotelId}/reservations")
+@CheckModuleEntitlement("PMS")
 public class ReservationController {
 
     private final ReservationService reservationService;
@@ -83,6 +85,17 @@ public class ReservationController {
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
             @RequestBody(required = false) ApiDtos.CancelReservationRequest request) {
         return reservationService.cancelReservation(hotelId, hotelHeader, reservationId, request);
+    }
+
+    @PostMapping("/{reservationId}/modify")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST')")
+    public ApiDtos.ModifyReservationResponse modifyReservation(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID reservationId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody ApiDtos.ModifyReservationRequest request) {
+        return reservationService.modifyReservation(hotelId, hotelHeader, reservationId, request);
     }
 
     @PostMapping("/{reservationId}/apply-guest-preferences")
@@ -164,6 +177,16 @@ public class ReservationController {
             @PathVariable UUID reservationId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         return reservationService.getStaffReservationDetail(hotelId, hotelHeader, reservationId);
+    }
+
+    @GetMapping("/{reservationId}/overstay-status")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
+    public ApiDtos.OverstayStatusResponse overstayStatus(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID reservationId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return reservationService.overstayStatus(hotelId, hotelHeader, reservationId);
     }
 
     @GetMapping("/{reservationId}/folio")

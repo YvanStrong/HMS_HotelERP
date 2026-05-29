@@ -136,6 +136,21 @@ public class Reservation {
     @Column(name = "deposit_payment_method", length = 30)
     private String depositPaymentMethod;
 
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
+    @Column(name = "cancellation_reason", columnDefinition = "TEXT")
+    private String cancellationReason;
+
+    @Column(name = "cancellation_penalty", precision = 14, scale = 2)
+    private BigDecimal cancellationPenalty;
+
+    @Column(name = "cancellation_refundable_amount", precision = 14, scale = 2)
+    private BigDecimal cancellationRefundableAmount;
+
+    @Column(name = "cancellation_policy_summary", columnDefinition = "TEXT")
+    private String cancellationPolicySummary;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

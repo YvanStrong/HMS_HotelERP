@@ -426,7 +426,31 @@ public final class ApiDtos {
 
     public record CancelReservationRequest(String reason) {}
 
-    public record CancelReservationResponse(UUID reservationId, String status, String message) {}
+    public record CancelReservationResponse(
+            UUID reservationId,
+            String status,
+            String message,
+            BigDecimal cancellationPenalty,
+            BigDecimal refundableAmount,
+            String policySummary) {}
+
+    public record ModifyReservationRequest(
+            LocalDate checkInDate,
+            LocalDate checkOutDate,
+            UUID roomTypeId,
+            UUID preferredRoomId,
+            BigDecimal rebookingFee,
+            String reason) {}
+
+    public record ModifyReservationResponse(
+            UUID reservationId,
+            String status,
+            LocalDate checkInDate,
+            LocalDate checkOutDate,
+            RoomAssign room,
+            ReservationPricingSummary pricing,
+            BigDecimal rebookingFee,
+            String message) {}
 
     /** Staff: move a CONFIRMED reservation from its current physical room to another same-type vacant-ready room. */
     public record ReservationReassignRoomRequest(
@@ -508,7 +532,56 @@ public final class ApiDtos {
     public record NoShowResponse(UUID reservationId, String status, String message) {}
 
     public record HotelFeePolicy(
-            BigDecimal earlyCheckinFee, BigDecimal lateCheckoutFee, BigDecimal noShowDefaultFee, String currency) {}
+            BigDecimal earlyCheckinFee,
+            BigDecimal lateCheckoutFee,
+            BigDecimal noShowDefaultFee,
+            String currency,
+            Boolean overstayAutoPostEnabled,
+            Integer overstayGraceMinutes,
+            BigDecimal overstayHourlyPercent,
+            BigDecimal overstayHalfDayCapPercent,
+            Integer overstayFullNightAfterHours,
+            BigDecimal overstayMaxDailyPercent,
+            Boolean overstayApplyTax,
+            String overstayPostTiming) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record HotelFeePolicyUpdateRequest(
+            BigDecimal earlyCheckinFee,
+            BigDecimal lateCheckoutFee,
+            BigDecimal noShowDefaultFee,
+            Boolean overstayAutoPostEnabled,
+            Integer overstayGraceMinutes,
+            BigDecimal overstayHourlyPercent,
+            BigDecimal overstayHalfDayCapPercent,
+            Integer overstayFullNightAfterHours,
+            BigDecimal overstayMaxDailyPercent,
+            Boolean overstayApplyTax,
+            String overstayPostTiming) {}
+
+    public record OverstayStatusResponse(
+            boolean enabled,
+            String postTiming,
+            Integer graceMinutes,
+            BigDecimal hourlyPercent,
+            BigDecimal halfDayCapPercent,
+            Integer fullNightAfterHours,
+            BigDecimal maxDailyPercent,
+            Boolean applyTax,
+            Instant scheduledCheckoutAt,
+            Instant graceEndsAt,
+            Instant evaluatedAt,
+            boolean inGrace,
+            boolean overdue,
+            long minutesLate,
+            long billableHours,
+            boolean fullNight,
+            BigDecimal nightlyRate,
+            BigDecimal projectedCharge,
+            BigDecimal alreadyPosted,
+            BigDecimal amountToPost,
+            String currency,
+            String message) {}
 
     public record HousekeepingPatchRequest(
             String status,
@@ -728,6 +801,7 @@ public final class ApiDtos {
             String logoUrl,
             Integer starRating,
             Boolean isActive,
+            UUID businessCategoryId,
             /** When set with {@code adminPassword}, a hotel-scoped admin user is created in the same transaction. */
             String adminUsername,
             String adminPassword) {}
@@ -745,7 +819,8 @@ public final class ApiDtos {
             String imageUrl,
             String logoUrl,
             Integer starRating,
-            Boolean isActive) {}
+            Boolean isActive,
+            UUID businessCategoryId) {}
 
     public record BootstrapUserInput(@NotBlank String username, @NotBlank String password, String email) {}
 

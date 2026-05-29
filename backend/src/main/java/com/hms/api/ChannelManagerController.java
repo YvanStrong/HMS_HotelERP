@@ -4,6 +4,7 @@ import com.hms.entity.*;
 import com.hms.repository.HotelRepository;
 import com.hms.repository.RoomTypeRepository;
 import com.hms.service.ChannelManagerService;
+import com.hms.security.CheckModuleEntitlement;
 import com.hms.web.ApiException;
 import java.math.BigDecimal;
 import java.util.*;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/v1/hotels/{hotelId}/channels")
+@CheckModuleEntitlement("REVENUE_CHANNELS")
 public class ChannelManagerController {
 
     private final ChannelManagerService channelService;

@@ -1,11 +1,16 @@
 package com.hms.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hms.service.TenantSubscriptionGuard;
+import com.hms.web.ApiErrorResponse;
+import com.hms.web.SubscriptionAccessException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -18,9 +23,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     public static final String IMPERSONATE_HEADER = "X-Impersonate-Token";
 
     private final JwtService jwtService;
+    private final TenantSubscriptionGuard tenantSubscriptionGuard;
+    private final ObjectMapper objectMapper;
 
-    public JwtAuthenticationFilter(JwtService jwtService) {
+    public JwtAuthenticationFilter(
+            JwtService jwtService, TenantSubscriptionGuard tenantSubscriptionGuard, ObjectMapper objectMapper) {
         this.jwtService = jwtService;
+        this.tenantSubscriptionGuard = tenantSubscriptionGuard;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -31,6 +41,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String impersonateHeader = request.getHeader(IMPERSONATE_HEADER);
         UserPrincipal principal = JwtWebAuthSupport.resolvePrincipal(jwtService, header, impersonateHeader);
         if (principal != null) {
+            try {
+                tenantSubscriptionGuard.assertRequestAllowed(principal);
+            } catch (SubscriptionAccessException ex) {
+                SecurityContextHolder.clearContext();
+                response.setStatus(ex.getStatus().value());
+                response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                objectMapper.writeValue(
+                        response.getOutputStream(),
+                        ApiErrorResponse.of(ex.getErrorCode(), ex.getReason(), ex.getMessage(), request.getRequestURI()));
+                return;
+            }
             var auth = new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
             auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(auth);

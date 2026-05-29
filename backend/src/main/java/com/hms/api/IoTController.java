@@ -3,6 +3,7 @@ package com.hms.api;
 import com.hms.entity.*;
 import com.hms.repository.HotelRepository;
 import com.hms.repository.RoomRepository;
+import com.hms.security.CheckModuleEntitlement;
 import com.hms.service.IoTDeviceService;
 import com.hms.web.ApiException;
 import java.math.BigDecimal;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/v1/hotels/{hotelId}/iot")
+@CheckModuleEntitlement("IOT_SMART_ROOM")
 public class IoTController {
 
     private final IoTDeviceService iotService;

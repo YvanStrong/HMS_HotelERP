@@ -1,6 +1,7 @@
 package com.hms.api;
 
 import com.hms.api.dto.SelfOrderDtos;
+import com.hms.security.CheckModuleEntitlement;
 import com.hms.service.SelfOrderService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/hotels/{hotelId}/inventory/self-service-orders")
+@CheckModuleEntitlement("SELF_ORDERS")
 public class SelfServiceOrderStaffController {
 
     private final SelfOrderService selfOrderService;

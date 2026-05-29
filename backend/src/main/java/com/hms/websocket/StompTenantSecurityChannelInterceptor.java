@@ -6,6 +6,7 @@ import com.hms.security.JwtAuthenticationFilter;
 import com.hms.security.JwtService;
 import com.hms.security.JwtWebAuthSupport;
 import com.hms.security.UserPrincipal;
+import com.hms.service.TenantSubscriptionGuard;
 import java.security.Principal;
 import java.util.List;
 import java.util.Map;
@@ -30,10 +31,15 @@ public class StompTenantSecurityChannelInterceptor implements ChannelInterceptor
 
     private final JwtService jwtService;
     private final ReservationRepository reservationRepository;
+    private final TenantSubscriptionGuard tenantSubscriptionGuard;
 
-    public StompTenantSecurityChannelInterceptor(JwtService jwtService, ReservationRepository reservationRepository) {
+    public StompTenantSecurityChannelInterceptor(
+            JwtService jwtService,
+            ReservationRepository reservationRepository,
+            TenantSubscriptionGuard tenantSubscriptionGuard) {
         this.jwtService = jwtService;
         this.reservationRepository = reservationRepository;
+        this.tenantSubscriptionGuard = tenantSubscriptionGuard;
     }
 
     @Override
@@ -51,6 +57,7 @@ public class StompTenantSecurityChannelInterceptor implements ChannelInterceptor
             if (user == null) {
                 throw new AccessDeniedException("Unauthorized STOMP CONNECT: missing or invalid token");
             }
+            tenantSubscriptionGuard.assertRequestAllowed(user);
             accessor.setUser(user);
             return message;
         }

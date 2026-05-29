@@ -8,6 +8,7 @@ interface ImageUploadProps {
   label?: string;
   placeholder?: string;
   className?: string;
+  previewClassName?: string;
 }
 
 /** True when the string is safe to pass to an {@code <img src>} (avoids Next/Image parse errors while typing). */
@@ -33,6 +34,7 @@ export function ImageUpload({
   label = "Image",
   placeholder = "Enter image URL or upload",
   className = "",
+  previewClassName = "h-48",
 }: ImageUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [previewError, setPreviewError] = useState(false);
@@ -105,7 +107,7 @@ export function ImageUpload({
       <label className="block text-sm font-medium text-foreground">{label}</label>
 
       {showPreview && (
-        <div className="relative w-full h-48 rounded-xl overflow-hidden border border-border bg-muted/40">
+        <div className={`relative w-full ${previewClassName} rounded-xl overflow-hidden border border-border bg-muted/40`}>
           {/* Use native img so partial URLs while typing never hit next/image's strict src parser. */}
           <img
             src={value!.trim()}

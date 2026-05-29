@@ -5,6 +5,7 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
 ## Module 1 (Dashboard) - Done
 
 ### What was implemented
+
 - Added a new backend executive dashboard endpoint:
   - `GET /api/v1/hotels/{hotelId}/reports/executive-dashboard`
 - Added dashboard response contracts for:
@@ -31,6 +32,7 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
   - KPI rows and arrivals/departures/activity tables
 
 ### Files changed in Module 1
+
 - `backend/src/main/java/com/hms/api/ReportController.java`
 - `backend/src/main/java/com/hms/service/ReportService.java`
 - `backend/src/main/java/com/hms/api/dto/ReportDtos.java`
@@ -41,12 +43,14 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
 - `frontend/src/app/hotels/[hotelId]/dashboard/page.tsx`
 
 ### Verification completed
+
 - `mvn -DskipTests compile` passed.
 - `npm run build` passed (with pre-existing non-blocking warnings elsewhere).
 
 ## Module 2 (Reservations) - Done
 
 ### What was implemented
+
 - Enterprise reservations operations board:
   - KPI counters (total, confirmed, checked-in, arrivals today)
   - date/status/search filters with quick presets
@@ -68,11 +72,13 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
 - UUID exposure reduced in staff-facing reservations workflows by prioritizing booking references and confirmation codes.
 
 ### Files changed in Module 2
+
 - `frontend/src/app/hotels/[hotelId]/reservations/page.tsx`
 - `frontend/src/app/hotels/[hotelId]/reservations/new/page.tsx`
 - `frontend/src/app/hotels/[hotelId]/reservations/[reservationId]/page.tsx`
 
 ## Module 3 (Guests) - Done
+
 - Rebuilt guests index into an operations list page with:
   - manager-friendly columns (guest, contact, booking, status, room, stay)
   - search + status filtering + pagination
@@ -89,10 +95,12 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
 - Replaced placeholder guest-detail experience with operational, data-backed UI.
 
 ### Files changed in Module 3
+
 - `frontend/src/app/hotels/[hotelId]/guests/page.tsx`
 - `frontend/src/app/hotels/[hotelId]/guests/[guestId]/page.tsx`
 
 ## Module 4 (Rooms) - Done
+
 - Completed operational room detail workspace with tabbed sections:
   - Room Info
   - Status History
@@ -107,9 +115,11 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
 - Removed staff-facing raw block UUID exposure from room info display.
 
 ### Files changed in Module 4
+
 - `frontend/src/app/hotels/[hotelId]/rooms/[roomId]/page.tsx`
 
 ## Module 5 (Room Types) - Done
+
 - Added backend room-type lifecycle endpoints:
   - get room type detail
   - update room type
@@ -122,6 +132,7 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
 - Preserved rate override management via the dedicated rates editor page.
 
 ### Files changed in Module 5
+
 - `backend/src/main/java/com/hms/api/dto/ApiDtos.java`
 - `backend/src/main/java/com/hms/service/RoomTypeService.java`
 - `backend/src/main/java/com/hms/api/RoomTypeController.java`
@@ -129,6 +140,7 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
 - `frontend/src/app/hotels/[hotelId]/room-types/[roomTypeId]/page.tsx`
 
 ## Module 6 (Housekeeping) - Done
+
 - Upgraded housekeeping board UX:
   - top KPI summary bar (pending, in progress, completed, inspected, urgent, DND blocked)
   - improved operational framing and visibility controls
@@ -143,9 +155,11 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
 - Preserved existing assignment/start/complete/inspect/skip-DND actions with cleaner workflow structure.
 
 ### Files changed in Module 6
+
 - `frontend/src/app/hotels/[hotelId]/housekeeping/page.tsx`
 
 ## Module 7 (Inventory) - Done
+
 - Rebuilt inventory into a tabbed operational workspace:
   - Stock Levels
   - Purchase Orders
@@ -167,9 +181,11 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
 - Added waste/consumption session log view for operational traceability from the inventory workspace.
 
 ### Files changed in Module 7
+
 - `frontend/src/app/hotels/[hotelId]/inventory/page.tsx`
 
 ## Module 8 (F&B) - Done
+
 - Rebuilt F&B into a tabbed operational workspace:
   - Orders
   - Menu
@@ -190,9 +206,11 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
 - Preserved manager-friendly behavior standards (clear labels, validation, non-blocking error/success banners, no prototype prompt/confirm flows).
 
 ### Files changed in Module 8
+
 - `frontend/src/app/hotels/[hotelId]/fb/page.tsx`
 
 ## Module 9 (Facilities) - Done
+
 - Completed facilities into a true tabbed operational workspace:
   - Operations
   - Settings
@@ -207,9 +225,11 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
 - Kept manager-friendly standards: validation, loading-safe submit states, clear feedback banners, and scalable lists.
 
 ### Files changed in Module 9
+
 - `frontend/src/app/hotels/[hotelId]/facilities/page.tsx`
 
 ## Module 10 (Reports) - Done
+
 - Rebuilt reports workspace into enterprise tabs:
   - Executive
   - Occupancy
@@ -230,11 +250,13 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
   - proper content-disposition/content-type responses for downloads.
 
 ### Files changed in Module 10
+
 - `backend/src/main/java/com/hms/api/ReportController.java`
 - `backend/src/main/java/com/hms/service/ReportService.java`
 - `frontend/src/app/hotels/[hotelId]/reports/page.tsx`
 
 ## Module 11 (Staff) - Done
+
 - Completed full staff lifecycle actions end-to-end:
   - role edit
   - deactivate/reactivate
@@ -256,6 +278,7 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
 - Preserved create-user workflow and role guardrails.
 
 ### Files changed in Module 11
+
 - `backend/src/main/resources/db/migration/V12__app_users_active_flag.sql`
 - `backend/src/main/java/com/hms/entity/AppUser.java`
 - `backend/src/main/java/com/hms/api/dto/ApiDtos.java`
@@ -266,6 +289,7 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
 - `frontend/src/app/hotels/[hotelId]/staff/page.tsx`
 
 ## Cross-Cutting Standards To Apply To Every Module
+
 - Header with title + subtitle + primary action.
 - Skeleton loading states (no spinner-only UX).
 - Empty state with icon/message/action.
@@ -277,21 +301,24 @@ Last updated: 2026-04-30 (security hardening + checklist pass)
 - Success and error toast notifications.
 
 ## Security / platform hardening (pass 2026-04-30) — Done
+
 - **Login lockout (in-memory):** configurable failed-attempt window + temporary lockout on `POST /api/v1/auth/login` (`LoginAttemptService`, properties `hms.auth.login.*`). Returns HTTP 429 with `LOGIN_TEMP_LOCKED` when locked.
-- **Tenant header for super-admin:** `TenantAccessService.assertHotelAccess` now requires **`X-Hotel-ID` matching the URL hotel** for `SUPER_ADMIN` as well, so path hotel IDs cannot be exercised without an explicit header match (aligns with staff clients that derive `X-Hotel-ID` from `/hotels/{hotelId}/...` paths).
+- **Tenant header for super-admin:** `TenantAccessService.assertHotelAccess` now requires `**X-Hotel-ID` matching the URL hotel** for `SUPER_ADMIN` as well, so path hotel IDs cannot be exercised without an explicit header match (aligns with staff clients that derive `X-Hotel-ID` from `/hotels/{hotelId}/...` paths).
 - **Guest folio isolation:** `ReservationService.getFolio` denies `ROLE_GUEST` unless the reservation’s guest profile is linked to the signed-in portal account (`portal_account_id`).
 - **Structured security audit log (SLF4J):** logger `SECURITY_AUDIT` for login outcomes, folio payments / voids, and staff lifecycle actions (`SecurityAuditService` + `AuthController` / `ReservationService` / `HotelStaffUserService`). Ship logs to your SIEM in production.
-- **Production profile:** `application-prod.properties` sets `ddl-auto=validate`, disables OpenAPI/Swagger UI, requires `JWT_SECRET` / `SETUP_TOKEN`, and documents `HMS_CORS_ALLOWED_ORIGIN_PATTERNS`. **`ProductionSecurityGuardrails`** fails startup on unsafe default JWT/setup secrets when `spring.profiles.active=prod`.
+- **Production profile:** `application-prod.properties` sets `ddl-auto=validate`, disables OpenAPI/Swagger UI, requires `JWT_SECRET` / `SETUP_TOKEN`, and documents `HMS_CORS_ALLOWED_ORIGIN_PATTERNS`. `**ProductionSecurityGuardrails`** fails startup on unsafe default JWT/setup secrets when `spring.profiles.active=prod`.
 - **CORS:** `hms.cors.allowed-origin-patterns` (comma-separated) replaces hard-coded localhost-only patterns in `SecurityConfig`.
 
 ### Final checklist (release-oriented)
-- [x] Hotel-scoped APIs: `X-Hotel-ID` vs path hotel enforced for all roles including super-admin.
-- [x] Guest-facing folio: only the owning portal guest can read the folio.
-- [x] Login abuse: basic rate lock on failed password attempts (per identity + client IP).
-- [x] Financial writes: folio payment add/void emit audit events; DB remains source of truth for amounts.
-- [x] Staff security actions: create user, role change, activate/deactivate, password reset audited (no secrets in logs).
-- [x] Prod profile: validate-only DDL, Swagger off, secrets not defaulted in `application-prod.properties`.
-- [ ] **Multi-instance / edge:** replace in-memory login lockout with Redis or WAF rules; add DB-backed hotel audit if long-term retention is required.
+
+- Hotel-scoped APIs: `X-Hotel-ID` vs path hotel enforced for all roles including super-admin.
+- Guest-facing folio: only the owning portal guest can read the folio.
+- Login abuse: basic rate lock on failed password attempts (per identity + client IP).
+- Financial writes: folio payment add/void emit audit events; DB remains source of truth for amounts.
+- Staff security actions: create user, role change, activate/deactivate, password reset audited (no secrets in logs).
+- Prod profile: validate-only DDL, Swagger off, secrets not defaulted in `application-prod.properties`.
+- **Multi-instance / edge:** replace in-memory login lockout with Redis or WAF rules; add DB-backed hotel audit if long-term retention is required.
 
 ## Next execution order
+
 1. Optional: multi-instance rate limiting + durable hotel-level audit table

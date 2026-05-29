@@ -32,6 +32,9 @@ public class Notification {
     @Column(name = "recipient_id", nullable = false)
     private UUID recipientId;
 
+    @Column(name = "recipient_address", length = 255)
+    private String recipientAddress;
+
     @Column(length = 255)
     private String subject;
 
