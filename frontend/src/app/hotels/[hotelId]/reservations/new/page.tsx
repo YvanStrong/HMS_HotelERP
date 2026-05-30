@@ -566,6 +566,7 @@ export default function NewStaffReservationPage() {
     () => avail?.available_room_types.find((x) => x.room_type_id === roomTypeId),
     [avail, roomTypeId],
   );
+  const selectedNightlyRate = selectedAvail ? selectedAvail.total_price / Math.max(1, selectedAvail.nights) : 0;
   const roomTypePriceMap = useMemo(() => {
     const m = new Map<string, { currency: string; nightly: number; total: number }>();
     for (const t of avail?.available_room_types ?? []) {
@@ -644,6 +645,9 @@ export default function NewStaffReservationPage() {
     setDone(null);
     try {
       if (!getToken()) throw new Error("Not signed in.");
+      if (!selectedAvail || selectedNightlyRate <= 0 || selectedAvail.total_price <= 0) {
+        throw new Error("Select an available room type with a positive room price before confirming.");
+      }
       const gid = await ensureGuest();
       const dep = deposit.trim() ? Number(deposit) : 0;
       const body = {
@@ -661,7 +665,7 @@ export default function NewStaffReservationPage() {
           .join(" · ") || null,
         source: bookingSource,
         ratePlan: {
-          nightlyRate: selectedAvail ? selectedAvail.total_price / Math.max(1, selectedAvail.nights) : null,
+          nightlyRate: selectedNightlyRate,
           includesBreakfast: false,
           cancellationPolicy: null,
         },
@@ -1860,7 +1864,7 @@ export default function NewStaffReservationPage() {
                 <button
                   type="button"
                   className="hms-btn-solid"
-                  disabled={submitting || !roomTypeId}
+                  disabled={submitting || !roomTypeId || selectedNightlyRate <= 0}
                   onClick={() => void confirmBooking()}
                 >
                   {submitting ? "Saving…" : "Confirm reservation"}

@@ -33,6 +33,28 @@ type Hotel = {
   isActive: boolean;
 };
 
+type PlatformModuleRow = {
+  moduleKey: string;
+  label: string;
+  description?: string | null;
+  navSection?: string | null;
+  tier: string;
+  locked: boolean;
+  paidAddon: boolean;
+  pricePerMonth?: number | null;
+  enabled?: boolean | null;
+  showWhenDisabled?: boolean | null;
+  billingStatus?: string | null;
+};
+type BusinessCategoryRow = { id: string; code: string; name: string; modules: PlatformModuleRow[] };
+type ModuleEntitlements = {
+  coreModules: PlatformModuleRow[];
+  enabledModules: PlatformModuleRow[];
+  disabledModules: PlatformModuleRow[];
+  availableAddons: PlatformModuleRow[];
+  enabledModuleKeys: string[];
+};
+
 export default function EditHotelPage() {
   const params = useParams();
   const router = useRouter();
@@ -68,6 +90,11 @@ export default function EditHotelPage() {
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [resetError, setResetError] = useState<string | null>(null);
   const [platformSuperAdmin, setPlatformSuperAdmin] = useState(false);
+  const [categories, setCategories] = useState<BusinessCategoryRow[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [modules, setModules] = useState<ModuleEntitlements | null>(null);
+  const [moduleMessage, setModuleMessage] = useState<string | null>(null);
+  const [moduleBusy, setModuleBusy] = useState(false);
 
   useEffect(() => {
     setPlatformSuperAdmin(isSuperAdmin(loadAuthUser()));
@@ -149,6 +176,134 @@ export default function EditHotelPage() {
       cancelled = true;
     };
   }, [hotelId, platformSuperAdmin]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!getToken() || !platformSuperAdmin || !hotelId) return undefined;
+    (async () => {
+      try {
+        const [categoryRows, entitlementRows] = await Promise.all([
+          apiFetch<BusinessCategoryRow[]>("/api/v1/platform/categories", { quiet: true }),
+          apiFetch<ModuleEntitlements>(`/api/v1/platform/hotels/${hotelId}/modules`, { quiet: true }),
+        ]);
+        if (cancelled) return;
+        setCategories(categoryRows);
+        setModules(entitlementRows);
+        const fullHotel = categoryRows.find((row) => row.code === "FULL_HOTEL") ?? categoryRows[0];
+        setSelectedCategoryId(fullHotel?.id ?? "");
+      } catch (e) {
+        if (!cancelled) setModuleMessage(e instanceof Error ? e.message : "Could not load module controls.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hotelId, platformSuperAdmin]);
+
+  async function refreshModules() {
+    const entitlementRows = await apiFetch<ModuleEntitlements>(`/api/v1/platform/hotels/${hotelId}/modules`, { quiet: true });
+    setModules(entitlementRows);
+  }
+
+  async function applyCategoryDefaults() {
+    if (!selectedCategoryId) return;
+    if (!window.confirm("This will reset standard module selections to this category default. Continue?")) return;
+    setModuleBusy(true);
+    setModuleMessage(null);
+    try {
+      const updated = await apiFetch<ModuleEntitlements>(`/api/v1/platform/hotels/${hotelId}/modules/category`, {
+        method: "PUT",
+        body: JSON.stringify({ categoryId: selectedCategoryId }),
+        quiet: true,
+      });
+      setModules(updated);
+      setModuleMessage("Category defaults applied.");
+    } catch (e) {
+      setModuleMessage(e instanceof Error ? e.message : "Could not apply category.");
+    } finally {
+      setModuleBusy(false);
+    }
+  }
+
+  async function toggleModule(module: PlatformModuleRow, enabled: boolean) {
+    if (!enabled && !window.confirm(`Disable ${module.label}? Dependent modules may also be disabled.`)) return;
+    setModuleBusy(true);
+    setModuleMessage(null);
+    try {
+      const result = await apiFetch<{ entitlements: ModuleEntitlements; cascadeDisabled?: string[] }>(
+        `/api/v1/platform/hotels/${hotelId}/modules/${module.moduleKey}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            enabled,
+            showWhenDisabled: enabled ? false : Boolean(module.showWhenDisabled),
+            reason: enabled ? "Enabled by platform admin" : "Disabled by platform admin",
+          }),
+          quiet: true,
+        },
+      );
+      setModules(result.entitlements);
+      setModuleMessage(
+        result.cascadeDisabled?.length
+          ? `Updated. Also disabled: ${result.cascadeDisabled.join(", ")}.`
+          : "Module updated.",
+      );
+    } catch (e) {
+      setModuleMessage(e instanceof Error ? e.message : "Could not update module.");
+    } finally {
+      setModuleBusy(false);
+    }
+  }
+
+  async function toggleSidebarVisibility(module: PlatformModuleRow, showWhenDisabled: boolean) {
+    setModuleBusy(true);
+    setModuleMessage(null);
+    try {
+      const result = await apiFetch<{ entitlements: ModuleEntitlements; cascadeDisabled?: string[] }>(
+        `/api/v1/platform/hotels/${hotelId}/modules/${module.moduleKey}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            enabled: Boolean(module.enabled),
+            showWhenDisabled,
+            reason: showWhenDisabled ? "Show locked module in sidebar" : "Hide disabled module from sidebar",
+          }),
+          quiet: true,
+        },
+      );
+      setModules(result.entitlements);
+      setModuleMessage(showWhenDisabled ? "Disabled module will show as locked in the hotel sidebar." : "Disabled module hidden from hotel sidebar.");
+    } catch (e) {
+      setModuleMessage(e instanceof Error ? e.message : "Could not update sidebar visibility.");
+    } finally {
+      setModuleBusy(false);
+    }
+  }
+
+  async function toggleAddon(module: PlatformModuleRow, activate: boolean) {
+    setModuleBusy(true);
+    setModuleMessage(null);
+    try {
+      if (activate) {
+        await apiFetch(`/api/v1/platform/hotels/${hotelId}/modules/${module.moduleKey}/activate-addon`, {
+          method: "POST",
+          body: JSON.stringify({ billingStatus: "addon" }),
+          quiet: true,
+        });
+      } else {
+        await apiFetch(`/api/v1/platform/hotels/${hotelId}/modules/${module.moduleKey}/addon`, {
+          method: "DELETE",
+          quiet: true,
+        });
+      }
+      await refreshModules();
+      setModuleMessage(activate ? "Add-on activated." : "Add-on deactivated.");
+    } catch (e) {
+      setModuleMessage(e instanceof Error ? e.message : "Could not update add-on.");
+    } finally {
+      setModuleBusy(false);
+    }
+  }
 
   function generatePassword() {
     const chars =
@@ -404,6 +559,134 @@ export default function EditHotelPage() {
             <label htmlFor="isActive" className="text-sm font-medium">Hotel is active and visible to guests</label>
           </div>
         </div>
+
+        {platformSuperAdmin && (
+          <div className="space-y-5 pt-4 border-t">
+            <div>
+              <h2 className="text-lg font-semibold">Functionality &amp; Services</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Control what this tenant can see and use. Core modules stay locked on for every property.
+              </p>
+            </div>
+            {moduleMessage && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                {moduleMessage}
+              </div>
+            )}
+            <div className="grid gap-3 rounded-2xl border border-border bg-background p-4 md:grid-cols-[1fr_auto] md:items-end">
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Business category</label>
+                <select value={selectedCategoryId} onChange={(e) => setSelectedCategoryId(e.target.value)}>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button type="button" className="hms-btn-outline" onClick={applyCategoryDefaults} disabled={moduleBusy || !selectedCategoryId}>
+                Apply Category Defaults
+              </button>
+            </div>
+
+            {modules && (
+              <div className="space-y-5">
+                <div>
+                  <p className="mb-2 text-sm font-bold">Core Modules</p>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {modules.coreModules.map((module) => (
+                      <div key={module.moduleKey} className="rounded-xl border border-border bg-muted/30 p-3 text-sm">
+                        <p className="font-bold">{module.label} <span className="text-xs text-muted-foreground">locked</span></p>
+                        <p className="text-xs text-muted-foreground">{module.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-sm font-bold">Standard Modules</p>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {[...modules.enabledModules, ...modules.disabledModules]
+                      .filter((module) => module.tier === "DEFAULT")
+                      .sort((a, b) => a.label.localeCompare(b.label))
+                      .map((module) => (
+                        <div key={module.moduleKey} className="flex items-start justify-between gap-3 rounded-xl border border-border bg-background p-3 text-sm">
+                          <span>
+                            <span className="block font-bold">{module.label}</span>
+                            <span className="text-xs text-muted-foreground">{module.description}</span>
+                            {!module.enabled && (
+                              <span className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(module.showWhenDisabled)}
+                                  disabled={moduleBusy}
+                                  onChange={(e) => void toggleSidebarVisibility(module, e.target.checked)}
+                                />
+                                <span>Show as locked in hotel sidebar</span>
+                              </span>
+                            )}
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(module.enabled)}
+                            disabled={moduleBusy}
+                            onChange={(e) => void toggleModule(module, e.target.checked)}
+                          />
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-sm font-bold">Add-on Services</p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {[...modules.enabledModules, ...modules.availableAddons]
+                      .filter((module) => module.tier === "ADDON")
+                      .sort((a, b) => a.label.localeCompare(b.label))
+                      .map((module) => {
+                        const active = Boolean(module.enabled);
+                        return (
+                          <div key={module.moduleKey} className="rounded-xl border border-border bg-background p-4 text-sm">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-bold">{module.label}</p>
+                                <p className="text-xs text-muted-foreground">{module.description}</p>
+                              </div>
+                              <span className={`rounded-full px-2 py-1 text-xs font-bold ${active ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>
+                                {active ? (module.billingStatus || "active").toUpperCase() : "INACTIVE"}
+                              </span>
+                            </div>
+                            <p className="mt-3 text-xs font-semibold text-muted-foreground">
+                              {module.pricePerMonth ? `$${module.pricePerMonth}/month` : "Custom pricing"}
+                            </p>
+                            {!active && (
+                              <label className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(module.showWhenDisabled)}
+                                  disabled={moduleBusy}
+                                  onChange={(e) => void toggleSidebarVisibility(module, e.target.checked)}
+                                />
+                                Show as locked in hotel sidebar
+                              </label>
+                            )}
+                            <button
+                              type="button"
+                              className="hms-btn-outline mt-3 text-sm"
+                              disabled={moduleBusy}
+                              onClick={() => void toggleAddon(module, !active)}
+                            >
+                              {active ? "Deactivate" : "Activate Add-on"}
+                            </button>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Contact Info */}
         <div className="space-y-4 pt-4 border-t">

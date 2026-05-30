@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, getToken } from "@/lib/api";
 import { ImageUpload } from "@/components/ImageUpload";
 
@@ -33,6 +33,16 @@ function defaultAdminUsername(hotelCode: string, hotelName: string): string {
   return slug.length >= 2 ? `${slug}_admin` : "hotel_admin";
 }
 
+type PlatformModuleRow = { moduleKey: string; label: string; tier: string };
+type BusinessCategoryRow = {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  icon?: string | null;
+  modules: PlatformModuleRow[];
+};
+
 export default function CreateHotelPage() {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
@@ -46,6 +56,8 @@ export default function CreateHotelPage() {
   const [logoUrl, setLogoUrl] = useState("");
   const [starRating, setStarRating] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [categories, setCategories] = useState<BusinessCategoryRow[]>([]);
+  const [businessCategoryId, setBusinessCategoryId] = useState("");
 
   const [adminUsername, setAdminUsername] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
@@ -57,6 +69,24 @@ export default function CreateHotelPage() {
   const [credentials, setCredentials] = useState<{ username: string; password: string } | null>(null);
 
   const suggestedUsername = useMemo(() => defaultAdminUsername(code, name), [code, name]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!getToken()) return;
+    apiFetch<BusinessCategoryRow[]>("/api/v1/platform/categories", { quiet: true })
+      .then((rows) => {
+        if (cancelled) return;
+        setCategories(rows);
+        const fallback = rows.find((row) => row.code === "FULL_HOTEL") ?? rows[0];
+        setBusinessCategoryId((prev) => prev || fallback?.id || "");
+      })
+      .catch(() => {
+        if (!cancelled) setCategories([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fillSuggestedUsername = useCallback(() => {
     setAdminUsername(suggestedUsername);
@@ -104,6 +134,7 @@ export default function CreateHotelPage() {
         logoUrl: logoUrl || null,
         starRating: starRating ? parseInt(starRating, 10) : null,
         isActive,
+        businessCategoryId: businessCategoryId || null,
         adminUsername: u,
         adminPassword: p,
       };
@@ -209,6 +240,41 @@ export default function CreateHotelPage() {
       )}
 
       <form onSubmit={handleSubmit} className="bg-card rounded-xl border border-border/60 p-6 shadow-soft space-y-6">
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold">Business Type</h2>
+          <p className="text-sm text-muted-foreground">
+            Choose the category that best matches this tenant. Platform can still enable or disable modules later.
+          </p>
+          <div className="grid gap-3 md:grid-cols-2">
+            {categories.map((category) => {
+              const selected = businessCategoryId === category.id;
+              return (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => setBusinessCategoryId(category.id)}
+                  className={`rounded-2xl border p-4 text-left transition ${
+                    selected ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-border bg-background hover:bg-muted/40"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-bold text-foreground">{category.name}</p>
+                      <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">{category.code}</p>
+                    </div>
+                    {selected && <span className="rounded-full bg-primary px-2 py-1 text-xs font-bold text-primary-foreground">Selected</span>}
+                  </div>
+                  {category.description && <p className="mt-2 text-sm text-muted-foreground">{category.description}</p>}
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Includes: {category.modules.map((module) => module.label).slice(0, 6).join(", ")}
+                    {category.modules.length > 6 ? "..." : ""}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="space-y-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <svg className="w-5 h-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

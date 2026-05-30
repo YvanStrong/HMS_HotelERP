@@ -14,6 +14,14 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiErrorResponse> handleApi(ApiException ex, HttpServletRequest req) {
+        if (ex instanceof SubscriptionAccessException subscription) {
+            return ResponseEntity.status(subscription.getStatus())
+                    .body(ApiErrorResponse.of(
+                            subscription.getErrorCode(),
+                            subscription.getReason(),
+                            subscription.getMessage(),
+                            req.getRequestURI()));
+        }
         return ResponseEntity.status(ex.getStatus())
                 .body(ApiErrorResponse.of(ex.getErrorCode(), ex.getMessage(), req.getRequestURI()));
     }

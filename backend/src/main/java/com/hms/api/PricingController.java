@@ -3,6 +3,7 @@ package com.hms.api;
 import com.hms.entity.PricingRule;
 import com.hms.entity.Promotion;
 import com.hms.repository.HotelRepository;
+import com.hms.security.CheckModuleEntitlement;
 import com.hms.service.DynamicPricingService;
 import com.hms.web.ApiException;
 import java.math.BigDecimal;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/v1/hotels/{hotelId}/pricing")
+@CheckModuleEntitlement("PRICING")
 public class PricingController {
 
     private final DynamicPricingService pricingService;

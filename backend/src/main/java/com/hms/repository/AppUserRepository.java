@@ -20,6 +20,9 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
     @Query("select u from AppUser u left join fetch u.hotel where lower(u.email) = lower(:email)")
     Optional<AppUser> findByEmailIgnoreCase(@Param("email") String email);
 
+    @Query("select u from AppUser u left join fetch u.hotel where u.id = :id")
+    Optional<AppUser> findByIdWithHotel(@Param("id") UUID id);
+
     @Query("select u from AppUser u where u.hotel.id = :hotelId and u.role in :roles")
     List<AppUser> findByHotel_IdAndRoleIn(@Param("hotelId") UUID hotelId, @Param("roles") Collection<Role> roles);
 

@@ -16,6 +16,15 @@ public interface RoomChargeRepository extends JpaRepository<RoomCharge, UUID> {
 
     List<RoomCharge> findByReservation_IdAndChargeType(UUID reservationId, ChargeType chargeType);
 
+    @Query(
+            """
+            select c from RoomCharge c
+            where c.chargeType = :chargeType
+            and (c.reservation.id = :reservationId or c.originatingReservation.id = :reservationId)
+            """)
+    List<RoomCharge> findByReservationOrOriginatingReservationAndChargeType(
+            @Param("reservationId") UUID reservationId, @Param("chargeType") ChargeType chargeType);
+
     @Query("select coalesce(sum(c.amount), 0) from RoomCharge c where c.reservation.id = :rid")
     BigDecimal sumAmountForReservation(@Param("rid") UUID reservationId);
 

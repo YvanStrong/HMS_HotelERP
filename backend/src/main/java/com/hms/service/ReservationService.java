@@ -97,6 +97,7 @@ public class ReservationService {
     private final GuestService guestService;
     private final FolioLedgerService folioLedgerService;
     private final GroupBillingRouter groupBillingRouter;
+    private final OverstayChargeService overstayChargeService;
 
     public ReservationService(
             HotelRepository hotelRepository,
@@ -126,7 +127,8 @@ public class ReservationService {
             GroupBookingRepository groupBookingRepository,
             GuestService guestService,
             FolioLedgerService folioLedgerService,
-            GroupBillingRouter groupBillingRouter) {
+            GroupBillingRouter groupBillingRouter,
+            OverstayChargeService overstayChargeService) {
         this.hotelRepository = hotelRepository;
         this.roomRepository = roomRepository;
         this.roomTypeRepository = roomTypeRepository;
@@ -155,6 +157,7 @@ public class ReservationService {
         this.guestService = guestService;
         this.folioLedgerService = folioLedgerService;
         this.groupBillingRouter = groupBillingRouter;
+        this.overstayChargeService = overstayChargeService;
     }
 
     @Transactional(readOnly = true)
@@ -397,6 +400,12 @@ public class ReservationService {
                             req.checkOutDate(),
                             roomType.getBaseRate());
         }
+        if (nightly == null || nightly.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "ROOM_RATE_REQUIRED",
+                    "Room nightly rate must be greater than zero before creating a reservation.");
+        }
         BigDecimal total = nightly.multiply(BigDecimal.valueOf(nights)).setScale(2, RoundingMode.HALF_UP);
 
         Room room = pickRoom(hotelId, roomType.getId(), req.preferredRoomId(), req.checkInDate(), req.checkOutDate(), guests);
@@ -458,9 +467,8 @@ public class ReservationService {
                 "Reservation confirmed");
 
         Guest g = persisted.getGuest();
-        if (serverAuthoritativePricing) {
-            notificationService.queueBookingConfirmationEmail(persisted);
-        }
+        notificationService.queueBookingConfirmationEmail(persisted);
+        notificationService.queueBookingConfirmationSms(persisted);
 
         return new ApiDtos.CreateReservationResponse(
                 persisted.getId(),
@@ -790,6 +798,14 @@ public class ReservationService {
             LocalDate currentDay = d;
             BigDecimal night = override.orElseGet(() -> 
                 dynamicPricingService.calculateDynamicRate(hotelId, base, currentDay));
+            if ((night == null || night.compareTo(BigDecimal.ZERO) <= 0)
+                    && base != null
+                    && base.compareTo(BigDecimal.ZERO) > 0) {
+                night = base;
+            }
+            if (night == null) {
+                night = BigDecimal.ZERO;
+            }
                 
             sum = sum.add(night);
         }
@@ -1161,6 +1177,8 @@ public class ReservationService {
         if (invoiceRepository.existsByReservation_Id(r.getId())) {
             throw new ApiException(HttpStatus.CONFLICT, "Invoice already generated for this reservation");
         }
+        Instant checkoutTime = b.actualCheckOutTime() != null ? b.actualCheckOutTime() : Instant.now();
+        overstayChargeService.postIfNeeded(r, checkoutTime, staff.getUsername());
         List<RoomCharge> chargesPreview = roomChargeRepository.findByReservation_IdOrderByChargedAtDesc(r.getId());
         ApiDtos.FolioSummary folioBefore = folioLedgerService.toSummary(
                 r, chargesPreview, paymentRepository.findByReservation_IdOrderByProcessedAtDesc(r.getId()));
@@ -1230,24 +1248,23 @@ public class ReservationService {
                             "currency", folioBefore.currency(),
                             "reason", overrideReason));
         }
-        Hotel hotel = r.getHotel();
         if (Boolean.TRUE.equals(b.isLateCheckout())
-                && hotel.getLateCheckoutFee() != null
-                && hotel.getLateCheckoutFee().compareTo(BigDecimal.ZERO) > 0) {
+                && !r.getHotel().isOverstayAutoPostEnabled()
+                && r.getHotel().getLateCheckoutFee() != null
+                && r.getHotel().getLateCheckoutFee().compareTo(BigDecimal.ZERO) > 0) {
             chargeService.postFolioCharge(
                     hotelId,
                     r,
-                    hotel.getLateCheckoutFee(),
+                    r.getHotel().getLateCheckoutFee(),
                     "Late check-out fee",
                     ChargeType.LATE_CHECKOUT,
                     staff.getUsername(),
                     null);
             r.setLateCheckout(true);
-            r.setLateCheckoutFeeApplied(hotel.getLateCheckoutFee());
+            r.setLateCheckoutFeeApplied(r.getHotel().getLateCheckoutFee());
             reservationRepository.save(r);
         }
 
-        Instant checkoutTime = b.actualCheckOutTime() != null ? b.actualCheckOutTime() : Instant.now();
         r.setActualCheckOut(checkoutTime);
         r.setStatus(ReservationStatus.CHECKED_OUT);
         r.setCheckedOutBy(appUserRepository.getReferenceById(staff.getId()));
@@ -1329,6 +1346,15 @@ public class ReservationService {
                         + (r.getGuest().getEmail() != null ? r.getGuest().getEmail() : "guest"));
     }
 
+    @Transactional(readOnly = true)
+    public ApiDtos.OverstayStatusResponse overstayStatus(UUID hotelId, String hotelHeader, UUID reservationId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Reservation r = reservationRepository
+                .findDetailedByIdAndHotel_Id(reservationId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
+        return overstayChargeService.preview(r, Instant.now());
+    }
+
     @Transactional
     public ApiDtos.NoShowResponse markNoShow(UUID hotelId, String hotelHeader, UUID reservationId) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
@@ -1382,6 +1408,270 @@ public class ReservationService {
     }
 
     @Transactional
+    public ApiDtos.ModifyReservationResponse modifyReservation(
+            UUID hotelId, String hotelHeader, UUID reservationId, ApiDtos.ModifyReservationRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (req == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Modification request is required");
+        }
+        Reservation r = reservationRepository
+                .findDetailedByIdAndHotel_Id(reservationId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
+        if (r.getStatus() != ReservationStatus.CONFIRMED && r.getStatus() != ReservationStatus.CHECKED_IN) {
+            throw new ApiException(HttpStatus.CONFLICT, "Only CONFIRMED or CHECKED_IN reservations can be modified");
+        }
+        LocalDate newCheckIn = req.checkInDate() != null ? req.checkInDate() : r.getCheckInDate();
+        LocalDate requestedOut = req.checkOutDate() != null ? req.checkOutDate() : r.getCheckOutDate();
+        LocalDate newCheckOut = bookingDateNormalizer.toStorageCheckOutExclusive(newCheckIn, requestedOut);
+        validateDates(newCheckIn, newCheckOut);
+        if (r.getStatus() == ReservationStatus.CHECKED_IN) {
+            if (!newCheckIn.equals(r.getCheckInDate())) {
+                throw new ApiException(HttpStatus.CONFLICT, "Checked-in reservations can only extend or shorten departure");
+            }
+            if (req.roomTypeId() != null || req.preferredRoomId() != null) {
+                throw new ApiException(HttpStatus.CONFLICT, "Use room reassignment before check-in; checked-in stays keep their room");
+            }
+        }
+        int guests = r.getAdults() + (r.getChildren() != null ? r.getChildren() : 0);
+        UUID targetRoomTypeId = req.roomTypeId() != null
+                ? req.roomTypeId()
+                : r.getRoom().getRoomType().getId();
+        RoomType roomType = roomTypeRepository
+                .findByIdAndHotel_Id(targetRoomTypeId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Room type not found"));
+        if (roomType.getMaxOccupancy() < guests) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Occupancy exceeds target room type capacity");
+        }
+        LocalDate oldCheckOut = r.getCheckOutDate();
+        boolean checkedInExtension = r.getStatus() == ReservationStatus.CHECKED_IN && newCheckOut.isAfter(oldCheckOut);
+        Room targetRoom = resolveRoomForModification(hotelId, r, roomType, req.preferredRoomId(), newCheckIn, newCheckOut, guests);
+        BigDecimal nightly = averageNightlyForStay(hotelId, roomType.getId(), newCheckIn, newCheckOut, roomType.getBaseRate());
+        if (nightly == null || nightly.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "ROOM_RATE_REQUIRED",
+                    "Target stay must have a positive nightly room rate.");
+        }
+        long nights = ChronoUnit.DAYS.between(newCheckIn, newCheckOut);
+        BigDecimal rebookingFee = req.rebookingFee() != null
+                ? req.rebookingFee().max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal extensionChargeAmount = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        if (checkedInExtension) {
+            long addedNights = ChronoUnit.DAYS.between(oldCheckOut, newCheckOut);
+            BigDecimal extensionNightly =
+                    averageNightlyForStay(hotelId, roomType.getId(), oldCheckOut, newCheckOut, roomType.getBaseRate());
+            if (extensionNightly == null || extensionNightly.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new ApiException(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "ROOM_RATE_REQUIRED",
+                        "Extended stay must have a positive nightly room rate.");
+            }
+            extensionChargeAmount =
+                    extensionNightly.multiply(BigDecimal.valueOf(addedNights)).setScale(2, RoundingMode.HALF_UP);
+        }
+        BigDecimal newRoomTotal = checkedInExtension
+                ? moneyOrZero(r.getTotalAmount()).add(rebookingFee).setScale(2, RoundingMode.HALF_UP)
+                : nightly.multiply(BigDecimal.valueOf(nights)).add(rebookingFee).setScale(2, RoundingMode.HALF_UP);
+        Room oldRoom = r.getRoom();
+        if (!oldRoom.getId().equals(targetRoom.getId())) {
+            oldRoom.setCurrentBooking(null);
+            RoomStatus oldStatus = oldRoom.getStatus();
+            CleanlinessStatus oldClean = oldRoom.getCleanliness();
+            oldRoom.setStatus(RoomStatus.VACANT_CLEAN);
+            roomRepository.save(oldRoom);
+            roomStatusAuditService.logTransition(
+                    hotelId, oldRoom, oldStatus, RoomStatus.VACANT_CLEAN, oldClean, oldClean, auditActor(), "Reservation room changed");
+
+            RoomStatus newStatus = targetRoom.getStatus();
+            CleanlinessStatus newClean = targetRoom.getCleanliness();
+            targetRoom.setStatus(r.getStatus() == ReservationStatus.CHECKED_IN ? RoomStatus.OCCUPIED : RoomStatus.RESERVED);
+            targetRoom.setCurrentBooking(r);
+            roomRepository.save(targetRoom);
+            roomStatusAuditService.logTransition(
+                    hotelId,
+                    targetRoom,
+                    newStatus,
+                    targetRoom.getStatus(),
+                    newClean,
+                    newClean,
+                    auditActor(),
+                    "Reservation room changed");
+            r.setRoom(targetRoom);
+        }
+        r.setCheckInDate(newCheckIn);
+        r.setCheckOutDate(newCheckOut);
+        r.setNightlyRate(nightly.setScale(2, RoundingMode.HALF_UP));
+        r.setTotalAmount(newRoomTotal);
+        if (req.reason() != null && !req.reason().isBlank()) {
+            String note = "Modification reason: " + req.reason().trim();
+            r.setSpecialRequests(r.getSpecialRequests() == null || r.getSpecialRequests().isBlank()
+                    ? note
+                    : r.getSpecialRequests() + "\n" + note);
+        }
+        reservationRepository.save(r);
+        if (checkedInExtension && extensionChargeAmount.compareTo(BigDecimal.ZERO) > 0) {
+            ObjectNode metadata = objectMapper.createObjectNode();
+            metadata.put("source", "EXTEND_STAY");
+            metadata.put("from", oldCheckOut.toString());
+            metadata.put("to", newCheckOut.toString());
+            chargeService.postFolioCharge(
+                    hotelId,
+                    r,
+                    extensionChargeAmount,
+                    "Extended stay room night: " + oldCheckOut + " to " + newCheckOut,
+                    ChargeType.ROOM_NIGHT,
+                    tenantAccessService.currentUser().getUsername(),
+                    metadata.toString());
+            reverseOpenOverstayCharges(hotelId, r, oldCheckOut, newCheckOut);
+        }
+        folioLedgerService.refreshGuestFolioSnapshot(r);
+        UserPrincipal actor = tenantAccessService.currentUser();
+        securityAuditService.logEvent(
+                "RESERVATION_MODIFIED",
+                actor.getId(),
+                hotelId,
+                Map.of(
+                        "reservationId", reservationId,
+                        "checkIn", newCheckIn,
+                        "checkOut", newCheckOut,
+                        "roomId", targetRoom.getId(),
+                        "rebookingFee", rebookingFee));
+        return new ApiDtos.ModifyReservationResponse(
+                r.getId(),
+                r.getStatus().name(),
+                r.getCheckInDate(),
+                r.getCheckOutDate(),
+                new ApiDtos.RoomAssign(targetRoom.getId(), targetRoom.getRoomNumber(), targetRoom.getFloor()),
+                buildCreatePricing(r, (int) nights),
+                rebookingFee,
+                checkedInExtension
+                        ? "Stay extended. Extra room-night charge posted instead of overstay charge."
+                        : "Reservation updated. Pricing recalculated"
+                                + (rebookingFee.signum() > 0 ? " with rebooking fee " + rebookingFee + "." : "."));
+    }
+
+    private void reverseOpenOverstayCharges(UUID hotelId, Reservation reservation, LocalDate from, LocalDate to) {
+        List<RoomCharge> lateCharges =
+                roomChargeRepository.findByReservationOrOriginatingReservationAndChargeType(
+                        reservation.getId(), ChargeType.LATE_CHECKOUT);
+        for (RoomCharge charge : lateCharges) {
+            if (charge.getAmount() == null || charge.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            String marker = "REVERSAL_FOR:" + charge.getId();
+            boolean alreadyReversed = lateCharges.stream()
+                    .anyMatch(other -> other.getAmount() != null
+                            && other.getAmount().compareTo(BigDecimal.ZERO) < 0
+                            && other.getMetadataJson() != null
+                            && other.getMetadataJson().contains(marker));
+            if (alreadyReversed) {
+                continue;
+            }
+            String description = charge.getDescription() != null ? charge.getDescription().toLowerCase() : "";
+            String metadata = charge.getMetadataJson() != null ? charge.getMetadataJson().toLowerCase() : "";
+            if (!description.contains("overstay") && !metadata.contains("overstay")) {
+                continue;
+            }
+            ObjectNode reversal = objectMapper.createObjectNode();
+            reversal.put("source", "EXTEND_STAY");
+            reversal.put("reversalFor", marker);
+            reversal.put("from", from.toString());
+            reversal.put("to", to.toString());
+            chargeService.postFolioCharge(
+                    hotelId,
+                    reservation,
+                    charge.getAmount().negate(),
+                    "Overstay charge reversed because stay was extended",
+                    ChargeType.LATE_CHECKOUT,
+                    tenantAccessService.currentUser().getUsername(),
+                    reversal.toString());
+        }
+    }
+
+    private Room resolveRoomForModification(
+            UUID hotelId,
+            Reservation reservation,
+            RoomType targetRoomType,
+            UUID preferredRoomId,
+            LocalDate checkIn,
+            LocalDate checkOut,
+            int guests) {
+        Room current = reservation.getRoom();
+        if (preferredRoomId == null && current.getRoomType().getId().equals(targetRoomType.getId())) {
+            ensureCurrentRoomStillFits(current, checkIn, checkOut, guests, reservation.getId());
+            return current;
+        }
+        UUID targetRoomId = preferredRoomId;
+        if (targetRoomId != null) {
+            Room preferred = roomRepository
+                    .findByIdAndHotel_Id(targetRoomId, hotelId)
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Preferred room not found"));
+            if (!preferred.getRoomType().getId().equals(targetRoomType.getId())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Preferred room does not match target room type");
+            }
+            if (preferred.getId().equals(current.getId())) {
+                ensureCurrentRoomStillFits(preferred, checkIn, checkOut, guests, reservation.getId());
+            } else {
+                ensureRoomAssignable(preferred, checkIn, checkOut, guests, reservation.getId());
+            }
+            return preferred;
+        }
+        List<Room> candidates = findAssignableRooms(hotelId, targetRoomType.getId(), guests, checkIn, checkOut);
+        candidates.sort(Comparator.comparing(Room::getRoomNumber));
+        for (Room room : candidates) {
+            if (reservationRepository.countOverlapping(room.getId(), checkIn, checkOut, reservation.getId()) == 0) {
+                return room;
+            }
+        }
+        throw new ApiException(HttpStatus.CONFLICT, "No available room for the requested reservation change");
+    }
+
+    private void ensureCurrentRoomStillFits(
+            Room room, LocalDate checkIn, LocalDate checkOut, int guests, UUID reservationId) {
+        if (room.getRoomType().getMaxOccupancy() < guests) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Room type capacity insufficient for guest count");
+        }
+        if (room.isOutOfOrder() || room.getStatus() == RoomStatus.OUT_OF_ORDER || room.getStatus() == RoomStatus.BLOCKED) {
+            throw new ApiException(HttpStatus.CONFLICT, "Current room is not available for the modified stay");
+        }
+        if (reservationRepository.countOverlapping(room.getId(), checkIn, checkOut, reservationId) > 0) {
+            throw new ApiException(HttpStatus.CONFLICT, "Current room has another overlapping reservation");
+        }
+        if (roomBlockRepository.countActiveOverlapping(room.getId(), checkIn, checkOut) > 0) {
+            throw new ApiException(HttpStatus.CONFLICT, "Current room has an active block overlapping these dates");
+        }
+    }
+
+    private record CancellationDecision(BigDecimal penalty, BigDecimal refundableAmount, String policySummary) {}
+
+    private CancellationDecision calculateCancellationDecision(Reservation r) {
+        List<Payment> payments = paymentRepository.findByReservation_IdOrderByProcessedAtDesc(r.getId());
+        BigDecimal completedPayments = payments.stream()
+                .filter(p -> "COMPLETED".equalsIgnoreCase(p.getStatus()))
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal deposit = r.isDepositPaid() && r.getDepositAmount() != null ? r.getDepositAmount() : BigDecimal.ZERO;
+        BigDecimal paid = completedPayments.add(deposit).setScale(2, RoundingMode.HALF_UP);
+        Instant freeUntil = r.getCheckInDate().atStartOfDay().toInstant(ZoneOffset.UTC).minus(48, ChronoUnit.HOURS);
+        boolean free = Instant.now().isBefore(freeUntil);
+        BigDecimal firstNightPenalty = r.getNightlyRate() != null ? r.getNightlyRate() : BigDecimal.ZERO;
+        BigDecimal penalty = free ? BigDecimal.ZERO : firstNightPenalty.add(FolioTax.taxOnSubtotal(firstNightPenalty, r.getHotel()));
+        penalty = penalty.min(paid).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal refundable = paid.subtract(penalty).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+        String summary = free
+                ? "Free cancellation: more than 48 hours before arrival."
+                : "Late cancellation: first-night penalty retained; remaining paid amount is refundable.";
+        return new CancellationDecision(penalty, refundable, summary);
+    }
+
+    private static BigDecimal moneyOrZero(BigDecimal amount) {
+        return amount != null
+                ? amount.setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    @Transactional
     public ApiDtos.CancelReservationResponse cancelReservation(
             UUID hotelId, String hotelHeader, UUID reservationId, ApiDtos.CancelReservationRequest req) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
@@ -1390,7 +1680,12 @@ public class ReservationService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
         if (r.getStatus() == ReservationStatus.CANCELLED) {
             return new ApiDtos.CancelReservationResponse(
-                    r.getId(), r.getStatus().name(), "Reservation was already cancelled");
+                    r.getId(),
+                    r.getStatus().name(),
+                    "Reservation was already cancelled",
+                    moneyOrZero(r.getCancellationPenalty()),
+                    moneyOrZero(r.getCancellationRefundableAmount()),
+                    r.getCancellationPolicySummary() != null ? r.getCancellationPolicySummary() : "Already cancelled.");
         }
         if (r.getStatus() == ReservationStatus.NO_SHOW) {
             throw new ApiException(HttpStatus.CONFLICT, "Cannot cancel a no-show reservation");
@@ -1404,7 +1699,16 @@ public class ReservationService {
         if (r.getStatus() != ReservationStatus.CONFIRMED) {
             throw new ApiException(HttpStatus.CONFLICT, "Reservation cannot be cancelled in its current state");
         }
+        CancellationDecision cancellation = calculateCancellationDecision(r);
+        String cancellationReason = req != null && req.reason() != null && !req.reason().isBlank()
+                ? req.reason().trim()
+                : "No reason provided";
         r.setStatus(ReservationStatus.CANCELLED);
+        r.setCancelledAt(Instant.now());
+        r.setCancellationReason(cancellationReason);
+        r.setCancellationPenalty(cancellation.penalty());
+        r.setCancellationRefundableAmount(cancellation.refundableAmount());
+        r.setCancellationPolicySummary(cancellation.policySummary());
         reservationRepository.save(r);
         Room room = r.getRoom();
         if (room != null) {
@@ -1419,10 +1723,22 @@ public class ReservationService {
                     hotelId, room, cx, RoomStatus.VACANT_CLEAN, cc, cc, auditActor(), "Reservation cancelled");
         }
         String msg = "Reservation cancelled";
-        if (req != null && req.reason() != null && !req.reason().isBlank()) {
-            msg = msg + " (" + req.reason().trim() + ")";
-        }
-        return new ApiDtos.CancelReservationResponse(r.getId(), r.getStatus().name(), msg);
+        msg = msg + " (" + cancellationReason + ")";
+        UserPrincipal actor = tenantAccessService.currentUser();
+        Map<String, Object> audit = new LinkedHashMap<>();
+        audit.put("reservationId", reservationId);
+        audit.put("reason", cancellationReason);
+        audit.put("penalty", cancellation.penalty());
+        audit.put("refundableAmount", cancellation.refundableAmount());
+        audit.put("policy", cancellation.policySummary());
+        securityAuditService.logEvent("RESERVATION_CANCELLED", actor.getId(), hotelId, audit);
+        return new ApiDtos.CancelReservationResponse(
+                r.getId(),
+                r.getStatus().name(),
+                msg,
+                cancellation.penalty(),
+                cancellation.refundableAmount(),
+                cancellation.policySummary());
     }
 
     private Invoice buildInvoice(

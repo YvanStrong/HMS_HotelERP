@@ -3,6 +3,7 @@ package com.hms.api;
 import com.hms.api.dto.ApiDtos;
 import com.hms.service.RoomManagementService;
 import com.hms.service.RoomTypeService;
+import com.hms.security.CheckModuleEntitlement;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/hotels/{hotelId}/room-types")
+@CheckModuleEntitlement("ROOM_TYPES")
 public class RoomTypeController {
 
     private final RoomTypeService roomTypeService;

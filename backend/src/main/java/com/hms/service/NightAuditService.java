@@ -12,8 +12,8 @@ import com.hms.repository.ReservationRepository;
 import com.hms.repository.RoomChargeRepository;
 import com.hms.security.TenantAccessService;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -30,6 +30,8 @@ public class NightAuditService {
     private final NightAuditRunRepository nightAuditRunRepository;
     private final ChargeService chargeService;
     private final TenantAccessService tenantAccessService;
+    private final TenantSubscriptionGuard tenantSubscriptionGuard;
+    private final Clock clock;
 
     public NightAuditService(
             HotelRepository hotelRepository,
@@ -37,20 +39,27 @@ public class NightAuditService {
             RoomChargeRepository roomChargeRepository,
             NightAuditRunRepository nightAuditRunRepository,
             ChargeService chargeService,
-            TenantAccessService tenantAccessService) {
+            TenantAccessService tenantAccessService,
+            TenantSubscriptionGuard tenantSubscriptionGuard,
+            Clock clock) {
         this.hotelRepository = hotelRepository;
         this.reservationRepository = reservationRepository;
         this.roomChargeRepository = roomChargeRepository;
         this.nightAuditRunRepository = nightAuditRunRepository;
         this.chargeService = chargeService;
         this.tenantAccessService = tenantAccessService;
+        this.tenantSubscriptionGuard = tenantSubscriptionGuard;
+        this.clock = clock;
     }
 
     @Scheduled(cron = "${hms.night-audit.cron:0 0 23 * * ?}")
     @Transactional
     public void runNightAuditForAllHotels() {
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        LocalDate today = LocalDate.now(clock);
         for (Hotel h : hotelRepository.findAll()) {
+            if (tenantSubscriptionGuard.subscriptionContext(h.getId()).blocked()) {
+                continue;
+            }
             runNightAuditInternal(h.getId(), today, "SYSTEM");
         }
     }
@@ -58,7 +67,7 @@ public class NightAuditService {
     @Transactional
     public ApiDtos.NightAuditRunResponse runNightAuditNow(UUID hotelId, String hotelHeader) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
-        return toDto(runNightAuditInternal(hotelId, LocalDate.now(ZoneOffset.UTC), tenantAccessService.currentUser().getUsername()));
+        return toDto(runNightAuditInternal(hotelId, LocalDate.now(clock), tenantAccessService.currentUser().getUsername()));
     }
 
     @Transactional(readOnly = true)
@@ -88,8 +97,8 @@ public class NightAuditService {
                 if (r.getRoom() == null) {
                     continue;
                 }
-                var fromTs = runDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-                var toTs = runDate.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+                var fromTs = runDate.atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+                var toTs = runDate.plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
                 long exists =
                         roomChargeRepository.countForReservationTypeBetween(r.getId(), ChargeType.ROOM_NIGHT, fromTs, toTs);
                 if (exists > 0) {

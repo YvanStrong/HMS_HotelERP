@@ -2,6 +2,7 @@ package com.hms.api;
 
 import com.hms.api.dto.FacilityDtos;
 import com.hms.service.FacilityService;
+import com.hms.security.CheckModuleEntitlement;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/hotels/{hotelId}/facilities")
+@CheckModuleEntitlement("FACILITIES")
 public class FacilityController {
 
     private final FacilityService facilityService;

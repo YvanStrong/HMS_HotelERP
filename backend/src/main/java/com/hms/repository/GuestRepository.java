@@ -28,6 +28,16 @@ public interface GuestRepository extends JpaRepository<Guest, UUID> {
     @Query(
             """
             select g from Guest g
+            join fetch g.hotel
+            where g.marketingConsent = true
+            and g.email is not null
+            and g.email <> ''
+            """)
+    List<Guest> findMarketingEmailCandidates();
+
+    @Query(
+            """
+            select g from Guest g
             where g.hotel.id = :hotelId
             and (
               :q is null or :q = ''

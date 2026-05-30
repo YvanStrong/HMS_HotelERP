@@ -46,12 +46,25 @@ type ImpersonationResult = {
   usage?: Record<string, unknown>;
 };
 
+type SubscriptionStatus = {
+  billingStatus: string;
+  subscriptionEndDate?: string | null;
+  daysRemaining?: number | null;
+  suspended: boolean;
+  manuallyBlocked: boolean;
+  manualBlockReason?: string | null;
+  lastPaymentConfirmedAt?: string | null;
+};
+
 export default function PlatformHotelDetailPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
 
   const [hotel, setHotel] = useState<Hotel | null>(null);
   const [rooms, setRooms] = useState<Room[] | null>(null);
+  const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
+  const [subscriptionBusy, setSubscriptionBusy] = useState(false);
+  const [renewMonths, setRenewMonths] = useState("1");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -80,6 +93,11 @@ export default function PlatformHotelDetailPage() {
           throw new Error("Hotel not found");
         }
         if (!cancelled) setHotel(hotelData);
+        apiFetch<SubscriptionStatus>(`/api/v1/platform/tenants/${hotelId}/subscription`, { quiet: true })
+          .then((row) => {
+            if (!cancelled) setSubscription(row);
+          })
+          .catch(() => undefined);
         
         // Load hotel rooms using hotel-scoped API
         try {
@@ -124,6 +142,55 @@ export default function PlatformHotelDetailPage() {
       setImpError(e instanceof Error ? e.message : "Impersonation failed");
     } finally {
       setImpLoading(false);
+    }
+  }
+
+  async function refreshSubscription() {
+    const row = await apiFetch<SubscriptionStatus>(`/api/v1/platform/tenants/${hotelId}/subscription`, { quiet: true });
+    setSubscription(row);
+  }
+
+  async function renewSubscription() {
+    setSubscriptionBusy(true);
+    try {
+      await apiFetch(`/api/v1/platform/tenants/${hotelId}/subscription/renew`, {
+        method: "POST",
+        body: JSON.stringify({ months: Number(renewMonths), note: "Manual external payment confirmed by platform admin" }),
+        quiet: true,
+      });
+      await refreshSubscription();
+    } finally {
+      setSubscriptionBusy(false);
+    }
+  }
+
+  async function blockSubscription() {
+    const reason = window.prompt("Reason for blocking this hotel?");
+    if (!reason?.trim()) return;
+    setSubscriptionBusy(true);
+    try {
+      await apiFetch(`/api/v1/platform/tenants/${hotelId}/subscription/block`, {
+        method: "POST",
+        body: JSON.stringify({ reason: reason.trim() }),
+        quiet: true,
+      });
+      await refreshSubscription();
+    } finally {
+      setSubscriptionBusy(false);
+    }
+  }
+
+  async function unblockSubscription() {
+    setSubscriptionBusy(true);
+    try {
+      await apiFetch(`/api/v1/platform/tenants/${hotelId}/subscription/unblock`, {
+        method: "POST",
+        body: JSON.stringify({ note: "Manual unblock by platform admin" }),
+        quiet: true,
+      });
+      await refreshSubscription();
+    } finally {
+      setSubscriptionBusy(false);
     }
   }
 
@@ -319,6 +386,15 @@ export default function PlatformHotelDetailPage() {
               Edit Hotel
             </Link>
             <Link
+              href={`/platform/hotels/${hotelId}/modules`}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 5.25h16.5M3.75 9.75h16.5M3.75 14.25h16.5M3.75 18.75h16.5" />
+              </svg>
+              Manage Functions
+            </Link>
+            <Link
               href={`/hotels/${hotelId}/dashboard`}
               className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-muted text-foreground hover:bg-muted/80 transition-colors"
             >
@@ -350,6 +426,38 @@ export default function PlatformHotelDetailPage() {
           </div>
         </div>
       </div>
+
+      {subscription && (
+        <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">Subscription</p>
+              <h2 className="mt-1 text-xl font-black">Access Control</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Status: <span className="font-bold text-foreground">{subscription.billingStatus}</span> · Expiry: {subscription.subscriptionEndDate ?? "Not set"} · Days left: {subscription.daysRemaining ?? "n/a"}
+              </p>
+              {subscription.manualBlockReason && <p className="mt-2 text-sm text-red-700">{subscription.manualBlockReason}</p>}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select className="w-32 text-sm" value={renewMonths} onChange={(event) => setRenewMonths(event.target.value)}>
+                <option value="1">1 month</option>
+                <option value="3">3 months</option>
+                <option value="6">6 months</option>
+                <option value="12">12 months</option>
+              </select>
+              <button type="button" className="hms-btn-solid text-sm" disabled={subscriptionBusy} onClick={() => void renewSubscription()}>
+                Renew
+              </button>
+              <button type="button" className="hms-btn-outline text-sm" disabled={subscriptionBusy} onClick={() => void blockSubscription()}>
+                Block
+              </button>
+              <button type="button" className="hms-btn-outline text-sm" disabled={subscriptionBusy} onClick={() => void unblockSubscription()}>
+                Unblock
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Rooms */}
       <div className="bg-card rounded-xl border border-border/60 p-5 shadow-soft">

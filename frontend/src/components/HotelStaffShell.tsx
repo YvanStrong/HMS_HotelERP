@@ -9,6 +9,8 @@ import { loadAuthUser } from "@/lib/auth";
 import { canAccessHotelNav, navHint, type HotelNavKey } from "@/lib/hotelNavAccess";
 import { staffAppPath } from "@/lib/staffAppRoutes";
 import { useHotelContext } from "@/lib/useHotelContext";
+import { StaffNotificationBell } from "@/components/StaffNotificationBell";
+import { ModuleDisabledPage } from "@/components/ModuleDisabledPage";
 
 type NavItem = {
   key: HotelNavKey;
@@ -19,6 +21,35 @@ type NavItem = {
   publicTarget?: "guest_self_order" | "guest_kitchen_screen";
 };
 type NavSection = { title: string; items: NavItem[] };
+
+const NAV_MODULES: Partial<Record<HotelNavKey, string>> = {
+  dashboard: "DASHBOARD",
+  reports: "REPORTS",
+  accounting: "ACCOUNTING",
+  guestAnalytics: "GUEST_ANALYTICS",
+  roomTypes: "ROOM_TYPES",
+  rooms: "ROOMS",
+  roomBlocks: "ROOM_BLOCKS",
+  reservations: "PMS",
+  groups: "GROUPS_EVENTS",
+  invoices: "INVOICES",
+  guests: "GUESTS",
+  staff: "STAFF",
+  housekeeping: "HOUSEKEEPING",
+  hkMyTasks: "HK_MY_TASKS",
+  facilities: "FACILITIES",
+  menu: "MENU",
+  pos: "RESTAURANT_POS",
+  selfOrders: "SELF_ORDERS",
+  inventory: "INVENTORY",
+  fb: "FB",
+  pricing: "PRICING",
+  channels: "REVENUE_CHANNELS",
+  iot: "IOT_SMART_ROOM",
+  auditLogs: "AUDIT_LOGS",
+  serviceRequests: "SERVICE_REQUESTS",
+  settings: "SETTINGS",
+};
 
 const NAV_SECTIONS: NavSection[] = [
   {
@@ -85,6 +116,7 @@ const NAV_SECTIONS: NavSection[] = [
       { key: "staff", segment: "staff", label: "Staff", icon: "M17 20h5V9H2v11h5m10 0v-7.5A2.5 2.5 0 0014.5 10h-5A2.5 2.5 0 007 12.5V20m10 0H7m6-13a3 3 0 110-6 3 3 0 010 6z" },
       { key: "iot", segment: "iot", label: "IoT & Smart Room", icon: "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0114 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" },
       { key: "auditLogs", segment: "audit-logs", label: "Audit Logs", icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
+      { key: "subscription", segment: "subscription", label: "Subscription", icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 12v-2m8-4a8 8 0 11-16 0 8 8 0 0116 0z" },
       { key: "settings", segment: "settings", label: "Settings", icon: "M10.325 4.317a1 1 0 011.35-.936l1.07.425a1 1 0 001.07-.188l.829-.83a1 1 0 011.414 0l1.414 1.414a1 1 0 010 1.414l-.83.829a1 1 0 00-.188 1.07l.425 1.07a1 1 0 01-.936 1.35h-1.173a1 1 0 00-.948.684l-.363 1.09a1 1 0 01-.95.684h-2a1 1 0 01-.95-.684l-.363-1.09a1 1 0 00-.948-.684H6.055a1 1 0 01-.936-1.35l.425-1.07a1 1 0 00-.188-1.07l-.83-.829a1 1 0 010-1.414L5.94 2.788a1 1 0 011.414 0l.829.83a1 1 0 001.07.188l1.07-.425zM12 15a3 3 0 100-6 3 3 0 000 6z" },
     ],
   },
@@ -100,7 +132,7 @@ export function HotelStaffShell({
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
-  const { hotel, loading: hotelLoading } = useHotelContext(hotelId);
+  const { hotel, hasModule, isModuleVisibleWhenDisabled, loading: hotelLoading } = useHotelContext(hotelId);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<string[]>([
@@ -127,6 +159,15 @@ export function HotelStaffShell({
     clearToken();
     router.push("/login");
   }
+
+  const currentNavItem = NAV_SECTIONS.flatMap((section) => section.items).find((item) => {
+    const href = staffAppPath(item.segment);
+    return item.segment === "dashboard"
+      ? pathname === "/app" || pathname === "/app/dashboard" || pathname.endsWith("/dashboard")
+      : pathname === href || pathname?.startsWith(`${href}/`) || pathname?.includes(`/${item.segment}`);
+  });
+  const currentModuleKey = currentNavItem ? NAV_MODULES[currentNavItem.key] : null;
+  const currentModuleDisabled = Boolean(currentModuleKey && !hasModule(currentModuleKey));
 
   return (
     <div className="h-screen overflow-hidden bg-gradient-to-br from-[hsl(204,94%,98%)] to-[hsl(38,92%,94%)] flex">
@@ -195,7 +236,13 @@ export function HotelStaffShell({
 
           {/* Navigation */}
           <nav className={`flex-1 overflow-y-auto py-2 space-y-1 scrollbar-thin ${isSidebarCollapsed ? "px-2" : "px-3"}`}>
-            {NAV_SECTIONS.map((section) => (
+            {NAV_SECTIONS.map((section) => {
+              const visibleItems = section.items.filter((item) => {
+                const moduleKey = NAV_MODULES[item.key];
+                return !moduleKey || hasModule(moduleKey) || isModuleVisibleWhenDisabled(moduleKey);
+              });
+              if (visibleItems.length === 0) return null;
+              return (
               <div key={section.title} className="mb-2">
                 {!isSidebarCollapsed && (
                   <button
@@ -216,7 +263,13 @@ export function HotelStaffShell({
                 )}
                 {(isSidebarCollapsed || isSectionExpanded(section.title)) && (
                   <div className="space-y-1 mt-1">
-                    {section.items.map((item) => {
+                    {visibleItems.map((item) => {
+                      const moduleKey = NAV_MODULES[item.key];
+                      const moduleEnabled = !moduleKey || hasModule(moduleKey);
+                      const canSeeDisabled = Boolean(moduleKey && isModuleVisibleWhenDisabled(moduleKey));
+                      if (!moduleEnabled && !canSeeDisabled) {
+                        return null;
+                      }
                       const publicHref =
                         item.publicTarget === "guest_self_order"
                           ? `/book/order/${hotelId}`
@@ -229,7 +282,8 @@ export function HotelStaffShell({
                         : item.segment === "dashboard"
                           ? pathname === "/app" || pathname === "/app/dashboard"
                           : pathname === href || (pathname?.startsWith(`${href}/`) ?? false);
-                      const allowed = canAccessHotelNav(user, item.key);
+                      const roleAllowed = canAccessHotelNav(user, item.key);
+                      const allowed = roleAllowed && moduleEnabled;
                       const className = `flex items-center rounded-lg text-sm font-medium transition-colors ${
                         isSidebarCollapsed ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2"
                       } ${
@@ -237,14 +291,22 @@ export function HotelStaffShell({
                           ? "bg-primary/10 text-primary"
                           : "text-muted-foreground hover:bg-accent hover:text-foreground"
                       } ${!allowed ? "opacity-50 cursor-not-allowed" : ""}`;
-                      const title = allowed ? item.label : `Requires access — ${navHint(item.key)}`;
+                      const title = allowed
+                        ? item.label
+                        : !moduleEnabled
+                          ? "Contact your administrator to enable this feature"
+                          : `Requires access — ${navHint(item.key)}`;
                       const inner = (
                         <>
                           <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
                           </svg>
                           {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
-                          {!allowed && !isSidebarCollapsed && (
+                          {!isSidebarCollapsed && !moduleEnabled ? (
+                            <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                              Locked
+                            </span>
+                          ) : !allowed && !isSidebarCollapsed && (
                             <svg className="w-4 h-4 ml-auto text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                             </svg>
@@ -273,6 +335,13 @@ export function HotelStaffShell({
                           </a>
                         );
                       }
+                      if (!allowed) {
+                        return (
+                          <span key={item.segment} className={className} title={title}>
+                            {inner}
+                          </span>
+                        );
+                      }
                       return (
                         <Link
                           key={item.segment}
@@ -292,7 +361,8 @@ export function HotelStaffShell({
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </nav>
 
           {/* User section */}
@@ -345,12 +415,22 @@ export function HotelStaffShell({
             </svg>
           </button>
           <span className="font-semibold text-foreground">{hotelLoading ? "Loading..." : hotel.name}</span>
-          <div className="w-8" />
+          <StaffNotificationBell hotelId={hotelId} />
+        </header>
+
+        <header className="hidden lg:flex items-center justify-end gap-3 border-b border-border/60 bg-white/70 px-8 py-3 backdrop-blur">
+          <StaffNotificationBell hotelId={hotelId} />
         </header>
 
         {/* Page content */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-          <div className="mx-auto max-w-7xl min-w-0">{children}</div>
+          <div className="mx-auto max-w-7xl min-w-0">
+            {currentModuleDisabled ? (
+              <ModuleDisabledPage module={currentNavItem?.label ?? "This module"} />
+            ) : (
+              children
+            )}
+          </div>
         </main>
       </div>
     </div>
