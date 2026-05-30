@@ -209,12 +209,8 @@ public class InvoiceService {
         return d.regionMatches(true, 0, "tax", 0, 3) || d.regionMatches(true, 0, "vat", 0, 3);
     }
 
-    /** Preserve "VAT" vs "Tax" prefix from the stored line when rewriting the percentage. */
     private static String taxHeadingFromOriginal(String desc) {
-        if (desc != null && desc.trim().regionMatches(true, 0, "vat", 0, 3)) {
-            return "VAT";
-        }
-        return "Tax";
+        return FolioTax.TAX_LABEL;
     }
 
     private static String formatInvoicePercentLabel(BigDecimal pct) {
@@ -280,7 +276,7 @@ public class InvoiceService {
         }
         Totals totals = computeTotals(r, charges);
         BigDecimal taxPct = FolioTax.effectiveRate(r.getHotel()).multiply(new BigDecimal("100")).stripTrailingZeros();
-        lines.add(new ApiDtos.InvoiceLine("Tax (" + taxPct + "%)", totals.taxes()));
+        lines.add(new ApiDtos.InvoiceLine(FolioTax.TAX_LABEL + " (" + taxPct + "%)", totals.taxes()));
         if (totals.depositCredit().signum() > 0) {
             lines.add(new ApiDtos.InvoiceLine("Deposit Paid", totals.depositCredit().negate()));
         }

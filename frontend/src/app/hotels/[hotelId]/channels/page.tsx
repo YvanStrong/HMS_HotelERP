@@ -10,7 +10,10 @@ type ChannelConnection = {
   status: "CONNECTED" | "DISCONNECTED" | "ERROR";
   lastSyncAt: string | null;
   syncErrors: number;
+  config?: string | null;
 };
+
+const BOOKING_DEFAULT_AVAILABILITY_ENDPOINT = "https://supply-xml.booking.com/ota/OTA_HotelAvailNotif";
 
 export default function ChannelsPage() {
   const params = useParams();
@@ -22,6 +25,14 @@ export default function ChannelsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [showBookingSettings, setShowBookingSettings] = useState(false);
+  const [savingBookingSettings, setSavingBookingSettings] = useState(false);
+  const [bookingSettings, setBookingSettings] = useState({
+    hotelCode: "",
+    username: "",
+    password: "",
+    availabilityEndpoint: BOOKING_DEFAULT_AVAILABILITY_ENDPOINT,
+  });
 
   // New mapping form state
   const [showAddMapping, setShowAddMapping] = useState(false);
@@ -97,6 +108,59 @@ export default function ChannelsPage() {
     }
   }
 
+  function parseConnectionConfig(connection?: ChannelConnection) {
+    if (!connection?.config) return {};
+    try {
+      return JSON.parse(connection.config) as Record<string, string>;
+    } catch {
+      return {};
+    }
+  }
+
+  function openBookingSettings() {
+    const config = parseConnectionConfig(bookingConn);
+    setBookingSettings({
+      hotelCode: config.hotelCode || "",
+      username: "",
+      password: "",
+      availabilityEndpoint: config.availabilityEndpoint || BOOKING_DEFAULT_AVAILABILITY_ENDPOINT,
+    });
+    setShowBookingSettings(true);
+  }
+
+  async function saveBookingSettings(e: React.FormEvent) {
+    e.preventDefault();
+    if (!bookingSettings.hotelCode.trim() || !bookingSettings.username.trim() || !bookingSettings.password.trim()) {
+      setError("Booking.com hotel code, username, and password are required.");
+      return;
+    }
+    setSavingBookingSettings(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/channels`, {
+        method: "POST",
+        body: JSON.stringify({
+          channelCode: "BOOKING_COM",
+          status: "CONNECTED",
+          credentials: JSON.stringify({
+            username: bookingSettings.username.trim(),
+            password: bookingSettings.password,
+          }),
+          config: JSON.stringify({
+            hotelCode: bookingSettings.hotelCode.trim(),
+            availabilityEndpoint: bookingSettings.availabilityEndpoint.trim() || BOOKING_DEFAULT_AVAILABILITY_ENDPOINT,
+          }),
+        }),
+      });
+      setShowBookingSettings(false);
+      await loadData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save Booking.com settings");
+    } finally {
+      setSavingBookingSettings(false);
+    }
+  }
+
   async function triggerSync(connId: string) {
     setSyncingId(connId);
     try {
@@ -158,7 +222,7 @@ export default function ChannelsPage() {
             {!bookingConn ? (
               <button 
                 className="w-full hms-btn-solid hms-btn-sm" 
-                onClick={() => connectChannel("BOOKING_COM")}
+                onClick={openBookingSettings}
                 disabled={loading}
               >
                 Connect Booking.com
@@ -166,7 +230,7 @@ export default function ChannelsPage() {
             ) : bookingConn.status === "DISCONNECTED" ? (
               <button 
                 className="w-full hms-btn-solid hms-btn-sm" 
-                onClick={() => connectChannel("BOOKING_COM")}
+                onClick={openBookingSettings}
                 disabled={loading}
               >
                 Activate Connection
@@ -182,7 +246,7 @@ export default function ChannelsPage() {
                 </button>
                 <button 
                   className="hms-btn-outline hms-btn-sm px-2"
-                  onClick={() => alert("Booking.com API Settings: Pointing to Ishyiga-Global XML endpoint.")}
+                  onClick={openBookingSettings}
                 >
                   Settings
                 </button>
@@ -288,6 +352,98 @@ export default function ChannelsPage() {
           </div>
         </div>
       </div>
+
+      {showBookingSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+          <form onSubmit={saveBookingSettings} className="w-full max-w-lg rounded-2xl border border-border bg-white p-5 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold tracking-tight">Booking.com API Settings</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Add your Booking.com Connectivity credentials and property code before syncing.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-lg px-2 py-1 text-muted-foreground hover:bg-muted"
+                onClick={() => setShowBookingSettings(false)}
+                aria-label="Close Booking.com settings"
+              >
+                x
+              </button>
+            </div>
+
+            <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs leading-relaxed text-sky-900">
+              Booking.com requires active Connectivity Partner/API credentials. Availability sync uses HTTPS XML with
+              Basic Auth and UTF-8 XML payloads.
+            </div>
+
+            <div className="grid gap-4">
+              <div>
+                <label htmlFor="booking-hotel-code" className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  Booking.com Hotel / Property Code
+                </label>
+                <input
+                  id="booking-hotel-code"
+                  value={bookingSettings.hotelCode}
+                  onChange={(e) => setBookingSettings((prev) => ({ ...prev, hotelCode: e.target.value }))}
+                  placeholder="e.g. 6314570"
+                  required
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="booking-username" className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                    API Username
+                  </label>
+                  <input
+                    id="booking-username"
+                    value={bookingSettings.username}
+                    onChange={(e) => setBookingSettings((prev) => ({ ...prev, username: e.target.value }))}
+                    placeholder="Booking.com API user"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="booking-password" className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                    API Password
+                  </label>
+                  <input
+                    id="booking-password"
+                    type="password"
+                    value={bookingSettings.password}
+                    onChange={(e) => setBookingSettings((prev) => ({ ...prev, password: e.target.value }))}
+                    placeholder={bookingConn ? "Enter to update" : "Password"}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="booking-endpoint" className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  Availability Endpoint
+                </label>
+                <input
+                  id="booking-endpoint"
+                  value={bookingSettings.availabilityEndpoint}
+                  onChange={(e) => setBookingSettings((prev) => ({ ...prev, availabilityEndpoint: e.target.value }))}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => setShowBookingSettings(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="hms-btn-solid hms-btn-sm" disabled={savingBookingSettings}>
+                {savingBookingSettings ? "Saving..." : "Save & Connect"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <section className="hms-section-card mt-8">
         <div className="flex items-center justify-between mb-4">

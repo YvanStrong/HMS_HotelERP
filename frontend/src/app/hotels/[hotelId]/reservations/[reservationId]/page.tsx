@@ -240,10 +240,10 @@ function folioTaxLabel(summary: Folio["summary"]): string {
   if (gross > 0.0001 && tax >= 0) {
     const pct = Math.round((tax / gross) * 1000) / 10;
     if (Number.isFinite(pct) && pct > 0) {
-      return `Tax (${pct}%)`;
+      return `Tourism Tax (TT) (${pct}%)`;
     }
   }
-  return "Tax";
+  return "Tourism Tax (TT)";
 }
 
 type StaffReservationDetail = {

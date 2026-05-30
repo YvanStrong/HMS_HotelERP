@@ -16,7 +16,7 @@ type Props = {
   label: string;
   /** Optional supporting text under the value. */
   caption?: string;
-  /** Hex colour for the bar. Defaults to brand green primary. */
+  /** Hex colour for the bar. Defaults to the brand sky primary. */
   color?: string;
   /** Optional formatter for displayed value. */
   formatValue?: (n: number) => string;
@@ -29,7 +29,7 @@ export function HmsRadialGauge({
   max = 100,
   label,
   caption,
-  color = "#16a34a",
+  color = "#0ea5e9",
   formatValue = defaultFmt,
 }: Props) {
   const clamped = Math.max(0, Math.min(value, max));
@@ -45,7 +45,7 @@ export function HmsRadialGauge({
           endAngle={-30}
         >
           <PolarAngleAxis type="number" domain={[0, max]} tick={false} />
-          <RadialBar background={{ fill: "rgba(20,83,45,0.08)" }} dataKey="value" cornerRadius={8} />
+          <RadialBar background={{ fill: "rgba(26,58,92,0.08)" }} dataKey="value" cornerRadius={8} />
         </RadialBarChart>
       </ResponsiveContainer>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">

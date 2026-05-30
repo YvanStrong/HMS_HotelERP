@@ -4,16 +4,17 @@ import com.hms.entity.Hotel;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
-/** Single source of truth for hotel VAT/sales tax rate applied to folio-style totals. */
+/** Single source of truth for hotel tourism tax applied to folio-style totals. */
 public final class FolioTax {
 
-    public static final BigDecimal DEFAULT_TAX_RATE = new BigDecimal("0.18");
+    public static final BigDecimal DEFAULT_TAX_RATE = new BigDecimal("0.03");
+    public static final String TAX_LABEL = "Tourism Tax (TT)";
 
     private FolioTax() {}
 
     /**
-     * Returns a decimal rate (e.g. 0.18 for 18%). {@code hotel.tax_rate}: if {@code > 1}, treated as whole
-     * percent (18 → 0.18); otherwise used as-is. Null/zero/negative falls back to {@link #DEFAULT_TAX_RATE}.
+     * Returns a decimal rate (e.g. 0.03 for 3%). {@code hotel.tax_rate}: if {@code > 1}, treated as whole
+     * percent (3 → 0.03); otherwise used as-is. Null/zero/negative falls back to {@link #DEFAULT_TAX_RATE}.
      */
     public static BigDecimal effectiveRate(Hotel hotel) {
         if (hotel == null) {

@@ -1,7 +1,9 @@
 package com.hms.service;
 
 import com.hms.api.dto.InventoryDepotDtos;
+import com.hms.domain.ChargeType;
 import com.hms.domain.DepotType;
+import com.hms.domain.ReservationStatus;
 import com.hms.domain.StockTransactionType;
 import com.hms.entity.DepotProduct;
 import com.hms.entity.DepotSale;
@@ -10,6 +12,12 @@ import com.hms.entity.Hotel;
 import com.hms.entity.InvWarehouse;
 import com.hms.entity.InventoryDepot;
 import com.hms.entity.InventoryItem;
+import com.hms.entity.PosProforma;
+import com.hms.entity.PosProformaLine;
+import com.hms.entity.PosDeliveryOrder;
+import com.hms.entity.PosDeliveryOrderLine;
+import com.hms.entity.Reservation;
+import com.hms.entity.RoomCharge;
 import com.hms.entity.StockTransaction;
 import com.hms.repository.DepotProductRepository;
 import com.hms.repository.DepotSaleRepository;
@@ -17,6 +25,9 @@ import com.hms.repository.HotelRepository;
 import com.hms.repository.InvWarehouseRepository;
 import com.hms.repository.InventoryDepotRepository;
 import com.hms.repository.InventoryItemRepository;
+import com.hms.repository.PosProformaRepository;
+import com.hms.repository.PosDeliveryOrderRepository;
+import com.hms.repository.ReservationRepository;
 import com.hms.repository.StockTransactionRepository;
 import com.hms.security.TenantAccessService;
 import com.hms.web.ApiException;
@@ -47,28 +58,40 @@ public class InventoryDepotService {
     private final InventoryDepotRepository inventoryDepotRepository;
     private final DepotProductRepository depotProductRepository;
     private final DepotSaleRepository depotSaleRepository;
+    private final PosProformaRepository posProformaRepository;
+    private final PosDeliveryOrderRepository posDeliveryOrderRepository;
     private final HotelRepository hotelRepository;
     private final InventoryItemRepository inventoryItemRepository;
     private final InvWarehouseRepository invWarehouseRepository;
     private final StockTransactionRepository stockTransactionRepository;
+    private final ReservationRepository reservationRepository;
+    private final ChargeService chargeService;
 
     public InventoryDepotService(
             TenantAccessService tenantAccessService,
             InventoryDepotRepository inventoryDepotRepository,
             DepotProductRepository depotProductRepository,
             DepotSaleRepository depotSaleRepository,
+            PosProformaRepository posProformaRepository,
+            PosDeliveryOrderRepository posDeliveryOrderRepository,
             HotelRepository hotelRepository,
             InventoryItemRepository inventoryItemRepository,
             InvWarehouseRepository invWarehouseRepository,
-            StockTransactionRepository stockTransactionRepository) {
+            StockTransactionRepository stockTransactionRepository,
+            ReservationRepository reservationRepository,
+            ChargeService chargeService) {
         this.tenantAccessService = tenantAccessService;
         this.inventoryDepotRepository = inventoryDepotRepository;
         this.depotProductRepository = depotProductRepository;
         this.depotSaleRepository = depotSaleRepository;
+        this.posProformaRepository = posProformaRepository;
+        this.posDeliveryOrderRepository = posDeliveryOrderRepository;
         this.hotelRepository = hotelRepository;
         this.inventoryItemRepository = inventoryItemRepository;
         this.invWarehouseRepository = invWarehouseRepository;
         this.stockTransactionRepository = stockTransactionRepository;
+        this.reservationRepository = reservationRepository;
+        this.chargeService = chargeService;
     }
 
     @Transactional(readOnly = true)
@@ -397,6 +420,26 @@ public class InventoryDepotService {
         }
         sale.setTotalAmount(scale2(total));
         sale = depotSaleRepository.save(sale);
+        RoomCharge folioCharge = null;
+        if (Boolean.TRUE.equals(req.chargeToRoom())) {
+            if (req.reservationId() == null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "reservationId is required when chargeToRoom is true");
+            }
+            Reservation reservation = reservationRepository
+                    .findByIdAndHotel_Id(req.reservationId(), hotelId)
+                    .orElseThrow(() -> notFound("Reservation"));
+            if (reservation.getStatus() != ReservationStatus.CHECKED_IN) {
+                throw new ApiException(HttpStatus.CONFLICT, "Reservation must be CHECKED_IN to charge POS sale to folio");
+            }
+            folioCharge = chargeService.postFolioCharge(
+                    hotelId,
+                    reservation,
+                    sale.getTotalAmount(),
+                    "POS sale " + sale.getSaleNumber() + " @ " + depot.getName(),
+                    ChargeType.FNB,
+                    sale.getCreatedBy(),
+                    "{\"depotSaleId\":\"" + sale.getId() + "\",\"saleNumber\":\"" + sale.getSaleNumber() + "\"}");
+        }
         return new InventoryDepotDtos.CreateSaleResponse(
                 sale.getId(),
                 sale.getSaleNumber(),
@@ -404,6 +447,7 @@ public class InventoryDepotService {
                 sale.getTotalAmount(),
                 sale.getCreatedAt(),
                 responseLines,
+                folioCharge != null ? folioCharge.getId() : null,
                 "Sale completed");
     }
 
@@ -447,6 +491,357 @@ public class InventoryDepotService {
                 lineRows);
     }
 
+    @Transactional
+    public InventoryDepotDtos.CreateDeliveryOrderResponse createDeliveryOrder(
+            UUID hotelId, String hotelHeader, InventoryDepotDtos.CreateDeliveryOrderRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        InventoryDepot depot = inventoryDepotRepository
+                .findByIdAndHotel_Id(req.depotId(), hotelId)
+                .orElseThrow(() -> notFound("Depot"));
+        Hotel hotel = hotelRepository.findById(hotelId).orElseThrow(() -> notFound("Hotel"));
+
+        PosDeliveryOrder order = new PosDeliveryOrder();
+        order.setHotel(hotel);
+        order.setDepot(depot);
+        order.setDeliveryNumber(nextDeliveryNumber(hotelId));
+        order.setCustomerName(req.customerName() == null ? null : req.customerName().trim());
+        order.setLocationLabel(req.locationLabel() == null ? null : req.locationLabel().trim());
+        order.setCreatedBy(tenantAccessService.currentUser().getUsername());
+
+        BigDecimal total = BigDecimal.ZERO;
+        int lineOrder = 0;
+        List<InventoryDepotDtos.SaleLineRow> responseLines = new ArrayList<>();
+        for (InventoryDepotDtos.SaleLineInput line : req.lines()) {
+            if (line.quantity() == null || line.quantity().signum() <= 0) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Quantity must be positive");
+            }
+            DepotProduct p = depotProductRepository
+                    .findByIdAndHotel_Id(line.productId(), hotelId)
+                    .orElseThrow(() -> notFound("Product"));
+            if (!p.getDepot().getId().equals(depot.getId())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Product does not belong to selected depot");
+            }
+            BigDecimal unitPrice = scale2(p.getSellingPrice());
+            BigDecimal lineTotal = scale2(unitPrice.multiply(line.quantity()));
+            total = total.add(lineTotal);
+
+            PosDeliveryOrderLine dl = new PosDeliveryOrderLine();
+            dl.setDeliveryOrder(order);
+            dl.setProduct(p);
+            dl.setLineOrder(lineOrder++);
+            dl.setQuantity(line.quantity().setScale(3, RoundingMode.HALF_UP));
+            dl.setUnitPrice(unitPrice);
+            dl.setLineTotal(lineTotal);
+            dl.setTaxable(p.isTaxable());
+            order.getLines().add(dl);
+
+            responseLines.add(new InventoryDepotDtos.SaleLineRow(
+                    p.getProductName(), p.getProductCode(), dl.getQuantity(), dl.getUnitPrice(), dl.getLineTotal(), dl.isTaxable()));
+        }
+        order.setTotalAmount(scale2(total));
+        order = posDeliveryOrderRepository.save(order);
+        return new InventoryDepotDtos.CreateDeliveryOrderResponse(
+                order.getId(),
+                order.getDeliveryNumber(),
+                depot.getId(),
+                order.getTotalAmount(),
+                order.getCreatedAt(),
+                responseLines,
+                "Delivery order saved");
+    }
+
+    @Transactional(readOnly = true)
+    public List<InventoryDepotDtos.DeliveryOrderRow> listDeliveryOrders(UUID hotelId, String hotelHeader, String status) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        String normalizedStatus = status == null || status.isBlank() || "ALL".equalsIgnoreCase(status)
+                ? null
+                : status.trim().toUpperCase(Locale.ROOT);
+        return posDeliveryOrderRepository.findByHotelId(hotelId, normalizedStatus).stream()
+                .map(this::toDeliveryOrderRow)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public InventoryDepotDtos.DeliveryOrderDetailResponse getDeliveryOrderDetail(
+            UUID hotelId, String hotelHeader, UUID orderId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        PosDeliveryOrder order = posDeliveryOrderRepository
+                .findFetchedByIdAndHotelId(orderId, hotelId)
+                .orElseThrow(() -> notFound("Delivery order"));
+        return toDeliveryOrderDetail(order);
+    }
+
+    @Transactional
+    public InventoryDepotDtos.CreateSaleResponse convertDeliveryToSale(UUID hotelId, String hotelHeader, UUID orderId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        PosDeliveryOrder order = posDeliveryOrderRepository
+                .findFetchedByIdAndHotelId(orderId, hotelId)
+                .orElseThrow(() -> notFound("Delivery order"));
+        if (!"PENDING".equals(order.getStatus())) {
+            throw new ApiException(HttpStatus.CONFLICT, "Only pending delivery orders can be converted to invoice");
+        }
+
+        DepotSale sale = new DepotSale();
+        sale.setHotel(order.getHotel());
+        sale.setDepot(order.getDepot());
+        sale.setSaleNumber(nextSaleNumber(hotelId));
+        sale.setCustomerName(order.getCustomerName());
+        sale.setCreatedBy(tenantAccessService.currentUser().getUsername());
+
+        BigDecimal total = BigDecimal.ZERO;
+        int lineOrder = 0;
+        List<InventoryDepotDtos.SaleLineRow> responseLines = new ArrayList<>();
+        for (PosDeliveryOrderLine dl : order.getLines().stream()
+                .sorted(Comparator.comparing(PosDeliveryOrderLine::getLineOrder))
+                .toList()) {
+            DepotProduct p = depotProductRepository
+                    .findByIdAndHotel_Id(dl.getProduct().getId(), hotelId)
+                    .orElseThrow(() -> notFound("Product"));
+            BigDecimal qty = dl.getQuantity();
+            boolean managedStock = isManagedStockType(p.getStockType());
+            if (managedStock && p.getStockQty().compareTo(qty) < 0) {
+                throw new ApiException(HttpStatus.CONFLICT, "Insufficient stock for " + p.getProductCode());
+            }
+
+            DepotSaleLine sl = new DepotSaleLine();
+            sl.setSale(sale);
+            sl.setProduct(p);
+            sl.setLineOrder(lineOrder++);
+            sl.setQuantity(qty.setScale(3, RoundingMode.HALF_UP));
+            sl.setUnitPrice(scale2(dl.getUnitPrice()));
+            sl.setLineTotal(scale2(dl.getLineTotal()));
+            sl.setTaxable(dl.isTaxable());
+            sale.getLines().add(sl);
+            total = total.add(sl.getLineTotal());
+
+            if (managedStock) {
+                p.setStockQty(p.getStockQty().subtract(qty).setScale(3, RoundingMode.HALF_UP));
+                depotProductRepository.save(p);
+                if (p.getInventoryItem() != null) {
+                    InventoryItem ii = inventoryItemRepository
+                            .findByIdAndHotel_Id(p.getInventoryItem().getId(), hotelId)
+                            .orElseThrow(() -> notFound("Inventory item"));
+                    if (ii.getCurrentStock().compareTo(qty) < 0) {
+                        throw new ApiException(HttpStatus.CONFLICT, "Insufficient ERP stock for linked item " + ii.getSku());
+                    }
+                    ii.setCurrentStock(ii.getCurrentStock().subtract(qty).setScale(4, RoundingMode.HALF_UP));
+                    inventoryItemRepository.save(ii);
+                    StockTransaction st = new StockTransaction();
+                    st.setItem(ii);
+                    st.setType(StockTransactionType.CONSUMPTION);
+                    st.setQuantity(qty);
+                    st.setReference("MENU_SALE:" + sale.getSaleNumber());
+                    st.setNotes("Converted from delivery " + order.getDeliveryNumber());
+                    st.setPerformedBy(tenantAccessService.currentUser().getUsername());
+                    st.setFromLocation(order.getDepot().getName());
+                    stockTransactionRepository.save(st);
+                }
+            }
+            responseLines.add(new InventoryDepotDtos.SaleLineRow(
+                    p.getProductName(), p.getProductCode(), sl.getQuantity(), sl.getUnitPrice(), sl.getLineTotal(), sl.isTaxable()));
+        }
+
+        sale.setTotalAmount(scale2(total));
+        sale = depotSaleRepository.save(sale);
+        order.setSale(sale);
+        order.setStatus("INVOICED");
+        order.setInvoicedAt(java.time.Instant.now());
+        posDeliveryOrderRepository.save(order);
+        return new InventoryDepotDtos.CreateSaleResponse(
+                sale.getId(),
+                sale.getSaleNumber(),
+                order.getDepot().getId(),
+                sale.getTotalAmount(),
+                sale.getCreatedAt(),
+                responseLines,
+                null,
+                "Delivery converted to invoice");
+    }
+
+    @Transactional
+    public InventoryDepotDtos.CreateProformaResponse createProforma(
+            UUID hotelId, String hotelHeader, InventoryDepotDtos.CreateSaleRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        InventoryDepot depot = inventoryDepotRepository
+                .findByIdAndHotel_Id(req.depotId(), hotelId)
+                .orElseThrow(() -> notFound("Depot"));
+        Hotel hotel = hotelRepository.findById(hotelId).orElseThrow(() -> notFound("Hotel"));
+
+        PosProforma proforma = new PosProforma();
+        proforma.setHotel(hotel);
+        proforma.setDepot(depot);
+        proforma.setProformaNumber(nextProformaNumber(hotelId));
+        proforma.setCustomerName(req.customerName() == null ? null : req.customerName().trim());
+        proforma.setCreatedBy(tenantAccessService.currentUser().getUsername());
+
+        BigDecimal total = BigDecimal.ZERO;
+        int lineOrder = 0;
+        List<InventoryDepotDtos.SaleLineRow> responseLines = new ArrayList<>();
+
+        for (InventoryDepotDtos.SaleLineInput line : req.lines()) {
+            if (line.quantity() == null || line.quantity().signum() <= 0) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Quantity must be positive");
+            }
+            DepotProduct p = depotProductRepository
+                    .findByIdAndHotel_Id(line.productId(), hotelId)
+                    .orElseThrow(() -> notFound("Product"));
+            if (!p.getDepot().getId().equals(depot.getId())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Product does not belong to selected depot");
+            }
+            BigDecimal unitPrice = scale2(p.getSellingPrice());
+            BigDecimal lineTotal = scale2(unitPrice.multiply(line.quantity()));
+            total = total.add(lineTotal);
+
+            PosProformaLine pl = new PosProformaLine();
+            pl.setProforma(proforma);
+            pl.setProduct(p);
+            pl.setLineOrder(lineOrder++);
+            pl.setQuantity(line.quantity().setScale(3, RoundingMode.HALF_UP));
+            pl.setUnitPrice(unitPrice);
+            pl.setLineTotal(lineTotal);
+            pl.setTaxable(p.isTaxable());
+            proforma.getLines().add(pl);
+
+            responseLines.add(new InventoryDepotDtos.SaleLineRow(
+                    p.getProductName(),
+                    p.getProductCode(),
+                    pl.getQuantity(),
+                    pl.getUnitPrice(),
+                    pl.getLineTotal(),
+                    pl.isTaxable()));
+        }
+
+        proforma.setTotalAmount(scale2(total));
+        proforma = posProformaRepository.save(proforma);
+        return new InventoryDepotDtos.CreateProformaResponse(
+                proforma.getId(),
+                proforma.getProformaNumber(),
+                depot.getId(),
+                proforma.getTotalAmount(),
+                proforma.getCreatedAt(),
+                responseLines,
+                "Proforma created");
+    }
+
+    @Transactional(readOnly = true)
+    public List<InventoryDepotDtos.ProformaRow> listPosProformas(UUID hotelId, String hotelHeader, UUID depotId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        return posProformaRepository.findByHotelId(hotelId, depotId).stream()
+                .map(p -> new InventoryDepotDtos.ProformaRow(
+                        p.getId(),
+                        p.getProformaNumber(),
+                        p.getDepot().getName(),
+                        p.getCustomerName(),
+                        p.getTotalAmount(),
+                        p.getCreatedAt()))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public InventoryDepotDtos.ProformaDetailResponse getPosProformaDetail(
+            UUID hotelId, String hotelHeader, UUID proformaId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        PosProforma proforma = posProformaRepository
+                .findFetchedByIdAndHotelId(proformaId, hotelId)
+                .orElseThrow(() -> notFound("Proforma"));
+        List<InventoryDepotDtos.SaleLineRow> lineRows = proforma.getLines().stream()
+                .sorted(Comparator.comparing(PosProformaLine::getLineOrder))
+                .map(pl -> new InventoryDepotDtos.SaleLineRow(
+                        pl.getProduct().getProductName(),
+                        pl.getProduct().getProductCode(),
+                        pl.getQuantity(),
+                        pl.getUnitPrice(),
+                        pl.getLineTotal(),
+                        pl.isTaxable()))
+                .toList();
+        return new InventoryDepotDtos.ProformaDetailResponse(
+                proforma.getId(),
+                proforma.getProformaNumber(),
+                proforma.getDepot().getName(),
+                proforma.getCustomerName(),
+                proforma.getTotalAmount(),
+                proforma.getCreatedAt(),
+                lineRows);
+    }
+
+    @Transactional
+    public InventoryDepotDtos.CreateSaleResponse convertProformaToSale(UUID hotelId, String hotelHeader, UUID proformaId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        PosProforma proforma = posProformaRepository
+                .findFetchedByIdAndHotelId(proformaId, hotelId)
+                .orElseThrow(() -> notFound("Proforma"));
+        DepotSale sale = new DepotSale();
+        sale.setHotel(proforma.getHotel());
+        sale.setDepot(proforma.getDepot());
+        sale.setSaleNumber(nextSaleNumber(hotelId));
+        sale.setCustomerName(proforma.getCustomerName());
+        sale.setCreatedBy(tenantAccessService.currentUser().getUsername());
+
+        BigDecimal total = BigDecimal.ZERO;
+        int lineOrder = 0;
+        List<InventoryDepotDtos.SaleLineRow> responseLines = new ArrayList<>();
+        for (PosProformaLine pl : proforma.getLines().stream()
+                .sorted(Comparator.comparing(PosProformaLine::getLineOrder))
+                .toList()) {
+            DepotProduct p = depotProductRepository
+                    .findByIdAndHotel_Id(pl.getProduct().getId(), hotelId)
+                    .orElseThrow(() -> notFound("Product"));
+            BigDecimal qty = pl.getQuantity();
+            boolean managedStock = isManagedStockType(p.getStockType());
+            if (managedStock && p.getStockQty().compareTo(qty) < 0) {
+                throw new ApiException(HttpStatus.CONFLICT, "Insufficient stock for " + p.getProductCode());
+            }
+            DepotSaleLine sl = new DepotSaleLine();
+            sl.setSale(sale);
+            sl.setProduct(p);
+            sl.setLineOrder(lineOrder++);
+            sl.setQuantity(qty.setScale(3, RoundingMode.HALF_UP));
+            sl.setUnitPrice(scale2(pl.getUnitPrice()));
+            sl.setLineTotal(scale2(pl.getLineTotal()));
+            sl.setTaxable(pl.isTaxable());
+            sale.getLines().add(sl);
+            total = total.add(sl.getLineTotal());
+
+            if (managedStock) {
+                p.setStockQty(p.getStockQty().subtract(qty).setScale(3, RoundingMode.HALF_UP));
+                depotProductRepository.save(p);
+                if (p.getInventoryItem() != null) {
+                    InventoryItem ii = inventoryItemRepository
+                            .findByIdAndHotel_Id(p.getInventoryItem().getId(), hotelId)
+                            .orElseThrow(() -> notFound("Inventory item"));
+                    if (ii.getCurrentStock().compareTo(qty) < 0) {
+                        throw new ApiException(HttpStatus.CONFLICT, "Insufficient ERP stock for linked item " + ii.getSku());
+                    }
+                    ii.setCurrentStock(ii.getCurrentStock().subtract(qty).setScale(4, RoundingMode.HALF_UP));
+                    inventoryItemRepository.save(ii);
+                    StockTransaction st = new StockTransaction();
+                    st.setItem(ii);
+                    st.setType(StockTransactionType.CONSUMPTION);
+                    st.setQuantity(qty);
+                    st.setReference("MENU_SALE:" + sale.getSaleNumber());
+                    st.setNotes("Converted from proforma " + proforma.getProformaNumber());
+                    st.setPerformedBy(tenantAccessService.currentUser().getUsername());
+                    st.setFromLocation(proforma.getDepot().getName());
+                    stockTransactionRepository.save(st);
+                }
+            }
+            responseLines.add(new InventoryDepotDtos.SaleLineRow(
+                    p.getProductName(), p.getProductCode(), sl.getQuantity(), sl.getUnitPrice(), sl.getLineTotal(), sl.isTaxable()));
+        }
+        sale.setTotalAmount(scale2(total));
+        sale = depotSaleRepository.save(sale);
+        posProformaRepository.delete(proforma);
+        return new InventoryDepotDtos.CreateSaleResponse(
+                sale.getId(),
+                sale.getSaleNumber(),
+                proforma.getDepot().getId(),
+                sale.getTotalAmount(),
+                sale.getCreatedAt(),
+                responseLines,
+                null,
+                "Proforma converted to invoice");
+    }
+
     private static String normalizeMenuName(String raw) {
         if (raw == null || raw.isBlank()) return "GENERAL";
         return raw.trim().toUpperCase(Locale.ROOT).replace(' ', '_');
@@ -454,6 +849,47 @@ public class InventoryDepotService {
 
     private static BigDecimal scale2(BigDecimal n) {
         return n == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : n.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private InventoryDepotDtos.DeliveryOrderRow toDeliveryOrderRow(PosDeliveryOrder order) {
+        DepotSale sale = order.getSale();
+        return new InventoryDepotDtos.DeliveryOrderRow(
+                order.getId(),
+                order.getDeliveryNumber(),
+                order.getDepot().getName(),
+                order.getCustomerName(),
+                order.getLocationLabel(),
+                order.getTotalAmount(),
+                order.getStatus(),
+                order.getCreatedAt(),
+                sale != null ? sale.getId() : null,
+                sale != null ? sale.getSaleNumber() : null);
+    }
+
+    private InventoryDepotDtos.DeliveryOrderDetailResponse toDeliveryOrderDetail(PosDeliveryOrder order) {
+        DepotSale sale = order.getSale();
+        List<InventoryDepotDtos.SaleLineRow> lineRows = order.getLines().stream()
+                .sorted(Comparator.comparing(PosDeliveryOrderLine::getLineOrder))
+                .map(dl -> new InventoryDepotDtos.SaleLineRow(
+                        dl.getProduct().getProductName(),
+                        dl.getProduct().getProductCode(),
+                        dl.getQuantity(),
+                        dl.getUnitPrice(),
+                        dl.getLineTotal(),
+                        dl.isTaxable()))
+                .toList();
+        return new InventoryDepotDtos.DeliveryOrderDetailResponse(
+                order.getId(),
+                order.getDeliveryNumber(),
+                order.getDepot().getName(),
+                order.getCustomerName(),
+                order.getLocationLabel(),
+                order.getTotalAmount(),
+                order.getStatus(),
+                order.getCreatedAt(),
+                sale != null ? sale.getId() : null,
+                sale != null ? sale.getSaleNumber() : null,
+                lineRows);
     }
 
     private InventoryDepotDtos.DepotRow toRow(InventoryDepot d) {
@@ -563,6 +999,16 @@ public class InventoryDepotService {
     private String nextSaleNumber(UUID hotelId) {
         long next = depotSaleRepository.countByHotelId(hotelId) + 1;
         return "DS-" + Year.now().getValue() + "-" + String.format("%06d", next);
+    }
+
+    private String nextProformaNumber(UUID hotelId) {
+        long next = posProformaRepository.countByHotelId(hotelId) + 1;
+        return "PF-" + Year.now().getValue() + "-" + String.format("%06d", next);
+    }
+
+    private String nextDeliveryNumber(UUID hotelId) {
+        long next = posDeliveryOrderRepository.countByHotelId(hotelId) + 1;
+        return "DEL-" + Year.now().getValue() + "-" + String.format("%06d", next);
     }
 
     private static ApiException notFound(String what) {

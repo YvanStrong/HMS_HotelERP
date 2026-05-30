@@ -677,7 +677,7 @@ export default function HotelReportsPage() {
                   key: "Occupancy",
                   label: "Occupancy %",
                   type: "area",
-                  color: "#16a34a",
+                  color: "#0ea5e9",
                   format: (n) => `${n.toFixed(1)}%`,
                 },
                 {
@@ -711,7 +711,7 @@ export default function HotelReportsPage() {
               data={occChartData}
               xKey="date"
               series={[
-                { key: "Occupied", label: "Occupied", type: "bar", color: "#16a34a" },
+                { key: "Occupied", label: "Occupied", type: "bar", color: "#0ea5e9" },
                 { key: "Total", label: "Total", type: "line", color: "#6b7280" },
               ]}
             />
@@ -868,7 +868,7 @@ export default function HotelReportsPage() {
               leftAxisLabel="Charges"
               rightAxisLabel="$"
               series={[
-                { key: "Charges", label: "Charges posted", type: "bar", color: "#16a34a" },
+                { key: "Charges", label: "Charges posted", type: "bar", color: "#0ea5e9" },
                 {
                   key: "Total",
                   label: "Total amount",

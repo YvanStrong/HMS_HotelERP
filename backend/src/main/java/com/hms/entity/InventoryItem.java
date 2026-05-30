@@ -72,6 +72,9 @@ public class InventoryItem {
     @Column(name = "selling_price", precision = 14, scale = 4)
     private BigDecimal sellingPrice;
 
+    @Column(name = "tax_category", nullable = false, length = 1)
+    private String taxCategory = "B";
+
     @Column(name = "image_url", columnDefinition = "TEXT")
     private String imageUrl;
 

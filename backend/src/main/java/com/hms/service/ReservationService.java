@@ -1446,7 +1446,7 @@ public class ReservationService {
         BigDecimal sub = roomLine.add(extras);
         BigDecimal tax = FolioTax.taxOnSubtotal(sub, r.getHotel());
         BigDecimal pct = FolioTax.effectiveRate(r.getHotel()).multiply(new BigDecimal("100")).stripTrailingZeros();
-        items.add(line(inv, order++, "Tax (" + pct + "%)", tax));
+        items.add(line(inv, order++, FolioTax.TAX_LABEL + " (" + pct + "%)", tax));
 
         BigDecimal deposit = r.isDepositPaid() && r.getDepositAmount() != null ? r.getDepositAmount() : BigDecimal.ZERO;
         if (deposit.signum() > 0) {

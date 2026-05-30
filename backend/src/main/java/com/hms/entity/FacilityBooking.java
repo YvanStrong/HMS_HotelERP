@@ -69,6 +69,12 @@ public class FacilityBooking {
     @Column(name = "amount_paid", precision = 14, scale = 2)
     private BigDecimal amountPaid = BigDecimal.ZERO;
 
+    @Column(name = "invoice_number", length = 64)
+    private String invoiceNumber;
+
+    @Column(name = "invoiced_at")
+    private Instant invoicedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_status", nullable = false, length = 32)
     private FacilityPaymentStatus paymentStatus = FacilityPaymentStatus.PENDING;
@@ -76,6 +82,10 @@ public class FacilityBooking {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "room_charge_id")
     private RoomCharge roomCharge;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "abonnement_id")
+    private FacilityAbonnement abonnement;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;

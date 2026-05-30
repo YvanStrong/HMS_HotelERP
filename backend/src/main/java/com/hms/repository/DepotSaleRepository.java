@@ -30,6 +30,19 @@ public interface DepotSaleRepository extends JpaRepository<DepotSale, UUID> {
 
     @Query(
             """
+            select s from DepotSale s
+            where s.hotel.id = :hotelId
+              and s.createdAt >= :from
+              and s.createdAt < :to
+            order by s.createdAt desc
+            """)
+    List<DepotSale> findSalesBetween(
+            @Param("hotelId") UUID hotelId,
+            @Param("from") Instant from,
+            @Param("to") Instant to);
+
+    @Query(
+            """
             select count(s)
             from DepotSale s
             where s.hotel.id = :hotelId

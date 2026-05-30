@@ -7,13 +7,13 @@
  */
 
 export const HMS_CHART_PALETTE = [
-  "#16a34a", // primary green
-  "#3b82f6", // sky 500
-  "#10b981", // emerald 500
+  "#0ea5e9", // logo sky
+  "#1a3a5c", // logo navy
+  "#38bdf8", // logo light sky
   "#f59e0b", // amber 500
   "#ef4444", // red 500
   "#8b5cf6", // violet 500
-  "#0ea5e9", // sky 500 (alt)
+  "#0284c7", // deep sky
   "#14b8a6", // teal 500
   "#f97316", // orange 500
   "#6366f1", // indigo 500
@@ -23,17 +23,17 @@ export const HMS_CHART_TONE: Record<
   "green" | "amber" | "red" | "blue" | "violet" | "muted",
   string
 > = {
-  green: "#10b981",
+  green: "#0ea5e9",
   amber: "#f59e0b",
   red: "#ef4444",
-  blue: "#3b82f6",
+  blue: "#0ea5e9",
   violet: "#8b5cf6",
-  muted: "#16a34a",
+  muted: "#1a3a5c",
 };
 
-export const HMS_CHART_GRID = "rgba(20, 83, 45, 0.08)";
-export const HMS_CHART_AXIS = "rgba(20, 83, 45, 0.55)";
-export const HMS_CHART_TICK = "rgba(20, 83, 45, 0.7)";
+export const HMS_CHART_GRID = "rgba(26, 58, 92, 0.08)";
+export const HMS_CHART_AXIS = "rgba(26, 58, 92, 0.55)";
+export const HMS_CHART_TICK = "rgba(26, 58, 92, 0.7)";
 
 export function tonedColor(tone: string | undefined | null): string {
   if (!tone) return HMS_CHART_TONE.muted;

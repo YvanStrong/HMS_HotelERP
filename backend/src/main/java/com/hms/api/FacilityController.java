@@ -70,6 +70,46 @@ public class FacilityController {
                 .body(facilityService.createFacility(hotelId, hotelHeader, body));
     }
 
+    @PostMapping("/abonnements")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public ResponseEntity<FacilityDtos.FacilityAbonnementRow> createAbonnement(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody FacilityDtos.FacilityAbonnementCreateRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(facilityService.createAbonnement(hotelId, hotelHeader, body));
+    }
+
+    @GetMapping("/abonnements")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE','ROLE_MAINTENANCE')")
+    public List<FacilityDtos.FacilityAbonnementRow> listAbonnements(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) String q) {
+        return facilityService.listAbonnements(hotelId, hotelHeader, q);
+    }
+
+    @GetMapping("/invoices")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
+    public List<FacilityDtos.FacilityInvoiceRow> listFacilityInvoices(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return facilityService.listFacilityInvoices(hotelId, hotelHeader);
+    }
+
+    @PostMapping("/{facilityId}/abonnements/check-in")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_MAINTENANCE')")
+    public FacilityDtos.FacilityAbonnementCheckInResponse checkInAbonnement(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID facilityId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody FacilityDtos.FacilityAbonnementCheckInRequest body) {
+        return facilityService.checkInAbonnement(hotelId, hotelHeader, facilityId, body);
+    }
+
     @PostMapping("/{facilityId}/slots")
     @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER')")
     public ResponseEntity<FacilityDtos.FacilitySlotResponse> createSlot(

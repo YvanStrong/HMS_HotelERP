@@ -82,7 +82,18 @@ public final class InventoryDepotDtos {
 
     public record SaleLineInput(@NotNull UUID productId, @NotNull BigDecimal quantity) {}
 
-    public record CreateSaleRequest(String customerName, @NotNull UUID depotId, @NotEmpty List<SaleLineInput> lines) {}
+    public record CreateSaleRequest(
+            String customerName,
+            @NotNull UUID depotId,
+            @NotEmpty List<SaleLineInput> lines,
+            Boolean chargeToRoom,
+            UUID reservationId) {}
+
+    public record CreateDeliveryOrderRequest(
+            String customerName,
+            String locationLabel,
+            @NotNull UUID depotId,
+            @NotEmpty List<SaleLineInput> lines) {}
 
     public record SaleLineRow(
             String productName,
@@ -99,6 +110,7 @@ public final class InventoryDepotDtos {
             BigDecimal totalAmount,
             Instant soldAt,
             List<SaleLineRow> lines,
+            UUID roomChargeId,
             String message) {}
 
     public record SaleRow(UUID saleId, String saleNumber, String depotName, String customerName, BigDecimal totalAmount, Instant soldAt) {}
@@ -111,5 +123,65 @@ public final class InventoryDepotDtos {
             String customerName,
             BigDecimal totalAmount,
             Instant soldAt,
+            List<SaleLineRow> lines) {}
+
+    public record DeliveryOrderRow(
+            UUID deliveryOrderId,
+            String deliveryNumber,
+            String depotName,
+            String customerName,
+            String locationLabel,
+            BigDecimal totalAmount,
+            String status,
+            Instant createdAt,
+            UUID saleId,
+            String saleNumber) {}
+
+    public record DeliveryOrderDetailResponse(
+            UUID deliveryOrderId,
+            String deliveryNumber,
+            String depotName,
+            String customerName,
+            String locationLabel,
+            BigDecimal totalAmount,
+            String status,
+            Instant createdAt,
+            UUID saleId,
+            String saleNumber,
+            List<SaleLineRow> lines) {}
+
+    public record CreateDeliveryOrderResponse(
+            UUID deliveryOrderId,
+            String deliveryNumber,
+            UUID depotId,
+            BigDecimal totalAmount,
+            Instant createdAt,
+            List<SaleLineRow> lines,
+            String message) {}
+
+    public record CreateProformaResponse(
+            UUID proformaId,
+            String proformaNumber,
+            UUID depotId,
+            BigDecimal totalAmount,
+            Instant createdAt,
+            List<SaleLineRow> lines,
+            String message) {}
+
+    public record ProformaRow(
+            UUID proformaId,
+            String proformaNumber,
+            String depotName,
+            String customerName,
+            BigDecimal totalAmount,
+            Instant createdAt) {}
+
+    public record ProformaDetailResponse(
+            UUID proformaId,
+            String proformaNumber,
+            String depotName,
+            String customerName,
+            BigDecimal totalAmount,
+            Instant createdAt,
             List<SaleLineRow> lines) {}
 }

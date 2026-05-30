@@ -194,7 +194,7 @@ public class InvoicePdfService {
                         FolioTax.effectiveRate(h).multiply(new BigDecimal("100")).stripTrailingZeros();
                 String vatPctLabel = vatPctWhole.scale() > 0 ? vatPctWhole.toPlainString() : vatPctWhole.toBigInteger().toString();
                 textRight(cs, right, summaryTop - 14, 9, false, "Subtotal: " + money(subtotal, currency));
-                textRight(cs, right, summaryTop - 28, 9, false, "VAT (" + vatPctLabel + "%): " + money(tax, currency));
+                textRight(cs, right, summaryTop - 28, 9, false, FolioTax.TAX_LABEL + " (" + vatPctLabel + "%): " + money(tax, currency));
                 textRight(cs, right, summaryTop - 42, 9, false, "Discounts: " + money(discount, currency));
                 textRight(cs, right, summaryTop - 56, 10, true, "Grand Total: " + money(grandTotal, currency));
                 textRight(cs, right, summaryTop - 72, 9, false, "Total Paid: " + money(paymentsTotal, currency));

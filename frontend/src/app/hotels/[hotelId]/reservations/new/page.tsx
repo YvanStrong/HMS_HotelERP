@@ -149,7 +149,7 @@ export default function NewStaffReservationPage() {
   const [earlyCheckIn, setEarlyCheckIn] = useState(false);
   const [deposit, setDeposit] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("CASH");
-  const [taxRate, setTaxRate] = useState(18);
+  const [taxRate] = useState(3);
 
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState<CreateRes | null>(null);
@@ -1816,7 +1816,7 @@ export default function NewStaffReservationPage() {
                       </p>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Tax ({taxRate}%):</span>
+                      <span className="text-muted-foreground">Tourism Tax (TT) ({taxRate}%):</span>
                       <p className="font-medium">
                         {(selectedAvail.total_price * (taxRate / 100)).toFixed(2)} {selectedAvail.currency}
                       </p>

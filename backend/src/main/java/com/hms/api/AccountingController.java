@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/v1/hotels/{hotelId}/accounting")
@@ -56,6 +57,24 @@ public class AccountingController {
         return accountingService.analytics(hotelId, hotelHeader, from, to);
     }
 
+    @GetMapping("/accounts")
+    @PreAuthorize(ACCOUNTING_READ)
+    public java.util.List<AccountingDtos.AccountRow> listAccounts(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return accountingService.listAccounts(hotelId, hotelHeader);
+    }
+
+    @PostMapping("/accounts")
+    @PreAuthorize(CASH_DISBURSE)
+    public ResponseEntity<AccountingDtos.AccountRow> createAccount(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody AccountingDtos.CreateAccountRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(accountingService.createAccount(hotelId, hotelHeader, body));
+    }
+
     @PostMapping("/expenses")
     @PreAuthorize(CASH_DISBURSE)
     public ResponseEntity<AccountingDtos.ExpenseRow> createExpense(
@@ -64,6 +83,35 @@ public class AccountingController {
             @Valid @RequestBody AccountingDtos.CreateExpenseRequest body) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(accountingService.createExpense(hotelId, hotelHeader, body));
+    }
+
+    @PostMapping("/bank-statements")
+    @PreAuthorize(CASH_DISBURSE)
+    public ResponseEntity<AccountingDtos.BankStatementLineRow> createBankStatementLine(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody AccountingDtos.CreateBankStatementLineRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(accountingService.createBankStatementLine(hotelId, hotelHeader, body));
+    }
+
+    @PostMapping("/bank-statements/import-pdf")
+    @PreAuthorize(CASH_DISBURSE)
+    public AccountingDtos.BankStatementImportResponse importBankStatementPdf(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam("file") MultipartFile file) {
+        return accountingService.importBankStatementPdf(hotelId, hotelHeader, file);
+    }
+
+    @GetMapping("/reports")
+    @PreAuthorize(ACCOUNTING_READ)
+    public AccountingDtos.AccountingReports reports(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) LocalDate from,
+            @RequestParam(required = false) LocalDate to) {
+        return accountingService.reports(hotelId, hotelHeader, from, to);
     }
 
     @PostMapping("/petty-cash")
