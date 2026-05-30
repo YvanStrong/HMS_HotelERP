@@ -4,13 +4,16 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hms.api.dto.InventoryDtos;
 import com.hms.domain.ChargeType;
+import com.hms.domain.DepotType;
 import com.hms.domain.InventoryItemType;
 import com.hms.domain.PoPaymentTerms;
 import com.hms.domain.ValuationMethod;
 import com.hms.domain.PurchaseOrderStatus;
 import com.hms.domain.ReservationStatus;
 import com.hms.domain.StockTransactionType;
+import com.hms.entity.DepotProduct;
 import com.hms.entity.Hotel;
+import com.hms.entity.InventoryDepot;
 import com.hms.entity.InventoryCategory;
 import com.hms.entity.InventoryItem;
 import com.hms.entity.PurchaseOrder;
@@ -18,8 +21,10 @@ import com.hms.entity.InvWarehouse;
 import com.hms.entity.PurchaseOrderLine;
 import com.hms.entity.StockTransaction;
 import com.hms.entity.Supplier;
+import com.hms.repository.DepotProductRepository;
 import com.hms.repository.HotelRepository;
 import com.hms.repository.InventoryCategoryRepository;
+import com.hms.repository.InventoryDepotRepository;
 import com.hms.repository.InventoryItemRepository;
 import com.hms.repository.InvWarehouseRepository;
 import com.hms.repository.PurchaseOrderLineRepository;
@@ -46,6 +51,8 @@ public class InventoryService {
 
     private final InventoryItemRepository inventoryItemRepository;
     private final InventoryCategoryRepository inventoryCategoryRepository;
+    private final InventoryDepotRepository inventoryDepotRepository;
+    private final DepotProductRepository depotProductRepository;
     private final HotelRepository hotelRepository;
     private final SupplierRepository supplierRepository;
     private final PurchaseOrderRepository purchaseOrderRepository;
@@ -60,6 +67,8 @@ public class InventoryService {
     public InventoryService(
             InventoryItemRepository inventoryItemRepository,
             InventoryCategoryRepository inventoryCategoryRepository,
+            InventoryDepotRepository inventoryDepotRepository,
+            DepotProductRepository depotProductRepository,
             HotelRepository hotelRepository,
             SupplierRepository supplierRepository,
             PurchaseOrderRepository purchaseOrderRepository,
@@ -72,6 +81,8 @@ public class InventoryService {
             ObjectMapper objectMapper) {
         this.inventoryItemRepository = inventoryItemRepository;
         this.inventoryCategoryRepository = inventoryCategoryRepository;
+        this.inventoryDepotRepository = inventoryDepotRepository;
+        this.depotProductRepository = depotProductRepository;
         this.hotelRepository = hotelRepository;
         this.supplierRepository = supplierRepository;
         this.purchaseOrderRepository = purchaseOrderRepository;
@@ -218,8 +229,14 @@ public class InventoryService {
         if (req.unitCost() != null) {
             i.setUnitCost(req.unitCost());
         }
+        boolean taxCategoryChanged = false;
         if (req.sellingPrice() != null) {
             i.setSellingPrice(req.sellingPrice());
+        }
+        if (req.taxCategory() != null && !req.taxCategory().isBlank()) {
+            String taxCategory = normalizeTaxCategory(req.taxCategory());
+            taxCategoryChanged = !taxCategory.equals(normalizeTaxCategory(i.getTaxCategory()));
+            i.setTaxCategory(taxCategory);
         }
         if (req.unitOfMeasure() != null && !req.unitOfMeasure().isBlank()) {
             i.setUnitOfMeasure(req.unitOfMeasure().trim());
@@ -246,6 +263,9 @@ public class InventoryService {
             i.setValuation(ValuationMethod.valueOf(req.valuationMethod().trim().toUpperCase()));
         }
         i = inventoryItemRepository.save(i);
+        if (taxCategoryChanged) {
+            syncDepotProductTaxability(hotelId, i);
+        }
         return toRow(i);
     }
 
@@ -282,7 +302,9 @@ public class InventoryService {
                 i.getManufactureDate(),
                 val,
                 i.getImageUrl(),
-                normalizeStockType(i.getStockType()));
+                normalizeStockType(i.getStockType()),
+                normalizeTaxCategory(i.getTaxCategory()),
+                isTaxableCategory(i.getTaxCategory()));
     }
 
     private static String stockStatus(InventoryItem i) {
@@ -477,8 +499,17 @@ public class InventoryService {
     }
 
     private String nextPoNumber(UUID hotelId) {
-        long n = purchaseOrderRepository.countByHotel_Id(hotelId) + 1;
-        return "PO-" + Year.now() + "-" + String.format("%05d", n);
+        String prefix = "PO-" + Year.now() + "-";
+        long next = purchaseOrderRepository.findLastPoNumberByPrefix(prefix + "%")
+                .map(last -> {
+                    try {
+                        return Long.parseLong(last.substring(prefix.length())) + 1;
+                    } catch (RuntimeException ignored) {
+                        return purchaseOrderRepository.count() + 1;
+                    }
+                })
+                .orElse(1L);
+        return prefix + String.format("%05d", next);
     }
 
     @Transactional
@@ -511,7 +542,15 @@ public class InventoryService {
             BigDecimal ordered = pl.getQuantityOrdered();
             BigDecimal already = pl.getQuantityReceived();
             BigDecimal recv = rl.quantityReceived();
+            if (recv == null || recv.signum() <= 0) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Received quantity must be positive");
+            }
             BigDecimal expectedRemaining = ordered.subtract(already);
+            if (recv.compareTo(expectedRemaining) > 0) {
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        "Cannot receive more than ordered. Remaining quantity is " + expectedRemaining);
+            }
             if (recv.compareTo(expectedRemaining) < 0) {
                 discrepancies.add(new InventoryDtos.ReceiveDiscrepancy(
                         "SHORTAGE",
@@ -660,8 +699,9 @@ public class InventoryService {
         if (inventoryItemRepository.findByHotel_IdAndSkuIgnoreCase(hotelId, sku).isPresent()) {
             throw new ApiException(HttpStatus.CONFLICT, "SKU already exists for this hotel: " + sku);
         }
+        Hotel hotel = hotelRepository.getReferenceById(hotelId);
         InventoryItem i = new InventoryItem();
-        i.setHotel(hotelRepository.getReferenceById(hotelId));
+        i.setHotel(hotel);
         i.setCategory(cat);
         i.setName(req.name().trim());
         i.setSku(sku);
@@ -689,6 +729,7 @@ public class InventoryService {
         if (req.sellingPrice() != null) {
             i.setSellingPrice(req.sellingPrice());
         }
+        i.setTaxCategory(normalizeTaxCategory(req.taxCategory()));
         if (req.imageUrl() != null && !req.imageUrl().isBlank()) {
             i.setImageUrl(req.imageUrl().trim());
         }
@@ -699,8 +740,87 @@ public class InventoryService {
             i.setManufactureDate(req.manufactureDate());
         }
         i = inventoryItemRepository.save(i);
+        publishToPrincipalOutlet(hotelId, hotel, i);
         recordOpeningStockAtPrincipalWarehouse(hotelId, i);
         return new InventoryDtos.CreatedIdResponse(i.getId());
+    }
+
+    private void publishToPrincipalOutlet(UUID hotelId, Hotel hotel, InventoryItem item) {
+        InventoryDepot principal = inventoryDepotRepository
+                .findByHotel_IdAndCodeIgnoreCase(hotelId, "PRINC")
+                .or(() -> inventoryDepotRepository.findByHotel_IdAndCodeIgnoreCase(hotelId, "PRINCIPAL"))
+                .orElseGet(() -> {
+                    InventoryDepot d = new InventoryDepot();
+                    d.setHotel(hotel);
+                    d.setName("Principal");
+                    d.setCode("PRINC");
+                    d.setDepotType(DepotType.PRINCIPAL);
+                    d.setActive(true);
+                    invWarehouseRepository.findByHotel_IdAndCodeIgnoreCase(hotelId, "PRINCIPAL")
+                            .ifPresent(d::setLinkedWarehouse);
+                    return inventoryDepotRepository.save(d);
+                });
+
+        if (depotProductRepository.existsByHotel_IdAndDepot_IdAndInventoryItem_Id(
+                hotelId, principal.getId(), item.getId())) {
+            return;
+        }
+
+        DepotProduct p = new DepotProduct();
+        p.setHotel(hotel);
+        p.setDepot(principal);
+        p.setInventoryItem(item);
+        p.setProductNumber(depotProductRepository.findMaxProductNumber(hotelId) + 1);
+        p.setProductName(item.getName());
+        p.setProductCode(nextDepotProductCode(hotelId, item.getName()));
+        p.setBatchNo("NA");
+        p.setCostPrice(scale2(item.getUnitCost()));
+        p.setSellingPrice(scale2(item.getSellingPrice() != null ? item.getSellingPrice() : item.getUnitCost()));
+        String stockType = normalizeStockType(item.getStockType());
+        p.setStockType(stockType);
+        p.setStockQty("NON_STOCK".equals(stockType)
+                ? BigDecimal.ZERO.setScale(3, RoundingMode.HALF_UP)
+                : item.getCurrentStock().setScale(3, RoundingMode.HALF_UP));
+        p.setMenuName(item.getCategory() != null ? item.getCategory().getCode() : "GENERAL");
+        p.setTaxable(isTaxableCategory(item.getTaxCategory()));
+        p.setPhotoUrl(item.getImageUrl());
+        depotProductRepository.save(p);
+    }
+
+    private void syncDepotProductTaxability(UUID hotelId, InventoryItem item) {
+        boolean taxable = isTaxableCategory(item.getTaxCategory());
+        List<DepotProduct> products = depotProductRepository.findByHotel_IdAndInventoryItem_Id(hotelId, item.getId());
+        for (DepotProduct product : products) {
+            product.setTaxable(taxable);
+            depotProductRepository.save(product);
+        }
+    }
+
+    private String nextDepotProductCode(UUID hotelId, String name) {
+        String prefix = prefixFromName(name);
+        int max = 0;
+        for (DepotProduct p : depotProductRepository.findByHotel_IdAndProductCodeStartingWithIgnoreCase(hotelId, prefix)) {
+            String suffix = p.getProductCode() != null && p.getProductCode().length() > prefix.length()
+                    ? p.getProductCode().substring(prefix.length())
+                    : "";
+            try {
+                max = Math.max(max, Integer.parseInt(suffix));
+            } catch (NumberFormatException ignored) {
+                // ignore non-standard legacy codes
+            }
+        }
+        return prefix + String.format("%03d", max + 1);
+    }
+
+    private static String prefixFromName(String name) {
+        String cleaned = name == null ? "" : name.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", "");
+        if (cleaned.isBlank()) return "PRD";
+        if (cleaned.length() >= 3) return cleaned.substring(0, 3);
+        return (cleaned + "XXX").substring(0, 3);
+    }
+
+    private static BigDecimal scale2(BigDecimal value) {
+        return (value == null ? BigDecimal.ZERO : value).setScale(2, RoundingMode.HALF_UP);
     }
 
     private static String normalizeStockType(String raw) {
@@ -709,6 +829,22 @@ public class InventoryService {
         if ("NON_STOCK".equals(v) || "NONSTOCK".equals(v)) return "NON_STOCK";
         if ("STOCK".equals(v)) return "STOCK";
         throw new ApiException(HttpStatus.BAD_REQUEST, "stockType must be STOCK or NON_STOCK");
+    }
+
+    private static String normalizeTaxCategory(String raw) {
+        if (raw == null || raw.isBlank()) return "B";
+        String v = raw.trim().toUpperCase(Locale.ROOT);
+        if ("A".equals(v) || "0".equals(v) || "0%".equals(v) || "NON_TAXABLE".equals(v) || "NOT_TAXABLE".equals(v)) {
+            return "A";
+        }
+        if ("B".equals(v) || "18".equals(v) || "18%".equals(v) || "TAXABLE".equals(v)) {
+            return "B";
+        }
+        throw new ApiException(HttpStatus.BAD_REQUEST, "taxCategory must be A (0% not taxable) or B (18% taxable)");
+    }
+
+    private static boolean isTaxableCategory(String taxCategory) {
+        return "B".equals(normalizeTaxCategory(taxCategory));
     }
 
     private void recordOpeningStockAtPrincipalWarehouse(UUID hotelId, InventoryItem i) {

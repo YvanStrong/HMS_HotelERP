@@ -12,6 +12,8 @@ import com.hms.domain.FacilityPriority;
 import com.hms.domain.FacilityType;
 import com.hms.domain.ReservationStatus;
 import com.hms.entity.Facility;
+import com.hms.entity.FacilityAbonnement;
+import com.hms.entity.FacilityAbonnementFacility;
 import com.hms.entity.FacilityBooking;
 import com.hms.entity.FacilityIncident;
 import com.hms.entity.FacilityMaintenance;
@@ -23,6 +25,7 @@ import com.hms.entity.Reservation;
 import com.hms.entity.RoomCharge;
 import com.hms.entity.WaterQualityLog;
 import com.hms.repository.FacilityBookingRepository;
+import com.hms.repository.FacilityAbonnementRepository;
 import com.hms.repository.FacilityIncidentRepository;
 import com.hms.repository.FacilityMaintenanceRepository;
 import com.hms.repository.FacilityRepository;
@@ -50,6 +53,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Locale;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -64,6 +68,7 @@ public class FacilityService {
     private final FacilityRepository facilityRepository;
     private final FacilitySlotRepository facilitySlotRepository;
     private final FacilityBookingRepository facilityBookingRepository;
+    private final FacilityAbonnementRepository facilityAbonnementRepository;
     private final FacilityMaintenanceRepository facilityMaintenanceRepository;
     private final WaterQualityLogRepository waterQualityLogRepository;
     private final LifeguardRosterRepository lifeguardRosterRepository;
@@ -80,6 +85,7 @@ public class FacilityService {
             FacilityRepository facilityRepository,
             FacilitySlotRepository facilitySlotRepository,
             FacilityBookingRepository facilityBookingRepository,
+            FacilityAbonnementRepository facilityAbonnementRepository,
             FacilityMaintenanceRepository facilityMaintenanceRepository,
             WaterQualityLogRepository waterQualityLogRepository,
             LifeguardRosterRepository lifeguardRosterRepository,
@@ -94,6 +100,7 @@ public class FacilityService {
         this.facilityRepository = facilityRepository;
         this.facilitySlotRepository = facilitySlotRepository;
         this.facilityBookingRepository = facilityBookingRepository;
+        this.facilityAbonnementRepository = facilityAbonnementRepository;
         this.facilityMaintenanceRepository = facilityMaintenanceRepository;
         this.waterQualityLogRepository = waterQualityLogRepository;
         this.lifeguardRosterRepository = lifeguardRosterRepository;
@@ -264,6 +271,7 @@ public class FacilityService {
         }
         b.setStatus(FacilityBookingStatus.CHECKED_IN);
         b.setCheckedInAt(Instant.now());
+        BigDecimal invoiceAmount = ensureFacilityInvoice(b, actual);
         facilityBookingRepository.save(b);
 
         Facility facility = b.getFacility();
@@ -286,8 +294,30 @@ public class FacilityService {
                 b.getId(),
                 b.getStatus().name(),
                 b.getCheckedInAt(),
+                b.getInvoiceNumber(),
+                invoiceAmount,
                 new FacilityDtos.FacilityOccupancyInfo(facility.getName(), occ, remaining),
                 broadcast);
+    }
+
+    private BigDecimal ensureFacilityInvoice(FacilityBooking booking, int actualGuestCount) {
+        if (booking.getInvoiceNumber() != null && !booking.getInvoiceNumber().isBlank()) {
+            return booking.getAmountPaid() != null ? booking.getAmountPaid() : BigDecimal.ZERO;
+        }
+        Facility facility = booking.getFacility();
+        BigDecimal unitPrice = facility.getBasePrice() != null ? facility.getBasePrice() : BigDecimal.ZERO;
+        BigDecimal amount = unitPrice
+                .multiply(BigDecimal.valueOf(Math.max(1, actualGuestCount)))
+                .setScale(2, RoundingMode.HALF_UP);
+        if (amount.signum() > 0 && (booking.getAmountPaid() == null || booking.getAmountPaid().signum() == 0)) {
+            booking.setAmountPaid(amount);
+            booking.setPaymentStatus(FacilityPaymentStatus.PAID);
+        }
+        if (amount.signum() > 0) {
+            booking.setInvoiceNumber(nextFacilityInvoiceNumber());
+            booking.setInvoicedAt(Instant.now());
+        }
+        return amount;
     }
 
     @Transactional
@@ -481,7 +511,9 @@ public class FacilityService {
                         b.getGuestCount(),
                         b.getSlot().getStartTime().atZone(ZoneOffset.UTC).toInstant(),
                         b.getSlot().getEndTime().atZone(ZoneOffset.UTC).toInstant(),
-                        b.getAccessCode()))
+                        b.getAccessCode(),
+                        b.getInvoiceNumber(),
+                        b.getAmountPaid()))
                 .toList();
 
         return new FacilityDtos.FacilityDashboardResponse(
@@ -513,6 +545,136 @@ public class FacilityService {
         f.setBufferMinutesBetweenSlots(0);
         f = facilityRepository.save(f);
         return new FacilityDtos.FacilityCreatedResponse(f.getId());
+    }
+
+    @Transactional
+    public FacilityDtos.FacilityAbonnementRow createAbonnement(
+            UUID hotelId, String hotelHeader, FacilityDtos.FacilityAbonnementCreateRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (req.validUntil().isBefore(req.validFrom())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "validUntil must be on/after validFrom");
+        }
+        Hotel hotel = hotelRepository.findById(hotelId).orElseThrow(() -> notFound("Hotel"));
+        String code = normalizeAbonnementCode(
+                req.code() != null && !req.code().isBlank()
+                        ? req.code()
+                        : "ABO-" + Year.now() + "-" + UUID.randomUUID().toString().substring(0, 6));
+        if (facilityAbonnementRepository.findByHotel_IdAndCodeIgnoreCase(hotelId, code).isPresent()) {
+            throw new ApiException(HttpStatus.CONFLICT, "Abonnement code already exists");
+        }
+        FacilityAbonnement a = new FacilityAbonnement();
+        a.setHotel(hotel);
+        a.setMemberName(req.memberName().trim());
+        a.setCompanyName(cleanNullable(req.companyName()));
+        a.setCode(code);
+        a.setContactEmail(cleanNullable(req.contactEmail()));
+        a.setContactPhone(cleanNullable(req.contactPhone()));
+        a.setValidFrom(req.validFrom());
+        a.setValidUntil(req.validUntil());
+        a.setVisitLimit(req.visitLimit());
+        a.setMonthlyBilling(Boolean.TRUE.equals(req.monthlyBilling()));
+        a.setActive(true);
+
+        for (UUID facilityId : req.facilityIds() == null ? List.<UUID>of() : req.facilityIds()) {
+            Facility facility = facilityRepository
+                    .findByIdAndHotel_Id(facilityId, hotelId)
+                    .orElseThrow(() -> notFound("Facility"));
+            FacilityAbonnementFacility af = new FacilityAbonnementFacility();
+            af.setAbonnement(a);
+            af.setFacility(facility);
+            a.getAllowedFacilities().add(af);
+        }
+        a = facilityAbonnementRepository.save(a);
+        return toAbonnementRow(a);
+    }
+
+    @Transactional(readOnly = true)
+    public List<FacilityDtos.FacilityAbonnementRow> listAbonnements(UUID hotelId, String hotelHeader, String q) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        String query = q == null ? "" : q.trim();
+        List<FacilityAbonnement> rows = query.isBlank()
+                ? facilityAbonnementRepository.findDetailedByHotelId(hotelId)
+                : facilityAbonnementRepository.searchDetailed(hotelId, query);
+        return rows.stream().map(this::toAbonnementRow).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<FacilityDtos.FacilityInvoiceRow> listFacilityInvoices(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        return facilityBookingRepository.findInvoicedByHotelId(hotelId).stream()
+                .map(b -> new FacilityDtos.FacilityInvoiceRow(
+                        b.getId(),
+                        b.getInvoiceNumber(),
+                        b.getFacility().getName(),
+                        b.getGuest().getFullName(),
+                        b.getAmountPaid(),
+                        b.getInvoicedAt()))
+                .toList();
+    }
+
+    @Transactional
+    public FacilityDtos.FacilityAbonnementCheckInResponse checkInAbonnement(
+            UUID hotelId,
+            String hotelHeader,
+            UUID facilityId,
+            FacilityDtos.FacilityAbonnementCheckInRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Facility facility = facilityRepository
+                .findByIdAndHotel_Id(facilityId, hotelId)
+                .orElseThrow(() -> notFound("Facility"));
+        FacilitySlot slot = facilitySlotRepository
+                .findByIdAndFacility_Id(req.slotId(), facilityId)
+                .orElseThrow(() -> notFound("Slot"));
+        FacilityAbonnement abonnement = resolveAbonnement(hotelId, req);
+        validateAbonnementForFacility(abonnement, facility);
+        int guestCount = req.guestCount() != null && req.guestCount() > 0 ? req.guestCount() : 1;
+        if (abonnement.getVisitLimit() != null
+                && abonnement.getVisitsUsed() + guestCount > abonnement.getVisitLimit()) {
+            throw new ApiException(HttpStatus.CONFLICT, "Abonnement visit limit would be exceeded");
+        }
+        long occupied = facilityBookingRepository.sumGuestCountOnSlot(slot.getId(), OCCUPYING_STATUSES);
+        if (occupied + guestCount > slot.getMaxBookings()) {
+            throw new ApiException(HttpStatus.CONFLICT, "Slot capacity exceeded");
+        }
+
+        Guest guest = resolveAbonnementGuest(hotelId, abonnement);
+        FacilityBooking booking = new FacilityBooking();
+        booking.setFacility(facility);
+        booking.setSlot(slot);
+        booking.setGuest(guest);
+        booking.setAbonnement(abonnement);
+        booking.setBookingReference(generateBookingRef(facility.getType().name()));
+        booking.setGuestCount(guestCount);
+        booking.setSpecialRequests(cleanNullable(req.staffNotes()));
+        booking.setAccessCode(abonnement.getCode());
+        booking.setQrCode(QrCodeUtil.toPngDataUri(abonnement.getCode()));
+        booking.setAmountPaid(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+        booking.setPaymentStatus(FacilityPaymentStatus.PAID);
+        booking.setStatus(FacilityBookingStatus.CHECKED_IN);
+        booking.setCheckedInAt(Instant.now());
+        booking = facilityBookingRepository.save(booking);
+
+        abonnement.setVisitsUsed(abonnement.getVisitsUsed() + guestCount);
+        facilityAbonnementRepository.save(abonnement);
+
+        long newOcc = occupied + guestCount;
+        slot.setCurrentBookings((int) newOcc);
+        if (newOcc >= slot.getMaxBookings()) {
+            slot.setStatus(FacilitySlotStatus.BOOKED);
+        }
+        facilitySlotRepository.save(slot);
+        facilityWebSocketPublisher.publishOccupancy(hotelId, facility.getId(), (int) newOcc, slot.getMaxBookings());
+
+        return new FacilityDtos.FacilityAbonnementCheckInResponse(
+                booking.getId(),
+                booking.getBookingReference(),
+                booking.getStatus().name(),
+                abonnement.getMemberName(),
+                abonnement.getCode(),
+                BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
+                abonnement.getVisitsUsed(),
+                abonnement.getVisitLimit(),
+                abonnement.isMonthlyBilling() ? "MONTHLY_COMPANY_BILLING" : "PREPAID_ABONNEMENT");
     }
 
     @Transactional
@@ -778,8 +940,108 @@ public class FacilityService {
         return guestRepository.save(guest);
     }
 
+    private FacilityAbonnement resolveAbonnement(
+            UUID hotelId, FacilityDtos.FacilityAbonnementCheckInRequest req) {
+        if (req.abonnementId() != null) {
+            return facilityAbonnementRepository
+                    .findByIdAndHotel_Id(req.abonnementId(), hotelId)
+                    .orElseThrow(() -> notFound("Abonnement"));
+        }
+        if (req.code() != null && !req.code().isBlank()) {
+            return facilityAbonnementRepository
+                    .findByHotel_IdAndCodeIgnoreCase(hotelId, normalizeAbonnementCode(req.code()))
+                    .orElseThrow(() -> notFound("Abonnement"));
+        }
+        throw new ApiException(HttpStatus.BAD_REQUEST, "abonnementId or code is required");
+    }
+
+    private void validateAbonnementForFacility(FacilityAbonnement a, Facility facility) {
+        LocalDate today = LocalDate.now();
+        if (!a.isActive()) {
+            throw new ApiException(HttpStatus.CONFLICT, "Abonnement is inactive");
+        }
+        if (today.isBefore(a.getValidFrom()) || today.isAfter(a.getValidUntil())) {
+            throw new ApiException(HttpStatus.CONFLICT, "Abonnement is expired or not yet valid");
+        }
+        if (a.getVisitLimit() != null && a.getVisitsUsed() >= a.getVisitLimit()) {
+            throw new ApiException(HttpStatus.CONFLICT, "Abonnement visit limit reached");
+        }
+        boolean allowed = a.getAllowedFacilities().isEmpty()
+                || a.getAllowedFacilities().stream()
+                        .anyMatch(af -> af.getFacility().getId().equals(facility.getId()));
+        if (!allowed) {
+            throw new ApiException(HttpStatus.CONFLICT, "Abonnement is not allowed for this facility");
+        }
+    }
+
+    private Guest resolveAbonnementGuest(UUID hotelId, FacilityAbonnement a) {
+        String email = a.getContactEmail();
+        final String resolvedEmail = email == null || email.isBlank()
+                ? a.getCode().toLowerCase(Locale.ROOT) + "@abonnement.local"
+                : email.trim();
+        return guestRepository.findByHotel_IdAndEmailIgnoreCase(hotelId, resolvedEmail)
+                .orElseGet(() -> {
+                    Hotel hotel = hotelRepository.findById(hotelId).orElseThrow(() -> notFound("Hotel"));
+                    String[] names = a.getMemberName().trim().split("\\s+", 2);
+                    Guest guest = new Guest();
+                    guest.setHotel(hotel);
+                    guest.setFirstName(names[0]);
+                    guest.setLastName(names.length > 1 ? names[1] : "Member");
+                    guest.setFullName(a.getMemberName().trim());
+                    guest.setEmail(resolvedEmail);
+                    guest.setPhone(a.getContactPhone());
+                    guest.setGuestType("ABONNEMENT");
+                    guest.setCorporateCompanyName(a.getCompanyName());
+                    guest.setCorporateAccountCode(a.getCode());
+                    GuestProfileDefaults.ensureRequiredForPersistence(guest, hotel);
+                    return guestRepository.save(guest);
+                });
+    }
+
+    private FacilityDtos.FacilityAbonnementRow toAbonnementRow(FacilityAbonnement a) {
+        List<FacilityDtos.FacilitySummary> facilities = a.getAllowedFacilities().stream()
+                .map(af -> new FacilityDtos.FacilitySummary(
+                        af.getFacility().getId(),
+                        af.getFacility().getName(),
+                        af.getFacility().getCode(),
+                        af.getFacility().getType().name()))
+                .toList();
+        return new FacilityDtos.FacilityAbonnementRow(
+                a.getId(),
+                a.getMemberName(),
+                a.getCompanyName(),
+                a.getCode(),
+                a.getContactEmail(),
+                a.getContactPhone(),
+                a.getValidFrom(),
+                a.getValidUntil(),
+                a.getVisitLimit(),
+                a.getVisitsUsed(),
+                a.isMonthlyBilling(),
+                a.isActive(),
+                facilities);
+    }
+
+    private static String normalizeAbonnementCode(String raw) {
+        String value = raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9_-]", "");
+        if (value.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid abonnement code");
+        }
+        return value;
+    }
+
+    private static String cleanNullable(String raw) {
+        return raw == null || raw.isBlank() ? null : raw.trim();
+    }
+
     private static String generateBookingRef(String typePrefix) {
         return typePrefix + "-" + Year.now() + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 4).toUpperCase();
+    }
+
+    private String nextFacilityInvoiceNumber() {
+        String year = String.valueOf(Year.now().getValue());
+        int next = facilityBookingRepository.findMaxFacilityInvoiceSuffixForYear(year) + 1;
+        return "FAC-" + year + "-" + String.format("%06d", next);
     }
 
     private static ApiException notFound(String what) {

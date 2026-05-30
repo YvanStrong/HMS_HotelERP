@@ -50,6 +50,20 @@ public final class AccountingDtos {
             String paymentMethod,
             String referenceNo) {}
 
+    public record AccountRow(
+            UUID id,
+            String code,
+            String name,
+            String accountType,
+            String description,
+            boolean active) {}
+
+    public record CreateAccountRequest(
+            @NotBlank String code,
+            @NotBlank String name,
+            @NotBlank String accountType,
+            String description) {}
+
     public record PettyCashRow(
             UUID id,
             String requestNumber,
@@ -83,8 +97,87 @@ public final class AccountingDtos {
 
     public record DisbursePettyCashRequest(String notes) {}
 
+    public record BankStatementLineRow(
+            UUID id,
+            LocalDate bookDate,
+            LocalDate valueDate,
+            String reference,
+            String narration,
+            BigDecimal debitAmount,
+            BigDecimal creditAmount,
+            BigDecimal balanceAmount,
+            String sourceBank,
+            String recordedBy,
+            Instant createdAt) {}
+
+    public record BankStatementImportResponse(
+            int importedCount,
+            int skippedCount,
+            String message,
+            List<BankStatementLineRow> lines) {}
+
+    public record CreateBankStatementLineRequest(
+            @NotNull LocalDate bookDate,
+            LocalDate valueDate,
+            String reference,
+            @NotBlank String narration,
+            BigDecimal debitAmount,
+            BigDecimal creditAmount,
+            BigDecimal balanceAmount,
+            String sourceBank) {}
+
+    public record LedgerEntryRow(
+            LocalDate date,
+            String reference,
+            String source,
+            String accountCode,
+            String accountName,
+            String accountType,
+            String description,
+            BigDecimal debit,
+            BigDecimal credit) {}
+
+    public record TrialBalanceRow(
+            String accountCode,
+            String accountName,
+            String accountType,
+            BigDecimal debit,
+            BigDecimal credit) {}
+
+    public record ProfitLossRow(String accountName, BigDecimal amount) {}
+
+    public record ProfitLossReport(
+            LocalDate fromDate,
+            LocalDate toDate,
+            List<ProfitLossRow> income,
+            List<ProfitLossRow> expenses,
+            BigDecimal totalIncome,
+            BigDecimal totalExpenses,
+            BigDecimal netProfit) {}
+
+    public record BalanceSheetRow(String accountName, BigDecimal amount) {}
+
+    public record BalanceSheetReport(
+            LocalDate asOfDate,
+            List<BalanceSheetRow> assets,
+            List<BalanceSheetRow> liabilities,
+            List<BalanceSheetRow> equity,
+            BigDecimal totalAssets,
+            BigDecimal totalLiabilities,
+            BigDecimal totalEquity,
+            BigDecimal liabilitiesAndEquity) {}
+
+    public record AccountingReports(
+            List<LedgerEntryRow> ledger,
+            List<TrialBalanceRow> trialBalance,
+            ProfitLossReport profitAndLoss,
+            BalanceSheetReport balanceSheet,
+            List<BankStatementLineRow> bankStatementLines) {}
+
     public record AccountingDashboard(
             SalesAnalytics analytics,
+            List<AccountRow> accounts,
             List<ExpenseRow> expenses,
-            List<PettyCashRow> pettyCashRequests) {}
+            List<PettyCashRow> pettyCashRequests,
+            AccountingReports reports) {}
 }

@@ -13,8 +13,10 @@ export type DepotSaleLine = {
 export type DepotSalePrintPayload = {
   saleId: string;
   saleNumber: string;
+  documentTitle?: "INVOICE" | "PROFORMA" | "DELIVERY";
   depotName: string;
   customerName: string | null;
+  customerTin?: string | null;
   totalAmount: number;
   soldAt: string;
   lines: DepotSaleLine[];
@@ -46,6 +48,7 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const assetUrl = (path: string) => `${origin}${path.startsWith("/") ? path : `/${path}`}`;
   const vatPercent = payload.vatPercent ?? 18;
+  const documentTitle = payload.documentTitle ?? "INVOICE";
 
   const soldAtLabel = (() => {
     try {
@@ -78,7 +81,7 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
   /** Remainder so subtotal + VAT matches charged total after per-line rounding. */
   const vatTotal = round2(Math.max(0, totalIncl - subtotalExclVat));
 
-  return `<!doctype html><html><head><meta charset="utf-8"/><title>Sale ${esc(payload.saleNumber)}</title>
+  return `<!doctype html><html><head><meta charset="utf-8"/><title>${esc(documentTitle)} ${esc(payload.saleNumber)}</title>
 <style>
   @page { size: A4; margin: 14mm; }
   * { box-sizing: border-box; }
@@ -114,7 +117,7 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
     font-size: 20px;
     letter-spacing: 0.02em;
     font-weight: 800;
-    color: #14532d;
+    color: #1a3a5c;
   }
   .tagline { margin: 0; font-size: 11px; color: #7a6a62; letter-spacing: 0.12em; text-transform: uppercase; }
   .meta {
@@ -126,7 +129,7 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
   }
   .meta div { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px dashed #e3d8ce; padding-bottom: 6px; }
   .muted { color: #7a6a62; }
-  .strong { font-weight: 700; color: #14532d; }
+  .strong { font-weight: 700; color: #1a3a5c; }
   table.lines {
     width: 100%;
     table-layout: fixed;
@@ -189,7 +192,7 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
     border-top: 1px solid #e8dfd4;
     font-weight: 800;
     font-size: 15px;
-    color: #14532d;
+    color: #1a3a5c;
   }
   .invoice-totals .note {
     margin-top: 8px;
@@ -220,12 +223,13 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
     </div>
     <div>
       <p class="tagline">Point of sale</p>
-      <h1>Sale receipt</h1>
+      <h1>${esc(documentTitle)}</h1>
     </div>
     <div class="meta">
-      <div><span class="muted">Sale #</span><span class="strong">${esc(payload.saleNumber)}</span></div>
+      <div><span class="muted">${documentTitle === "PROFORMA" ? "Proforma #" : "Invoice #"}</span><span class="strong">${esc(payload.saleNumber)}</span></div>
       <div><span class="muted">Depot</span><span>${esc(payload.depotName)}</span></div>
       <div><span class="muted">Client</span><span>${esc(payload.customerName || "Walk-in")}</span></div>
+      ${payload.customerTin?.trim() ? `<div><span class="muted">TIN</span><span>${esc(payload.customerTin.trim())}</span></div>` : ""}
       <div><span class="muted">Date</span><span>${esc(soldAtLabel)}</span></div>
     </div>
     <table class="lines">

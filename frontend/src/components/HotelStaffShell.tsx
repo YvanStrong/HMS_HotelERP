@@ -134,6 +134,7 @@ export function HotelStaffShell({
   const [user, setUser] = useState<AuthUser | null>(null);
   const { hotel, hasModule, isModuleVisibleWhenDisabled, loading: hotelLoading } = useHotelContext(hotelId);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<string[]>([
     "Overview",
     "Rooms",
@@ -169,7 +170,7 @@ export function HotelStaffShell({
   const currentModuleDisabled = Boolean(currentModuleKey && !hasModule(currentModuleKey));
 
   return (
-    <div className="h-screen overflow-hidden bg-gradient-to-br from-[hsl(140,40%,98%)] to-[hsl(140,25%,94%)] flex">
+    <div className="h-screen overflow-hidden bg-gradient-to-br from-[hsl(204,94%,98%)] to-[hsl(38,92%,94%)] flex">
       {/* Mobile sidebar overlay */}
       {isSidebarOpen && (
         <div
@@ -180,34 +181,61 @@ export function HotelStaffShell({
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:sticky lg:top-0 inset-y-0 left-0 z-50 w-64 h-screen bg-white/97 backdrop-blur-sm border-r border-border/80 shadow-[2px_0_16px_rgba(20,83,45,0.06)] transform transition-transform duration-200 ease-in-out ${
+        className={`fixed lg:sticky lg:top-0 inset-y-0 left-0 z-50 h-screen bg-white/97 backdrop-blur-sm border-r border-border/80 shadow-[2px_0_16px_rgba(26,58,92,0.08)] transform transition-all duration-200 ease-in-out ${
+          isSidebarCollapsed ? "lg:w-20" : "lg:w-72"
+        } w-72 ${
           isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
         <div className="h-full flex flex-col">
           {/* Brand + Hotel area */}
-          <div className="p-4 border-b border-border/70" style={{ background: "linear-gradient(to bottom right, hsl(0 0% 100%), hsl(140 35% 97%))" }}>
-            <Link href="/" className="flex items-center gap-2.5 no-underline group">
-              {hotel.logoUrl ? (
-                <img
-                  src={hotel.logoUrl}
-                  alt={`${hotel.name} logo`}
-                  className="w-9 h-9 rounded-lg object-cover border border-border/60 shadow-sm"
-                />
-              ) : (
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-sm" style={{ background: "hsl(var(--primary))" }}>
-                  {(hotel.name || "H").slice(0, 1).toUpperCase()}
+          <div className="relative p-4 border-b border-border/70" style={{ background: "linear-gradient(to bottom right, hsl(0 0% 100%), hsl(204 94% 97%))" }}>
+            <div className={`flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-end"}`}>
+              <button
+                type="button"
+                onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+                className="absolute right-4 top-4 hidden h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-white text-muted-foreground shadow-sm transition hover:bg-accent hover:text-foreground lg:inline-flex"
+                aria-label={isSidebarCollapsed ? "Expand menu" : "Collapse menu"}
+                title={isSidebarCollapsed ? "Expand menu" : "Collapse menu"}
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(false)}
+                className="lg:hidden h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-white text-muted-foreground shadow-sm"
+                aria-label="Close menu"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {!isSidebarCollapsed && (
+              <div className="flex items-center gap-2.5 rounded-xl bg-white/70 p-2 pr-14">
+                {hotel.logoUrl ? (
+                  <img
+                    src={hotel.logoUrl}
+                    alt={`${hotel.name} logo`}
+                    className="w-9 h-9 rounded-lg object-cover border border-border/60 shadow-sm"
+                  />
+                ) : (
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-sm" style={{ background: "hsl(var(--primary))" }}>
+                    {(hotel.name || "H").slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">{hotelLoading ? "Loading…" : hotel.name}</p>
+                  <p className="text-[11px] text-muted-foreground">Active hotel</p>
                 </div>
-              )}
-              <div className="min-w-0">
-                <p className="font-bold text-base text-foreground truncate leading-tight group-hover:text-primary transition-colors">{hotelLoading ? "Loading…" : hotel.name}</p>
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">Staff Console</p>
               </div>
-            </Link>
+            )}
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto py-2 px-3 space-y-1 scrollbar-thin">
+          <nav className={`flex-1 overflow-y-auto py-2 space-y-1 scrollbar-thin ${isSidebarCollapsed ? "px-2" : "px-3"}`}>
             {NAV_SECTIONS.map((section) => {
               const visibleItems = section.items.filter((item) => {
                 const moduleKey = NAV_MODULES[item.key];
@@ -216,22 +244,24 @@ export function HotelStaffShell({
               if (visibleItems.length === 0) return null;
               return (
               <div key={section.title} className="mb-2">
-                <button
-                  onClick={() => toggleSection(section.title)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors bg-transparent shadow-none rounded-none border-none"
-                >
-                  <span>{section.title}</span>
-                  <svg 
-                    className={`w-4 h-4 transition-transform ${isSectionExpanded(section.title) ? "rotate-180" : ""}`} 
-                    fill="none" 
-                    viewBox="0 0 24 24" 
-                    stroke="currentColor" 
-                    strokeWidth={2}
+                {!isSidebarCollapsed && (
+                  <button
+                    onClick={() => toggleSection(section.title)}
+                    className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors bg-transparent shadow-none rounded-none border-none"
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {isSectionExpanded(section.title) && (
+                    <span>{section.title}</span>
+                    <svg 
+                      className={`w-4 h-4 transition-transform ${isSectionExpanded(section.title) ? "rotate-180" : ""}`} 
+                      fill="none" 
+                      viewBox="0 0 24 24" 
+                      stroke="currentColor" 
+                      strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                )}
+                {(isSidebarCollapsed || isSectionExpanded(section.title)) && (
                   <div className="space-y-1 mt-1">
                     {visibleItems.map((item) => {
                       const moduleKey = NAV_MODULES[item.key];
@@ -254,7 +284,9 @@ export function HotelStaffShell({
                           : pathname === href || (pathname?.startsWith(`${href}/`) ?? false);
                       const roleAllowed = canAccessHotelNav(user, item.key);
                       const allowed = roleAllowed && moduleEnabled;
-                      const className = `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      const className = `flex items-center rounded-lg text-sm font-medium transition-colors ${
+                        isSidebarCollapsed ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2"
+                      } ${
                         active
                           ? "bg-primary/10 text-primary"
                           : "text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -269,12 +301,12 @@ export function HotelStaffShell({
                           <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
                           </svg>
-                          <span className="truncate">{item.label}</span>
-                          {!moduleEnabled ? (
+                          {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
+                          {!isSidebarCollapsed && !moduleEnabled ? (
                             <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
                               Locked
                             </span>
-                          ) : !allowed && (
+                          ) : !allowed && !isSidebarCollapsed && (
                             <svg className="w-4 h-4 ml-auto text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                             </svg>
@@ -335,25 +367,28 @@ export function HotelStaffShell({
 
           {/* User section */}
           <div className="p-3 border-t border-border/70">
-            <div className="flex items-center gap-2.5 px-1 py-1.5 rounded-lg">
+            <div className={`flex items-center rounded-lg ${isSidebarCollapsed ? "justify-center px-0 py-1.5" : "gap-2.5 px-1 py-1.5"}`}>
               <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white text-sm font-bold shadow-sm" style={{ background: "hsl(var(--primary))" }}>
                 {user?.username?.charAt(0).toUpperCase() || "U"}
               </div>
-              <div className="flex-1 min-w-0">
+              {!isSidebarCollapsed && <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-foreground truncate leading-tight">{user?.username || "User"}</p>
                 <p className="text-[11px] text-muted-foreground truncate">{user?.role?.replace(/_/g, " ") || "HOTEL ADMIN"}</p>
-              </div>
+              </div>}
             </div>
             {user && (
               <button
                 type="button"
                 onClick={logout}
-                className="mt-1 w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors bg-transparent shadow-none border-none"
+                className={`mt-1 w-full flex items-center rounded-lg text-sm text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors bg-transparent shadow-none border-none ${
+                  isSidebarCollapsed ? "justify-center px-2 py-2" : "gap-2 px-2 py-2"
+                }`}
+                title="Sign out"
               >
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                 </svg>
-                Sign out
+                {!isSidebarCollapsed && "Sign out"}
               </button>
             )}
           </div>
@@ -363,10 +398,17 @@ export function HotelStaffShell({
       {/* Main content */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Mobile header */}
-        <header className="lg:hidden bg-white border-b border-border px-4 py-3 flex items-center justify-between">
+        <header className="bg-white border-b border-border px-4 py-3 flex items-center justify-between lg:hidden">
           <button
-            onClick={() => setIsSidebarOpen(true)}
+            onClick={() => {
+              if (window.innerWidth >= 1024) {
+                setIsSidebarCollapsed((prev) => !prev);
+              } else {
+                setIsSidebarOpen(true);
+              }
+            }}
             className="p-2 rounded-lg hover:bg-accent transition-colors bg-transparent shadow-none border-none"
+            aria-label="Toggle menu"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />

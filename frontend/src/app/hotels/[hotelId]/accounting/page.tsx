@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
-import { loadAuthUser } from "@/lib/auth";
+import { loadAuthUser, type AuthUser } from "@/lib/auth";
 
 type SalesAnalytics = {
   fromDate: string;
@@ -50,8 +50,84 @@ type PettyCashRow = {
 
 type AccountingDashboard = {
   analytics: SalesAnalytics;
+  accounts: AccountRow[];
   expenses: ExpenseRow[];
   pettyCashRequests: PettyCashRow[];
+  reports?: AccountingReports;
+};
+
+type AccountRow = {
+  id: string;
+  code: string;
+  name: string;
+  accountType: "ASSET" | "LIABILITY" | "EQUITY" | "INCOME" | "EXPENSE";
+  description?: string | null;
+  active: boolean;
+};
+
+type BankStatementLineRow = {
+  id: string;
+  bookDate: string;
+  valueDate?: string | null;
+  reference?: string | null;
+  narration: string;
+  debitAmount: number;
+  creditAmount: number;
+  balanceAmount?: number | null;
+  sourceBank: string;
+};
+
+type LedgerEntryRow = {
+  date: string;
+  reference: string;
+  source: string;
+  accountCode: string;
+  accountName: string;
+  accountType: string;
+  description: string;
+  debit: number;
+  credit: number;
+};
+
+type TrialBalanceRow = {
+  accountCode: string;
+  accountName: string;
+  accountType: string;
+  debit: number;
+  credit: number;
+};
+
+type ProfitLossReport = {
+  income: { accountName: string; amount: number }[];
+  expenses: { accountName: string; amount: number }[];
+  totalIncome: number;
+  totalExpenses: number;
+  netProfit: number;
+};
+
+type BalanceSheetReport = {
+  assets: { accountName: string; amount: number }[];
+  liabilities: { accountName: string; amount: number }[];
+  equity: { accountName: string; amount: number }[];
+  totalAssets: number;
+  totalLiabilities: number;
+  totalEquity: number;
+  liabilitiesAndEquity: number;
+};
+
+type AccountingReports = {
+  ledger: LedgerEntryRow[];
+  trialBalance: TrialBalanceRow[];
+  profitAndLoss: ProfitLossReport;
+  balanceSheet: BalanceSheetReport;
+  bankStatementLines: BankStatementLineRow[];
+};
+
+type BankStatementImportResponse = {
+  importedCount: number;
+  skippedCount: number;
+  message: string;
+  lines: BankStatementLineRow[];
 };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -83,10 +159,17 @@ function statusClass(status: PettyCashRow["status"]) {
   }
 }
 
+function sourceLabel(source: string) {
+  return source.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+type ReportKey = "profitLoss" | "balanceSheet" | "trialBalance" | "ledger" | "bankStatement";
+
 export default function AccountingPage() {
   const params = useParams<{ hotelId: string }>();
   const hotelId = params.hotelId;
-  const user = useMemo(() => loadAuthUser(), []);
+  const [mounted, setMounted] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const canManage = canManageAccounting(user?.role);
   const manager = canApprove(user?.role);
   const cashier = canManage;
@@ -98,6 +181,7 @@ export default function AccountingPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeReport, setActiveReport] = useState<ReportKey>("profitLoss");
 
   const [expense, setExpense] = useState({
     expenseDate: today,
@@ -115,12 +199,28 @@ export default function AccountingPage() {
     amountRequested: "",
     notes: "",
   });
+  const [bankLine, setBankLine] = useState({
+    bookDate: today,
+    valueDate: today,
+    reference: "",
+    narration: "",
+    debitAmount: "",
+    creditAmount: "",
+    balanceAmount: "",
+    sourceBank: "Bank of Kigali",
+  });
+  const [accountForm, setAccountForm] = useState({
+    code: "",
+    name: "",
+    accountType: "EXPENSE" as AccountRow["accountType"],
+    description: "",
+  });
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (range?: { from: string; to: string }) => {
     setLoading(true);
     setError(null);
     try {
-      const q = new URLSearchParams({ from, to });
+      const q = new URLSearchParams({ from: range?.from ?? from, to: range?.to ?? to });
       const payload = await apiFetch<AccountingDashboard>(`/api/v1/hotels/${hotelId}/accounting?${q}`, {
         quiet: !canManage,
       });
@@ -134,8 +234,14 @@ export default function AccountingPage() {
   }, [hotelId, from, to, canManage]);
 
   useEffect(() => {
+    setUser(loadAuthUser());
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
     void load();
-  }, [load]);
+  }, [mounted, load]);
 
   async function submitExpense(e: React.FormEvent) {
     e.preventDefault();
@@ -180,6 +286,91 @@ export default function AccountingPage() {
     }
   }
 
+  async function submitBankLine(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy("bank");
+    setError(null);
+    try {
+      await apiFetch<BankStatementLineRow>(`/api/v1/hotels/${hotelId}/accounting/bank-statements`, {
+        method: "POST",
+        body: JSON.stringify({
+          ...bankLine,
+          valueDate: bankLine.valueDate || null,
+          reference: bankLine.reference || null,
+          debitAmount: Number(bankLine.debitAmount || 0),
+          creditAmount: Number(bankLine.creditAmount || 0),
+          balanceAmount: bankLine.balanceAmount ? Number(bankLine.balanceAmount) : null,
+        }),
+      });
+      setBankLine((prev) => ({
+        ...prev,
+        reference: "",
+        narration: "",
+        debitAmount: "",
+        creditAmount: "",
+        balanceAmount: "",
+      }));
+      setMsg("Bank statement line recorded.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not record bank statement line");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function importBankStatementPdf(file: File | null) {
+    if (!file) return;
+    setBusy("bank-pdf");
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await apiFetch<BankStatementImportResponse>(
+        `/api/v1/hotels/${hotelId}/accounting/bank-statements/import-pdf`,
+        {
+          method: "POST",
+          body: form,
+        },
+      );
+      if ((res.lines ?? []).length > 0) {
+        const dates = res.lines.map((line) => line.bookDate).sort();
+        const nextFrom = dates[0];
+        const nextTo = dates[dates.length - 1];
+        setFrom(nextFrom);
+        setTo(nextTo);
+        setMsg(`${res.message || `Imported ${res.importedCount} bank statement line(s).`} Showing imported statement period ${nextFrom} to ${nextTo}.`);
+        await load({ from: nextFrom, to: nextTo });
+      } else {
+        setMsg(res.message || "No bank statement rows were recognized.");
+        await load();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not import bank statement PDF");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function submitAccount(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy("account");
+    setError(null);
+    try {
+      await apiFetch<AccountRow>(`/api/v1/hotels/${hotelId}/accounting/accounts`, {
+        method: "POST",
+        body: JSON.stringify(accountForm),
+      });
+      setAccountForm({ code: "", name: "", accountType: "EXPENSE", description: "" });
+      setMsg("Account created.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create account");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function pettyAction(id: string, action: "approve" | "reject" | "disburse") {
     const amountApproved =
       action === "approve" ? window.prompt("Approved amount (leave blank to approve requested amount):") : null;
@@ -207,7 +398,54 @@ export default function AccountingPage() {
     }
   }
 
+  function downloadReportPdf(report: ReportKey) {
+    const titleMap: Record<ReportKey, string> = {
+      profitLoss: "Profit & Loss",
+      balanceSheet: "Balance Sheet",
+      trialBalance: "Trial Balance",
+      ledger: "Ledger",
+      bankStatement: "Bank Statement",
+    };
+    const reportTitle = titleMap[report];
+    const printable = document.getElementById(`accounting-report-${report}`);
+    if (!printable) return;
+    const w = window.open("", "_blank");
+    if (!w) {
+      setError("Pop-up blocked. Allow pop-ups to download this report as PDF.");
+      return;
+    }
+    w.document.open();
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>${reportTitle}</title>
+      <style>
+      body{font-family:Arial,sans-serif;margin:24px;color:#111}
+      h1{font-size:20px;margin:0 0 4px}
+      .muted{color:#666;font-size:12px;margin-bottom:16px}
+      table{width:100%;border-collapse:collapse;font-size:12px}
+      th,td{border-bottom:1px solid #ddd;padding:7px;text-align:left;vertical-align:top}
+      th{background:#f1f5f9}
+      .text-right{text-align:right}
+      </style></head><body>
+      <h1>${reportTitle}</h1><div class="muted">Period: ${from} to ${to}</div>${printable.innerHTML}
+      <script>window.onload=()=>{window.print();}</script></body></html>`);
+    w.document.close();
+  }
+
   const analytics = data?.analytics;
+  const reports = data?.reports;
+
+  if (!mounted) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Accounting</h1>
+          <p className="text-sm text-muted-foreground">Loading accounting workspace…</p>
+        </div>
+        <div className="rounded-2xl border border-border/70 bg-card p-4 text-sm text-muted-foreground shadow-soft">
+          Preparing ledger, bank statement, and reports.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -239,17 +477,21 @@ export default function AccountingPage() {
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div> : null}
 
       {canManage ? (
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {[
-            ["Total sales", analytics?.totalSales],
-            ["POS sales", analytics?.posSales],
-            ["Invoice sales", analytics?.inventoryInvoiceSales],
+            [
+              "Sales",
+              analytics?.totalSales,
+              `POS ${money(analytics?.posSales)} · Invoice ${money(analytics?.inventoryInvoiceSales)}`,
+            ],
             ["Expenses", analytics?.totalExpenses],
             ["Net", analytics?.netAfterExpenses],
-          ].map(([label, value]) => (
+            ["Petty cash disbursed", analytics?.pettyCashDisbursed],
+          ].map(([label, value, sub]) => (
             <div key={label as string} className="rounded-2xl border border-border/70 bg-card p-4 shadow-soft">
               <p className="text-xs text-muted-foreground">{label}</p>
               <p className="mt-1 text-2xl font-bold tabular-nums">{loading ? "…" : money(value as number)}</p>
+              {sub ? <p className="mt-1 text-xs text-muted-foreground">{sub as string}</p> : null}
             </div>
           ))}
         </section>
@@ -259,6 +501,230 @@ export default function AccountingPage() {
           finance, and hotel admin users.
         </div>
       )}
+
+      {canManage ? (
+        <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-soft">
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold">Chart of accounts</h2>
+            <p className="text-sm text-muted-foreground">
+              Stored account list used by the ledger and reports, such as 1000 Cash / Bank, 4000 Sales Revenue, and 4010 Facility Revenue.
+            </p>
+          </div>
+          <form className="mb-4 grid gap-3 lg:grid-cols-[0.6fr_1fr_0.7fr_1.4fr_auto]" onSubmit={submitAccount}>
+            <input placeholder="Code e.g. 5020" value={accountForm.code} onChange={(e) => setAccountForm({ ...accountForm, code: e.target.value })} required />
+            <input placeholder="Account name" value={accountForm.name} onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} required />
+            <select value={accountForm.accountType} onChange={(e) => setAccountForm({ ...accountForm, accountType: e.target.value as AccountRow["accountType"] })}>
+              {["ASSET", "LIABILITY", "EQUITY", "INCOME", "EXPENSE"].map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <input placeholder="Description" value={accountForm.description} onChange={(e) => setAccountForm({ ...accountForm, description: e.target.value })} />
+            <button className="hms-btn-solid" disabled={busy === "account"}>{busy === "account" ? "Saving…" : "Create account"}</button>
+          </form>
+          <div className="max-h-80 overflow-auto rounded-xl border border-border/70">
+            <table>
+              <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Description</th><th>Status</th></tr></thead>
+              <tbody>
+                {(data?.accounts ?? []).map((account) => (
+                  <tr key={account.id}>
+                    <td className="font-semibold">{account.code}</td>
+                    <td>{account.name}</td>
+                    <td>{account.accountType}</td>
+                    <td>{account.description ?? "—"}</td>
+                    <td>{account.active ? "Active" : "Inactive"}</td>
+                  </tr>
+                ))}
+                {(data?.accounts ?? []).length === 0 ? (
+                  <tr><td colSpan={5} className="text-muted-foreground">No accounts yet.</td></tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
+      {canManage ? (
+        <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-soft">
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold">Bank statement</h2>
+            <p className="text-sm text-muted-foreground">
+              Record BK statement lines with book date, value date, reference, narration, debit, credit, and balance.
+            </p>
+          </div>
+          <form className="grid gap-3" onSubmit={submitBankLine}>
+            <div className="grid gap-3 md:grid-cols-4">
+              <label className="text-xs">
+                Book date
+                <input type="date" value={bankLine.bookDate} onChange={(e) => setBankLine({ ...bankLine, bookDate: e.target.value })} required />
+              </label>
+              <label className="text-xs">
+                Value date
+                <input type="date" value={bankLine.valueDate} onChange={(e) => setBankLine({ ...bankLine, valueDate: e.target.value })} />
+              </label>
+              <input placeholder="Reference" value={bankLine.reference} onChange={(e) => setBankLine({ ...bankLine, reference: e.target.value })} />
+              <input placeholder="Bank e.g. Bank of Kigali" value={bankLine.sourceBank} onChange={(e) => setBankLine({ ...bankLine, sourceBank: e.target.value })} />
+            </div>
+            <textarea rows={2} placeholder="Narration" value={bankLine.narration} onChange={(e) => setBankLine({ ...bankLine, narration: e.target.value })} required />
+            <div className="grid gap-3 md:grid-cols-3">
+              <input type="number" min="0" step="0.01" placeholder="Debit / money out" value={bankLine.debitAmount} onChange={(e) => setBankLine({ ...bankLine, debitAmount: e.target.value })} />
+              <input type="number" min="0" step="0.01" placeholder="Credit / money in" value={bankLine.creditAmount} onChange={(e) => setBankLine({ ...bankLine, creditAmount: e.target.value })} />
+              <input type="number" step="0.01" placeholder="Balance" value={bankLine.balanceAmount} onChange={(e) => setBankLine({ ...bankLine, balanceAmount: e.target.value })} />
+            </div>
+            <button className="hms-btn-solid w-fit" disabled={busy === "bank"}>{busy === "bank" ? "Saving…" : "Record bank line"}</button>
+          </form>
+          <div className="mt-4 rounded-xl border border-dashed border-border/80 p-3">
+            <label className="block text-sm font-medium text-foreground" htmlFor="bank-pdf">
+              Import BK statement PDF
+            </label>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Upload the PDF statement and the system will read rows like book date, value date, reference, narration, debit, credit, and balance.
+            </p>
+            <input
+              id="bank-pdf"
+              type="file"
+              accept="application/pdf,.pdf"
+              disabled={busy === "bank-pdf"}
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                void importBankStatementPdf(file);
+                e.currentTarget.value = "";
+              }}
+            />
+            {busy === "bank-pdf" ? <p className="mt-2 text-sm text-muted-foreground">Reading PDF…</p> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {canManage ? (
+        <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-soft">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">QuickBooks style reports</h2>
+            <p className="text-sm text-muted-foreground">
+              Open one report at a time to avoid long scrolling. Use Download PDF to print or save each report.
+            </p>
+          </div>
+          <div className="mb-4 flex flex-wrap gap-2">
+            {[
+              ["profitLoss", "Profit & Loss"],
+              ["balanceSheet", "Balance Sheet"],
+              ["trialBalance", "Trial Balance"],
+              ["ledger", "Ledger"],
+              ["bankStatement", "Bank Statement"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={activeReport === key ? "hms-btn-solid hms-btn-sm" : "hms-btn-outline hms-btn-sm"}
+                onClick={() => setActiveReport(key as ReportKey)}
+              >
+                {label}
+              </button>
+            ))}
+            <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => downloadReportPdf(activeReport)}>
+              Download PDF
+            </button>
+          </div>
+
+          {activeReport === "profitLoss" ? (
+            <div id="accounting-report-profitLoss" className="overflow-x-auto rounded-xl border border-border/70">
+              <table>
+                <tbody>
+                  <tr><th colSpan={2}>Income</th></tr>
+                  {(reports?.profitAndLoss.income ?? []).map((r) => <tr key={`inc-${r.accountName}`}><td>{r.accountName}</td><td className="text-right">{money(r.amount)}</td></tr>)}
+                  <tr><td className="font-semibold">Total income</td><td className="text-right font-semibold">{money(reports?.profitAndLoss.totalIncome)}</td></tr>
+                  <tr><th colSpan={2}>Expenses</th></tr>
+                  {(reports?.profitAndLoss.expenses ?? []).map((r) => <tr key={`exp-${r.accountName}`}><td>{r.accountName}</td><td className="text-right">{money(r.amount)}</td></tr>)}
+                  <tr><td className="font-semibold">Total expenses</td><td className="text-right font-semibold">{money(reports?.profitAndLoss.totalExpenses)}</td></tr>
+                  <tr><td className="font-bold">Net profit</td><td className="text-right font-bold">{money(reports?.profitAndLoss.netProfit)}</td></tr>
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {activeReport === "balanceSheet" ? (
+            <div id="accounting-report-balanceSheet" className="overflow-x-auto rounded-xl border border-border/70">
+              <table>
+                <tbody>
+                  <tr><th colSpan={2}>Assets</th></tr>
+                  {(reports?.balanceSheet.assets ?? []).map((r) => <tr key={`asset-${r.accountName}`}><td>{r.accountName}</td><td className="text-right">{money(r.amount)}</td></tr>)}
+                  <tr><td className="font-semibold">Total assets</td><td className="text-right font-semibold">{money(reports?.balanceSheet.totalAssets)}</td></tr>
+                  <tr><th colSpan={2}>Liabilities</th></tr>
+                  {(reports?.balanceSheet.liabilities ?? []).map((r) => <tr key={`liab-${r.accountName}`}><td>{r.accountName}</td><td className="text-right">{money(r.amount)}</td></tr>)}
+                  <tr><td className="font-semibold">Total liabilities</td><td className="text-right font-semibold">{money(reports?.balanceSheet.totalLiabilities)}</td></tr>
+                  <tr><th colSpan={2}>Equity</th></tr>
+                  {(reports?.balanceSheet.equity ?? []).map((r) => <tr key={`equity-${r.accountName}`}><td>{r.accountName}</td><td className="text-right">{money(r.amount)}</td></tr>)}
+                  <tr><td className="font-bold">Liabilities + equity</td><td className="text-right font-bold">{money(reports?.balanceSheet.liabilitiesAndEquity)}</td></tr>
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {activeReport === "trialBalance" ? (
+            <div id="accounting-report-trialBalance" className="max-h-[32rem] overflow-auto rounded-xl border border-border/70">
+                <table>
+                  <thead><tr><th>Account</th><th>Type</th><th>Debit</th><th>Credit</th></tr></thead>
+                  <tbody>
+                    {(reports?.trialBalance ?? []).map((r) => (
+                      <tr key={r.accountCode}>
+                        <td><strong>{r.accountCode}</strong> {r.accountName}</td>
+                        <td>{r.accountType}</td>
+                        <td className="text-right">{money(r.debit)}</td>
+                        <td className="text-right">{money(r.credit)}</td>
+                      </tr>
+                    ))}
+                    {(reports?.trialBalance ?? []).length === 0 ? <tr><td colSpan={4} className="text-muted-foreground">No accounting entries for this period.</td></tr> : null}
+                  </tbody>
+                </table>
+            </div>
+          ) : null}
+
+          {activeReport === "ledger" ? (
+            <div id="accounting-report-ledger" className="max-h-[32rem] overflow-auto rounded-xl border border-border/70">
+                <table>
+                  <thead><tr><th>Date</th><th>Source</th><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>
+                  <tbody>
+                    {(reports?.ledger ?? []).map((r, idx) => (
+                      <tr key={`${r.date}-${r.reference}-${r.accountCode}-${idx}`}>
+                        <td>{r.date}</td>
+                        <td>{sourceLabel(r.source)}<br /><span className="text-xs text-muted-foreground">{r.reference}</span></td>
+                        <td><strong>{r.accountCode}</strong><br />{r.accountName}</td>
+                        <td>{r.description}</td>
+                        <td className="text-right">{money(r.debit)}</td>
+                        <td className="text-right">{money(r.credit)}</td>
+                      </tr>
+                    ))}
+                    {(reports?.ledger ?? []).length === 0 ? <tr><td colSpan={6} className="text-muted-foreground">No ledger entries for this period.</td></tr> : null}
+                  </tbody>
+                </table>
+            </div>
+          ) : null}
+
+          {activeReport === "bankStatement" ? (
+            <>
+              <p className="mb-2 text-xs text-muted-foreground">
+                This table shows all saved bank statement lines from the database. The date filter still controls how bank lines feed Ledger, Trial Balance, Balance Sheet, and Profit & Loss.
+              </p>
+            <div id="accounting-report-bankStatement" className="max-h-[32rem] overflow-auto rounded-xl border border-border/70">
+              <table>
+                <thead><tr><th>Book date</th><th>Value date</th><th>Reference</th><th>Narration</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead>
+                <tbody>
+                  {(reports?.bankStatementLines ?? []).map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.bookDate}</td>
+                      <td>{r.valueDate ?? "—"}</td>
+                      <td>{r.reference ?? "—"}</td>
+                      <td>{r.narration}</td>
+                      <td className="text-right">{money(r.debitAmount)}</td>
+                      <td className="text-right">{money(r.creditAmount)}</td>
+                      <td className="text-right">{money(r.balanceAmount)}</td>
+                    </tr>
+                  ))}
+                  {(reports?.bankStatementLines ?? []).length === 0 ? <tr><td colSpan={7} className="text-muted-foreground">No bank statement lines recorded.</td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+            </>
+          ) : null}
+        </section>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
         <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-soft">

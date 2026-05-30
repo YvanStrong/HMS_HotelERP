@@ -25,4 +25,17 @@ public interface AccountingExpenseRepository extends JpaRepository<AccountingExp
             @Param("hotelId") UUID hotelId,
             @Param("from") LocalDate from,
             @Param("to") LocalDate to);
+
+    @Query(
+            """
+            select e from AccountingExpense e
+            where e.hotel.id = :hotelId
+              and e.expenseDate >= :from
+              and e.expenseDate <= :to
+            order by e.expenseDate desc, e.createdAt desc
+            """)
+    List<AccountingExpense> findByHotelAndDateRange(
+            @Param("hotelId") UUID hotelId,
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to);
 }

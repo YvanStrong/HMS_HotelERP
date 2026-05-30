@@ -5,5 +5,7 @@ public enum StockTransactionType {
     CONSUMPTION,
     ADJUSTMENT,
     TRANSFER,
-    WASTE
+    WASTE,
+    FABRICATION_CONSUME,
+    FABRICATION_OUTPUT
 }

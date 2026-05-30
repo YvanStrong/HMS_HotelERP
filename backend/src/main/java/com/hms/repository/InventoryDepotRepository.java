@@ -12,4 +12,8 @@ public interface InventoryDepotRepository extends JpaRepository<InventoryDepot, 
     boolean existsByHotel_IdAndCodeIgnoreCase(UUID hotelId, String code);
 
     Optional<InventoryDepot> findByIdAndHotel_Id(UUID id, UUID hotelId);
+
+    Optional<InventoryDepot> findByHotel_IdAndCodeIgnoreCase(UUID hotelId, String code);
+
+    Optional<InventoryDepot> findByHotel_IdAndLinkedWarehouse_Id(UUID hotelId, UUID warehouseId);
 }

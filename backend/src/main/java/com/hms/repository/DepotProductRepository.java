@@ -34,4 +34,8 @@ public interface DepotProductRepository extends JpaRepository<DepotProduct, UUID
     List<DepotProduct> findByHotel_IdAndProductCodeStartingWithIgnoreCase(UUID hotelId, String codePrefix);
 
     boolean existsByHotel_IdAndDepot_IdAndInventoryItem_Id(UUID hotelId, UUID depotId, UUID inventoryItemId);
+
+    Optional<DepotProduct> findByHotel_IdAndDepot_IdAndInventoryItem_Id(UUID hotelId, UUID depotId, UUID inventoryItemId);
+
+    List<DepotProduct> findByHotel_IdAndInventoryItem_Id(UUID hotelId, UUID inventoryItemId);
 }

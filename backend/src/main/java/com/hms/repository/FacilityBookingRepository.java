@@ -88,9 +88,47 @@ public interface FacilityBookingRepository extends JpaRepository<FacilityBooking
 
     @Query(
             """
+            select coalesce(max(cast(substring(b.invoiceNumber, 10, 6) as int)), 0)
+            from FacilityBooking b
+            where b.invoiceNumber like concat(concat(concat('FAC-', :year), '-'), '%')
+              and length(b.invoiceNumber) = 15
+            """)
+    int findMaxFacilityInvoiceSuffixForYear(@Param("year") String year);
+
+    @Query(
+            """
             select count(b) from FacilityBooking b
             where b.facility.id = :facilityId
               and b.status = com.hms.domain.FacilityBookingStatus.CHECKED_IN
             """)
     long countCheckedInByFacility(@Param("facilityId") UUID facilityId);
+
+    @Query(
+            """
+            select b from FacilityBooking b
+            join fetch b.facility f
+            join fetch f.hotel h
+            join fetch b.guest g
+            where h.id = :hotelId
+              and b.invoiceNumber is not null
+            order by b.invoicedAt desc
+            """)
+    List<FacilityBooking> findInvoicedByHotelId(@Param("hotelId") UUID hotelId);
+
+    @Query(
+            """
+            select b from FacilityBooking b
+            join fetch b.facility f
+            join fetch f.hotel h
+            join fetch b.guest g
+            where h.id = :hotelId
+              and b.invoiceNumber is not null
+              and b.invoicedAt >= :from
+              and b.invoicedAt < :to
+            order by b.invoicedAt desc
+            """)
+    List<FacilityBooking> findInvoicedByHotelAndDateRange(
+            @Param("hotelId") UUID hotelId,
+            @Param("from") java.time.Instant from,
+            @Param("to") java.time.Instant to);
 }

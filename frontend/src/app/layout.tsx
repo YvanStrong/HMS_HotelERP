@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     template: "%s | HMS",
   },
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    icon: [{ url: "/images/ijisho_eye_mark.svg", type: "image/svg+xml" }],
   },
   description: "Modern Hotel Management System - Book rooms, manage reservations, and streamline your hotel operations.",
   keywords: ["hotel", "booking", "reservation", "management", "hospitality"],
@@ -34,8 +34,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f0fdf4" },
-    { media: "(prefers-color-scheme: dark)", color: "#052e16" },
+    { media: "(prefers-color-scheme: light)", color: "#e0f2fe" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
   ],
 };
 

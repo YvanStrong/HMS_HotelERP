@@ -36,7 +36,7 @@ export function PlatformStaffShell({ children }: { children: React.ReactNode }) 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-[hsl(140,40%,98%)] to-[hsl(140,25%,94%)]">
+    <div className="flex min-h-screen bg-gradient-to-br from-[hsl(204,94%,98%)] to-[hsl(38,92%,94%)]">
       {/* Mobile Overlay */}
       {isSidebarOpen && (
         <div 

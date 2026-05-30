@@ -117,9 +117,9 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <div className="min-h-svh flex flex-col bg-gradient-to-br from-[hsl(140_40%_98%)] via-[hsl(140_30%_96%)] to-[hsl(140_25%_92%)] p-3 sm:p-4">
+    <div className="min-h-svh flex flex-col bg-gradient-to-br from-[#e0f2fe] via-white to-[#fef3c7] p-3 sm:p-4">
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center">
-        <div className="rounded-2xl border border-[hsl(var(--primary))]/20 bg-white p-6 shadow-[0_20px_50px_rgba(20,83,45,0.12)] sm:p-8">
+        <div className="rounded-2xl border border-sky-200/70 bg-white p-6 shadow-[0_20px_50px_rgba(26,58,92,0.14)] sm:p-8">
           <div className="mb-6">
             <Link
               href="/login"

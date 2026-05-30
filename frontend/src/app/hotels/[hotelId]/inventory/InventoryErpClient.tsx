@@ -39,6 +39,8 @@ type ItemRow = {
   imageUrl?: string | null;
   unitOfMeasure?: string | null;
   stockType?: "STOCK" | "NON_STOCK";
+  taxCategory?: "A" | "B";
+  taxable?: boolean;
 };
 
 type SalesReportPayload = {
@@ -209,6 +211,9 @@ type TransferRow = {
   toWarehouse: string;
   transferDate: string;
   items: { itemId: string; itemName: string; sku: string; quantity: number | string }[];
+  transferredBy?: string | null;
+  createdAt?: string | null;
+  completedAt?: string | null;
 };
 
 type MenuOutletRow = {
@@ -222,6 +227,18 @@ type MenuOutletRow = {
   warehouseName?: string | null;
 };
 
+type DepotProductStockRow = {
+  id: string;
+  depotId: string;
+  depotName: string;
+  productName: string;
+  productCode: string;
+  stockQty: number | string;
+  stockType?: "STOCK" | "NON_STOCK";
+  active: boolean;
+  inventoryItemId?: string | null;
+};
+
 type DepotMenuSaleRow = {
   saleId: string;
   saleNumber: string;
@@ -231,6 +248,49 @@ type DepotMenuSaleRow = {
   soldAt: string;
 };
 
+type FabricationFormulaLine = {
+  id?: string;
+  componentItemId: string;
+  componentName?: string;
+  componentSku?: string;
+  quantity: number | string;
+  currentStock?: number | string;
+  unitOfMeasure?: string | null;
+  notes?: string | null;
+};
+
+type FabricationFormula = {
+  id: string;
+  name: string;
+  outputItemId: string;
+  outputItemName: string;
+  outputSku?: string;
+  outputQuantity: number | string;
+  notes?: string | null;
+  active: boolean;
+  lines: FabricationFormulaLine[];
+};
+
+type FabricationRun = {
+  id: string;
+  formulaId: string;
+  formulaName: string;
+  outputItemName: string;
+  outputSku?: string;
+  quantityProduced: number | string;
+  referenceNo?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+  lines: {
+    componentItemId: string;
+    componentName: string;
+    componentSku?: string;
+    requiredQuantity: number | string;
+    stockBefore: number | string;
+    stockAfter: number | string;
+  }[];
+};
+
 const PAGE_SIZE = 12;
 
 type Tab =
@@ -238,6 +298,7 @@ type Tab =
   | "catalog"
   | "stock"
   | "purchasing"
+  | "fabrication"
   | "branches"
   | "alerts"
   | "reports"
@@ -259,7 +320,6 @@ export function InventoryErpClient() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [savingCategory, setSavingCategory] = useState(false);
   const [savingItem, setSavingItem] = useState(false);
-  const [consumeId, setConsumeId] = useState<string | null>(null);
   const [savingSupplier, setSavingSupplier] = useState(false);
   const [categoryForm, setCategoryForm] = useState({ name: "" });
   const [supplierForm, setSupplierForm] = useState({ name: "", contactPerson: "", email: "", phone: "" });
@@ -274,13 +334,11 @@ export function InventoryErpClient() {
     description: "",
     barcode: "",
     sellingPrice: "",
+    taxCategory: "B" as "A" | "B",
     imageUrl: "",
     expiryDate: "",
   });
-  const [consume, setConsume] = useState<Record<string, string>>({});
-  const [wasteLog, setWasteLog] = useState<
-    { id: string; itemName: string; sku: string; quantity: number; reason: string; at: string }[]
-  >([]);
+  const wasteLog: { id: string; itemName: string; sku: string; quantity: number; reason: string; at: string }[] = [];
 
   const [poSupplierId, setPoSupplierId] = useState("");
   const [poExpectedDelivery, setPoExpectedDelivery] = useState("");
@@ -300,6 +358,7 @@ export function InventoryErpClient() {
   const [poList, setPoList] = useState<PoSummary[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseRow[]>([]);
   const [menuOutlets, setMenuOutlets] = useState<MenuOutletRow[]>([]);
+  const [depotProductStocks, setDepotProductStocks] = useState<DepotProductStockRow[]>([]);
   const [transfers, setTransfers] = useState<TransferRow[]>([]);
   const [supplierDetails, setSupplierDetails] = useState<SupplierDetail[]>([]);
 
@@ -325,6 +384,24 @@ export function InventoryErpClient() {
   const [valuationReport, setValuationReport] = useState<ValuationPayload | null>(null);
   const [menuSalesReport, setMenuSalesReport] = useState<DepotMenuSaleRow[] | null>(null);
   const [menuSalesDepotId, setMenuSalesDepotId] = useState("");
+  const [fabricationFormulas, setFabricationFormulas] = useState<FabricationFormula[]>([]);
+  const [fabricationRuns, setFabricationRuns] = useState<FabricationRun[]>([]);
+  const [formulaForm, setFormulaForm] = useState({
+    name: "",
+    outputItemId: "",
+    outputQuantity: "1",
+    notes: "",
+  });
+  const [formulaLineDraft, setFormulaLineDraft] = useState({ componentItemId: "", quantity: "", notes: "" });
+  const [formulaLines, setFormulaLines] = useState<FabricationFormulaLine[]>([]);
+  const [savingFormula, setSavingFormula] = useState(false);
+  const [fabricationRunForm, setFabricationRunForm] = useState({
+    formulaId: "",
+    quantityProduced: "",
+    referenceNo: "",
+    notes: "",
+  });
+  const [runningFabrication, setRunningFabrication] = useState(false);
   const [editItem, setEditItem] = useState<ItemRow | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
@@ -334,6 +411,7 @@ export function InventoryErpClient() {
     unitCost: "",
     reorderPoint: "",
     stockType: "STOCK" as "STOCK" | "NON_STOCK",
+    taxCategory: "B" as "A" | "B",
     imageUrl: "",
     expiryDate: "",
     active: true,
@@ -375,12 +453,13 @@ export function InventoryErpClient() {
   const loadExtensions = useCallback(async () => {
     if (!getToken()) return;
     try {
-      const [dash, mov, pos, wh, outlets, trf, supD] = await Promise.all([
+      const [dash, mov, pos, wh, outlets, depotProducts, trf, supD] = await Promise.all([
         apiFetch<DashboardPayload>(`/api/v1/hotels/${hotelId}/inventory/dashboard`),
         apiFetch<MovementRow[]>(`/api/v1/hotels/${hotelId}/inventory/movements?limit=150`),
         apiFetch<PoSummary[]>(`/api/v1/hotels/${hotelId}/inventory/purchase-orders`),
         apiFetch<WarehouseRow[]>(`/api/v1/hotels/${hotelId}/inventory/warehouses`),
         apiFetch<MenuOutletRow[]>(`/api/v1/hotels/${hotelId}/inventory/depots`).catch(() => []),
+        apiFetch<DepotProductStockRow[]>(`/api/v1/hotels/${hotelId}/inventory/depot-products`).catch(() => []),
         apiFetch<TransferRow[]>(`/api/v1/hotels/${hotelId}/inventory/stock-transfers`),
         apiFetch<SupplierDetail[]>(`/api/v1/hotels/${hotelId}/inventory/suppliers/detail`).catch(() => []),
       ]);
@@ -389,6 +468,7 @@ export function InventoryErpClient() {
       setPoList(pos ?? []);
       setWarehouses(wh ?? []);
       setMenuOutlets(Array.isArray(outlets) ? outlets : []);
+      setDepotProductStocks(Array.isArray(depotProducts) ? depotProducts : []);
       setTransfers(trf ?? []);
       setSupplierDetails(Array.isArray(supD) ? supD : []);
       if (wh && wh.length > 0) {
@@ -410,6 +490,64 @@ export function InventoryErpClient() {
     }
   }, [hotelId]);
 
+  const items = useMemo(() => payload?.data ?? [], [payload?.data]);
+  const stockItems = useMemo(
+    () => items.filter((item) => item.stockType !== "NON_STOCK"),
+    [items],
+  );
+  const selectedTransferItem = useMemo(
+    () => stockItems.find((item) => item.id === trItem) ?? null,
+    [stockItems, trItem],
+  );
+  const selectedTransferOutletBalances = useMemo(() => {
+    if (!trItem) return [];
+    return depotProductStocks
+      .filter((row) => row.inventoryItemId === trItem && row.active !== false && row.stockType !== "NON_STOCK")
+      .map((row) => {
+        const outlet = menuOutlets.find((o) => o.id === row.depotId);
+        return {
+          depotId: row.depotId,
+          depotName: outlet ? `${outlet.name} (${outlet.code})` : row.depotName,
+          stockQty: row.stockQty,
+        };
+      })
+      .sort((a, b) => a.depotName.localeCompare(b.depotName));
+  }, [depotProductStocks, menuOutlets, trItem]);
+
+  const productWarehouseLabels = useMemo(() => {
+    const outletById = new Map(menuOutlets.map((outlet) => [outlet.id, outlet]));
+    const labels = new Map<string, string>();
+    for (const row of depotProductStocks) {
+      if (!row.inventoryItemId || row.active === false) continue;
+      const outlet = outletById.get(row.depotId);
+      const warehouse = outlet?.warehouseName || outlet?.warehouseCode || row.depotName;
+      const existing = labels.get(row.inventoryItemId);
+      if (!existing) {
+        labels.set(row.inventoryItemId, warehouse);
+      } else if (!existing.split(", ").includes(warehouse)) {
+        labels.set(row.inventoryItemId, `${existing}, ${warehouse}`);
+      }
+    }
+    return labels;
+  }, [depotProductStocks, menuOutlets]);
+
+  const loadFabrication = useCallback(async () => {
+    if (!getToken()) return;
+    try {
+      const [formulas, runs] = await Promise.all([
+        apiFetch<FabricationFormula[]>(`/api/v1/hotels/${hotelId}/inventory/fabrication/formulas`),
+        apiFetch<FabricationRun[]>(`/api/v1/hotels/${hotelId}/inventory/fabrication/runs?limit=50`),
+      ]);
+      setFabricationFormulas(formulas ?? []);
+      setFabricationRuns(runs ?? []);
+      setFormulaForm((f) => ({ ...f, outputItemId: f.outputItemId || stockItems[0]?.id || "" }));
+      setFormulaLineDraft((d) => ({ ...d, componentItemId: d.componentItemId || stockItems[0]?.id || "" }));
+      setFabricationRunForm((f) => ({ ...f, formulaId: f.formulaId || formulas?.[0]?.id || "" }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Fabrication load failed");
+    }
+  }, [hotelId, stockItems]);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -422,18 +560,15 @@ export function InventoryErpClient() {
       tab === "catalog" ||
       tab === "stock" ||
       tab === "reports" ||
-      tab === "waste"
+      tab === "waste" ||
+      tab === "fabrication"
     ) {
       void loadExtensions();
     }
+    if (tab === "fabrication") void loadFabrication();
     if (tab === "alerts") void loadAlerts();
-  }, [tab, loadExtensions, loadAlerts]);
+  }, [tab, loadExtensions, loadAlerts, loadFabrication]);
 
-  const items = useMemo(() => payload?.data ?? [], [payload?.data]);
-  const stockItems = useMemo(
-    () => items.filter((item) => item.stockType !== "NON_STOCK"),
-    [items],
-  );
   const { slice, total, totalPages } = useMemo(
     () => paginateSlice(items, page, PAGE_SIZE),
     [items, page],
@@ -488,6 +623,7 @@ export function InventoryErpClient() {
           description: itemForm.description.trim() || null,
           barcode: itemForm.barcode.trim() || null,
           sellingPrice: itemForm.sellingPrice ? Number(itemForm.sellingPrice) : null,
+          taxCategory: itemForm.taxCategory,
           imageUrl: itemForm.imageUrl.trim() || null,
           expiryDate: itemForm.expiryDate || null,
           manufactureDate: null,
@@ -504,6 +640,7 @@ export function InventoryErpClient() {
         description: "",
         barcode: "",
         sellingPrice: "",
+        taxCategory: "B",
         imageUrl: "",
         expiryDate: "",
       }));
@@ -512,45 +649,6 @@ export function InventoryErpClient() {
       setError(e instanceof Error ? e.message : "Create item failed");
     } finally {
       setSavingItem(false);
-    }
-  }
-
-  async function consumeStock(itemId: string) {
-    const raw = consume[itemId];
-    const qty = Number(raw);
-    if (!raw || Number.isNaN(qty) || qty <= 0) {
-      setError("Enter a valid consume quantity.");
-      return;
-    }
-    setConsumeId(itemId);
-    setError(null);
-    setMsg(null);
-    try {
-      await apiFetch(`/api/v1/hotels/${hotelId}/inventory/items/${itemId}/consume`, {
-        method: "POST",
-        body: JSON.stringify({ quantity: qty, type: "CONSUMPTION", autoReorderCheck: true }),
-      });
-      setMsg("Stock consumed.");
-      setConsume((m) => ({ ...m, [itemId]: "" }));
-      const item = items.find((it) => it.id === itemId);
-      if (item) {
-        setWasteLog((w) => [
-          {
-            id: crypto.randomUUID(),
-            itemName: item.name,
-            sku: item.sku ?? "—",
-            quantity: qty,
-            reason: "Consumption/Waste recorded",
-            at: new Date().toISOString(),
-          },
-          ...w,
-        ]);
-      }
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Consume failed");
-    } finally {
-      setConsumeId(null);
     }
   }
 
@@ -644,6 +742,11 @@ export function InventoryErpClient() {
       setError("Enter valid received quantity.");
       return;
     }
+    const orderedQty = Number(outLine.quantity);
+    if (Number.isFinite(orderedQty) && qty > orderedQty) {
+      setError(`You cannot receive more than ordered (${fmtNum(orderedQty, 4)}).`);
+      return;
+    }
     setReceivingItemId(inLine.itemId);
     setError(null);
     setMsg(null);
@@ -703,6 +806,99 @@ export function InventoryErpClient() {
       void loadExtensions();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Adjust failed");
+    }
+  }
+
+  function addFormulaLine() {
+    const component = stockItems.find((item) => item.id === formulaLineDraft.componentItemId);
+    const quantity = Number(formulaLineDraft.quantity);
+    if (!component || !Number.isFinite(quantity) || quantity <= 0) {
+      setError("Choose an ingredient and enter a positive quantity.");
+      return;
+    }
+    if (component.id === formulaForm.outputItemId) {
+      setError("Finished product cannot also be an ingredient.");
+      return;
+    }
+    setFormulaLines((lines) => [
+      ...lines,
+      {
+        componentItemId: component.id,
+        componentName: component.name,
+        componentSku: component.sku,
+        quantity,
+        currentStock: component.currentStock,
+        unitOfMeasure: component.unitOfMeasure,
+        notes: formulaLineDraft.notes.trim() || null,
+      },
+    ]);
+    setFormulaLineDraft({ componentItemId: stockItems[0]?.id || "", quantity: "", notes: "" });
+  }
+
+  async function createFabricationFormula(e: React.FormEvent) {
+    e.preventDefault();
+    if (!formulaForm.name.trim() || !formulaForm.outputItemId || formulaLines.length === 0) {
+      setError("Formula name, finished product, and at least one ingredient are required.");
+      return;
+    }
+    setSavingFormula(true);
+    setError(null);
+    setMsg(null);
+    try {
+      await apiFetch<FabricationFormula>(`/api/v1/hotels/${hotelId}/inventory/fabrication/formulas`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: formulaForm.name.trim(),
+          outputItemId: formulaForm.outputItemId,
+          outputQuantity: Number(formulaForm.outputQuantity) || 1,
+          notes: formulaForm.notes.trim() || null,
+          lines: formulaLines.map((line) => ({
+            componentItemId: line.componentItemId,
+            quantity: Number(line.quantity),
+            notes: line.notes || null,
+          })),
+        }),
+      });
+      setMsg("Fabrication formula saved.");
+      setFormulaForm({ name: "", outputItemId: stockItems[0]?.id || "", outputQuantity: "1", notes: "" });
+      setFormulaLines([]);
+      await loadFabrication();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Create fabrication formula failed");
+    } finally {
+      setSavingFormula(false);
+    }
+  }
+
+  async function submitFabricationRun(e: React.FormEvent) {
+    e.preventDefault();
+    const qty = Number(fabricationRunForm.quantityProduced);
+    if (!fabricationRunForm.formulaId || !Number.isFinite(qty) || qty <= 0) {
+      setError("Choose a formula and enter a positive quantity to produce.");
+      return;
+    }
+    setRunningFabrication(true);
+    setError(null);
+    setMsg(null);
+    try {
+      const run = await apiFetch<FabricationRun>(`/api/v1/hotels/${hotelId}/inventory/fabrication/runs`, {
+        method: "POST",
+        body: JSON.stringify({
+          formulaId: fabricationRunForm.formulaId,
+          quantityProduced: qty,
+          referenceNo: fabricationRunForm.referenceNo.trim() || null,
+          notes: fabricationRunForm.notes.trim() || null,
+        }),
+      });
+      setMsg(`Fabrication completed: ${run.quantityProduced} ${run.outputItemName}`);
+      setFabricationRunForm((f) => ({ ...f, quantityProduced: "", referenceNo: "", notes: "" }));
+      await load();
+      await loadFabrication();
+      void loadExtensions();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Fabrication failed");
+    } finally {
+      setRunningFabrication(false);
     }
   }
 
@@ -789,8 +985,8 @@ export function InventoryErpClient() {
       await apiFetch(`/api/v1/hotels/${hotelId}/inventory/stock-transfers/${trPendingId}/complete`, {
         method: "POST",
       });
-      setMsg("Transfer completed (logged; hotel-wide quantity unchanged).");
-      void loadExtensions();
+      setMsg("Transfer completed. Source outlet stock reduced and destination outlet stock increased.");
+      await loadExtensions();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Complete transfer failed");
     }
@@ -870,6 +1066,7 @@ export function InventoryErpClient() {
       unitCost: it.unitCost != null ? String(it.unitCost) : "",
       reorderPoint: it.reorderPoint != null ? String(it.reorderPoint) : "",
       stockType: it.stockType === "NON_STOCK" ? "NON_STOCK" : "STOCK",
+      taxCategory: it.taxCategory === "A" ? "A" : "B",
       imageUrl: (it.imageUrl as string) ?? "",
       expiryDate: (it.expiryDate as string) ?? "",
       active: it.active !== false,
@@ -889,6 +1086,7 @@ export function InventoryErpClient() {
           description: editForm.description.trim() || null,
           barcode: editForm.barcode.trim() || null,
           sellingPrice: editForm.sellingPrice ? Number(editForm.sellingPrice) : null,
+          taxCategory: editForm.taxCategory,
           unitCost: editForm.unitCost ? Number(editForm.unitCost) : null,
           stockType: editForm.stockType,
           reorderPoint: editForm.stockType === "NON_STOCK" ? 0 : editForm.reorderPoint ? Number(editForm.reorderPoint) : null,
@@ -922,6 +1120,22 @@ export function InventoryErpClient() {
     };
   });
 
+  const selectedFormula = useMemo(
+    () => fabricationFormulas.find((f) => f.id === fabricationRunForm.formulaId) ?? null,
+    [fabricationFormulas, fabricationRunForm.formulaId],
+  );
+
+  const fabricationPreview = useMemo(() => {
+    if (!selectedFormula) return [];
+    const qty = Number(fabricationRunForm.quantityProduced || 0);
+    const outputQty = Number(selectedFormula.outputQuantity || 1) || 1;
+    const multiplier = qty > 0 ? qty / outputQty : 0;
+    return selectedFormula.lines.map((line) => ({
+      ...line,
+      required: Number(line.quantity) * multiplier,
+    }));
+  }, [selectedFormula, fabricationRunForm.quantityProduced]);
+
   return (
     <div className="space-y-5">
       <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
@@ -950,6 +1164,7 @@ export function InventoryErpClient() {
               ["overview", "Dashboard"],
               ["catalog", "Products"],
               ["stock", "Stock ops"],
+              ["fabrication", "Fabrication"],
               ["purchasing", "Purchasing"],
               ["branches", "Branches"],
               ["alerts", "Alerts"],
@@ -1159,6 +1374,19 @@ export function InventoryErpClient() {
                   />
                 </div>
                 <div className="col-span-2">
+                  <label>Tax category</label>
+                  <select
+                    value={itemForm.taxCategory}
+                    onChange={(e) => setItemForm((f) => ({ ...f, taxCategory: e.target.value as "A" | "B" }))}
+                  >
+                    <option value="A">A - 0% (not taxable)</option>
+                    <option value="B">B - 18% (taxable)</option>
+                  </select>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Choose A for products without VAT. Choose B for taxable products with 18% VAT on receipts.
+                  </p>
+                </div>
+                <div className="col-span-2">
                   <label>Description</label>
                   <input
                     value={itemForm.description}
@@ -1235,8 +1463,9 @@ export function InventoryErpClient() {
                   <th>SKU</th>
                   <th>Barcode</th>
                   <th>Type</th>
+                  <th>Tax</th>
+                  <th>Warehouse</th>
                   <th>Qty</th>
-                  <th>Consume</th>
                   <th />
                 </tr>
               </thead>
@@ -1249,30 +1478,13 @@ export function InventoryErpClient() {
                     <td>
                       <span className="badge badge-neutral">{r.stockType === "NON_STOCK" ? "NON STOCK" : "STOCK"}</span>
                     </td>
-                    <td>{r.stockType === "NON_STOCK" ? "—" : r.currentStock ?? "—"}</td>
                     <td>
-                      {r.stockType === "NON_STOCK" ? (
-                        <span className="text-xs text-muted-foreground">No stock movement</span>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            value={consume[r.id] ?? ""}
-                            onChange={(e) => setConsume((m) => ({ ...m, [r.id]: e.target.value }))}
-                            style={{ width: 90 }}
-                            placeholder="qty"
-                          />
-                          <button
-                            type="button"
-                            className="hms-btn-outline text-xs"
-                            disabled={consumeId === r.id}
-                            onClick={() => void consumeStock(r.id)}
-                          >
-                            {consumeId === r.id ? "..." : "Consume"}
-                          </button>
-                        </div>
-                      )}
+                      <span className={r.taxCategory === "A" || r.taxable === false ? "badge badge-neutral" : "badge badge-info"}>
+                        {r.taxCategory === "A" || r.taxable === false ? "A - 0%" : "B - 18%"}
+                      </span>
                     </td>
+                    <td className="text-xs">{productWarehouseLabels.get(r.id) ?? "—"}</td>
+                    <td>{r.stockType === "NON_STOCK" ? "—" : r.currentStock ?? "—"}</td>
                     <td>
                       <button type="button" className="hms-btn-outline text-xs" onClick={() => openEdit(r)}>
                         Edit
@@ -1448,6 +1660,16 @@ export function InventoryErpClient() {
                       />
                     </div>
                   </div>
+                  <div>
+                    <label>Tax category</label>
+                    <select
+                      value={editForm.taxCategory}
+                      onChange={(e) => setEditForm((f) => ({ ...f, taxCategory: e.target.value as "A" | "B" }))}
+                    >
+                      <option value="A">A - 0% (not taxable)</option>
+                      <option value="B">B - 18% (taxable)</option>
+                    </select>
+                  </div>
                   {editForm.stockType === "STOCK" ? (
                     <div>
                       <label>Reorder point</label>
@@ -1577,6 +1799,306 @@ export function InventoryErpClient() {
                 </table>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {tab === "fabrication" && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+            <h2 className="text-lg font-semibold mb-2">Fabrication formula</h2>
+            <p className="mb-3 text-sm text-muted-foreground">
+              Define ingredients for one finished product. Example: one doughnut uses flour, eggs, sugar, milk,
+              oil, and other ingredients.
+            </p>
+            <form onSubmit={createFabricationFormula} className="grid grid-cols-1 gap-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div>
+                  <label>Formula name</label>
+                  <input
+                    value={formulaForm.name}
+                    onChange={(e) => setFormulaForm((f) => ({ ...f, name: e.target.value }))}
+                    placeholder="Doughnut formula"
+                  />
+                </div>
+                <div>
+                  <label>Finished product</label>
+                  <select
+                    value={formulaForm.outputItemId}
+                    onChange={(e) => setFormulaForm((f) => ({ ...f, outputItemId: e.target.value }))}
+                  >
+                    <option value="">Choose stock product...</option>
+                    {stockItems.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} ({item.sku ?? "—"})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label>Formula output qty</label>
+                  <input
+                    type="number"
+                    min="0.0001"
+                    step="0.0001"
+                    value={formulaForm.outputQuantity}
+                    onChange={(e) => setFormulaForm((f) => ({ ...f, outputQuantity: e.target.value }))}
+                    placeholder="1"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_160px_1fr_auto]">
+                <div>
+                  <label>Ingredient</label>
+                  <select
+                    value={formulaLineDraft.componentItemId}
+                    onChange={(e) => setFormulaLineDraft((d) => ({ ...d, componentItemId: e.target.value }))}
+                  >
+                    <option value="">Choose ingredient...</option>
+                    {stockItems
+                      .filter((item) => item.id !== formulaForm.outputItemId)
+                      .map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name} ({item.sku ?? "—"}) · Stock {fmtNum(item.currentStock, 4)}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label>Qty per formula</label>
+                  <input
+                    type="number"
+                    min="0.0001"
+                    step="0.0001"
+                    value={formulaLineDraft.quantity}
+                    onChange={(e) => setFormulaLineDraft((d) => ({ ...d, quantity: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label>Notes</label>
+                  <input
+                    value={formulaLineDraft.notes}
+                    onChange={(e) => setFormulaLineDraft((d) => ({ ...d, notes: e.target.value }))}
+                    placeholder="kg, litre, piece..."
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button type="button" className="hms-btn-outline w-full text-sm" onClick={addFormulaLine}>
+                    Add ingredient
+                  </button>
+                </div>
+              </div>
+              {formulaLines.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr>
+                        <th>Ingredient</th>
+                        <th>Qty</th>
+                        <th>Stock now</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {formulaLines.map((line, idx) => (
+                        <tr key={`${line.componentItemId}-${idx}`}>
+                          <td>{line.componentName} ({line.componentSku ?? "—"})</td>
+                          <td>{fmtNum(line.quantity, 4)} {line.unitOfMeasure ?? ""}</td>
+                          <td>{fmtNum(line.currentStock, 4)}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="hms-btn-outline text-xs"
+                              onClick={() => setFormulaLines((lines) => lines.filter((_, i) => i !== idx))}
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+              <textarea
+                rows={2}
+                value={formulaForm.notes}
+                onChange={(e) => setFormulaForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Formula notes (optional)"
+              />
+              <button type="submit" className="hms-btn-solid text-sm" disabled={savingFormula}>
+                {savingFormula ? "Saving formula..." : "Save formula"}
+              </button>
+            </form>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+              <h2 className="text-lg font-semibold mb-3">Run fabrication</h2>
+              <form onSubmit={submitFabricationRun} className="grid grid-cols-1 gap-3">
+                <div>
+                  <label>Formula</label>
+                  <select
+                    value={fabricationRunForm.formulaId}
+                    onChange={(e) => setFabricationRunForm((f) => ({ ...f, formulaId: e.target.value }))}
+                  >
+                    <option value="">Choose formula...</option>
+                    {fabricationFormulas.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name} → {f.outputItemName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label>Quantity to make</label>
+                  <input
+                    type="number"
+                    min="0.0001"
+                    step="0.0001"
+                    value={fabricationRunForm.quantityProduced}
+                    onChange={(e) => setFabricationRunForm((f) => ({ ...f, quantityProduced: e.target.value }))}
+                    placeholder="100"
+                  />
+                </div>
+                {fabricationPreview.length > 0 ? (
+                  <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                    <p className="mb-2 text-sm font-semibold">Ingredients needed</p>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr>
+                          <th>Ingredient</th>
+                          <th>Needed</th>
+                          <th>Stock</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fabricationPreview.map((line) => (
+                          <tr key={line.componentItemId}>
+                            <td>{line.componentName}</td>
+                            <td>{fmtNum(line.required, 4)}</td>
+                            <td>{fmtNum(line.currentStock, 4)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+                <input
+                  value={fabricationRunForm.referenceNo}
+                  onChange={(e) => setFabricationRunForm((f) => ({ ...f, referenceNo: e.target.value }))}
+                  placeholder="Reference no. (optional)"
+                />
+                <textarea
+                  rows={2}
+                  value={fabricationRunForm.notes}
+                  onChange={(e) => setFabricationRunForm((f) => ({ ...f, notes: e.target.value }))}
+                  placeholder="Run notes (optional)"
+                />
+                <button type="submit" className="hms-btn-solid text-sm" disabled={runningFabrication}>
+                  {runningFabrication ? "Producing..." : "Complete fabrication"}
+                </button>
+              </form>
+            </div>
+
+            <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+              <h2 className="text-lg font-semibold mb-3">Recent fabrication runs</h2>
+              {fabricationRuns.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No fabrication runs yet.</p>
+              ) : (
+                <div className="max-h-96 overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr>
+                        <th>When</th>
+                        <th>Output</th>
+                        <th>Qty</th>
+                        <th>By</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fabricationRuns.map((run) => (
+                        <tr key={run.id}>
+                          <td className="whitespace-nowrap text-xs">{new Date(run.createdAt).toLocaleString()}</td>
+                          <td>{run.outputItemName}</td>
+                          <td>{fmtNum(run.quantityProduced, 4)}</td>
+                          <td>{run.createdBy ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
+            <h2 className="text-lg font-semibold mb-3">Saved formulas</h2>
+            {fabricationFormulas.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No formulas yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr>
+                      <th>Formula</th>
+                      <th>Finished product</th>
+                      <th>Output qty</th>
+                      <th>Ingredients</th>
+                      <th>Notes</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fabricationFormulas.map((f) => (
+                      <tr key={f.id} className="align-top">
+                        <td className="font-semibold">{f.name}</td>
+                        <td>
+                          {f.outputItemName}
+                          <br />
+                          <span className="text-xs text-muted-foreground">{f.outputSku ?? "—"}</span>
+                        </td>
+                        <td className="tabular-nums">{fmtNum(f.outputQuantity, 4)}</td>
+                        <td className="min-w-[320px]">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr>
+                                <th>Ingredient</th>
+                                <th>Qty</th>
+                                <th>Stock</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {f.lines.map((line) => (
+                                <tr key={line.id ?? line.componentItemId}>
+                                  <td>
+                                    {line.componentName}
+                                    <br />
+                                    <span className="text-[11px] text-muted-foreground">
+                                      {line.componentSku ?? "—"}
+                                    </span>
+                                  </td>
+                                  <td className="whitespace-nowrap tabular-nums">
+                                    {fmtNum(line.quantity, 4)} {line.unitOfMeasure ?? ""}
+                                  </td>
+                                  <td className="whitespace-nowrap tabular-nums">{fmtNum(line.currentStock, 4)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </td>
+                        <td className="max-w-xs text-muted-foreground">{f.notes || "—"}</td>
+                        <td>
+                          <span className={f.active ? "badge badge-success" : "badge badge-neutral"}>
+                            {f.active ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1766,9 +2288,14 @@ export function InventoryErpClient() {
                           <td style={{ maxWidth: 160 }}>
                             <input
                               type="number"
+                              min="0"
+                              max={Number(line.quantity) || undefined}
                               value={receiveLines[line.lineId] ?? ""}
                               onChange={(e) => setReceiveLines((m) => ({ ...m, [line.lineId]: e.target.value }))}
                             />
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              Max: {fmtNum(line.quantity, 4)}
+                            </p>
                           </td>
                           <td>
                             <button
@@ -1815,9 +2342,8 @@ export function InventoryErpClient() {
               <Link href={staffAppPath("menu")} className="underline">
                 Menu
               </Link>{" "}
-              outlets (Principal depot ↔ <strong>PRINCIPAL</strong> store). Use <strong>Create default outlets</strong> on
-              Menu if links are missing. Transfers log movement between branches; hotel-wide SKU quantity stays the same
-              until per-location stock is modeled.
+              outlets (Principal depot ↔ <strong>PRINCIPAL</strong> store). New stock products are added to Principal
+              automatically. Completing a transfer reduces the source outlet stock and increases destination outlet stock.
             </p>
           </div>
           <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
@@ -1841,13 +2367,38 @@ export function InventoryErpClient() {
               </select>
               <select value={trItem} onChange={(e) => setTrItem(e.target.value)}>
                 <option value="">Item…</option>
-                {items.map((i) => (
+                {stockItems.map((i) => (
                   <option key={i.id} value={i.id}>
-                    {i.name}
+                    {i.name} ({i.sku ?? "—"})
                   </option>
                 ))}
               </select>
-              <input type="number" placeholder="Qty" value={trQty} onChange={(e) => setTrQty(e.target.value)} />
+              <input type="number" min="0.001" step="0.001" placeholder="Qty" value={trQty} onChange={(e) => setTrQty(e.target.value)} />
+              {selectedTransferItem && (
+                <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                  <p className="text-xs font-semibold text-foreground">
+                    Current outlet stock for {selectedTransferItem.name}
+                  </p>
+                  {selectedTransferOutletBalances.length === 0 ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      This product is not currently published to any outlet.
+                    </p>
+                  ) : (
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      {selectedTransferOutletBalances.map((row) => (
+                        <div key={row.depotId} className="flex items-center justify-between rounded-md bg-card px-3 py-2">
+                          <span className="text-muted-foreground">{row.depotName}</span>
+                          <span className="font-semibold tabular-nums">{fmtNum(row.stockQty)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Example: if Principal has 100 and you transfer 40 to Bar, after completion this shows Principal 60
+                    and Bar 40.
+                  </p>
+                </div>
+              )}
               <button type="submit" className="hms-btn-solid text-sm">
                 Create pending transfer
               </button>
@@ -1858,13 +2409,48 @@ export function InventoryErpClient() {
                 Complete transfer
               </button>
             </div>
-            <h3 className="text-sm font-semibold mt-4 mb-1">History</h3>
-            <div className="max-h-48 overflow-auto text-xs">
-              {transfers.map((t) => (
-                <div key={t.id} className="border-b border-border/40 py-1">
-                  {t.transferNumber} {t.status} · {t.fromWarehouse} → {t.toWarehouse}
-                </div>
-              ))}
+            <h3 className="text-sm font-semibold mt-4 mb-1">Stock transfer report</h3>
+            <div className="max-h-72 overflow-auto rounded-lg border border-border/60">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/40">
+                  <tr>
+                    <th className="px-2 py-2 text-left">Transfer</th>
+                    <th className="px-2 py-2 text-left">From</th>
+                    <th className="px-2 py-2 text-left">To</th>
+                    <th className="px-2 py-2 text-left">Product</th>
+                    <th className="px-2 py-2 text-right">Qty moved</th>
+                    <th className="px-2 py-2 text-left">Status</th>
+                    <th className="px-2 py-2 text-left">Completed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transfers.flatMap((t) =>
+                    (t.items ?? []).map((line, idx) => (
+                      <tr key={`${t.id}-${line.itemId}-${idx}`} className="border-t border-border/40">
+                        <td className="px-2 py-2 font-medium">{t.transferNumber}</td>
+                        <td className="px-2 py-2">{t.fromWarehouse}</td>
+                        <td className="px-2 py-2">{t.toWarehouse}</td>
+                        <td className="px-2 py-2">
+                          {line.itemName}
+                          <span className="block text-muted-foreground">{line.sku}</span>
+                        </td>
+                        <td className="px-2 py-2 text-right font-semibold tabular-nums">{fmtNum(line.quantity)}</td>
+                        <td className="px-2 py-2">{t.status}</td>
+                        <td className="px-2 py-2">
+                          {t.completedAt ? new Date(t.completedAt).toLocaleString() : "Pending"}
+                        </td>
+                      </tr>
+                    )),
+                  )}
+                  {transfers.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-2 py-4 text-center text-muted-foreground">
+                        No stock transfers yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

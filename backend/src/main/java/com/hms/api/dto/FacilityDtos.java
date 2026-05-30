@@ -2,6 +2,7 @@ package com.hms.api.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -59,6 +60,8 @@ public final class FacilityDtos {
             UUID bookingId,
             String status,
             Instant checkedInAt,
+            String invoiceNumber,
+            BigDecimal invoiceAmount,
             FacilityOccupancyInfo facility,
             FacilityOccupancyBroadcast broadcast) {}
 
@@ -120,7 +123,9 @@ public final class FacilityDtos {
             int guestCount,
             Instant slotStart,
             Instant slotEnd,
-            String accessCode) {}
+            String accessCode,
+            String invoiceNumber,
+            BigDecimal amountPaid) {}
 
     public record FacilityDashboardResponse(
             UUID facilityId,
@@ -146,6 +151,61 @@ public final class FacilityDtos {
             Boolean allowsWalkIn) {}
 
     public record FacilityCreatedResponse(UUID id) {}
+
+    // ── Abonnements / memberships ─────────────────────────────────────────────
+
+    public record FacilityAbonnementCreateRequest(
+            @NotBlank String memberName,
+            String companyName,
+            String code,
+            String contactEmail,
+            String contactPhone,
+            @NotNull LocalDate validFrom,
+            @NotNull LocalDate validUntil,
+            Integer visitLimit,
+            Boolean monthlyBilling,
+            List<UUID> facilityIds) {}
+
+    public record FacilityAbonnementRow(
+            UUID id,
+            String memberName,
+            String companyName,
+            String code,
+            String contactEmail,
+            String contactPhone,
+            LocalDate validFrom,
+            LocalDate validUntil,
+            Integer visitLimit,
+            int visitsUsed,
+            boolean monthlyBilling,
+            boolean active,
+            List<FacilitySummary> facilities) {}
+
+    public record FacilityAbonnementCheckInRequest(
+            UUID abonnementId,
+            String code,
+            @NotNull UUID slotId,
+            Integer guestCount,
+            String staffNotes) {}
+
+    public record FacilityAbonnementCheckInResponse(
+            UUID bookingId,
+            String bookingReference,
+            String status,
+            String memberName,
+            String code,
+            BigDecimal invoiceAmount,
+            int visitsUsed,
+            Integer visitLimit,
+            String billingMode) {}
+
+    public record FacilityInvoiceRow(
+            UUID bookingId,
+            String invoiceNumber,
+            String facilityName,
+            String guestName,
+            BigDecimal amount,
+            Instant invoicedAt) {}
 
     // ── Water Quality ──────────────────────────────────────────────────────────
 

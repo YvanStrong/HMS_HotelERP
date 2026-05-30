@@ -31,6 +31,7 @@ public class ChannelConnection {
     private String status = "DISCONNECTED";
 
     /** Encrypted JSON: API keys per channel */
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @Column(columnDefinition = "TEXT")
     private String credentials;
 

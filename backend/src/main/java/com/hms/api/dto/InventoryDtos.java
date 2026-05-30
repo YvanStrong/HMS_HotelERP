@@ -1,6 +1,7 @@
 package com.hms.api.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
@@ -8,7 +9,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
-import java.time.LocalTime;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public final class InventoryDtos {
@@ -42,7 +42,9 @@ public final class InventoryDtos {
             LocalDate manufactureDate,
             String valuationMethod,
             String imageUrl,
-            String stockType) {}
+            String stockType,
+            String taxCategory,
+            boolean taxable) {}
 
     public record InventoryListSummary(
             long totalItems, long lowStockCount, long outOfStockCount, BigDecimal totalValue) {}
@@ -142,6 +144,7 @@ public final class InventoryDtos {
             String description,
             String barcode,
             BigDecimal sellingPrice,
+            String taxCategory,
             String imageUrl,
             LocalDate expiryDate,
             LocalDate manufactureDate) {}
@@ -163,7 +166,8 @@ public final class InventoryDtos {
             LocalDate manufactureDate,
             Boolean active,
             String valuationMethod,
-            String stockType) {}
+            String stockType,
+            String taxCategory) {}
 
     public record CreatedIdResponse(UUID id) {}
 
@@ -199,6 +203,66 @@ public final class InventoryDtos {
             UUID itemId, String itemName, String sku,
             BigDecimal quantityBefore, BigDecimal quantityAfter, String adjustmentType,
             UUID transactionId) {}
+
+    public record FabricationFormulaLineRequest(
+            @NotNull UUID componentItemId,
+            @NotNull @DecimalMin(value = "0.0001") BigDecimal quantity,
+            String notes) {}
+
+    public record FabricationFormulaCreateRequest(
+            @NotBlank String name,
+            @NotNull UUID outputItemId,
+            BigDecimal outputQuantity,
+            String notes,
+            List<FabricationFormulaLineRequest> lines) {}
+
+    public record FabricationFormulaLineItem(
+            UUID id,
+            UUID componentItemId,
+            String componentName,
+            String componentSku,
+            BigDecimal quantity,
+            BigDecimal currentStock,
+            String unitOfMeasure,
+            String notes) {}
+
+    public record FabricationFormulaItem(
+            UUID id,
+            String name,
+            UUID outputItemId,
+            String outputItemName,
+            String outputSku,
+            BigDecimal outputQuantity,
+            String notes,
+            boolean active,
+            List<FabricationFormulaLineItem> lines) {}
+
+    public record FabricationRunRequest(
+            @NotNull UUID formulaId,
+            @NotNull @DecimalMin(value = "0.0001") BigDecimal quantityProduced,
+            String referenceNo,
+            String notes) {}
+
+    public record FabricationRunLineItem(
+            UUID componentItemId,
+            String componentName,
+            String componentSku,
+            BigDecimal requiredQuantity,
+            BigDecimal stockBefore,
+            BigDecimal stockAfter) {}
+
+    public record FabricationRunItem(
+            UUID id,
+            UUID formulaId,
+            String formulaName,
+            UUID outputItemId,
+            String outputItemName,
+            String outputSku,
+            BigDecimal quantityProduced,
+            String referenceNo,
+            String createdBy,
+            Instant createdAt,
+            List<FabricationRunLineItem> lines) {}
 
     // ── Stock movements listing ──────────────────────────────────────────
 

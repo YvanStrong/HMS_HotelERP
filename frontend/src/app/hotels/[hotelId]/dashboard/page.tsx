@@ -99,7 +99,7 @@ function defaultDateRange(): { from: string; to: string } {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  OCCUPIED: "#16a34a",
+  OCCUPIED: "#0ea5e9",
   VACANT_CLEAN: "#10b981",
   VACANT_DIRTY: "#f59e0b",
   CLEAN: "#10b981",
@@ -120,6 +120,14 @@ function shortDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function formatClock(now: Date | null): { time: string; date: string } {
+  if (!now) return { time: "--:--:--", date: "Loading time..." };
+  return {
+    time: now.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    date: now.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric", year: "numeric" }),
+  };
 }
 
 function timeBucketArrivals(arrivals: ArrivalRow[]): { label: string; value: number }[] {
@@ -151,6 +159,7 @@ export default function HotelDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [clockNow, setClockNow] = useState<Date | null>(null);
 
   const [board, setBoard] = useState<RoomDashboard | null>(null);
   const [grid, setGrid] = useState<OccupancyGrid | null>(null);
@@ -161,6 +170,13 @@ export default function HotelDashboardPage() {
   const [gridLoading, setGridLoading] = useState(true);
   const [kpiLoading, setKpiLoading] = useState(true);
   const range = useMemo(() => defaultDateRange(), []);
+  const clock = formatClock(clockNow);
+
+  useEffect(() => {
+    setClockNow(new Date());
+    const t = setInterval(() => setClockNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const loadExecutive = useCallback(async () => {
     if (!getToken()) {
@@ -268,7 +284,7 @@ export default function HotelDashboardPage() {
   const accountingSalesBars = useMemo(() => {
     if (!salesAnalytics) return [];
     return [
-      { label: "POS", value: Number(salesAnalytics.posSales) || 0, color: "#16a34a" },
+      { label: "POS", value: Number(salesAnalytics.posSales) || 0, color: "#0ea5e9" },
       { label: "Invoices", value: Number(salesAnalytics.inventoryInvoiceSales) || 0, color: "#0ea5e9" },
       { label: "Expenses", value: Number(salesAnalytics.totalExpenses) || 0, color: "#f59e0b" },
     ];
@@ -348,7 +364,12 @@ export default function HotelDashboardPage() {
               Live operations, revenue, and alerts at a glance — visualised with charts so trends are easy to spot.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-2 text-right shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current time</p>
+              <p className="text-2xl font-bold tabular-nums text-foreground">{clock.time}</p>
+              <p className="text-xs text-muted-foreground">{clock.date}</p>
+            </div>
             <Link href={staffAppPath("rooms")} className="hms-btn-outline hms-btn-sm hms-btn-icon">
               Rooms List
             </Link>
@@ -663,7 +684,7 @@ export default function HotelDashboardPage() {
             leftAxisLabel="Rooms"
             rightAxisLabel="%"
             series={[
-              { key: "Occupied", label: "Occupied", type: "bar", color: "#16a34a" },
+              { key: "Occupied", label: "Occupied", type: "bar", color: "#0ea5e9" },
               { key: "Available", label: "Available", type: "bar", color: "#d2bab0" },
               {
                 key: "Occupancy",

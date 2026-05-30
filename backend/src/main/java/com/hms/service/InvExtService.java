@@ -2,20 +2,31 @@ package com.hms.service;
 
 import com.hms.api.dto.InventoryDtos;
 import com.hms.domain.StockTransactionType;
+import com.hms.entity.DepotProduct;
+import com.hms.entity.Hotel;
 import com.hms.entity.InvCustomer;
+import com.hms.entity.InvFabricationFormula;
+import com.hms.entity.InvFabricationFormulaLine;
+import com.hms.entity.InvFabricationRun;
+import com.hms.entity.InvFabricationRunLine;
 import com.hms.entity.InvSalesInvoice;
 import com.hms.entity.InvSalesInvoiceItem;
 import com.hms.entity.InvStockTransfer;
 import com.hms.entity.InvStockTransferItem;
 import com.hms.entity.InvWarehouse;
+import com.hms.entity.InventoryDepot;
 import com.hms.entity.InventoryItem;
 import com.hms.entity.PurchaseOrder;
 import com.hms.entity.StockTransaction;
 import com.hms.entity.Supplier;
+import com.hms.repository.DepotProductRepository;
 import com.hms.repository.InvCustomerRepository;
+import com.hms.repository.InvFabricationFormulaRepository;
+import com.hms.repository.InvFabricationRunRepository;
 import com.hms.repository.InvSalesInvoiceRepository;
 import com.hms.repository.InvStockTransferRepository;
 import com.hms.repository.InvWarehouseRepository;
+import com.hms.repository.InventoryDepotRepository;
 import com.hms.repository.InventoryItemRepository;
 import com.hms.repository.PurchaseOrderLineRepository;
 import com.hms.repository.PurchaseOrderRepository;
@@ -55,6 +66,10 @@ public class InvExtService {
     private final HotelRepository hotelRepository;
     private final TenantAccessService tenantAccessService;
     private final PurchaseOrderLineRepository purchaseOrderLineRepository;
+    private final InvFabricationFormulaRepository fabricationFormulaRepository;
+    private final InvFabricationRunRepository fabricationRunRepository;
+    private final InventoryDepotRepository inventoryDepotRepository;
+    private final DepotProductRepository depotProductRepository;
 
     public InvExtService(
             InventoryItemRepository itemRepository,
@@ -67,7 +82,11 @@ public class InvExtService {
             InvStockTransferRepository transferRepository,
             HotelRepository hotelRepository,
             TenantAccessService tenantAccessService,
-            PurchaseOrderLineRepository purchaseOrderLineRepository) {
+            PurchaseOrderLineRepository purchaseOrderLineRepository,
+            InvFabricationFormulaRepository fabricationFormulaRepository,
+            InvFabricationRunRepository fabricationRunRepository,
+            InventoryDepotRepository inventoryDepotRepository,
+            DepotProductRepository depotProductRepository) {
         this.itemRepository = itemRepository;
         this.txRepository = txRepository;
         this.supplierRepository = supplierRepository;
@@ -79,6 +98,10 @@ public class InvExtService {
         this.hotelRepository = hotelRepository;
         this.tenantAccessService = tenantAccessService;
         this.purchaseOrderLineRepository = purchaseOrderLineRepository;
+        this.fabricationFormulaRepository = fabricationFormulaRepository;
+        this.fabricationRunRepository = fabricationRunRepository;
+        this.inventoryDepotRepository = inventoryDepotRepository;
+        this.depotProductRepository = depotProductRepository;
     }
 
     // ── Supplier full detail ──────────────────────────────────────────────
@@ -187,6 +210,162 @@ public class InvExtService {
         return new InventoryDtos.StockAdjustResponse(
                 item.getId(), item.getName(), item.getSku(),
                 before, after, typeLabel, tx.getId());
+    }
+
+    // ── Fabrication / formulas ────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public List<InventoryDtos.FabricationFormulaItem> listFabricationFormulas(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        return fabricationFormulaRepository.findDetailedByHotelId(hotelId).stream()
+                .map(this::toFabricationFormulaItem)
+                .toList();
+    }
+
+    @Transactional
+    public InventoryDtos.FabricationFormulaItem createFabricationFormula(
+            UUID hotelId, String hotelHeader, InventoryDtos.FabricationFormulaCreateRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (req.lines() == null || req.lines().isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Add at least one ingredient line");
+        }
+        BigDecimal outputQty = req.outputQuantity() == null ? BigDecimal.ONE : req.outputQuantity();
+        if (outputQty.signum() <= 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "outputQuantity must be positive");
+        }
+        Hotel hotel = hotelRepository.findById(hotelId).orElseThrow(() -> notFound("Hotel"));
+        InventoryItem output = itemRepository.findByIdAndHotel_Id(req.outputItemId(), hotelId)
+                .orElseThrow(() -> notFound("Output product"));
+        ensureStockManaged(output, "Output product");
+
+        InvFabricationFormula f = new InvFabricationFormula();
+        f.setHotel(hotel);
+        f.setOutputItem(output);
+        f.setName(req.name().trim());
+        f.setOutputQuantity(outputQty);
+        f.setNotes(cleanNullable(req.notes()));
+        for (InventoryDtos.FabricationFormulaLineRequest lineReq : req.lines()) {
+            if (lineReq.quantity() == null || lineReq.quantity().signum() <= 0) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Ingredient quantity must be positive");
+            }
+            InventoryItem component = itemRepository.findByIdAndHotel_Id(lineReq.componentItemId(), hotelId)
+                    .orElseThrow(() -> notFound("Ingredient product"));
+            ensureStockManaged(component, "Ingredient product");
+            if (component.getId().equals(output.getId())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Finished product cannot also be an ingredient");
+            }
+            InvFabricationFormulaLine line = new InvFabricationFormulaLine();
+            line.setFormula(f);
+            line.setComponent(component);
+            line.setQuantity(lineReq.quantity());
+            line.setNotes(cleanNullable(lineReq.notes()));
+            f.getLines().add(line);
+        }
+        f = fabricationFormulaRepository.save(f);
+        return toFabricationFormulaItem(f);
+    }
+
+    @Transactional
+    public InventoryDtos.FabricationRunItem runFabrication(
+            UUID hotelId, String hotelHeader, InventoryDtos.FabricationRunRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (req.quantityProduced() == null || req.quantityProduced().signum() <= 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "quantityProduced must be positive");
+        }
+        InvFabricationFormula formula = fabricationFormulaRepository
+                .findDetailedByIdAndHotelId(req.formulaId(), hotelId)
+                .orElseThrow(() -> notFound("Fabrication formula"));
+        if (!formula.isActive()) {
+            throw new ApiException(HttpStatus.CONFLICT, "Fabrication formula is inactive");
+        }
+        if (formula.getLines().isEmpty()) {
+            throw new ApiException(HttpStatus.CONFLICT, "Fabrication formula has no ingredients");
+        }
+        InventoryItem output = formula.getOutputItem();
+        ensureStockManaged(output, "Output product");
+
+        BigDecimal multiplier = req.quantityProduced()
+                .divide(formula.getOutputQuantity(), 8, RoundingMode.HALF_UP);
+
+        // Validate all ingredients before changing any stock.
+        Map<UUID, BigDecimal> requiredByItem = new HashMap<>();
+        for (InvFabricationFormulaLine line : formula.getLines()) {
+            InventoryItem component = line.getComponent();
+            ensureStockManaged(component, "Ingredient product");
+            BigDecimal required = line.getQuantity().multiply(multiplier).setScale(4, RoundingMode.HALF_UP);
+            requiredByItem.merge(component.getId(), required, BigDecimal::add);
+        }
+        for (InvFabricationFormulaLine line : formula.getLines()) {
+            InventoryItem component = line.getComponent();
+            BigDecimal required = requiredByItem.get(component.getId());
+            if (component.getCurrentStock().compareTo(required) < 0) {
+                throw new ApiException(
+                        HttpStatus.CONFLICT,
+                        "Insufficient stock for " + component.getName() + ": need " + required + ", have "
+                                + component.getCurrentStock());
+            }
+        }
+
+        InvFabricationRun run = new InvFabricationRun();
+        run.setHotel(hotelRepository.getReferenceById(hotelId));
+        run.setFormula(formula);
+        run.setOutputItem(output);
+        run.setQuantityProduced(req.quantityProduced().setScale(4, RoundingMode.HALF_UP));
+        run.setReferenceNo(cleanNullable(req.referenceNo()));
+        run.setNotes(cleanNullable(req.notes()));
+        run.setCreatedBy(tenantAccessService.currentUser().getUsername());
+
+        String ref = "FAB-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        for (InvFabricationFormulaLine formulaLine : formula.getLines()) {
+            InventoryItem component = formulaLine.getComponent();
+            BigDecimal required = formulaLine.getQuantity().multiply(multiplier).setScale(4, RoundingMode.HALF_UP);
+            BigDecimal before = component.getCurrentStock();
+            BigDecimal after = before.subtract(required);
+            component.setCurrentStock(after);
+            itemRepository.save(component);
+
+            InvFabricationRunLine runLine = new InvFabricationRunLine();
+            runLine.setRun(run);
+            runLine.setComponent(component);
+            runLine.setRequiredQuantity(required);
+            runLine.setStockBefore(before);
+            runLine.setStockAfter(after);
+            run.getLines().add(runLine);
+
+            StockTransaction tx = new StockTransaction();
+            tx.setItem(component);
+            tx.setType(StockTransactionType.FABRICATION_CONSUME);
+            tx.setQuantity(required.negate());
+            tx.setReference(ref);
+            tx.setNotes("Fabrication: " + formula.getName());
+            tx.setPerformedBy(run.getCreatedBy());
+            txRepository.save(tx);
+        }
+
+        BigDecimal outputBefore = output.getCurrentStock();
+        output.setCurrentStock(outputBefore.add(req.quantityProduced()).setScale(4, RoundingMode.HALF_UP));
+        itemRepository.save(output);
+
+        StockTransaction outTx = new StockTransaction();
+        outTx.setItem(output);
+        outTx.setType(StockTransactionType.FABRICATION_OUTPUT);
+        outTx.setQuantity(req.quantityProduced().setScale(4, RoundingMode.HALF_UP));
+        outTx.setReference(ref);
+        outTx.setNotes("Fabrication output: " + formula.getName());
+        outTx.setPerformedBy(run.getCreatedBy());
+        txRepository.save(outTx);
+
+        run = fabricationRunRepository.save(run);
+        return toFabricationRunItem(run);
+    }
+
+    @Transactional(readOnly = true)
+    public List<InventoryDtos.FabricationRunItem> listFabricationRuns(UUID hotelId, String hotelHeader, int limit) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        int size = Math.min(Math.max(limit, 1), 100);
+        return fabricationRunRepository.findRecentByHotelId(hotelId, PageRequest.of(0, size)).stream()
+                .map(this::toFabricationRunItem)
+                .toList();
     }
 
     // ── Stock movements listing ───────────────────────────────────────────
@@ -554,9 +733,48 @@ public class InvExtService {
             throw new ApiException(HttpStatus.CONFLICT, "Only PENDING transfers can be completed");
 
         String who = tenantAccessService.currentUser().getUsername();
+        InventoryDepot fromDepot = inventoryDepotRepository
+                .findByHotel_IdAndLinkedWarehouse_Id(hotelId, transfer.getFromWarehouse().getId())
+                .orElse(null);
+        InventoryDepot toDepot = inventoryDepotRepository
+                .findByHotel_IdAndLinkedWarehouse_Id(hotelId, transfer.getToWarehouse().getId())
+                .orElse(null);
+        Hotel transferHotel = transfer.getHotel();
         for (InvStockTransferItem ti : transfer.getItems()) {
             InventoryItem item = ti.getItem();
             BigDecimal qty = ti.getQuantity();
+            if ("NON_STOCK".equalsIgnoreCase(item.getStockType())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Cannot transfer NON STOCK product: " + item.getName());
+            }
+            if (qty == null || qty.signum() <= 0) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer quantity must be positive");
+            }
+            if (fromDepot != null) {
+                DepotProduct source = depotProductRepository
+                        .findByHotel_IdAndDepot_IdAndInventoryItem_Id(hotelId, fromDepot.getId(), item.getId())
+                        .orElseThrow(() -> new ApiException(
+                                HttpStatus.CONFLICT,
+                                item.getName() + " is not available in " + fromDepot.getName()));
+                if (!"STOCK".equalsIgnoreCase(source.getStockType())) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "Cannot transfer NON STOCK product: " + item.getName());
+                }
+                if (source.getStockQty().compareTo(qty) < 0) {
+                    throw new ApiException(
+                            HttpStatus.CONFLICT,
+                            "Not enough stock in " + fromDepot.getName() + " for " + item.getName()
+                                    + ". Available: " + source.getStockQty() + ", requested: " + qty);
+                }
+                source.setStockQty(source.getStockQty().subtract(qty).setScale(3, RoundingMode.HALF_UP));
+                depotProductRepository.save(source);
+            }
+            if (toDepot != null) {
+                DepotProduct dest = depotProductRepository
+                        .findByHotel_IdAndDepot_IdAndInventoryItem_Id(hotelId, toDepot.getId(), item.getId())
+                        .orElseGet(() -> createDepotProductFromInventory(transferHotel, toDepot, item));
+                dest.setStockQty(dest.getStockQty().add(qty).setScale(3, RoundingMode.HALF_UP));
+                dest.setActive(true);
+                depotProductRepository.save(dest);
+            }
 
             StockTransaction txOut = new StockTransaction();
             txOut.setItem(item);
@@ -857,6 +1075,109 @@ public class InvExtService {
         String year = String.valueOf(java.time.Year.now().getValue());
         String rand = UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
         return "TRF-" + year + "-" + rand;
+    }
+
+    private InventoryDtos.FabricationFormulaItem toFabricationFormulaItem(InvFabricationFormula f) {
+        return new InventoryDtos.FabricationFormulaItem(
+                f.getId(),
+                f.getName(),
+                f.getOutputItem().getId(),
+                f.getOutputItem().getName(),
+                f.getOutputItem().getSku(),
+                f.getOutputQuantity(),
+                f.getNotes(),
+                f.isActive(),
+                f.getLines().stream()
+                        .map(l -> new InventoryDtos.FabricationFormulaLineItem(
+                                l.getId(),
+                                l.getComponent().getId(),
+                                l.getComponent().getName(),
+                                l.getComponent().getSku(),
+                                l.getQuantity(),
+                                l.getComponent().getCurrentStock(),
+                                l.getComponent().getUnitOfMeasure(),
+                                l.getNotes()))
+                        .toList());
+    }
+
+    private InventoryDtos.FabricationRunItem toFabricationRunItem(InvFabricationRun r) {
+        return new InventoryDtos.FabricationRunItem(
+                r.getId(),
+                r.getFormula().getId(),
+                r.getFormula().getName(),
+                r.getOutputItem().getId(),
+                r.getOutputItem().getName(),
+                r.getOutputItem().getSku(),
+                r.getQuantityProduced(),
+                r.getReferenceNo(),
+                r.getCreatedBy(),
+                r.getCreatedAt(),
+                r.getLines().stream()
+                        .map(l -> new InventoryDtos.FabricationRunLineItem(
+                                l.getComponent().getId(),
+                                l.getComponent().getName(),
+                                l.getComponent().getSku(),
+                                l.getRequiredQuantity(),
+                                l.getStockBefore(),
+                                l.getStockAfter()))
+                        .toList());
+    }
+
+    private DepotProduct createDepotProductFromInventory(Hotel hotel, InventoryDepot depot, InventoryItem item) {
+        DepotProduct p = new DepotProduct();
+        p.setHotel(hotel);
+        p.setDepot(depot);
+        p.setInventoryItem(item);
+        p.setProductNumber(depotProductRepository.findMaxProductNumber(hotel.getId()) + 1);
+        p.setProductName(item.getName());
+        p.setProductCode(nextDepotProductCode(hotel.getId(), item.getName()));
+        p.setBatchNo("NA");
+        p.setCostPrice(scale2(item.getUnitCost()));
+        p.setSellingPrice(scale2(item.getSellingPrice() != null ? item.getSellingPrice() : item.getUnitCost()));
+        p.setStockType("STOCK");
+        p.setStockQty(BigDecimal.ZERO.setScale(3, RoundingMode.HALF_UP));
+        p.setMenuName(item.getCategory() != null ? item.getCategory().getCode() : "GENERAL");
+        p.setTaxable(true);
+        p.setPhotoUrl(item.getImageUrl());
+        return p;
+    }
+
+    private String nextDepotProductCode(UUID hotelId, String name) {
+        String prefix = prefixFromName(name);
+        int max = 0;
+        for (DepotProduct p : depotProductRepository.findByHotel_IdAndProductCodeStartingWithIgnoreCase(hotelId, prefix)) {
+            String suffix = p.getProductCode() != null && p.getProductCode().length() > prefix.length()
+                    ? p.getProductCode().substring(prefix.length())
+                    : "";
+            try {
+                max = Math.max(max, Integer.parseInt(suffix));
+            } catch (NumberFormatException ignored) {
+                // ignore non-standard legacy codes
+            }
+        }
+        return prefix + String.format("%03d", max + 1);
+    }
+
+    private static String prefixFromName(String name) {
+        String cleaned = name == null ? "" : name.toUpperCase(java.util.Locale.ROOT).replaceAll("[^A-Z0-9]", "");
+        if (cleaned.isBlank()) return "PRD";
+        if (cleaned.length() >= 3) return cleaned.substring(0, 3);
+        return (cleaned + "XXX").substring(0, 3);
+    }
+
+    private static BigDecimal scale2(BigDecimal value) {
+        return (value == null ? BigDecimal.ZERO : value).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static void ensureStockManaged(InventoryItem item, String label) {
+        if ("NON_STOCK".equalsIgnoreCase(item.getStockType())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, label + " must be STOCK, not NON STOCK");
+        }
+    }
+
+    private static String cleanNullable(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        return raw.trim();
     }
 
     private static ApiException notFound(String what) {

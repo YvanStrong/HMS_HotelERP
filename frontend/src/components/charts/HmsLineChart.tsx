@@ -134,7 +134,7 @@ export function HmsLineChart({
           contentStyle={{
             fontSize: 12,
             borderRadius: 6,
-            border: "1px solid rgba(20,83,45,0.12)",
+            border: "1px solid rgba(26,58,92,0.12)",
             background: "#fff",
           }}
           formatter={(value, name) => {

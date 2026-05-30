@@ -25,6 +25,15 @@ type BookingItem = {
   slotStart: string;
   slotEnd: string;
   accessCode: string;
+  invoiceNumber?: string | null;
+  amountPaid?: number | null;
+};
+type CheckInResponse = {
+  bookingId: string;
+  status: string;
+  checkedInAt: string;
+  invoiceNumber?: string | null;
+  invoiceAmount?: number | null;
 };
 type FacilityDashboard = {
   facilityId: string;
@@ -120,7 +129,34 @@ type RevenueSummary = {
   directRevenue: number;
 };
 
-type Tab = "operations" | "water-quality" | "lifeguards" | "incidents" | "revenue" | "maintenance" | "settings";
+type AbonnementRow = {
+  id: string;
+  memberName: string;
+  companyName?: string | null;
+  code: string;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  validFrom: string;
+  validUntil: string;
+  visitLimit?: number | null;
+  visitsUsed: number;
+  monthlyBilling: boolean;
+  active: boolean;
+  facilities: Facility[];
+};
+type AbonnementCheckInResponse = {
+  bookingId: string;
+  bookingReference: string;
+  status: string;
+  memberName: string;
+  code: string;
+  invoiceAmount: number;
+  visitsUsed: number;
+  visitLimit?: number | null;
+  billingMode: string;
+};
+
+type Tab = "operations" | "abonnements" | "water-quality" | "lifeguards" | "incidents" | "revenue" | "maintenance" | "settings";
 
 const PAGE_SIZE = 10;
 const BOOKING_PAGE_SIZE = 8;
@@ -273,6 +309,29 @@ export default function FacilitiesPage() {
   const [revFrom, setRevFrom] = useState(ymd(-30));
   const [revTo, setRevTo] = useState(ymd(0));
 
+  // Abonnements
+  const [abonnements, setAbonnements] = useState<AbonnementRow[]>([]);
+  const [abonnementLoading, setAbonnementLoading] = useState(false);
+  const [abonnementSearch, setAbonnementSearch] = useState("");
+  const [abonnementSaving, setAbonnementSaving] = useState(false);
+  const [abonnementForm, setAbonnementForm] = useState({
+    memberName: "",
+    companyName: "",
+    code: "",
+    contactEmail: "",
+    contactPhone: "",
+    validFrom: ymd(0),
+    validUntil: ymd(30),
+    visitLimit: "",
+    monthlyBilling: false,
+    facilityIds: [] as string[],
+  });
+  const [abonnementCheckIn, setAbonnementCheckIn] = useState({
+    code: "",
+    slotId: "",
+    guestCount: "1",
+  });
+
   // Create facility form
   const [form, setForm] = useState({
     name: "",
@@ -387,6 +446,16 @@ export default function FacilitiesPage() {
     finally { setRevenueLoading(false); }
   }, [hotelId, selectedFacilityId, revFrom, revTo]);
 
+  const loadAbonnements = useCallback(async () => {
+    setAbonnementLoading(true);
+    try {
+      const qs = abonnementSearch.trim() ? `?q=${encodeURIComponent(abonnementSearch.trim())}` : "";
+      const data = await apiFetch<AbonnementRow[]>(`/api/v1/hotels/${hotelId}/facilities/abonnements${qs}`);
+      setAbonnements(data ?? []);
+    } catch { setAbonnements([]); }
+    finally { setAbonnementLoading(false); }
+  }, [hotelId, abonnementSearch]);
+
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadDashboard(); }, [loadDashboard]);
   useEffect(() => { void loadMaintenance(); }, [loadMaintenance]);
@@ -394,6 +463,7 @@ export default function FacilitiesPage() {
   useEffect(() => { if (tab === "lifeguards") void loadLifeguards(); }, [tab, loadLifeguards]);
   useEffect(() => { if (tab === "incidents") void loadIncidents(); }, [tab, loadIncidents]);
   useEffect(() => { if (tab === "revenue") void loadRevenue(); }, [tab, loadRevenue]);
+  useEffect(() => { if (tab === "abonnements") void loadAbonnements(); }, [tab, loadAbonnements]);
 
   useEffect(() => {
     let cancelled = false;
@@ -516,19 +586,175 @@ export default function FacilitiesPage() {
     finally { setBookingLoading(false); }
   }
 
+  function printEpsonAccessPass(pass: NonNullable<typeof qrModal>) {
+    const facilityName = dashboard?.facilityName || (rows ?? []).find((f) => f.id === selectedFacilityId)?.name || "Facility";
+    const printedAt = new Date().toLocaleString();
+    const qrHtml = pass.qrCode
+      ? `<img src="${pass.qrCode}" alt="Access QR" class="qr" />`
+      : `<div class="no-qr">NO QR</div>`;
+    const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Facility Access Pass</title>
+  <style>
+    @page { size: 80mm auto; margin: 4mm; }
+    * { box-sizing: border-box; }
+    body {
+      width: 72mm;
+      margin: 0 auto;
+      color: #111;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 12px;
+      text-align: center;
+    }
+    .brand { font-size: 16px; font-weight: 800; margin: 0 0 2mm; }
+    .muted { color: #555; font-size: 11px; }
+    .line { border-top: 1px dashed #111; margin: 3mm 0; }
+    .title { font-size: 14px; font-weight: 800; text-transform: uppercase; }
+    .ref { font-size: 12px; letter-spacing: 0.08em; margin-top: 1mm; }
+    .qr {
+      display: block;
+      width: 42mm;
+      height: 42mm;
+      margin: 3mm auto;
+      object-fit: contain;
+    }
+    .no-qr {
+      width: 42mm;
+      height: 42mm;
+      margin: 3mm auto;
+      border: 1px solid #111;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+    }
+    .access-label { font-size: 10px; color: #555; text-transform: uppercase; }
+    .access-code {
+      border: 1px solid #111;
+      padding: 2mm;
+      margin-top: 1mm;
+      font-family: "Courier New", monospace;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      word-break: break-word;
+    }
+    .instructions { margin-top: 3mm; line-height: 1.35; }
+    .foot { margin-top: 3mm; font-size: 10px; color: #555; }
+  </style>
+</head>
+<body>
+  <div class="brand">${escapeHtml(facilityName)}</div>
+  <div class="muted">Facility Access Pass</div>
+  <div class="line"></div>
+  <div class="title">Booking confirmed</div>
+  <div class="ref">${escapeHtml(pass.ref)}</div>
+  ${qrHtml}
+  <div class="access-label">Access code</div>
+  <div class="access-code">${escapeHtml(pass.accessCode)}</div>
+  ${pass.instructions ? `<div class="instructions">${escapeHtml(pass.instructions)}</div>` : ""}
+  <div class="line"></div>
+  <div class="foot">Printed ${escapeHtml(printedAt)}</div>
+  <script>
+    window.addEventListener("load", function () {
+      window.print();
+      setTimeout(function () { window.close(); }, 500);
+    });
+  </script>
+</body>
+</html>`;
+    const printWindow = window.open("", "facility-access-pass", "width=360,height=640");
+    if (!printWindow) {
+      setError("Popup blocked. Allow popups to print the Epson receipt.");
+      return;
+    }
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+  }
+
+  function escapeHtml(value: string) {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
   async function checkInBooking(e: React.FormEvent) {
     e.preventDefault();
     if (!checkinForm.bookingId || !checkinForm.accessCode.trim()) { setError("Booking and access code are required."); return; }
     setCheckinLoading(true); setError(null); setMsg(null);
     try {
-      await apiFetch(`/api/v1/hotels/${hotelId}/facilities/bookings/${checkinForm.bookingId}/check-in`, {
+      const checkedIn = await apiFetch<CheckInResponse>(`/api/v1/hotels/${hotelId}/facilities/bookings/${checkinForm.bookingId}/check-in`, {
         method: "POST",
         body: JSON.stringify({ accessCode: checkinForm.accessCode.trim(), actualGuestCount: checkinForm.actualGuestCount ? Number(checkinForm.actualGuestCount) : null, staffNotes: "" }),
       });
-      setMsg("Booking checked in.");
+      setMsg(
+        checkedIn.invoiceNumber
+          ? `Booking checked in. Facility invoice ${checkedIn.invoiceNumber} created for ${fmt(Number(checkedIn.invoiceAmount ?? 0))}.`
+          : "Booking checked in.",
+      );
       setCheckinForm({ bookingId: "", accessCode: "", actualGuestCount: "" });
       await loadDashboard();
     } catch (e) { setError(e instanceof Error ? e.message : "Check-in failed"); }
+    finally { setCheckinLoading(false); }
+  }
+
+  async function createAbonnement(e: React.FormEvent) {
+    e.preventDefault();
+    if (!abonnementForm.memberName.trim()) { setError("Member/company name is required."); return; }
+    setAbonnementSaving(true); setError(null); setMsg(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/facilities/abonnements`, {
+        method: "POST",
+        body: JSON.stringify({
+          memberName: abonnementForm.memberName.trim(),
+          companyName: abonnementForm.companyName.trim() || null,
+          code: abonnementForm.code.trim() || null,
+          contactEmail: abonnementForm.contactEmail.trim() || null,
+          contactPhone: abonnementForm.contactPhone.trim() || null,
+          validFrom: abonnementForm.validFrom,
+          validUntil: abonnementForm.validUntil,
+          visitLimit: abonnementForm.visitLimit ? Number(abonnementForm.visitLimit) : null,
+          monthlyBilling: abonnementForm.monthlyBilling,
+          facilityIds: abonnementForm.facilityIds,
+        }),
+      });
+      setMsg("Abonnement created.");
+      setAbonnementForm((f) => ({ ...f, memberName: "", companyName: "", code: "", contactEmail: "", contactPhone: "", visitLimit: "" }));
+      await loadAbonnements();
+    } catch (e) { setError(e instanceof Error ? e.message : "Abonnement create failed"); }
+    finally { setAbonnementSaving(false); }
+  }
+
+  async function checkInAbonnement(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedFacilityId || !abonnementCheckIn.code.trim() || !abonnementCheckIn.slotId) {
+      setError("Facility, abonnement code, and slot are required.");
+      return;
+    }
+    setCheckinLoading(true); setError(null); setMsg(null);
+    try {
+      const res = await apiFetch<AbonnementCheckInResponse>(
+        `/api/v1/hotels/${hotelId}/facilities/${selectedFacilityId}/abonnements/check-in`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            code: abonnementCheckIn.code.trim(),
+            slotId: abonnementCheckIn.slotId,
+            guestCount: Number(abonnementCheckIn.guestCount || 1),
+            staffNotes: "Abonnement entrance check-in",
+          }),
+        },
+      );
+      setMsg(`Abonnement checked in: ${res.memberName} · ${res.bookingReference} · invoice amount ${fmt(Number(res.invoiceAmount))}.`);
+      setAbonnementCheckIn({ code: "", slotId: "", guestCount: "1" });
+      await Promise.all([loadDashboard(), loadAbonnements()]);
+    } catch (e) { setError(e instanceof Error ? e.message : "Abonnement check-in failed"); }
     finally { setCheckinLoading(false); }
   }
 
@@ -751,7 +977,7 @@ export default function FacilitiesPage() {
       {/* Tabs */}
       <div className="rounded-2xl border border-border/60 bg-card p-3 shadow-sm">
         <div className="flex flex-wrap gap-2">
-          {(["operations", "water-quality", "lifeguards", "incidents", "revenue", "maintenance", "settings"] as Tab[]).map((t) => (
+          {(["operations", "abonnements", "water-quality", "lifeguards", "incidents", "revenue", "maintenance", "settings"] as Tab[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -759,6 +985,7 @@ export default function FacilitiesPage() {
               onClick={() => setTab(t)}
             >
               {t === "operations" && "Operations"}
+              {t === "abonnements" && "Abonnements"}
               {t === "water-quality" && "Water Quality"}
               {t === "lifeguards" && "Lifeguards"}
               {t === "incidents" && "Incidents"}
@@ -945,6 +1172,11 @@ export default function FacilitiesPage() {
                             <span className="font-medium">{b.bookingReference}</span>
                             {" · "}{b.guestName}
                             {" · "}<span className="text-muted-foreground text-xs">{b.status}</span>
+                            {b.invoiceNumber && (
+                              <div className="mt-1 text-xs text-primary">
+                                Invoice {b.invoiceNumber} · {fmt(Number(b.amountPaid ?? 0))}
+                              </div>
+                            )}
                           </div>
                           <div className="flex gap-1">
                             {(b.status === "CONFIRMED" || b.status === "CHECKED_IN") && (
@@ -965,6 +1197,117 @@ export default function FacilitiesPage() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ABONNEMENTS TAB ───────────────────────────────────────────────── */}
+      {tab === "abonnements" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-card rounded-xl border border-border/60 p-5 shadow-soft">
+              <h2 className="text-lg font-semibold mb-3">Create abonnement</h2>
+              <form onSubmit={createAbonnement} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div><label>Member / company name</label><input value={abonnementForm.memberName} onChange={(e) => setAbonnementForm((f) => ({ ...f, memberName: e.target.value }))} /></div>
+                <div><label>Company name</label><input value={abonnementForm.companyName} onChange={(e) => setAbonnementForm((f) => ({ ...f, companyName: e.target.value }))} /></div>
+                <div><label>Card / QR code</label><input placeholder="Leave blank to auto-generate" value={abonnementForm.code} onChange={(e) => setAbonnementForm((f) => ({ ...f, code: e.target.value }))} /></div>
+                <div><label>Visit limit</label><input type="number" value={abonnementForm.visitLimit} onChange={(e) => setAbonnementForm((f) => ({ ...f, visitLimit: e.target.value }))} /></div>
+                <div><label>Valid from</label><input type="date" value={abonnementForm.validFrom} onChange={(e) => setAbonnementForm((f) => ({ ...f, validFrom: e.target.value }))} /></div>
+                <div><label>Valid until</label><input type="date" value={abonnementForm.validUntil} onChange={(e) => setAbonnementForm((f) => ({ ...f, validUntil: e.target.value }))} /></div>
+                <div><label>Email</label><input value={abonnementForm.contactEmail} onChange={(e) => setAbonnementForm((f) => ({ ...f, contactEmail: e.target.value }))} /></div>
+                <div><label>Phone</label><input value={abonnementForm.contactPhone} onChange={(e) => setAbonnementForm((f) => ({ ...f, contactPhone: e.target.value }))} /></div>
+                <div className="md:col-span-2">
+                  <label>Allowed facilities</label>
+                  <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-1 text-sm">
+                    {(rows ?? []).map((facility) => (
+                      <label key={facility.id} className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={abonnementForm.facilityIds.includes(facility.id)}
+                          onChange={(e) => setAbonnementForm((f) => ({
+                            ...f,
+                            facilityIds: e.target.checked
+                              ? [...f.facilityIds, facility.id]
+                              : f.facilityIds.filter((id) => id !== facility.id),
+                          }))}
+                        />
+                        {facility.name}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">If none selected, abonnement is allowed for all facilities.</p>
+                </div>
+                <label className="inline-flex items-center gap-2 md:col-span-2">
+                  <input type="checkbox" checked={abonnementForm.monthlyBilling} onChange={(e) => setAbonnementForm((f) => ({ ...f, monthlyBilling: e.target.checked }))} />
+                  Company monthly billing
+                </label>
+                <div className="md:col-span-2">
+                  <button className="hms-btn-solid" disabled={abonnementSaving}>{abonnementSaving ? "Creating..." : "Create abonnement"}</button>
+                </div>
+              </form>
+            </div>
+
+            <div className="bg-card rounded-xl border border-border/60 p-5 shadow-soft">
+              <h2 className="text-lg font-semibold mb-3">Entrance scan / check-in</h2>
+              <form onSubmit={checkInAbonnement} className="grid grid-cols-1 gap-3">
+                <div><label>Card / QR code</label><input value={abonnementCheckIn.code} onChange={(e) => setAbonnementCheckIn((f) => ({ ...f, code: e.target.value }))} placeholder="Scan or type code" /></div>
+                <div>
+                  <label>Slot</label>
+                  <select value={abonnementCheckIn.slotId} onChange={(e) => setAbonnementCheckIn((f) => ({ ...f, slotId: e.target.value }))}>
+                    <option value="">Choose slot</option>
+                    {(dashboard?.slots ?? []).map((slot) => (
+                      <option key={slot.id} value={slot.id}>
+                        {new Date(slot.start).toLocaleString()} · {slot.availableSpots} spots
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div><label>Guest count</label><input type="number" min="1" value={abonnementCheckIn.guestCount} onChange={(e) => setAbonnementCheckIn((f) => ({ ...f, guestCount: e.target.value }))} /></div>
+                <button className="hms-btn-solid" disabled={checkinLoading}>{checkinLoading ? "Checking..." : "Check in abonnement"}</button>
+              </form>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Valid abonnements check in with invoice amount 0. Expired, over-limit, or disallowed cards are blocked and must use normal paid booking.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-card rounded-xl border border-border/60 p-5 shadow-soft">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-3">
+              <h2 className="text-lg font-semibold">Abonnement list</h2>
+              <div className="flex gap-2">
+                <input placeholder="Search code/member/company" value={abonnementSearch} onChange={(e) => setAbonnementSearch(e.target.value)} />
+                <button type="button" className="hms-btn-outline" onClick={() => void loadAbonnements()} disabled={abonnementLoading}>Search</button>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/60 text-left text-muted-foreground">
+                    <th className="py-2 pr-3">Code</th>
+                    <th className="pr-3">Member</th>
+                    <th className="pr-3">Valid</th>
+                    <th className="pr-3">Visits</th>
+                    <th className="pr-3">Facilities</th>
+                    <th>Billing</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {abonnements.map((a) => (
+                    <tr key={a.id} className="border-b border-border/40">
+                      <td className="py-2 pr-3 font-medium">{a.code}</td>
+                      <td className="pr-3">{a.memberName}<div className="text-xs text-muted-foreground">{a.companyName ?? "Individual"}</div></td>
+                      <td className="pr-3">{a.validFrom} → {a.validUntil}</td>
+                      <td className="pr-3">{a.visitsUsed}{a.visitLimit != null ? ` / ${a.visitLimit}` : " / unlimited"}</td>
+                      <td className="pr-3">{a.facilities.length ? a.facilities.map((f) => f.name).join(", ") : "All"}</td>
+                      <td>{a.monthlyBilling ? "Monthly company" : "Prepaid"}</td>
+                    </tr>
+                  ))}
+                  {abonnements.length === 0 && (
+                    <tr><td colSpan={6} className="py-4 text-center text-muted-foreground">No abonnements yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -1431,7 +1774,12 @@ export default function FacilitiesPage() {
             {qrModal.instructions && (
               <p className="text-xs text-muted-foreground mb-4">{qrModal.instructions}</p>
             )}
-            <button type="button" className="hms-btn-solid w-full" onClick={() => setQrModal(null)}>Close</button>
+            <div className="flex flex-col gap-2">
+              <button type="button" className="hms-btn-solid w-full" onClick={() => printEpsonAccessPass(qrModal)}>
+                Print Epson receipt
+              </button>
+              <button type="button" className="hms-btn-outline w-full" onClick={() => setQrModal(null)}>Close</button>
+            </div>
           </div>
         </div>
       )}

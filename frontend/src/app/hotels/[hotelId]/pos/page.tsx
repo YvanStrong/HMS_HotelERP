@@ -78,7 +78,46 @@ type CreateSaleResponse = {
     lineTotal: number | string;
     taxable?: boolean;
   }[];
+  roomChargeId?: string | null;
   message: string;
+};
+
+type CreateProformaResponse = {
+  proformaId: string;
+  proformaNumber: string;
+  depotId: string;
+  totalAmount: number | string;
+  createdAt: string;
+  lines: CreateSaleResponse["lines"];
+  message: string;
+};
+
+type CreateDeliveryOrderResponse = {
+  deliveryOrderId: string;
+  deliveryNumber: string;
+  depotId: string;
+  totalAmount: number | string;
+  createdAt: string;
+  lines: CreateSaleResponse["lines"];
+  message: string;
+};
+
+type GuestSearchHit = {
+  guest?: {
+    id: string;
+    full_name?: string | null;
+    fullName?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  } | null;
+};
+
+type ReservationOption = {
+  id: string;
+  booking_reference?: string;
+  guestName?: string;
+  roomNumber?: string;
+  status?: string;
 };
 
 const ORDER_TYPES = ["Dine In", "Take Away", "Delivery", "Table"] as const;
@@ -116,10 +155,18 @@ export default function PosPage() {
   const [depots, setDepots] = useState<DepotRow[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItemRow[]>([]);
   const [depotProducts, setDepotProducts] = useState<DepotProductRow[]>([]);
-  const [depotId, setDepotId] = useState(ALL_DEPOTS);
+  const [depotId, setDepotId] = useState("");
   const [orderType, setOrderType] = useState<OrderType>("Dine In");
   const [locationLabel, setLocationLabel] = useState("Outlet / table");
   const [customerLabel, setCustomerLabel] = useState("Walk-in Customer");
+  const [customerTin, setCustomerTin] = useState("");
+  const [chargeToFolio, setChargeToFolio] = useState(false);
+  const [folioReservationId, setFolioReservationId] = useState("");
+  const [folioSearch, setFolioSearch] = useState("");
+  const [folioReservationOptions, setFolioReservationOptions] = useState<ReservationOption[]>([]);
+  const [folioSearchLoading, setFolioSearchLoading] = useState(false);
+  const [guestSuggestions, setGuestSuggestions] = useState<GuestSearchHit[]>([]);
+  const [guestSearchLoading, setGuestSearchLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string>("All");
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -148,10 +195,16 @@ export default function PosPage() {
       setInventoryItems((inv?.data ?? []).filter((x) => x.active !== false));
       setDepotProducts((dp ?? []).filter((x) => x.active));
       setDepotId((prev) => {
-        if (prev === ALL_DEPOTS) return ALL_DEPOTS;
         if (prev && activeDepots.some((x) => x.id === prev)) return prev;
+        const principal = activeDepots.find(
+          (x) =>
+            x.code.toUpperCase() === "PRINC" ||
+            x.code.toUpperCase() === "PRINCIPAL" ||
+            x.name.toLowerCase().includes("principal"),
+        );
+        if (principal) return principal.id;
         if (activeDepots.length === 1) return activeDepots[0].id;
-        return ALL_DEPOTS;
+        return activeDepots[0]?.id ?? "";
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load POS data");
@@ -163,6 +216,67 @@ export default function PosPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const q = customerLabel.trim();
+    if (!getToken() || q.length < 2 || q.toLowerCase() === "walk-in customer") {
+      setGuestSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setGuestSearchLoading(true);
+      try {
+        const hits = await apiFetch<GuestSearchHit[]>(
+          `/api/v1/hotels/${hotelId}/guests/search?q=${encodeURIComponent(q)}`,
+        );
+        if (!cancelled) setGuestSuggestions((hits ?? []).slice(0, 6));
+      } catch {
+        if (!cancelled) setGuestSuggestions([]);
+      } finally {
+        if (!cancelled) setGuestSearchLoading(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [customerLabel, hotelId]);
+
+  useEffect(() => {
+    const q = folioSearch.trim();
+    if (!getToken() || !chargeToFolio || q.length < 2) {
+      setFolioReservationOptions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setFolioSearchLoading(true);
+      try {
+        const p = new URLSearchParams();
+        p.set("status", "CHECKED_IN");
+        p.set("checkInFrom", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+        p.set("checkInTo", new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+        p.set("q", q);
+        const hits = await apiFetch<ReservationOption[]>(`/api/v1/hotels/${hotelId}/reservations?${p.toString()}`);
+        if (!cancelled) {
+          setFolioReservationOptions(
+            (hits ?? [])
+              .filter((r) => r.id && r.status === "CHECKED_IN" && Boolean(r.roomNumber))
+              .slice(0, 8),
+          );
+        }
+      } catch {
+        if (!cancelled) setFolioReservationOptions([]);
+      } finally {
+        if (!cancelled) setFolioSearchLoading(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [chargeToFolio, folioSearch, hotelId]);
 
   function depotProductForItem(itemId: string, targetDepotId: string): DepotProductRow | undefined {
     return depotProducts.find(
@@ -216,7 +330,7 @@ export default function PosPage() {
           name: inv?.name ?? dp.productName,
           sku: inv?.sku ?? dp.productCode,
           category: categoryLabel(inv?.category),
-          currentStock: inv?.currentStock ?? dp.stockQty,
+          currentStock: dp.stockQty,
           stockType: dp.stockType === "NON_STOCK" || inv?.stockType === "NON_STOCK" ? "NON_STOCK" : "STOCK",
           sellingPrice: Number(dp.sellingPrice),
           imageUrl: (inv?.imageUrl?.trim() || dp.photoUrl?.trim() || null) as string | null,
@@ -261,13 +375,6 @@ export default function PosPage() {
     return defaultSaleDepotId();
   }
 
-  const activeSaleDepot = useMemo(() => {
-    const id = resolveSaleDepotId();
-    if (!id) return null;
-    return depots.find((d) => d.id === id) ?? null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- cart + depotId drive sale outlet
-  }, [depotId, depots, cart, depotProducts]);
-
   const cartRows = useMemo(() => {
     return Object.entries(cart)
       .map(([depotProductId, qty]) => {
@@ -284,7 +391,7 @@ export default function PosPage() {
           name: inv?.name ?? dp.productName,
           code: dp.productCode,
           category: categoryLabel(inv?.category),
-          stock: inv?.currentStock,
+          stock: dp.stockQty,
           unit,
           qty,
           lineTotal: unit * qty,
@@ -394,6 +501,19 @@ export default function PosPage() {
     });
   }
 
+  function setLineQty(productId: string, rawValue: string) {
+    const next = Number(rawValue);
+    if (!Number.isFinite(next)) return;
+    setCart((prev) => {
+      if (next <= 0) {
+        const copy = { ...prev };
+        delete copy[productId];
+        return copy;
+      }
+      return { ...prev, [productId]: next };
+    });
+  }
+
   function removeLine(productId: string) {
     setCart((prev) => {
       const copy = { ...prev };
@@ -407,6 +527,19 @@ export default function PosPage() {
     setMsg(null);
   }
 
+  function resetRunningOrderFields() {
+    setCart({});
+    setOrderType("Dine In");
+    setLocationLabel("Outlet / table");
+    setCustomerLabel("Walk-in Customer");
+    setCustomerTin("");
+    setChargeToFolio(false);
+    setFolioReservationId("");
+    setFolioSearch("");
+    setFolioReservationOptions([]);
+    setGuestSuggestions([]);
+  }
+
   function saveDraft() {
     try {
       const payload = {
@@ -414,6 +547,10 @@ export default function PosPage() {
         orderType,
         locationLabel,
         customerLabel,
+        customerTin,
+        chargeToFolio,
+        folioReservationId,
+        folioSearch,
         depotId,
         savedAt: new Date().toISOString(),
       };
@@ -437,13 +574,21 @@ export default function PosPage() {
         orderType?: OrderType;
         locationLabel?: string;
         customerLabel?: string;
+        customerTin?: string;
+        chargeToFolio?: boolean;
+        folioReservationId?: string;
+        folioSearch?: string;
         depotId?: string;
       };
       if (o.cart && typeof o.cart === "object") setCart(o.cart);
       if (o.orderType && ORDER_TYPES.includes(o.orderType)) setOrderType(o.orderType);
       if (typeof o.locationLabel === "string") setLocationLabel(o.locationLabel);
       if (typeof o.customerLabel === "string") setCustomerLabel(o.customerLabel);
-      if (o.depotId === ALL_DEPOTS || (o.depotId && depots.some((d) => d.id === o.depotId))) {
+      if (typeof o.customerTin === "string") setCustomerTin(o.customerTin);
+      if (typeof o.chargeToFolio === "boolean") setChargeToFolio(o.chargeToFolio);
+      if (typeof o.folioReservationId === "string") setFolioReservationId(o.folioReservationId);
+      if (typeof o.folioSearch === "string") setFolioSearch(o.folioSearch);
+      if (o.depotId && o.depotId !== ALL_DEPOTS && depots.some((d) => d.id === o.depotId)) {
         setDepotId(o.depotId!);
       }
       setMsg("Draft loaded.");
@@ -454,14 +599,76 @@ export default function PosPage() {
   }
 
   function buildCustomerName(): string | null {
+    const customer = customerLabel.trim() || "Walk-in Customer";
     const parts = [
       "POS",
       orderType.replace(/\s+/g, "_").toUpperCase(),
       locationLabel.trim() || "—",
-      customerLabel.trim() || "Walk-in",
+      customer,
     ];
     const s = parts.join(" | ");
     return s.length > 160 ? s.slice(0, 157) + "…" : s;
+  }
+
+  async function printProforma() {
+    if (cartRows.length === 0) {
+      setError("Add at least one item to print a proforma.");
+      return;
+    }
+    const saleDepotId = resolveSaleDepotId() ?? depotProducts.find((p) => p.id === cartRows[0].productId)?.depotId;
+    if (!saleDepotId) {
+      setError("Could not determine outlet for this proforma.");
+      return;
+    }
+    const mixed = cartRows.some((r) => depotProducts.find((p) => p.id === r.productId)?.depotId !== saleDepotId);
+    if (mixed) {
+      setError("All items must be from the same outlet.");
+      return;
+    }
+
+    setPlacing(true);
+    setError(null);
+    setMsg(null);
+    try {
+      const res = await apiFetch<CreateProformaResponse>(`/api/v1/hotels/${hotelId}/inventory/proformas`, {
+        method: "POST",
+        body: JSON.stringify({
+          customerName: buildCustomerName(),
+          depotId: saleDepotId,
+          lines: cartRows.map((r) => ({ productId: r.productId, quantity: r.qty })),
+        }),
+      });
+      const depotName = depots.find((d) => d.id === saleDepotId)?.name ?? "Outlet";
+      printDepotSaleInvoice(
+        {
+          saleId: String(res.proformaId),
+          saleNumber: res.proformaNumber,
+          documentTitle: "PROFORMA",
+          depotName,
+          customerName: buildCustomerName(),
+          customerTin: customerTin.trim() || null,
+          totalAmount: Number(res.totalAmount),
+          soldAt: res.createdAt,
+          lines: (res.lines ?? []).map((ln) => ({
+            productName: ln.productName,
+            productCode: ln.productCode,
+            quantity: Number(ln.quantity),
+            unitPrice: Number(ln.unitPrice),
+            lineTotal: Number(ln.lineTotal),
+            taxable: ln.taxable !== false,
+          })),
+          vatPercent: 18,
+        },
+        "FRW",
+      );
+      resetRunningOrderFields();
+      sessionStorage.removeItem(DRAFT_KEY(hotelId));
+      setMsg(`Proforma ${res.proformaNumber} saved and printed.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Proforma failed");
+    } finally {
+      setPlacing(false);
+    }
   }
 
   async function submitSale(quickInvoice: boolean) {
@@ -479,6 +686,10 @@ export default function PosPage() {
       setError("All items must be from the same outlet.");
       return;
     }
+    if (chargeToFolio && !folioReservationId.trim()) {
+      setError("Select a checked-in guest with an assigned room before charging POS sale to room folio.");
+      return;
+    }
     setPlacing(true);
     setError(null);
     setMsg(null);
@@ -489,6 +700,8 @@ export default function PosPage() {
           customerName: buildCustomerName(),
           depotId: saleDepotId,
           lines: cartRows.map((r) => ({ productId: r.productId, quantity: r.qty })),
+          chargeToRoom: chargeToFolio,
+          reservationId: chargeToFolio ? folioReservationId.trim() : null,
         }),
       });
       const depotName = depots.find((d) => d.id === saleDepotId)?.name ?? "Outlet";
@@ -497,8 +710,10 @@ export default function PosPage() {
           {
             saleId: String(res.saleId),
             saleNumber: res.saleNumber,
+            documentTitle: "INVOICE",
             depotName,
             customerName: buildCustomerName(),
+            customerTin: customerTin.trim() || null,
             totalAmount: Number(res.totalAmount),
             soldAt: res.soldAt,
             lines: (res.lines ?? []).map((ln) => ({
@@ -518,12 +733,53 @@ export default function PosPage() {
           setError("Sale recorded; allow pop-ups to print the receipt.");
         }
       }
-      clearCart();
+      resetRunningOrderFields();
       sessionStorage.removeItem(DRAFT_KEY(hotelId));
       setMsg(quickInvoice ? "Invoice printed." : "Order placed.");
+      if (res.roomChargeId) {
+        setMsg(`POS sale charged to room folio. Charge ID: ${res.roomChargeId}`);
+      }
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Checkout failed");
+    } finally {
+      setPlacing(false);
+    }
+  }
+
+  async function submitDeliveryOrder() {
+    if (cartRows.length === 0) {
+      setError("Add at least one item to the delivery order.");
+      return;
+    }
+    const saleDepotId = resolveSaleDepotId() ?? depotProducts.find((p) => p.id === cartRows[0].productId)?.depotId;
+    if (!saleDepotId) {
+      setError("Could not determine outlet for this delivery.");
+      return;
+    }
+    const mixed = cartRows.some((r) => depotProducts.find((p) => p.id === r.productId)?.depotId !== saleDepotId);
+    if (mixed) {
+      setError("All items must be from the same outlet.");
+      return;
+    }
+    setPlacing(true);
+    setError(null);
+    setMsg(null);
+    try {
+      const res = await apiFetch<CreateDeliveryOrderResponse>(`/api/v1/hotels/${hotelId}/inventory/deliveries`, {
+        method: "POST",
+        body: JSON.stringify({
+          customerName: buildCustomerName(),
+          locationLabel: locationLabel.trim() || null,
+          depotId: saleDepotId,
+          lines: cartRows.map((r) => ({ productId: r.productId, quantity: r.qty })),
+        }),
+      });
+      resetRunningOrderFields();
+      sessionStorage.removeItem(DRAFT_KEY(hotelId));
+      setMsg(`Delivery ${res.deliveryNumber} saved. Convert it to invoice from the Invoices page after delivery is finished.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delivery order failed");
     } finally {
       setPlacing(false);
     }
@@ -557,7 +813,6 @@ export default function PosPage() {
               clearCart();
             }}
           >
-            <option value={ALL_DEPOTS}>All</option>
             {depots.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name} ({d.code})
@@ -572,15 +827,10 @@ export default function PosPage() {
           </button>
         </div>
       </div>
-      {depotId === ALL_DEPOTS && activeSaleDepot ? (
-        <p className="text-xs text-muted-foreground">
-          Selling via <strong className="text-foreground">{activeSaleDepot.name}</strong> ({activeSaleDepot.code})
-          — all inventory products; same outlet for the whole order.
-        </p>
-      ) : selectedOutlet ? (
+      {selectedOutlet ? (
         <p className="text-xs text-muted-foreground">
           Showing products on <strong className="text-foreground">{selectedOutlet.name}</strong> ({selectedOutlet.code})
-          only.
+          only. Stock shown is this outlet&apos;s transferred stock.
         </p>
       ) : null}
 
@@ -596,7 +846,7 @@ export default function PosPage() {
       )}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 lg:flex-row">
-        <section className="flex min-h-[min(380px,55dvh)] w-full min-w-0 shrink-0 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft lg:max-w-xl lg:basis-[40%] xl:max-w-none xl:basis-[40%]">
+        <section className="order-2 flex min-h-[min(380px,55dvh)] w-full min-w-0 shrink-0 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft lg:order-2 lg:max-w-xl lg:basis-[40%] xl:max-w-none xl:basis-[40%]">
           <div className="border-b border-border/60 bg-muted/20 p-3">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Running order</p>
             <div className="flex flex-wrap gap-1.5">
@@ -615,7 +865,7 @@ export default function PosPage() {
                 </button>
               ))}
             </div>
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div>
                 <label className="text-[11px] text-muted-foreground">Location / table</label>
                 <input
@@ -625,15 +875,132 @@ export default function PosPage() {
                   placeholder="e.g. Nanzige, Table 4"
                 />
               </div>
-              <div>
+              <div className="relative">
                 <label className="text-[11px] text-muted-foreground">Customer</label>
                 <input
                   className="hms-input mt-0.5 w-full text-sm"
                   value={customerLabel}
                   onChange={(e) => setCustomerLabel(e.target.value)}
+                  onBlur={() => {
+                    if (!customerLabel.trim()) setCustomerLabel("Walk-in Customer");
+                  }}
+                  onFocus={() => {
+                    if (customerLabel.trim().toLowerCase() === "walk-in customer") setCustomerLabel("");
+                  }}
                   placeholder="Walk-in Customer"
                 />
+                {(guestSearchLoading || guestSuggestions.length > 0) && (
+                  <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-xl border border-border/70 bg-card p-1 text-xs shadow-lg">
+                    {guestSearchLoading ? (
+                      <div className="px-2 py-1.5 text-muted-foreground">Searching guests…</div>
+                    ) : (
+                      guestSuggestions.map((hit) => {
+                        const name = hit.guest?.full_name || hit.guest?.fullName || "";
+                        return (
+                          <button
+                            key={hit.guest?.id ?? name}
+                            type="button"
+                            className="block w-full rounded-lg px-2 py-1.5 text-left hover:bg-muted"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setCustomerLabel(name || "Walk-in Customer");
+                              setGuestSuggestions([]);
+                            }}
+                          >
+                            <span className="block font-medium text-foreground">{name}</span>
+                            <span className="block text-muted-foreground">
+                              {[hit.guest?.phone, hit.guest?.email].filter(Boolean).join(" · ")}
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
               </div>
+              <div>
+                <label className="text-[11px] text-muted-foreground">TIN number</label>
+                <input
+                  className="hms-input mt-0.5 w-full text-sm"
+                  value={customerTin}
+                  onChange={(e) => setCustomerTin(e.target.value)}
+                  placeholder="Optional TIN"
+                />
+              </div>
+            </div>
+            <div className="mt-3 rounded-xl border border-border/70 bg-background/70 p-3">
+              <label className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
+                <input
+                  type="checkbox"
+                  checked={chargeToFolio}
+                  onChange={(e) => {
+                    setChargeToFolio(e.target.checked);
+                    if (!e.target.checked) {
+                      setFolioReservationId("");
+                      setFolioSearch("");
+                      setFolioReservationOptions([]);
+                    }
+                  }}
+                />
+                Charge to room folio
+              </label>
+              {chargeToFolio && (
+                <div className="relative">
+                  <p className="mb-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-medium text-sky-900">
+                    Accepted only when the client is checked in and has a room assigned.
+                  </p>
+                  <label className="text-[11px] text-muted-foreground">In-house guest / room</label>
+                  <input
+                    className="hms-input mt-0.5 w-full text-sm"
+                    value={folioSearch}
+                    onChange={(e) => {
+                      setFolioSearch(e.target.value);
+                      setFolioReservationId("");
+                    }}
+                    placeholder="Search in-house guest, room, or booking reference"
+                  />
+                  {folioReservationId && (
+                    <p className="mt-1 text-[11px] font-medium text-primary">Accepted: selected in-house guest folio will receive this POS charge.</p>
+                  )}
+                  {(folioSearchLoading || folioReservationOptions.length > 0) && (
+                    <div className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-border/70 bg-card p-1 text-xs shadow-lg">
+                      {folioSearchLoading ? (
+                        <div className="px-2 py-1.5 text-muted-foreground">Searching in-house guests...</div>
+                      ) : (
+                        folioReservationOptions.length > 0 ? (
+                          folioReservationOptions.map((r) => (
+                            <button
+                              key={r.id}
+                              type="button"
+                              className="block w-full rounded-lg px-2 py-1.5 text-left hover:bg-muted"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => {
+                                const label = [
+                                  r.guestName || "Guest",
+                                  r.roomNumber ? `Room ${r.roomNumber}` : null,
+                                  r.booking_reference || null,
+                                ].filter(Boolean).join(" - ");
+                                setFolioSearch(label);
+                                setFolioReservationId(r.id);
+                                setFolioReservationOptions([]);
+                              }}
+                            >
+                              <span className="block font-medium text-foreground">{r.guestName || "Guest"}</span>
+                              <span className="block text-muted-foreground">
+                                {[`Room ${r.roomNumber}`, r.booking_reference, "CHECKED IN"].filter(Boolean).join(" - ")}
+                              </span>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="px-2 py-1.5 text-muted-foreground">
+                            No in-house guest found. Check in the client and assign a room first.
+                          </div>
+                        )
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -648,7 +1015,7 @@ export default function PosPage() {
                       <th className="pb-2 pr-2">Item</th>
                       <th className="pb-2 w-14">Stock</th>
                       <th className="pb-2 w-16">Price</th>
-                      <th className="pb-2 w-28">Qty</th>
+                      <th className="pb-2 w-40">Qty</th>
                       <th className="pb-2 w-16 text-right">Total</th>
                       <th className="pb-2 w-8" />
                     </tr>
@@ -659,14 +1026,12 @@ export default function PosPage() {
                         <td className="py-2 pr-2">
                           <div className="font-medium">{r.name}</div>
                           <div className="text-[10px] text-muted-foreground">{r.category}</div>
-                          {depotId === ALL_DEPOTS && r.outletLabel ? (
-                            <div className="mt-0.5 text-[10px] text-muted-foreground">{r.outletLabel}</div>
-                          ) : null}
+                          <div className="mt-0.5 text-[10px] text-muted-foreground">{r.outletLabel}</div>
                         </td>
                         <td className="py-2 tabular-nums text-muted-foreground">{formatStock(r.stock)}</td>
                         <td className="py-2 text-muted-foreground">{formatMoney(r.unit)}</td>
                         <td className="py-2">
-                          <div className="inline-flex items-center overflow-hidden rounded-lg border border-border/80">
+                          <div className="inline-flex items-center rounded-lg border border-border/80 bg-background">
                             <button
                               type="button"
                               className="px-2 py-1 text-lg leading-none hover:bg-muted"
@@ -675,7 +1040,14 @@ export default function PosPage() {
                             >
                               −
                             </button>
-                            <span className="min-w-[2rem] px-2 text-center tabular-nums">{r.qty}</span>
+                            <input
+                              className="h-9 w-20 border-x border-border/80 bg-transparent px-2 text-center font-medium tabular-nums text-foreground outline-none focus:bg-muted/30"
+                              type="text"
+                              inputMode="decimal"
+                              value={r.qty}
+                              onChange={(e) => setLineQty(r.productId, e.target.value)}
+                              aria-label={`Quantity for ${r.name}`}
+                            />
                             <button
                               type="button"
                               className="px-2 py-1 text-lg leading-none hover:bg-muted"
@@ -709,7 +1081,7 @@ export default function PosPage() {
               <span className="text-sm font-medium text-muted-foreground">Total payable</span>
               <span className="text-xl font-bold tabular-nums text-primary">{formatMoney(totalPayable)}</span>
             </div>
-            <div className="grid grid-cols-2 gap-2 max-[380px]:grid-cols-1 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 max-[380px]:grid-cols-1 sm:grid-cols-5">
               <button
                 type="button"
                 className="rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
@@ -729,24 +1101,37 @@ export default function PosPage() {
               <button
                 type="button"
                 className="rounded-xl bg-sky-600 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
-                disabled={placing || cartRows.length === 0}
+                disabled={placing || cartRows.length === 0 || orderType === "Delivery"}
                 onClick={() => void submitSale(true)}
               >
                 {placing ? "…" : "Quick invoice"}
               </button>
               <button
                 type="button"
+                className="rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+                disabled={placing || cartRows.length === 0 || orderType === "Delivery"}
+                onClick={() => void printProforma()}
+              >
+                Proforma
+              </button>
+              <button
+                type="button"
                 className="rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                 disabled={placing || cartRows.length === 0}
-                onClick={() => void submitSale(false)}
+                onClick={() => (orderType === "Delivery" ? void submitDeliveryOrder() : void submitSale(false))}
               >
-                {placing ? "…" : "Place order"}
+                {placing ? "…" : orderType === "Delivery" ? "Save delivery" : "Place order"}
               </button>
             </div>
+            {orderType === "Delivery" && (
+              <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-900">
+                Delivery mode saves a delivery order only. Create the invoice later from Invoices → Deliveries after delivery is finished.
+              </p>
+            )}
           </div>
         </section>
 
-        <section className="flex min-h-[min(420px,60dvh)] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft">
+        <section className="order-1 flex min-h-[min(420px,60dvh)] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft lg:order-1">
           <div className="shrink-0 border-b border-border/60 p-2 sm:p-3">
             <input
               className="hms-input w-full min-w-0 text-sm"
@@ -779,7 +1164,7 @@ export default function PosPage() {
               {catalogItems.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   {selectedOutlet
-                    ? `No products on ${selectedOutlet.name}. Add them via Menu → Add to menu, or use All to sell from inventory.`
+                    ? `No products on ${selectedOutlet.name}. Transfer stock or add products to this outlet first.`
                     : "No active products in Inventory. Add products under Inventory → Products, then return here."}
                 </p>
               ) : filteredItems.length === 0 ? (
