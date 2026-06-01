@@ -156,7 +156,7 @@ export default function GroupsPage() {
   const matchInsight = useMemo(() => {
     if (!showAddModal) return null;
     if (!datesValid) return "Set check-in and check-out to scan live inventory.";
-    if (guestsNum < 1 || roomsNum < 1) return "Enter guests (pax) and rooms needed — we'll match sellable room types.";
+    if (guestsNum < 1 || roomsNum < 1) return "Enter expected guests and rooms needed — we'll match sellable room types.";
     if (availLoading) return `Analyzing inventory for ${guestsNum} guests in ${roomsNum} rooms (~${adultsPerRoom} per room)…`;
     if (smartMatches.length === 0) {
       return `No room type has ${roomsNum}+ vacant rooms for ~${adultsPerRoom} guest(s) per room on these dates. Try different dates or fewer rooms.`;
@@ -452,7 +452,7 @@ export default function GroupsPage() {
                           group.roomsNeeded != null ||
                           group.preferredRoomTypeId) && (
                           <p className="mt-2 text-[11px] font-semibold leading-snug text-indigo-600">
-                            {group.expectedGuests != null ? `${group.expectedGuests} pax` : ""}
+                            {group.expectedGuests != null ? `${group.expectedGuests} guests` : ""}
                             {group.expectedGuests != null && group.roomsNeeded != null ? " · " : ""}
                             {group.roomsNeeded != null ? `${group.roomsNeeded} rooms` : ""}
                             {roomTypeLabel(group.preferredRoomTypeId) ? (
@@ -563,7 +563,7 @@ export default function GroupsPage() {
                           </p>
                           {(group.expectedGuests != null || group.roomsNeeded != null || group.preferredRoomTypeId) && (
                             <p className="mt-1 max-w-md text-[11px] font-semibold leading-snug text-indigo-600">
-                              {group.expectedGuests != null ? `${group.expectedGuests} pax` : ""}
+                              {group.expectedGuests != null ? `${group.expectedGuests} guests` : ""}
                               {group.expectedGuests != null && group.roomsNeeded != null ? " · " : ""}
                               {group.roomsNeeded != null ? `${group.roomsNeeded} rooms` : ""}
                               {roomTypeLabel(group.preferredRoomTypeId) ? (
@@ -777,7 +777,9 @@ export default function GroupsPage() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="min-w-0">
-                      <label className="text-[10px] font-bold text-slate-600">Guests (pax) *</label>
+                      <label className="text-[10px] font-bold text-slate-600" title="Total people in the group (for rooming and planning).">
+                        Expected guests *
+                      </label>
                       <input
                         type="number"
                         min={1}

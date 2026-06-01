@@ -226,6 +226,21 @@ public class FacilityService {
                 new FacilityDtos.FacilityCancellationDto(allowedUntil, cancelPath));
     }
 
+    @Transactional(readOnly = true)
+    public boolean facilityExistsForHotel(UUID hotelId, UUID facilityId) {
+        return facilityRepository.findByIdAndHotel_Id(facilityId, hotelId).isPresent();
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasActiveBookingConflict(UUID hotelId, UUID facilityId, LocalDateTime start, LocalDateTime end) {
+        if (!start.isBefore(end)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Event end time must be after start time");
+        }
+        Facility facility =
+                facilityRepository.findByIdAndHotel_Id(facilityId, hotelId).orElseThrow(() -> notFound("Facility"));
+        return facilityBookingRepository.countActiveOverlappingFacilityWindow(facility.getId(), start, end) > 0;
+    }
+
     private RoomCharge postRecreationCharge(
             UUID hotelId,
             Reservation reservation,

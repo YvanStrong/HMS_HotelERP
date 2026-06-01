@@ -638,12 +638,14 @@ public class RoomService {
                                 .map(List::of)
                                 .orElse(List.of())
                         : roomTypeRepository.findByHotel_Id(hotelId);
+        LocalDate today = LocalDate.now();
         List<ApiDtos.RoomTypeAvailabilityItem> out = new ArrayList<>();
         for (RoomType rt : types) {
-            int available = countSellableRoomsForStay(hotelId, rt.getId(), checkIn, exclusiveCheckOut, adults);
-            if (available == 0) {
-                continue;
-            }
+            int available = countSellableRoomsForStay(hotelId, rt.getId(), checkIn, exclusiveCheckOut, adults, today);
+            String hint =
+                    available == 0
+                            ? explainZeroAvailability(hotelId, rt.getId(), checkIn, exclusiveCheckOut, adults, today)
+                            : null;
             BigDecimal base = rt.getBaseRate();
             BigDecimal sumNights = BigDecimal.ZERO;
             for (LocalDate d = checkIn; d.isBefore(exclusiveCheckOut); d = d.plusDays(1)) {
@@ -656,28 +658,34 @@ public class RoomService {
             BigDecimal total = sumNights.setScale(2, RoundingMode.HALF_UP);
             List<String> amenities = rt.getAmenities() != null ? List.copyOf(rt.getAmenities()) : List.of();
             out.add(new ApiDtos.RoomTypeAvailabilityItem(
-                    rt.getId(), rt.getName(), base, total, currency, nights, available, amenities, List.of()));
+                    rt.getId(),
+                    rt.getName(),
+                    base,
+                    total,
+                    currency,
+                    nights,
+                    available,
+                    amenities,
+                    List.of(),
+                    hint));
         }
         return new ApiDtos.RoomTypesAvailabilityResponse(out);
     }
 
     @Transactional(readOnly = true)
     public int countAvailableOnDate(UUID hotelId, UUID roomTypeId, LocalDate date) {
-        return countSellableRoomsForStay(hotelId, roomTypeId, date, date.plusDays(1), 1);
+        return countSellableRoomsForStay(hotelId, roomTypeId, date, date.plusDays(1), 1, LocalDate.now());
     }
 
     private int countSellableRoomsForStay(
-            UUID hotelId, UUID roomTypeId, LocalDate checkIn, LocalDate checkOut, int adults) {
+            UUID hotelId, UUID roomTypeId, LocalDate checkIn, LocalDate checkOut, int adults, LocalDate today) {
         List<Room> rooms = roomRepository.findByHotel_IdAndRoomType_Id(hotelId, roomTypeId);
         int n = 0;
         for (Room r : rooms) {
             if (r.getRoomType().getMaxOccupancy() < adults) {
                 continue;
             }
-            if (r.isOutOfOrder() || r.getStatus() == RoomStatus.OUT_OF_ORDER) {
-                continue;
-            }
-            if (!RoomBookingEligibility.isVacantBookable(r)) {
+            if (!RoomBookingEligibility.countsTowardStayAvailability(r, checkIn, today)) {
                 continue;
             }
             if (reservationRepository.countOverlapping(r.getId(), checkIn, checkOut, null) > 0) {
@@ -689,5 +697,64 @@ public class RoomService {
             n++;
         }
         return n;
+    }
+
+    private String explainZeroAvailability(
+            UUID hotelId,
+            UUID roomTypeId,
+            LocalDate checkIn,
+            LocalDate checkOut,
+            int adults,
+            LocalDate today) {
+        List<Room> rooms = roomRepository.findByHotel_IdAndRoomType_Id(hotelId, roomTypeId);
+        if (rooms.isEmpty()) {
+            return "No physical rooms are linked to this room type. Add rooms under Rooms and assign this category.";
+        }
+        int tooSmall = 0;
+        int hardBlocked = 0;
+        int notReadyToday = 0;
+        int reserved = 0;
+        int overlap = 0;
+        for (Room r : rooms) {
+            if (r.getRoomType().getMaxOccupancy() < adults) {
+                tooSmall++;
+                continue;
+            }
+            if (r.isOutOfOrder()
+                    || r.getStatus() == RoomStatus.OUT_OF_ORDER
+                    || r.getStatus() == RoomStatus.BLOCKED
+                    || r.getStatus() == RoomStatus.UNDER_MAINTENANCE) {
+                hardBlocked++;
+                continue;
+            }
+            if (!checkIn.isAfter(today) && !RoomBookingEligibility.isVacantBookable(r)) {
+                notReadyToday++;
+                continue;
+            }
+            if (r.getStatus() == RoomStatus.RESERVED) {
+                reserved++;
+                continue;
+            }
+            if (reservationRepository.countOverlapping(r.getId(), checkIn, checkOut, null) > 0
+                    || roomBlockRepository.countActiveOverlapping(r.getId(), checkIn, checkOut) > 0) {
+                overlap++;
+            }
+        }
+        if (tooSmall == rooms.size()) {
+            return "Adults per room exceeds max occupancy for every room in this category. Lower adults or pick another type.";
+        }
+        if (hardBlocked > 0 && hardBlocked + tooSmall >= rooms.size()) {
+            return hardBlocked + " room(s) out of order or blocked. Restore them on the Rooms screen.";
+        }
+        if (overlap > 0) {
+            return overlap + " room(s) already booked or blocked on these dates. Try other dates or release blocks.";
+        }
+        if (notReadyToday > 0) {
+            return notReadyToday + " room(s) not ready for check-in today (need vacant clean or inspected).";
+        }
+        if (reserved > 0) {
+            return reserved + " room(s) marked reserved. Clear the hold or pick other rooms.";
+        }
+        return "No sellable rooms for these dates. Check housekeeping status and existing stays.";
     }
 }
