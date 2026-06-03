@@ -36,6 +36,8 @@ type GroupDetail = {
   billingPreference?: string | null;
   notes?: string | null;
   preferredRoomTypeId?: string | null;
+  usesRoomBlock?: boolean;
+  uses_room_block?: boolean;
 };
 
 type CatalogRoomType = {
@@ -154,6 +156,11 @@ export default function GroupReserveBlockPage() {
           apiFetch<CatalogRoomType[]>(`/api/v1/hotels/${hotelId}/room-types`).catch(() => [] as CatalogRoomType[]),
         ]);
         if (!c) {
+          const roomBlock = g.usesRoomBlock ?? g.uses_room_block ?? true;
+          if (!roomBlock) {
+            router.replace(staffAppPath("groups", groupId));
+            return;
+          }
           setGroup(g);
           setCatalogTypes(Array.isArray(types) ? types : []);
           const fromUrl = searchParams.get("room_type_id");
@@ -184,7 +191,7 @@ export default function GroupReserveBlockPage() {
     return () => {
       c = true;
     };
-  }, [hotelId, groupId, searchParams.toString()]);
+  }, [hotelId, groupId, searchParams.toString(), router]);
 
   const loadAvailability = useCallback(async () => {
     if (!checkIn || !checkOut || checkOut <= checkIn) return;

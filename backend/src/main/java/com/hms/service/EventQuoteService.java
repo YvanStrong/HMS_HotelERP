@@ -18,6 +18,8 @@ import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,6 +42,10 @@ public class EventQuoteService {
     private final TenantAccessService tenantAccessService;
     private final EventBillingService eventBillingService;
 
+    @Lazy
+    @Autowired
+    private EventBillingDocumentService eventBillingDocumentService;
+
     @Transactional(readOnly = true)
     public List<EventOpsDtos.CateringLineResponse> listCateringLines(
             UUID hotelId, String hotelHeader, UUID groupId, UUID eventId) {
@@ -57,7 +63,10 @@ public class EventQuoteService {
         line.setEventBooking(event);
         applyCateringLine(hotelId, line, req);
         line = cateringLineRepository.save(line);
-        quoteRepository.findByEventBooking_Id(eventId).ifPresent(q -> syncQuoteFromCatering(q, event));
+        EventQuote quote = quoteRepository
+                .findByEventBooking_Id(eventId)
+                .orElseGet(() -> createDraftQuoteForEvent(event));
+        syncQuoteFromCatering(quote, event);
         return toCateringLine(line);
     }
 
@@ -68,7 +77,9 @@ public class EventQuoteService {
                 .findByIdAndEventBooking_Id(lineId, eventId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Catering line not found"));
         cateringLineRepository.delete(line);
-        quoteRepository.findByEventBooking_Id(eventId).ifPresent(q -> recalculateTotals(q.getId()));
+        quoteRepository
+                .findByEventBooking_Id(eventId)
+                .ifPresent(q -> syncQuoteFromCatering(q, q.getEventBooking()));
     }
 
     @Transactional(readOnly = true)
@@ -90,16 +101,19 @@ public class EventQuoteService {
         if (quoteRepository.findByEventBooking_Id(eventId).isPresent()) {
             throw new ApiException(HttpStatus.CONFLICT, "Quote already exists for this event");
         }
-        GroupBooking group = event.getGroupBooking();
+        EventQuote quote = createDraftQuoteForEvent(event);
+        syncQuoteFromCatering(quote, event);
+        return toQuoteResponse(quoteRepository.findByEventBooking_Id(eventId).orElseThrow());
+    }
+
+    private EventQuote createDraftQuoteForEvent(EventBooking event) {
         EventQuote quote = new EventQuote();
         quote.setHotel(event.getHotel());
-        quote.setGroupBooking(group);
+        quote.setGroupBooking(event.getGroupBooking());
         quote.setEventBooking(event);
         quote.setStatus(EventQuoteStatus.DRAFT);
         quote.setValidUntil(LocalDate.now().plusDays(30));
-        quote = quoteRepository.save(quote);
-        syncQuoteFromCatering(quote, event);
-        return toQuoteResponse(quoteRepository.findByEventBooking_Id(eventId).orElseThrow());
+        return quoteRepository.save(quote);
     }
 
     @Transactional
@@ -223,10 +237,17 @@ public class EventQuoteService {
                     .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Group not found"));
             if (group.getMasterReservation() != null) {
                 eventBillingService.postEventChargesToFolio(quote.getId());
+            } else if (!group.isUsesRoomBlock()) {
+                eventBillingService.postEventChargesToFolio(quote.getId());
             } else {
                 log.warn(
                         "Quote {} contracted but charges not posted — link a master reservation on the group",
                         quote.getId());
+            }
+            try {
+                eventBillingDocumentService.syncFromQuote(quote.getId());
+            } catch (Exception ex) {
+                log.warn("Could not create event billing document for quote {}: {}", quote.getId(), ex.getMessage());
             }
             return;
         }

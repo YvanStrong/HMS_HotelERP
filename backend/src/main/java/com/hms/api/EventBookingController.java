@@ -4,8 +4,10 @@ import com.hms.api.dto.EventBookingDtos;
 import com.hms.api.dto.EventOpsDtos;
 import com.hms.security.CheckModuleEntitlement;
 import com.hms.service.BanquetEventOrderService;
+import com.hms.service.EventBillingDocumentService;
 import com.hms.service.EventBillingService;
 import com.hms.service.EventBookingService;
+import com.hms.service.EventDocumentPdfService;
 import com.hms.service.EventQuoteService;
 import jakarta.validation.Valid;
 import java.time.LocalDateTime;
@@ -14,6 +16,8 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -28,6 +32,8 @@ public class EventBookingController {
     private final EventQuoteService eventQuoteService;
     private final BanquetEventOrderService banquetEventOrderService;
     private final EventBillingService eventBillingService;
+    private final EventBillingDocumentService eventBillingDocumentService;
+    private final EventDocumentPdfService eventDocumentPdfService;
 
     @GetMapping
     @PreAuthorize(
@@ -146,6 +152,32 @@ public class EventBookingController {
                 .orElse(ResponseEntity.noContent().build());
     }
 
+    @GetMapping("/{eventId}/quote/pdf")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
+    public ResponseEntity<byte[]> downloadQuotePdf(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID groupId,
+            @PathVariable UUID eventId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        byte[] pdf = eventBillingDocumentService.pdfBytesForEvent(hotelId, hotelHeader, groupId, eventId);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"event-billing-" + eventId + ".pdf\"");
+        return ResponseEntity.ok().headers(headers).body(pdf);
+    }
+
+    @GetMapping("/{eventId}/billing-document/pdf")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
+    public ResponseEntity<byte[]> downloadBillingDocumentPdf(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID groupId,
+            @PathVariable UUID eventId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return downloadQuotePdf(hotelId, groupId, eventId, hotelHeader);
+    }
+
     @GetMapping("/{eventId}/quote/print")
     @PreAuthorize(
             "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
@@ -231,6 +263,22 @@ public class EventBookingController {
             @PathVariable UUID eventId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         return banquetEventOrderService.getBeo(hotelId, hotelHeader, groupId, eventId);
+    }
+
+    @GetMapping("/{eventId}/beo/pdf")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE')")
+    public ResponseEntity<byte[]> downloadBeoPdf(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID groupId,
+            @PathVariable UUID eventId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        byte[] pdf = eventDocumentPdfService.renderBeoPdf(
+                banquetEventOrderService.getFullBEO(hotelId, hotelHeader, groupId, eventId));
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"banquet-order-" + eventId + ".pdf\"");
+        return ResponseEntity.ok().headers(headers).body(pdf);
     }
 
     @GetMapping("/{eventId}/beo/full")

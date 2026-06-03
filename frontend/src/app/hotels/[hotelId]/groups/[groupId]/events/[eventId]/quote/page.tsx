@@ -1,102 +1,59 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { apiFetch } from "@/lib/api";
-import { eventBase, money } from "@/lib/eventApi";
-import { formatQuoteStatus } from "@/lib/groupEventsCopy";
-import { HMS_PRINT_DOCUMENT_STYLES, useHmsPrintDocument } from "@/lib/hmsPrintDocument";
-
-type PrintableQuote = {
-  quote: {
-    status: string;
-    subtotal: number | string;
-    taxAmount: number | string;
-    discountAmount: number | string;
-    totalAmount: number | string;
-    depositRequired: number | string;
-    depositPaid: boolean;
-    validUntil?: string | null;
-    lines: Array<{ description: string; quantity: number | string; unitPrice: number | string; lineTotal: number | string }>;
-  };
-  event: { eventName: string; startDatetime: string; endDatetime: string; venueName?: string | null; expectedPax?: number | null };
-  groupName: string;
-  companyName?: string | null;
-  contactPerson?: string | null;
-  hotelName: string;
-  hotelAddress?: string | null;
-  currency?: string | null;
-};
+import { downloadEventBillingPdf } from "@/lib/eventApi";
+import { staffAppPath } from "@/lib/staffAppRoutes";
 
 export default function PrintableQuotePage() {
-  useHmsPrintDocument();
   const params = useParams();
   const hotelId = String(params.hotelId);
   const groupId = String(params.groupId);
   const eventId = String(params.eventId);
-  const [data, setData] = useState<PrintableQuote | null>(null);
+  const [filename, setFilename] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(true);
+
+  async function runDownload() {
+    setBusy(true);
+    setError(null);
+    try {
+      const name = await downloadEventBillingPdf(hotelId, groupId, eventId);
+      setFilename(name);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not download quote PDF");
+      setFilename(null);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
-    void apiFetch<PrintableQuote>(`${eventBase(hotelId, groupId)}/${eventId}/quote/print`).then(setData);
+    void runDownload();
   }, [eventId, groupId, hotelId]);
 
-  if (!data) return <p className="p-8 text-sm">Loading quote…</p>;
-
-  const watermark = formatQuoteStatus(data.quote.status);
-
   return (
-    <div className="hms-print-document bg-white p-8">
-      <style jsx global>{HMS_PRINT_DOCUMENT_STYLES}</style>
-      <div className="no-print mb-6 flex gap-2">
-        <button type="button" className="hms-btn-solid" onClick={() => window.print()}>
-          Print / Save PDF
-        </button>
-      </div>
-      <div className="relative hms-print-avoid-break">
-        <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-6xl font-black uppercase tracking-widest text-slate-200 opacity-40 rotate-[-18deg]">
-          {watermark}
+    <div className="mx-auto max-w-lg space-y-4 px-4 py-10">
+      <Link href={staffAppPath("groups", groupId)} className="text-sm font-medium text-indigo-600 hover:underline">
+        ← Back to group
+      </Link>
+      <h1 className="text-2xl font-black text-slate-900">Event billing document</h1>
+      <p className="text-sm text-muted-foreground">
+        Proforma, delivery note, or invoice — based on payments recorded on the group guest bill. Also listed under Invoices.
+      </p>
+      {busy ? <p className="text-sm text-muted-foreground">Preparing PDF…</p> : null}
+      {error ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{error}</div>
+      ) : null}
+      {filename ? (
+        <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
+          Downloaded {filename}. Check your browser downloads folder.
         </p>
-        <header className="border-b pb-4">
-          <h1 className="text-2xl font-black">{data.hotelName}</h1>
-          <p className="text-sm text-slate-600">{data.hotelAddress || ""}</p>
-          <h2 className="mt-4 text-xl font-bold">Event quotation</h2>
-          <p className="text-sm">Group: {data.groupName} {data.companyName ? `· ${data.companyName}` : ""}</p>
-          <p className="text-sm">Contact: {data.contactPerson || "—"}</p>
-        </header>
-        <section className="mt-4 text-sm">
-          <p><strong>Event:</strong> {data.event.eventName}</p>
-          <p><strong>When:</strong> {data.event.startDatetime} → {data.event.endDatetime}</p>
-          <p><strong>Venue:</strong> {data.event.venueName || "TBD"} · <strong>Guests:</strong> {data.event.expectedPax ?? "—"}</p>
-        </section>
-        <table className="mt-6 w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b text-left">
-              <th className="py-2">Description</th>
-              <th className="py-2 text-right">Qty</th>
-              <th className="py-2 text-right">Unit</th>
-              <th className="py-2 text-right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.quote.lines.map((line, i) => (
-              <tr key={i} className="border-b border-slate-100">
-                <td className="py-2">{line.description}</td>
-                <td className="py-2 text-right">{money(line.quantity)}</td>
-                <td className="py-2 text-right">{money(line.unitPrice).toFixed(2)}</td>
-                <td className="py-2 text-right">{money(line.lineTotal).toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="mt-4 ml-auto max-w-xs space-y-1 text-sm">
-          <p className="flex justify-between"><span>Subtotal</span><span>{money(data.quote.subtotal).toFixed(2)}</span></p>
-          <p className="flex justify-between"><span>Tax</span><span>{money(data.quote.taxAmount).toFixed(2)}</span></p>
-          <p className="flex justify-between"><span>Discount</span><span>-{money(data.quote.discountAmount).toFixed(2)}</span></p>
-          <p className="flex justify-between font-bold text-lg"><span>Total</span><span>{money(data.quote.totalAmount).toFixed(2)} {data.currency || ""}</span></p>
-          <p className="flex justify-between"><span>Deposit</span><span>{money(data.quote.depositRequired).toFixed(2)} {data.quote.depositPaid ? "(paid)" : ""}</span></p>
-          {data.quote.validUntil ? <p className="text-xs text-slate-500">Valid until {data.quote.validUntil}</p> : null}
-        </div>
-      </div>
+      ) : null}
+      <button type="button" className="hms-btn-solid text-sm" disabled={busy} onClick={() => void runDownload()}>
+        {busy ? "Preparing…" : "Download again"}
+      </button>
     </div>
   );
 }

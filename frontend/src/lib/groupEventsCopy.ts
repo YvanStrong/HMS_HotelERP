@@ -1,5 +1,21 @@
 /** Staff-facing labels and tooltip hints for group / banquet workflows. */
 
+export const GROUP_CREATE_COPY = {
+  bookingKind: "What does this group include?",
+  roomBlock:
+    "Room block — overnight stays (reservations, rooming list, check-in). Use Demand sketch to match inventory.",
+  functionsOnly:
+    "Functions only — banquet/catering and billing for the day (no room block or rooming list). Charges go to an event guest bill.",
+  functionDates: "Function dates (optional)",
+  functionDatesHint:
+    "Used for scheduling and the event guest bill window — not a room inventory hold. Same start and end date is fine for a one-day wedding or meeting.",
+  createRoomBlock: "Create group & book block",
+  createFunctionsOnly: "Create functions-only group",
+} as const;
+
+export const GROUP_WORKFLOW_HINT =
+  "Use Back and Next to move through the group setup in order. You can still click any step number above to jump.";
+
 export const GROUP_TABS = {
   overview: { label: "Overview", hint: "Group name, contact, target room dates, and notes for the whole booking." },
   rooms: { label: "Rooms", hint: "Room reservations linked to this group (rooming list)." },
@@ -44,9 +60,9 @@ export const EVENT_FIELDS = {
 
 export const CATERING_QUOTE_COPY = {
   stepsBanner:
-    "Step 1: Catering packages in Settings. Step 2: Add lines here. Step 3: Print/send the quote yourself → mark workflow steps → Contract (posts to master guest bill when a master room is linked on Billing).",
+    "Add catering lines here — the quote updates automatically. Then use Next to continue: mark sent → accepted → contract on Billing.",
   deliveryNote:
-    "HMS does not email the client. Open Printable quote, save as PDF or print, and send it yourself (email, WhatsApp, in person). Buttons below only record your progress.",
+    "HMS does not email the client. After contract, download the billing PDF (proforma, delivery note, or invoice based on payments) and send it yourself. Buttons below only record your progress.",
   manageCatalog: "Manage catering packages",
   packagePerGuest: "Catering package (price per guest)",
   depotItem: "Stock / menu item (single product)",
@@ -59,19 +75,20 @@ export const CATERING_QUOTE_COPY = {
   markSent: "I sent the quote (manual)",
   acceptQuote: "Client agreed (manual)",
   contract: "Contracted — post to guest bill",
-  printableQuote: "Printable quote (send to client)",
+  printableQuote: "Download billing PDF",
   noPackages:
     "No catering packages yet. Add them under Settings → Catering packages (linked above), then return here.",
-  sentInfo: "Status updated. Open Printable quote → and email or hand it to the client yourself.",
+  sentInfo: "Status updated. After contract, the billing document appears on Invoices and can be downloaded here.",
 } as const;
 
 export const BEO_COPY = {
   title: "Banquet orders (internal)",
   intro:
-    "For kitchen, housekeeping, and events — not sent to the guest. After the quote is marked sent, generate an order here and print or share with departments.",
+    "For kitchen, housekeeping, and events — not sent to the guest. After the quote is marked sent, generate an order here and download the PDF for departments.",
   deliveryNote: "This is an internal run sheet. HMS does not send it to the client or to departments automatically.",
   generate: "Generate banquet order",
-  viewPrint: "View / print banquet order",
+  viewPrint: "Download banquet order PDF",
+  editNotes: "Edit department notes",
   needQuote: "Mark the quote sent on Catering & quote first, then generate here.",
 } as const;
 
@@ -84,6 +101,10 @@ export const BILLING_COPY = {
     "Pick one in-house (or upcoming) reservation for this group. All group function charges post to that room's guest bill. Use Rooms tab to add reservations, then Set master here.",
   masterRequiredAlert:
     "Link a master room before function charges can post. Booking a room block sets the first room as master automatically; for older groups use Set master on the Rooms tab.",
+  functionsOnlyBilling:
+    "Functions-only group — billing is for catering, venue, and quote charges only (no room nights). Event guest bill is created automatically.",
+  functionsOnlyNoMaster:
+    "Event guest bill is not set up yet. Save the group again or contact support.",
   roomsCheckInAll: "Check in all",
   roomsSetMaster: "Set master guest bill",
   roomsCheckInOne: "Check in",
@@ -97,6 +118,14 @@ export const BILLING_COPY = {
   balance: "Balance due",
   needsMaster: "Needs master room",
   contractFirst: "Contract first",
+  eventGuestBill: "Event guest bill",
+  eventGuestBillHint:
+    "Created automatically for this functions-only group. Contracted quote charges (catering, venue, etc.) post here — no room nights.",
+  openEventGuestBill: "Open guest bill",
+  functionsOnlyBalance: "Balance due on event guest bill",
+  functionsOnlyCorporateHint:
+    "Optional company profile for invoicing this event. Link an account below if the client pays on account.",
+  functionsOnlyLinkCorporate: "Link corporate account",
 } as const;
 
 /** Format quote status for display (internal workflow — not automatic delivery). */

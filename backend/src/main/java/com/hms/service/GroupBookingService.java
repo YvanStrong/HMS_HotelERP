@@ -62,13 +62,46 @@ public class GroupBookingService {
         if (group.getGroupCode() != null && groupBookingRepository.existsByGroupCodeIgnoreCase(group.getGroupCode())) {
             throw new ApiException(HttpStatus.CONFLICT, "Group code already exists");
         }
-        if (group.getPreferredRoomTypeId() != null
-                && roomTypeRepository.findByIdAndHotel_Id(group.getPreferredRoomTypeId(), hotelId).isEmpty()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Preferred room type not found for this hotel");
+        if (group.isUsesRoomBlock()) {
+            if (group.getPreferredRoomTypeId() != null
+                    && roomTypeRepository.findByIdAndHotel_Id(group.getPreferredRoomTypeId(), hotelId).isEmpty()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Preferred room type not found for this hotel");
+            }
+        } else {
+            group.setExpectedGuests(null);
+            group.setRoomsNeeded(null);
+            group.setPreferredRoomTypeId(null);
+            group.setRoomMixSummary(null);
         }
 
-        log.info("Creating group booking: {} for hotel {}", group.getGroupName(), hotelId);
-        return groupBookingRepository.save(group);
+        log.info(
+                "Creating group booking: {} for hotel {} (usesRoomBlock={})",
+                group.getGroupName(),
+                hotelId,
+                group.isUsesRoomBlock());
+        GroupBooking saved = groupBookingRepository.save(group);
+        if (!saved.isUsesRoomBlock()) {
+            UUID guestId = getOrCreateGroupBlockPlaceholderGuest(hotelId, saved);
+            LocalDate checkIn =
+                    saved.getTargetCheckIn() != null ? saved.getTargetCheckIn() : LocalDate.now();
+            LocalDate checkOut = saved.getTargetCheckOut() != null
+                    ? saved.getTargetCheckOut()
+                    : checkIn;
+            if (!checkOut.isAfter(checkIn)) {
+                // Same-day function: one calendar day; folio uses exclusive checkout next morning.
+                checkOut = checkIn.plusDays(1);
+            } else {
+                checkOut = bookingDateNormalizer.toStorageCheckOutExclusive(checkIn, checkOut);
+                if (!checkIn.isBefore(checkOut)) {
+                    checkOut = checkIn.plusDays(1);
+                }
+            }
+            Reservation anchor = reservationService.createGroupEventFolioAnchor(
+                    hotelId, saved.getId(), guestId, checkIn, checkOut);
+            assignMasterReservation(saved, hotelId, anchor.getId());
+            log.info("Event-only group folio anchor reservationId={} groupId={}", anchor.getId(), saved.getId());
+        }
+        return saved;
     }
 
     @Transactional
@@ -120,6 +153,12 @@ public class GroupBookingService {
         GroupBooking group = groupBookingRepository
                 .findByIdAndHotel_Id(groupId, hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Group not found"));
+        if (!group.isUsesRoomBlock()) {
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "GROUP_FUNCTIONS_ONLY",
+                    "This group is functions-only and does not use room blocks. Add functions and bill on the Billing tab.");
+        }
         UUID leadGuestId = resolveLeadGuestId(hotelId, req.leadGuestId(), group);
         LocalDate exclusiveOut =
                 bookingDateNormalizer.toStorageCheckOutExclusive(req.checkInDate(), req.checkOutDate());

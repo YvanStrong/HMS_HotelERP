@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import {
+  downloadEventBillingPdf,
+  downloadEventPdf,
   eventBase,
   loadCateringPackages,
   loadDepotProducts,
@@ -30,9 +32,11 @@ type Props = {
   hotelId: string;
   groupId: string;
   events: EventOption[];
+  /** Refresh parent event list (quote status on Functions / BEO tabs). */
+  onDataChange?: () => void | Promise<void>;
 };
 
-export function GroupEventPackagesTab({ hotelId, groupId, events }: Props) {
+export function GroupEventPackagesTab({ hotelId, groupId, events, onDataChange }: Props) {
   const [selectedEventId, setSelectedEventId] = useState(events[0]?.id ?? "");
   const selectedEvent = events.find((e) => e.id === selectedEventId);
   const defaultPax = selectedEvent?.guaranteedPax ?? selectedEvent?.expectedPax ?? 1;
@@ -47,6 +51,7 @@ export function GroupEventPackagesTab({ hotelId, groupId, events }: Props) {
   const [discount, setDiscount] = useState("0");
   const [deposit, setDeposit] = useState("0");
   const [busy, setBusy] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
@@ -69,10 +74,16 @@ export function GroupEventPackagesTab({ hotelId, groupId, events }: Props) {
       setDepotProducts(depot);
       setLines(catering);
 
-      const ev = events.find((e) => e.id === selectedEventId);
       let q: Quote | null = null;
-      if (ev?.quoteId) {
-        q = (await apiFetch<Quote>(`${eventBase(hotelId, groupId)}/${selectedEventId}/quote`, { quiet: true })) ?? null;
+      try {
+        const fetched = await apiFetch<Quote>(`${eventBase(hotelId, groupId)}/${selectedEventId}/quote`, {
+          quiet: true,
+        });
+        if (fetched && typeof fetched === "object" && "id" in fetched) {
+          q = fetched;
+        }
+      } catch {
+        q = null;
       }
       setQuote(q);
       if (q) {
@@ -116,11 +127,27 @@ export function GroupEventPackagesTab({ hotelId, groupId, events }: Props) {
       });
       setPackageId("");
       setDepotId("");
-      if (!quote) {
-        await apiFetch(`${eventBase(hotelId, groupId)}/${selectedEventId}/quote`, { method: "POST", quiet: true });
+      const catering = await apiFetch<CateringLine[]>(
+        `${eventBase(hotelId, groupId)}/${selectedEventId}/catering-lines`,
+        { quiet: true },
+      ).catch(() => [] as CateringLine[]);
+      setLines(Array.isArray(catering) ? catering : []);
+      let fetchedQuote = await apiFetch<Quote>(`${eventBase(hotelId, groupId)}/${selectedEventId}/quote`, {
+        quiet: true,
+      }).catch(() => null);
+      if (!fetchedQuote || typeof fetchedQuote !== "object" || !("id" in fetchedQuote)) {
+        fetchedQuote = await apiFetch<Quote>(`${eventBase(hotelId, groupId)}/${selectedEventId}/quote`, {
+          method: "POST",
+          quiet: true,
+        }).catch(() => null);
       }
-      await load();
-      setInfo("Catering line added and quote totals updated.");
+      if (fetchedQuote && typeof fetchedQuote === "object" && "id" in fetchedQuote) {
+        setQuote(fetchedQuote);
+        setDiscount(String(money(fetchedQuote.discountAmount)));
+        setDeposit(String(money(fetchedQuote.depositRequired)));
+      }
+      await onDataChange?.();
+      setInfo("Catering line added — quote updated automatically.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not add line");
     } finally {
@@ -133,6 +160,7 @@ export function GroupEventPackagesTab({ hotelId, groupId, events }: Props) {
     setBusy(true);
     await apiFetch(`${eventBase(hotelId, groupId)}/${selectedEventId}/catering-lines/${lineId}`, { method: "DELETE", quiet: true });
     await load();
+    await onDataChange?.();
     setBusy(false);
   }
 
@@ -143,6 +171,7 @@ export function GroupEventPackagesTab({ hotelId, groupId, events }: Props) {
     try {
       await apiFetch(`${eventBase(hotelId, groupId)}/${selectedEventId}/quote`, { method: "POST" });
       await load();
+      await onDataChange?.();
       setInfo("Draft quote created from catering lines.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create quote");
@@ -167,6 +196,7 @@ export function GroupEventPackagesTab({ hotelId, groupId, events }: Props) {
         body: JSON.stringify(body),
       });
       await load();
+      await onDataChange?.();
       if (patchStatus === "SENT") {
         setInfo(CATERING_QUOTE_COPY.sentInfo);
       } else if (patchStatus === "CONTRACTED") {
@@ -198,7 +228,8 @@ export function GroupEventPackagesTab({ hotelId, groupId, events }: Props) {
     try {
       await apiFetch(`${eventBase(hotelId, groupId)}/${selectedEventId}/quote/accept`, { method: "POST" });
       await load();
-      setInfo("Quote accepted. Generate a banquet order on the Banquet order tab. Guest bill posting happens on Contract.");
+      await onDataChange?.();
+      setInfo("Quote accepted. Continue to Banquet order (Next below). Guest bill posting happens on Contract.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not accept quote");
     } finally {
@@ -340,6 +371,15 @@ export function GroupEventPackagesTab({ hotelId, groupId, events }: Props) {
                 Subtotal: {money(quote.subtotal).toFixed(2)} · Tax: {money(quote.taxAmount).toFixed(2)} · Total:{" "}
                 <strong>{money(quote.totalAmount).toFixed(2)}</strong>
               </p>
+              {quote.lines?.length > 0 ? (
+                <ul className="text-xs text-slate-600 space-y-1 rounded-lg border border-slate-100 bg-slate-50 p-3">
+                  {quote.lines.map((line) => (
+                    <li key={line.id}>
+                      {line.description} · {money(line.lineTotal).toFixed(2)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               <FieldLabel label={CATERING_QUOTE_COPY.discount.label} hint={CATERING_QUOTE_COPY.discount.hint}>
                 <input className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" value={discount} onChange={(e) => setDiscount(e.target.value)} />
               </FieldLabel>
@@ -365,13 +405,32 @@ export function GroupEventPackagesTab({ hotelId, groupId, events }: Props) {
                     {CATERING_QUOTE_COPY.contract}
                   </button>
                 ) : null}
-                <Link href={staffAppPath("groups", groupId, "events", selectedEventId, "quote")} className="text-sm font-semibold text-indigo-700 hover:underline">
-                  {CATERING_QUOTE_COPY.printableQuote} →
-                </Link>
+                {quote.status === "CONTRACTED" ? (
+                  <button
+                    type="button"
+                    className="text-sm font-semibold text-indigo-700 hover:underline disabled:opacity-50"
+                    disabled={pdfBusy || !selectedEventId}
+                    onClick={() => {
+                      if (!selectedEventId) return;
+                      setPdfBusy(true);
+                      setError(null);
+                      void downloadEventBillingPdf(hotelId, groupId, selectedEventId)
+                        .then((name) => setInfo(`Downloaded ${name}`))
+                        .catch((e) => setError(e instanceof Error ? e.message : "Could not download billing PDF"))
+                        .finally(() => setPdfBusy(false));
+                    }}
+                  >
+                    {pdfBusy ? "Preparing PDF…" : `${CATERING_QUOTE_COPY.printableQuote} →`}
+                  </button>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Contract to post billing document to Invoices</span>
+                )}
               </div>
             </>
           ) : (
-            <p className="text-sm text-muted-foreground">Add catering lines, then create a draft quote (or add a line to auto-create).</p>
+            <p className="text-sm text-muted-foreground">
+              Add a catering line above — a draft quote is created and updated automatically.
+            </p>
           )}
         </div>
       </div>

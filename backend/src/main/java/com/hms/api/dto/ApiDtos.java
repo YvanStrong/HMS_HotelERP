@@ -3,6 +3,7 @@ package com.hms.api.dto;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
@@ -518,14 +519,14 @@ public final class ApiDtos {
             UUID id, String companyName, String billingEmail, BigDecimal creditLimit, String paymentTerms, String status) {}
 
     public record GroupBillingDashboardMasterFolio(
-            UUID reservationId,
+            @JsonProperty("reservation_id") @JsonAlias("reservationId") UUID reservationId,
             String confirmationCode,
             @JsonProperty("guest_name") String guestName,
             @JsonProperty("balance_due") BigDecimal balanceDue,
             String currency) {}
 
     public record GroupBillingDashboardMember(
-            UUID reservationId,
+            @JsonProperty("reservation_id") @JsonAlias("reservationId") UUID reservationId,
             String confirmationCode,
             @JsonProperty("guest_name") String guestName,
             @JsonProperty("room_number") String roomNumber,

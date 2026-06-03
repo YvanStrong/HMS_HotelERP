@@ -155,7 +155,10 @@ public class ChargeService {
                     HttpStatus.CONFLICT,
                     "Charges can only be posted for CHECKED_IN reservations. Current status: " + reservation.getStatus());
         }
-        if (reservation.getRoom() == null) {
+        boolean eventFolio =
+                reservation.getBookingSource() != null
+                        && "GROUP_EVENT_FOLIO".equalsIgnoreCase(reservation.getBookingSource().trim());
+        if (reservation.getRoom() == null && !eventFolio) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Reservation has no room assigned");
         }
         Reservation orig = reservationRepository

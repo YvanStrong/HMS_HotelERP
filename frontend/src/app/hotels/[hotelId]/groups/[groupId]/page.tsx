@@ -1,18 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Building2, CalendarRange, Copy, CreditCard, Crown, Plus, Users } from "lucide-react";
 import { apiFetch, getToken } from "@/lib/api";
 import { GroupEventPackagesTab } from "@/components/groups/GroupEventPackagesTab";
-import { type EventBillingSummary, type EventListItem, money } from "@/lib/eventApi";
+import { GroupWorkflowNav } from "@/components/groups/GroupWorkflowNav";
+import { type EventBillingSummary, type EventListItem, downloadEventPdf, money } from "@/lib/eventApi";
 import { useHotelContext } from "@/lib/useHotelContext";
 import { staffAppPath } from "@/lib/staffAppRoutes";
 import {
   BEO_COPY,
   BILLING_COPY,
   GROUP_TABS,
+  GROUP_WORKFLOW_HINT,
   beoStatusHint,
   formatBeoStatus,
   formatQuoteStatus,
@@ -44,14 +46,16 @@ type BillingDashboard = {
     status: string;
   } | null;
   masterFolio: {
-    reservationId: string;
+    reservationId?: string;
+    reservation_id?: string;
     confirmationCode: string;
     guest_name: string;
     balance_due: number | string;
     currency: string;
   } | null;
   members: Array<{
-    reservationId: string;
+    reservationId?: string;
+    reservation_id?: string;
     confirmationCode: string;
     guest_name: string;
     room_number: string;
@@ -79,6 +83,8 @@ type GroupBookingDetail = {
   billingPreference?: string | null;
   preferredRoomTypeId?: string | null;
   notes?: string | null;
+  usesRoomBlock?: boolean;
+  uses_room_block?: boolean;
 };
 
 type GroupTab = "overview" | "rooms" | "events" | "packages" | "beo" | "billing";
@@ -91,6 +97,21 @@ function toMoney(v: unknown): number {
     return Number.isFinite(n) ? n : 0;
   }
   return 0;
+}
+
+/** Reservation id for group / event guest bill links (API may use reservation_id or reservationId). */
+function resolveGroupFolioReservationId(dash: BillingDashboard): string | null {
+  const mf = dash.masterFolio;
+  const fromMaster = mf?.reservation_id ?? mf?.reservationId;
+  if (fromMaster && fromMaster.length > 10) return fromMaster;
+  const masterMember = dash.members.find((m) => m.is_master) ?? dash.members[0];
+  const fromMember = masterMember?.reservation_id ?? masterMember?.reservationId;
+  return fromMember && fromMember.length > 10 ? fromMember : null;
+}
+
+function staffReservationHref(reservationId: string | null | undefined): string | null {
+  if (!reservationId || reservationId.length < 32) return null;
+  return staffAppPath("reservations", reservationId);
 }
 
 function formatYmd(v: string | string[] | null | undefined): string {
@@ -121,8 +142,11 @@ function eventStatusClass(status: string): string {
   }
 }
 
+const GROUP_TAB_KEYS = new Set<GroupTab>(["overview", "rooms", "events", "packages", "beo", "billing"]);
+
 export default function GroupBillingDashboardPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const hotelId = String(params.hotelId);
   const groupId = String(params.groupId);
   const { hotel } = useHotelContext(hotelId);
@@ -149,6 +173,7 @@ export default function GroupBillingDashboardPage() {
   const [newCorpTerms, setNewCorpTerms] = useState("");
   const [newCorpStatus, setNewCorpStatus] = useState("ACTIVE");
   const [creatingCorp, setCreatingCorp] = useState(false);
+  const [pdfEventId, setPdfEventId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -190,6 +215,69 @@ export default function GroupBillingDashboardPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const usesRoomBlock = useMemo(
+    () => group?.usesRoomBlock ?? group?.uses_room_block ?? true,
+    [group?.usesRoomBlock, group?.uses_room_block],
+  );
+
+  const visibleTabs = useMemo(() => {
+    const all = [
+      ["overview", GROUP_TABS.overview],
+      ["rooms", GROUP_TABS.rooms],
+      ["events", GROUP_TABS.events],
+      ["packages", GROUP_TABS.packages],
+      ["beo", GROUP_TABS.beo],
+      ["billing", GROUP_TABS.billing],
+    ] as const;
+    return usesRoomBlock ? all : all.filter(([key]) => key !== "rooms");
+  }, [usesRoomBlock]);
+
+  const workflowSteps = useMemo(
+    () =>
+      visibleTabs.map(([key, tab]) => ({
+        key,
+        label: tab.label,
+        hint: tab.hint,
+      })),
+    [visibleTabs],
+  );
+
+  const goToStep = useCallback((key: GroupTab) => {
+    setActiveTab(key);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, []);
+
+  const downloadBeoPdf = useCallback(
+    async (eventId: string) => {
+      setPdfEventId(eventId);
+      setError(null);
+      try {
+        const name = await downloadEventPdf(hotelId, groupId, eventId, "beo");
+        setBanner(`Downloaded ${name}`);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not download banquet order PDF");
+      } finally {
+        setPdfEventId(null);
+      }
+    },
+    [groupId, hotelId],
+  );
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab && GROUP_TAB_KEYS.has(tab as GroupTab)) {
+      setActiveTab(tab as GroupTab);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!usesRoomBlock && activeTab === "rooms") {
+      setActiveTab("events");
+    }
+  }, [usesRoomBlock, activeTab]);
 
   async function saveBilling() {
     setSaving(true);
@@ -421,6 +509,14 @@ export default function GroupBillingDashboardPage() {
     group?.billingPreference?.trim() ||
     null;
 
+  const eventGuestBillHref = useMemo(() => {
+    if (!dash) return null;
+    if (!usesRoomBlock) {
+      return staffAppPath("groups", groupId, "guest-bill");
+    }
+    return staffReservationHref(resolveGroupFolioReservationId(dash));
+  }, [dash, usesRoomBlock, groupId]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-100/80 via-background to-muted/20 pb-16">
       <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6">
@@ -431,19 +527,24 @@ export default function GroupBillingDashboardPage() {
                 ← Groups
               </Link>
             </p>
-            <h1 className="text-3xl font-black tracking-tight text-slate-900">Group billing & routing</h1>
+            <h1 className="text-3xl font-black tracking-tight text-slate-900">
+              {usesRoomBlock ? "Group billing & routing" : "Function billing"}
+            </h1>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-              The master guest bill receives routed charges per preference. Members cannot check out while the master bill
-              still has a balance (unless a manager overrides checkout on the reservation).
+              {usesRoomBlock
+                ? "The master guest bill receives routed charges per preference. Members cannot check out while the master bill still has a balance (unless a manager overrides checkout on the reservation)."
+                : BILLING_COPY.functionsOnlyBilling}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link
-              href={staffAppPath("groups", groupId, "reserve")}
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
-            >
-              Book / extend block
-            </Link>
+            {usesRoomBlock ? (
+              <Link
+                href={staffAppPath("groups", groupId, "reserve")}
+                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+              >
+                Book / extend block
+              </Link>
+            ) : null}
             <button type="button" className="hms-btn-outline text-sm" onClick={() => void load()}>
               Refresh
             </button>
@@ -464,32 +565,14 @@ export default function GroupBillingDashboardPage() {
         {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
         {!loading && group && (
-          <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-            {(
-              [
-                ["overview", GROUP_TABS.overview],
-                ["rooms", GROUP_TABS.rooms],
-                ["events", GROUP_TABS.events],
-                ["packages", GROUP_TABS.packages],
-                ["beo", GROUP_TABS.beo],
-                ["billing", GROUP_TABS.billing],
-              ] as const
-            ).map(([key, tab]) => (
-              <button
-                key={key}
-                type="button"
-                title={tab.hint}
-                onClick={() => setActiveTab(key as GroupTab)}
-                className={`rounded-xl px-4 py-2 text-sm font-bold transition ${
-                  activeTab === key
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          <>
+            <p className="text-xs text-muted-foreground">{GROUP_WORKFLOW_HINT}</p>
+            <GroupWorkflowNav
+              steps={workflowSteps}
+              activeKey={activeTab}
+              onStepChange={(key) => goToStep(key as GroupTab)}
+            />
+          </>
         )}
 
         {!loading && group && activeTab === "overview" && (
@@ -520,8 +603,16 @@ export default function GroupBillingDashboardPage() {
                     {formatYmd(group.targetCheckIn)} → {formatYmd(group.targetCheckOut)}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {group.expectedGuests != null ? `${group.expectedGuests} guests expected` : "Guests TBD"} ·{" "}
-                    {group.roomsNeeded != null ? `${group.roomsNeeded} rooms targeted` : "Rooms TBD"}
+                    {!usesRoomBlock ? (
+                      <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-bold text-teal-900">
+                        Functions only — no room block
+                      </span>
+                    ) : (
+                      <>
+                        {group.expectedGuests != null ? `${group.expectedGuests} guests expected` : "Guests TBD"} ·{" "}
+                        {group.roomsNeeded != null ? `${group.roomsNeeded} rooms targeted` : "Rooms TBD"}
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
@@ -650,12 +741,14 @@ export default function GroupBillingDashboardPage() {
                               Set master
                             </button>
                           ) : null}
-                          <Link
-                            href={staffAppPath("reservations", m.reservationId)}
-                            className="inline-flex rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
-                          >
-                            Open guest bill
-                          </Link>
+                          {(m.reservation_id ?? m.reservationId) && staffReservationHref(m.reservation_id ?? m.reservationId) ? (
+                            <Link
+                              href={staffReservationHref(m.reservation_id ?? m.reservationId)!}
+                              className="inline-flex rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
+                            >
+                              Open guest bill
+                            </Link>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -748,13 +841,22 @@ export default function GroupBillingDashboardPage() {
                           </span>
                         ) : null}
                         {row.beoStatus ? (
-                          <Link
-                            href={staffAppPath("groups", groupId, "events", event.id, "beo")}
-                            className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-bold text-teal-800"
-                            title={beoStatusHint(row.beoStatus)}
-                          >
-                            Banquet order: {formatBeoStatus(row.beoStatus)}
-                          </Link>
+                          <>
+                            <span
+                              className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-bold text-teal-800"
+                              title={beoStatusHint(row.beoStatus)}
+                            >
+                              Banquet order: {formatBeoStatus(row.beoStatus)}
+                            </span>
+                            <button
+                              type="button"
+                              className="rounded-lg border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-bold text-teal-900 disabled:opacity-50"
+                              disabled={pdfEventId === event.id}
+                              onClick={() => void downloadBeoPdf(event.id)}
+                            >
+                              {pdfEventId === event.id ? "Preparing…" : BEO_COPY.viewPrint}
+                            </button>
+                          </>
                         ) : canGenBeo ? (
                           <button
                             type="button"
@@ -790,6 +892,7 @@ export default function GroupBillingDashboardPage() {
               guaranteedPax: e.event.guaranteedPax,
               expectedPax: e.event.expectedPax,
             }))}
+            onDataChange={load}
           />
         )}
 
@@ -816,9 +919,22 @@ export default function GroupBillingDashboardPage() {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {row.beoStatus ? (
-                        <Link href={staffAppPath("groups", groupId, "events", row.event.id, "beo")} className="font-bold text-indigo-700 hover:underline">
-                          {BEO_COPY.viewPrint}
-                        </Link>
+                        <>
+                          <button
+                            type="button"
+                            className="font-bold text-indigo-700 hover:underline disabled:opacity-50"
+                            disabled={pdfEventId === row.event.id}
+                            onClick={() => void downloadBeoPdf(row.event.id)}
+                          >
+                            {pdfEventId === row.event.id ? "Preparing PDF…" : BEO_COPY.viewPrint}
+                          </button>
+                          <Link
+                            href={staffAppPath("groups", groupId, "events", row.event.id, "beo")}
+                            className="text-xs text-slate-600 hover:underline"
+                          >
+                            {BEO_COPY.editNotes}
+                          </Link>
+                        </>
                       ) : canGen ? (
                         <button
                           type="button"
@@ -844,12 +960,23 @@ export default function GroupBillingDashboardPage() {
 
         {!loading && dash && activeTab === "billing" && (
           <>
+            {!usesRoomBlock ? (
+              <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-950 shadow-sm">
+                <p className="font-bold">{BILLING_COPY.functionsOnlyBilling}</p>
+              </div>
+            ) : null}
             {!dash.masterFolio ? (
               <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-sm">
-                <p className="font-bold">Link a master room before posting function charges</p>
-                <p className="mt-1">{BILLING_COPY.masterRequiredAlert}</p>
+                <p className="font-bold">
+                  {usesRoomBlock
+                    ? "Link a master room before posting function charges"
+                    : "Event guest bill required"}
+                </p>
+                <p className="mt-1">
+                  {usesRoomBlock ? BILLING_COPY.masterRequiredAlert : BILLING_COPY.functionsOnlyNoMaster}
+                </p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {dash.members.length > 0 ? (
+                  {usesRoomBlock && dash.members.length > 0 ? (
                     <button
                       type="button"
                       disabled={saving}
@@ -860,22 +987,27 @@ export default function GroupBillingDashboardPage() {
                       Use first room as master
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    className="rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-xs font-bold text-amber-950 hover:bg-amber-100"
-                    onClick={() => setActiveTab("rooms")}
-                  >
-                    Go to Rooms tab
-                  </button>
+                  {usesRoomBlock ? (
+                    <button
+                      type="button"
+                      className="rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-xs font-bold text-amber-950 hover:bg-amber-100"
+                      onClick={() => setActiveTab("rooms")}
+                    >
+                      Go to Rooms tab
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ) : null}
             {eventBilling ? (
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500" title={BILLING_COPY.eventChargesHint}>
+                <h3
+                  className="text-sm font-bold uppercase tracking-wide text-slate-500"
+                  title={usesRoomBlock ? BILLING_COPY.eventChargesHint : BILLING_COPY.eventGuestBillHint}
+                >
                   {BILLING_COPY.eventCharges}
                 </h3>
-                <p className="text-sm" title={BILLING_COPY.eventChargesHint}>
+                <p className="text-sm" title={usesRoomBlock ? BILLING_COPY.eventChargesHint : BILLING_COPY.eventGuestBillHint}>
                   {BILLING_COPY.quoted} {money(eventBilling.totalQuoted).toFixed(2)} · {BILLING_COPY.accepted}{" "}
                   {money(eventBilling.totalAccepted).toFixed(2)} · {BILLING_COPY.posted}{" "}
                   {money(eventBilling.totalPosted).toFixed(2)} · {BILLING_COPY.balance}{" "}
@@ -887,7 +1019,7 @@ export default function GroupBillingDashboardPage() {
                       <th className="py-2">Function</th>
                       <th className="py-2">Quote</th>
                       <th className="py-2 text-right">Total</th>
-                      <th className="py-2 text-right" title={BILLING_COPY.masterFolioHint}>
+                      <th className="py-2 text-right" title={usesRoomBlock ? BILLING_COPY.masterFolioHint : BILLING_COPY.eventGuestBillHint}>
                         Guest bill
                       </th>
                     </tr>
@@ -902,11 +1034,13 @@ export default function GroupBillingDashboardPage() {
                         <td className="py-2 text-right">{money(row.totalAmount).toFixed(2)}</td>
                         <td className="py-2 text-right">
                           {row.chargesPosted ? (
-                            <span title="Charges are on the master guest bill.">On guest bill</span>
-                          ) : !dash.masterFolio ? (
+                            <span title="Charges are on the event guest bill.">On guest bill</span>
+                          ) : usesRoomBlock && !dash.masterFolio ? (
                             <span className="text-xs font-medium text-amber-800" title={BILLING_COPY.postRequiresMaster}>
                               {BILLING_COPY.needsMaster}
                             </span>
+                          ) : !usesRoomBlock && !dash.masterFolio ? (
+                            <span className="text-xs font-medium text-amber-800">{BILLING_COPY.functionsOnlyNoMaster}</span>
                           ) : row.quoteStatus === "ACCEPTED" ? (
                             <span className="text-xs text-slate-500" title={BILLING_COPY.postRequiresContract}>
                               {BILLING_COPY.contractFirst}
@@ -916,7 +1050,11 @@ export default function GroupBillingDashboardPage() {
                               type="button"
                               className="text-xs font-bold text-indigo-700 disabled:opacity-50"
                               disabled={saving}
-                              title="Use if Contract did not post automatically (master room must be linked)."
+                              title={
+                                usesRoomBlock
+                                  ? "Use if Contract did not post automatically (master room must be linked)."
+                                  : "Use if Contract did not post automatically."
+                              }
                               onClick={() => void postEventCharges(row.eventId)}
                             >
                               {BILLING_COPY.postChargesRetry}
@@ -931,6 +1069,122 @@ export default function GroupBillingDashboardPage() {
                 </table>
               </div>
             ) : null}
+
+            {!usesRoomBlock ? (
+              <>
+                {dash.masterFolio ? (
+                  <div className="rounded-2xl border border-teal-200/80 bg-card p-5 shadow-sm sm:p-6">
+                    <h3 className="text-sm font-bold text-slate-900" title={BILLING_COPY.eventGuestBillHint}>
+                      {BILLING_COPY.eventGuestBill}
+                    </h3>
+                    <p className="mt-1 text-xs text-muted-foreground">{BILLING_COPY.eventGuestBillHint}</p>
+                    <p className="mt-3 text-sm text-slate-800">
+                      {dash.masterFolio.guest_name} ·{" "}
+                      <span className="font-mono text-xs">{dash.masterFolio.confirmationCode}</span>
+                    </p>
+                    <p className="mt-3 text-2xl font-black text-rose-600 tabular-nums">
+                      {toMoney(dash.masterFolio.balance_due).toFixed(2)} {dash.masterFolio.currency}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">{BILLING_COPY.functionsOnlyBalance}</p>
+                    {eventGuestBillHref ? (
+                      <Link
+                        href={eventGuestBillHref}
+                        className="mt-4 inline-flex rounded-xl border border-teal-200 bg-teal-50 px-4 py-2 text-xs font-bold text-teal-900 shadow-sm hover:bg-teal-100"
+                      >
+                        {BILLING_COPY.openEventGuestBill}
+                      </Link>
+                    ) : (
+                      <p className="mt-4 text-xs font-medium text-amber-800">
+                        Guest bill link unavailable — refresh this page or contact support.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+
+                <div className="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm sm:p-6 space-y-4">
+                  <h3 className="text-sm font-bold text-slate-900">Corporate account</h3>
+                  <p className="text-xs text-muted-foreground">{BILLING_COPY.functionsOnlyCorporateHint}</p>
+                  {dash.corporateAccount ? (
+                    <>
+                      <p className="font-semibold text-slate-900">{dash.corporateAccount.companyName}</p>
+                      <p className="text-xs text-slate-700">{dash.corporateAccount.billingEmail || "—"}</p>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
+                      onClick={() => {
+                        setNewCorpCompany(group?.companyName?.trim() ?? "");
+                        setNewCorpEmail(group?.contactEmail?.trim() ?? "");
+                        setShowNewCorp(true);
+                      }}
+                    >
+                      <Plus className="h-3.5 w-3.5" aria-hidden />
+                      New corporate account
+                    </button>
+                  )}
+                  <label className="block text-xs font-semibold text-muted-foreground">
+                    {BILLING_COPY.functionsOnlyLinkCorporate}
+                    <select
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm shadow-inner"
+                      value={corpId}
+                      onChange={(e) => setCorpId(e.target.value)}
+                    >
+                      <option value="">— none linked —</option>
+                      <option value="__clear__">Clear link</option>
+                      {corporate.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.companyName}
+                          {a.billingEmail ? ` · ${a.billingEmail}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="hms-btn-solid text-sm"
+                    disabled={saving}
+                    onClick={() => void saveBilling()}
+                  >
+                    {saving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+
+                {showNewCorp ? (
+                  <div className="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm sm:p-6">
+                    <h3 className="text-sm font-bold text-slate-900">New corporate account</h3>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <label className="block text-xs font-semibold text-slate-600 sm:col-span-2">
+                        Company name *
+                        <input
+                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                          value={newCorpCompany}
+                          onChange={(e) => setNewCorpCompany(e.target.value)}
+                        />
+                      </label>
+                      <label className="block text-xs font-semibold text-slate-600 sm:col-span-2">
+                        Billing email
+                        <input
+                          type="email"
+                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                          value={newCorpEmail}
+                          onChange={(e) => setNewCorpEmail(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button type="button" className="hms-btn-solid text-sm" disabled={creatingCorp} onClick={() => void createCorporateAndLink()}>
+                        {creatingCorp ? "Working…" : "Create & link"}
+                      </button>
+                      <button type="button" className="hms-btn-outline text-sm" onClick={() => setShowNewCorp(false)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <>
             <div className="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm sm:p-6">
               <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Billing snapshot</h3>
               <p className="mt-2 text-sm text-slate-700">
@@ -959,12 +1213,14 @@ export default function GroupBillingDashboardPage() {
                       {toMoney(dash.masterFolio.balance_due).toFixed(2)} {dash.masterFolio.currency}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">Balance due on consolidated bill</p>
-                    <Link
-                      href={staffAppPath("reservations", dash.masterFolio.reservationId)}
-                      className="mt-4 inline-flex rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
-                    >
-                      Open master reservation
-                    </Link>
+                    {eventGuestBillHref ? (
+                      <Link
+                        href={eventGuestBillHref}
+                        className="mt-4 inline-flex rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
+                      >
+                        Open master reservation
+                      </Link>
+                    ) : null}
                   </>
                 ) : (
                   <div className="space-y-3">
@@ -1194,12 +1450,14 @@ export default function GroupBillingDashboardPage() {
                                   Set master
                                 </button>
                               ) : null}
-                              <Link
-                                href={staffAppPath("reservations", m.reservationId)}
-                                className="inline-flex rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
-                              >
-                                Guest bill
-                              </Link>
+                              {staffReservationHref(m.reservation_id ?? m.reservationId) ? (
+                                <Link
+                                  href={staffReservationHref(m.reservation_id ?? m.reservationId)!}
+                                  className="inline-flex rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
+                                >
+                                  Guest bill
+                                </Link>
+                              ) : null}
                             </div>
                           </td>
                         </tr>
@@ -1279,7 +1537,18 @@ export default function GroupBillingDashboardPage() {
                 </button>
               </div>
             </div>
+              </>
+            )}
           </>
+        )}
+
+        {!loading && group && (
+          <GroupWorkflowNav
+            steps={workflowSteps}
+            activeKey={activeTab}
+            onStepChange={(key) => goToStep(key as GroupTab)}
+            className="mt-6"
+          />
         )}
       </div>
     </div>

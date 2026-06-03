@@ -153,11 +153,18 @@ public class EventBillingService {
 
     private Reservation resolveBillingReservation(GroupBooking group) {
         Reservation master = group.getMasterReservation();
+        if (master == null && !group.isUsesRoomBlock()) {
+            master = reservationRepository
+                    .findFirstByGroupBooking_IdAndBookingSource(group.getId(), "GROUP_EVENT_FOLIO")
+                    .orElse(null);
+        }
         if (master == null) {
             throw new ApiException(
                     HttpStatus.UNPROCESSABLE_ENTITY,
                     "GROUP_MASTER_REQUIRED",
-                    "Link a master reservation to this group before posting event charges.");
+                    group.isUsesRoomBlock()
+                            ? "Link a master reservation to this group before posting event charges."
+                            : "Event guest bill is missing for this functions-only group — contact support or recreate the group.");
         }
         return reservationRepository
                 .findByIdAndHotel_IdWithGroupBilling(master.getId(), group.getHotel().getId())

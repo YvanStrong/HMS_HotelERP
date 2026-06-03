@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
 import { formatMoney } from "@/lib/money";
 import { staffAppPath } from "@/lib/staffAppRoutes";
+import { GROUP_CREATE_COPY } from "@/lib/groupEventsCopy";
 import { useHotelContext } from "@/lib/useHotelContext";
 import {
   Users,
@@ -68,6 +69,12 @@ interface GroupBooking {
   roomsNeeded?: number | null;
   eventType?: string | null;
   preferredRoomTypeId?: string | null;
+  usesRoomBlock?: boolean;
+  uses_room_block?: boolean;
+}
+
+function groupUsesRoomBlock(g: GroupBooking): boolean {
+  return g.usesRoomBlock ?? g.uses_room_block ?? true;
 }
 
 export default function GroupsPage() {
@@ -98,6 +105,7 @@ export default function GroupsPage() {
     roomMixSummary: "",
     billingPreference: "MASTER_PAYS_ALL",
     notes: "",
+    usesRoomBlock: true,
   });
   const [isCreating, setIsCreating] = useState(false);
   const [createErr, setCreateErr] = useState<string | null>(null);
@@ -126,7 +134,8 @@ export default function GroupsPage() {
     !!newGroup.targetCheckOut &&
     newGroup.targetCheckOut > newGroup.targetCheckIn;
 
-  const canAnalyze = showAddModal && datesValid && guestsNum > 0 && roomsNum > 0;
+  const usesRoomBlock = newGroup.usesRoomBlock;
+  const canAnalyze = showAddModal && usesRoomBlock && datesValid && guestsNum > 0 && roomsNum > 0;
 
   const smartMatches = useMemo(() => {
     if (!canAnalyze) return [];
@@ -286,20 +295,29 @@ export default function GroupsPage() {
       setCreateErr("Group name is required.");
       return;
     }
-    if (!datesValid) {
-      setCreateErr("Set target check-in and check-out dates.");
-      return;
-    }
-    if (guestsNum < 1 || roomsNum < 1) {
-      setCreateErr("Enter expected guests and rooms needed.");
-      return;
-    }
-    if (!newGroup.preferredRoomTypeId) {
-      setCreateErr("Pick a room type from the inventory matches below.");
-      return;
-    }
-    if (smartMatches.length > 0 && !smartMatches.some((m) => m.room_type_id === newGroup.preferredRoomTypeId)) {
-      setCreateErr("Selected room type is not available for this demand — pick a matched type.");
+    if (usesRoomBlock) {
+      if (!datesValid) {
+        setCreateErr("Set target check-in and check-out dates.");
+        return;
+      }
+      if (guestsNum < 1 || roomsNum < 1) {
+        setCreateErr("Enter expected guests and rooms needed.");
+        return;
+      }
+      if (!newGroup.preferredRoomTypeId) {
+        setCreateErr("Pick a room type from the inventory matches below.");
+        return;
+      }
+      if (smartMatches.length > 0 && !smartMatches.some((m) => m.room_type_id === newGroup.preferredRoomTypeId)) {
+        setCreateErr("Selected room type is not available for this demand — pick a matched type.");
+        return;
+      }
+    } else if (
+      newGroup.targetCheckIn &&
+      newGroup.targetCheckOut &&
+      newGroup.targetCheckOut < newGroup.targetCheckIn
+    ) {
+      setCreateErr("Function end date cannot be before the start date.");
       return;
     }
     try {
@@ -323,6 +341,7 @@ export default function GroupsPage() {
         roomMixSummary: newGroup.roomMixSummary.trim() || null,
         billingPreference: newGroup.billingPreference || null,
         notes: newGroup.notes.trim() || null,
+        uses_room_block: usesRoomBlock,
       };
       const created = await apiFetch<GroupBooking>(`/api/v1/hotels/${hotelId}/groups`, {
         method: "POST",
@@ -346,15 +365,20 @@ export default function GroupsPage() {
         roomMixSummary: "",
         billingPreference: "MASTER_PAYS_ALL",
         notes: "",
+        usesRoomBlock: true,
       });
       void loadGroups();
       if (created?.id) {
-        const params = new URLSearchParams();
-        params.set("from_create", "1");
-        if (selectedRoomTypeId !== "") {
-          params.set("room_type_id", selectedRoomTypeId);
+        if (usesRoomBlock) {
+          const params = new URLSearchParams();
+          params.set("from_create", "1");
+          if (selectedRoomTypeId !== "") {
+            params.set("room_type_id", selectedRoomTypeId);
+          }
+          router.push(`${staffAppPath("groups", created.id, "reserve")}?${params.toString()}`);
+        } else {
+          router.push(staffAppPath("groups", created.id));
         }
-        router.push(`${staffAppPath("groups", created.id, "reserve")}?${params.toString()}`);
       }
     } catch (err) {
       setCreateErr(err instanceof Error ? err.message : "Failed to create group");
@@ -442,11 +466,18 @@ export default function GroupsPage() {
                               {group.groupCode || "NO-CODE"}
                             </p>
                           </div>
-                          <span
-                            className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${statusBadgeClass(group.status)}`}
-                          >
-                            {group.status}
-                          </span>
+                          <div className="flex shrink-0 flex-wrap gap-1">
+                            {group.usesRoomBlock === false || group.uses_room_block === false ? (
+                              <span className="rounded-full bg-teal-100 px-2 py-1 text-[10px] font-bold text-teal-800">
+                                Functions only
+                              </span>
+                            ) : null}
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${statusBadgeClass(group.status)}`}
+                            >
+                              {group.status}
+                            </span>
+                          </div>
                         </div>
                         {(group.expectedGuests != null ||
                           group.roomsNeeded != null ||
@@ -485,20 +516,24 @@ export default function GroupsPage() {
                           >
                             Billing
                           </Link>
-                          <Link
-                            href={`${staffAppPath("groups", group.id, "reserve")}`}
-                            className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-indigo-100 bg-indigo-50 px-3 text-xs font-black uppercase tracking-wide text-indigo-700 transition hover:bg-indigo-100"
-                          >
-                            <LayoutGrid className="h-4 w-4 shrink-0" />
-                            Block
-                          </Link>
-                          <Link
-                            href={`${staffAppPath("reservations", "new")}?groupId=${encodeURIComponent(group.id)}`}
-                            className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-indigo-200 hover:text-indigo-700"
-                          >
-                            <ChevronRight className="h-4 w-4 shrink-0" />
-                            One room
-                          </Link>
+                          {groupUsesRoomBlock(group) ? (
+                            <>
+                              <Link
+                                href={`${staffAppPath("groups", group.id, "reserve")}`}
+                                className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-indigo-100 bg-indigo-50 px-3 text-xs font-black uppercase tracking-wide text-indigo-700 transition hover:bg-indigo-100"
+                              >
+                                <LayoutGrid className="h-4 w-4 shrink-0" />
+                                Block
+                              </Link>
+                              <Link
+                                href={`${staffAppPath("reservations", "new")}?groupId=${encodeURIComponent(group.id)}`}
+                                className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-indigo-200 hover:text-indigo-700"
+                              >
+                                <ChevronRight className="h-4 w-4 shrink-0" />
+                                One room
+                              </Link>
+                            </>
+                          ) : null}
                           <button
                             type="button"
                             className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-rose-100 bg-rose-50/90 px-3 text-xs font-black uppercase tracking-wide text-rose-800 transition hover:bg-rose-100 disabled:opacity-40"
@@ -602,22 +637,26 @@ export default function GroupsPage() {
                         >
                           Billing
                         </Link>
-                        <Link
-                          href={`${staffAppPath("groups", group.id, "reserve")}`}
-                          className="inline-flex min-h-10 items-center justify-center gap-1 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-black uppercase tracking-wide text-indigo-700 transition hover:bg-indigo-100"
-                          title="Plan multi-room block with inventory radar"
-                        >
-                          <LayoutGrid className="h-4 w-4 shrink-0" />
-                          Block
-                        </Link>
-                        <Link
-                          href={`${staffAppPath("reservations", "new")}?groupId=${encodeURIComponent(group.id)}`}
-                          className="inline-flex min-h-10 min-w-10 items-center justify-center gap-1 rounded-xl border border-transparent px-2 text-slate-400 transition-all hover:border-slate-100 hover:bg-white hover:text-indigo-600 hover:shadow-md"
-                          title="Single-room staff reservation linked to this group"
-                        >
-                          <span className="sr-only">One room</span>
-                          <ChevronRight className="h-5 w-5" />
-                        </Link>
+                        {groupUsesRoomBlock(group) ? (
+                          <>
+                            <Link
+                              href={`${staffAppPath("groups", group.id, "reserve")}`}
+                              className="inline-flex min-h-10 items-center justify-center gap-1 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-black uppercase tracking-wide text-indigo-700 transition hover:bg-indigo-100"
+                              title="Plan multi-room block with inventory radar"
+                            >
+                              <LayoutGrid className="h-4 w-4 shrink-0" />
+                              Block
+                            </Link>
+                            <Link
+                              href={`${staffAppPath("reservations", "new")}?groupId=${encodeURIComponent(group.id)}`}
+                              className="inline-flex min-h-10 min-w-10 items-center justify-center gap-1 rounded-xl border border-transparent px-2 text-slate-400 transition-all hover:border-slate-100 hover:bg-white hover:text-indigo-600 hover:shadow-md"
+                              title="Single-room staff reservation linked to this group"
+                            >
+                              <span className="sr-only">One room</span>
+                              <ChevronRight className="h-5 w-5" />
+                            </Link>
+                          </>
+                        ) : null}
                         <button
                           type="button"
                           className="inline-flex min-h-10 items-center justify-center gap-1 rounded-xl border border-rose-100 bg-rose-50/80 px-3 py-2 text-xs font-black uppercase tracking-wide text-rose-800 transition hover:bg-rose-100 disabled:opacity-40"
@@ -652,7 +691,7 @@ export default function GroupsPage() {
               <div className="space-y-1 min-w-0 pr-2">
                 <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-tight">Create Group Block</h2>
                 <p className="text-sm font-medium text-slate-500 leading-relaxed">
-                  Set dates and headcount, then pick a matched room type. Use <strong>Block</strong> to book.
+                  Choose whether this group holds rooms or is functions-only (banquet/catering billing).
                 </p>
               </div>
               <button 
@@ -682,6 +721,48 @@ export default function GroupsPage() {
                   />
                 </div>
                 
+                <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 space-y-3">
+                  <legend className="text-[11px] font-black uppercase tracking-wider text-slate-600 px-1">
+                    {GROUP_CREATE_COPY.bookingKind}
+                  </legend>
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white bg-white p-3 shadow-sm has-[:checked]:border-indigo-400 has-[:checked]:ring-2 has-[:checked]:ring-indigo-100">
+                    <input
+                      type="radio"
+                      name="group-booking-kind"
+                      className="mt-1"
+                      checked={usesRoomBlock}
+                      onChange={() => setNewGroup({ ...newGroup, usesRoomBlock: true })}
+                    />
+                    <span className="text-sm">
+                      <span className="font-bold text-slate-900">Room block</span>
+                      <span className="mt-0.5 block text-xs text-slate-600 leading-relaxed">
+                        {GROUP_CREATE_COPY.roomBlock}
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white bg-white p-3 shadow-sm has-[:checked]:border-indigo-400 has-[:checked]:ring-2 has-[:checked]:ring-indigo-100">
+                    <input
+                      type="radio"
+                      name="group-booking-kind"
+                      className="mt-1"
+                      checked={!usesRoomBlock}
+                      onChange={() =>
+                        setNewGroup({
+                          ...newGroup,
+                          usesRoomBlock: false,
+                          preferredRoomTypeId: "",
+                        })
+                      }
+                    />
+                    <span className="text-sm">
+                      <span className="font-bold text-slate-900">Functions only</span>
+                      <span className="mt-0.5 block text-xs text-slate-600 leading-relaxed">
+                        {GROUP_CREATE_COPY.functionsOnly}
+                      </span>
+                    </span>
+                  </label>
+                </fieldset>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1.5 block ml-1">Group Code</label>
@@ -747,6 +828,49 @@ export default function GroupsPage() {
                   </div>
                 </div>
 
+                {!usesRoomBlock ? (
+                  <div className="rounded-2xl border border-teal-100 bg-teal-50/50 p-3 sm:p-4 space-y-4">
+                    <p className="text-[11px] font-black uppercase tracking-wider text-teal-900">
+                      {GROUP_CREATE_COPY.functionDates}
+                    </p>
+                    <p className="text-xs text-teal-800">{GROUP_CREATE_COPY.functionDatesHint}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-600">Starts</label>
+                        <input
+                          type="date"
+                          className="mt-1 w-full min-h-[44px] rounded-xl border border-white bg-white px-3 py-2.5 text-sm"
+                          value={newGroup.targetCheckIn}
+                          onChange={(e) => setNewGroup({ ...newGroup, targetCheckIn: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-600">Ends (same day OK)</label>
+                        <input
+                          type="date"
+                          className="mt-1 w-full min-h-[44px] rounded-xl border border-white bg-white px-3 py-2.5 text-sm"
+                          value={newGroup.targetCheckOut}
+                          onChange={(e) => setNewGroup({ ...newGroup, targetCheckOut: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600">Function type</label>
+                      <select
+                        className="mt-1 w-full min-h-[44px] rounded-xl border border-white bg-white px-3 py-2.5 text-xs font-semibold"
+                        value={newGroup.eventType}
+                        onChange={(e) => setNewGroup({ ...newGroup, eventType: e.target.value })}
+                      >
+                        <option value="CONFERENCE">Conference / meeting</option>
+                        <option value="WEDDING">Wedding</option>
+                        <option value="GALA">Gala / dinner</option>
+                        <option value="OTHER">Other</option>
+                      </select>
+                    </div>
+                  </div>
+                ) : null}
+
+                {usesRoomBlock ? (
                 <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-3 sm:p-4 space-y-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-[11px] font-black uppercase tracking-wider text-indigo-800">Demand sketch</p>
@@ -962,6 +1086,7 @@ export default function GroupsPage() {
                     </select>
                   </div>
                 </div>
+                ) : null}
 
                 <div>
                   <label className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1.5 block ml-1">Ops notes / drama log</label>
@@ -991,7 +1116,11 @@ export default function GroupsPage() {
                 onClick={() => void handleCreateGroup()}
                 disabled={isCreating}
               >
-                {isCreating ? "Creating…" : "Create group & book block"}
+                {isCreating
+                  ? "Creating…"
+                  : usesRoomBlock
+                    ? GROUP_CREATE_COPY.createRoomBlock
+                    : GROUP_CREATE_COPY.createFunctionsOnly}
               </button>
             </div>
           </div>

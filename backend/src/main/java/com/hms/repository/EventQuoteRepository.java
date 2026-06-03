@@ -32,4 +32,11 @@ public interface EventQuoteRepository extends JpaRepository<EventQuote, UUID> {
             order by e.startDatetime asc
             """)
     List<EventQuote> findUpcomingByHotel(@Param("hotelId") UUID hotelId, @Param("from") java.time.LocalDateTime from);
+
+    @Query(
+            """
+            select q from EventQuote q
+            where q.hotel.id = :hotelId and q.status = com.hms.domain.EventQuoteStatus.CONTRACTED
+            """)
+    List<EventQuote> findContractedByHotel(@Param("hotelId") UUID hotelId);
 }

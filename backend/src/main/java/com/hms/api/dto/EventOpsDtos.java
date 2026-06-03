@@ -206,4 +206,19 @@ public final class EventOpsDtos {
             boolean depositPaid,
             boolean chargesPosted,
             Instant chargesPostedAt) {}
+
+    public record EventBillingDocumentRow(
+            UUID id,
+            String documentNumber,
+            EventBillingDocumentType documentType,
+            UUID eventId,
+            String eventName,
+            String groupName,
+            String contactPerson,
+            BigDecimal totalAmount,
+            BigDecimal amountPaid,
+            BigDecimal balanceDue,
+            String currency,
+            Instant createdAt,
+            Instant updatedAt) {}
 }
