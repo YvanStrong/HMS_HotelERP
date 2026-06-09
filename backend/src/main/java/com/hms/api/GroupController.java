@@ -106,4 +106,13 @@ public class GroupController {
             @Valid @RequestBody ApiDtos.GroupBlockReserveRequest body) {
         return groupBookingService.reserveBlock(hotelId, hotelHeader, groupId, body);
     }
+
+    @PostMapping("/{groupId}/check-in-all")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST')")
+    public ApiDtos.GroupBulkCheckInResponse checkInAll(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID groupId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return groupBookingService.checkInAllConfirmed(hotelId, hotelHeader, groupId);
+    }
 }

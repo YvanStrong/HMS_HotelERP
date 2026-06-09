@@ -37,8 +37,8 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
             select r from Reservation r
             join fetch r.guest g
             left join fetch g.portalAccount
-            join fetch r.room
-            join fetch r.room.roomType
+            left join fetch r.room
+            left join fetch r.room.roomType
             join fetch r.hotel
             left join fetch r.groupBooking gb
             where r.id = :id and r.hotel.id = :hotelId
@@ -283,6 +283,8 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
             @Param("hotelId") UUID hotelId, @Param("guestId") UUID guestId);
 
     List<Reservation> findByGroupBooking_Id(UUID groupId);
+
+    java.util.Optional<Reservation> findFirstByGroupBooking_IdAndBookingSource(UUID groupId, String bookingSource);
 
     List<Reservation> findByCheckInDateAndStatus(LocalDate checkInDate, ReservationStatus status);
 

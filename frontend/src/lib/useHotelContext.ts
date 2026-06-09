@@ -121,9 +121,14 @@ export function useHotelContext(explicitHotelId?: string) {
       }
     : { ...EMPTY_CONTEXT, hotelId };
 
+  const entitlementsLoaded = Boolean(modulesQuery.data) || modulesQuery.isError;
+
   function hasModule(key: string): boolean {
     const normalized = key.trim().toUpperCase();
-    return CORE_MODULES.has(normalized) || hotel.enabledModules.includes(normalized);
+    if (CORE_MODULES.has(normalized)) return true;
+    // Avoid "module disabled" flash on refresh while entitlements are still loading.
+    if (!entitlementsLoaded) return true;
+    return hotel.enabledModules.includes(normalized);
   }
 
   function isModuleVisibleWhenDisabled(key: string): boolean {
@@ -136,6 +141,7 @@ export function useHotelContext(explicitHotelId?: string) {
     hotel,
     hasModule,
     isModuleVisibleWhenDisabled,
+    entitlementsLoaded,
     loading: query.isLoading || modulesQuery.isLoading,
   };
 }

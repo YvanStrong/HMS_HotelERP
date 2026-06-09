@@ -58,6 +58,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -98,6 +100,10 @@ public class ReservationService {
     private final FolioLedgerService folioLedgerService;
     private final GroupBillingRouter groupBillingRouter;
     private final OverstayChargeService overstayChargeService;
+
+    @Lazy
+    @Autowired
+    private EventBillingDocumentService eventBillingDocumentService;
 
     public ReservationService(
             HotelRepository hotelRepository,
@@ -280,6 +286,44 @@ public class ReservationService {
             UUID hotelId, String hotelHeader, ApiDtos.CreateReservationRequest req) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         return createReservationWithActor(hotelId, req, auditActor(), false, Optional.empty());
+    }
+
+    /**
+     * Functions-only group: open folio for event/catering charges without holding a physical room.
+     */
+    @Transactional
+    public Reservation createGroupEventFolioAnchor(
+            UUID hotelId, UUID groupId, UUID guestId, LocalDate checkIn, LocalDate checkOutExclusive) {
+        Hotel hotel = hotelRepository
+                .findById(hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Hotel not found"));
+        GroupBooking group = groupBookingRepository
+                .findByIdAndHotel_Id(groupId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Group not found"));
+        Guest guest = guestRepository
+                .findByIdAndHotel_Id(guestId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Guest not found"));
+        validateDates(checkIn, checkOutExclusive);
+        Reservation r = new Reservation();
+        r.setHotel(hotel);
+        r.setGuest(guest);
+        r.setGroupBooking(group);
+        r.setRoom(null);
+        r.setConfirmationCode(generateConfirmationCode(hotel));
+        r.setBookingReference(nextBookingReference(hotel));
+        r.setBookingSource("GROUP_EVENT_FOLIO");
+        r.setSource("group_event");
+        r.setCheckInDate(checkIn);
+        r.setCheckOutDate(checkOutExclusive);
+        r.setAdults(1);
+        r.setChildren(0);
+        r.setNightlyRate(BigDecimal.ZERO);
+        r.setTotalAmount(BigDecimal.ZERO);
+        r.setStatus(ReservationStatus.CHECKED_IN);
+        r.setActualCheckIn(Instant.now());
+        r.setGuestIdVerified(true);
+        r.setSpecialRequests("Event folio — " + group.getGroupName());
+        return reservationRepository.save(r);
     }
 
     /**
@@ -2387,6 +2431,11 @@ public class ReservationService {
                         "currency", p.getCurrency(),
                         "paymentType", p.getPaymentType(),
                         "method", p.getMethod()));
+        try {
+            eventBillingDocumentService.syncForReservation(reservationId);
+        } catch (Exception ex) {
+            // Non-blocking: folio payment still succeeds if event doc sync fails.
+        }
         return getFolio(hotelId, hotelHeader, reservationId);
     }
 

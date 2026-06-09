@@ -36,6 +36,8 @@ type GroupDetail = {
   billingPreference?: string | null;
   notes?: string | null;
   preferredRoomTypeId?: string | null;
+  usesRoomBlock?: boolean;
+  uses_room_block?: boolean;
 };
 
 type CatalogRoomType = {
@@ -54,6 +56,7 @@ type AvailType = {
   currency: string;
   nights: number;
   available_count: number;
+  availability_hint?: string | null;
 };
 
 type AvailResponse = { available_room_types: AvailType[] };
@@ -153,6 +156,11 @@ export default function GroupReserveBlockPage() {
           apiFetch<CatalogRoomType[]>(`/api/v1/hotels/${hotelId}/room-types`).catch(() => [] as CatalogRoomType[]),
         ]);
         if (!c) {
+          const roomBlock = g.usesRoomBlock ?? g.uses_room_block ?? true;
+          if (!roomBlock) {
+            router.replace(staffAppPath("groups", groupId));
+            return;
+          }
           setGroup(g);
           setCatalogTypes(Array.isArray(types) ? types : []);
           const fromUrl = searchParams.get("room_type_id");
@@ -183,7 +191,7 @@ export default function GroupReserveBlockPage() {
     return () => {
       c = true;
     };
-  }, [hotelId, groupId, searchParams.toString()]);
+  }, [hotelId, groupId, searchParams.toString(), router]);
 
   const loadAvailability = useCallback(async () => {
     if (!checkIn || !checkOut || checkOut <= checkIn) return;
@@ -198,15 +206,17 @@ export default function GroupReserveBlockPage() {
       setAvail(data);
       const urlPref = searchParams.get("room_type_id");
       const preferred = group?.preferredRoomTypeId;
-      if (data.available_room_types.length) {
+      const sellable = data.available_room_types.filter((t) => t.available_count > 0);
+      const pool = sellable.length > 0 ? sellable : data.available_room_types;
+      if (pool.length) {
         const pick =
-          (urlPref && data.available_room_types.some((t) => t.room_type_id === urlPref)
+          (urlPref && pool.some((t) => t.room_type_id === urlPref)
             ? urlPref
-            : preferred && data.available_room_types.some((t) => t.room_type_id === preferred)
+            : preferred && pool.some((t) => t.room_type_id === preferred)
               ? preferred
-              : roomTypeId && data.available_room_types.some((t) => t.room_type_id === roomTypeId)
+              : roomTypeId && pool.some((t) => t.room_type_id === roomTypeId)
                 ? roomTypeId
-                : data.available_room_types[0].room_type_id) ?? "";
+                : pool[0].room_type_id) ?? "";
         if (pick) setRoomTypeId(pick);
       }
     } catch {
@@ -238,6 +248,17 @@ export default function GroupReserveBlockPage() {
     if (!id) return null;
     return catalogTypes.find((t) => t.id === id)?.name ?? null;
   }, [group?.preferredRoomTypeId, catalogTypes]);
+
+  const plannedAvail = useMemo(() => {
+    const id = group?.preferredRoomTypeId;
+    if (!id || !avail) return null;
+    return avail.available_room_types.find((t) => t.room_type_id === id) ?? null;
+  }, [group?.preferredRoomTypeId, avail]);
+
+  const selectedAvailHint = useMemo(() => {
+    if (!roomTypeId || !avail) return null;
+    return avail.available_room_types.find((t) => t.room_type_id === roomTypeId)?.availability_hint ?? null;
+  }, [roomTypeId, avail]);
 
   /** Room types that have at least one sellable room for the current date range + party size. */
   const availableCatalogTypes = useMemo(
@@ -523,9 +544,10 @@ export default function GroupReserveBlockPage() {
                     {selectedType.nights} nights)
                   </p>
                 ) : roomTypeId ? (
-                  <p className="mt-2 text-sm text-amber-800">
-                    No sellable rooms for these dates — change dates or open all room types below.
-                  </p>
+                  <div className="mt-2 text-sm text-amber-800 space-y-1">
+                    <p>No sellable rooms for these dates — change dates or open all room types below.</p>
+                    {selectedAvailHint ? <p className="text-xs">{selectedAvailHint}</p> : null}
+                  </div>
                 ) : null}
                 <label className="mt-3 block text-xs font-bold uppercase text-slate-500">
                   Rooms to book
@@ -613,10 +635,21 @@ export default function GroupReserveBlockPage() {
                     </Link>
                   </p>
                 ) : availableCatalogTypes.length === 0 ? (
-                  <p className="text-sm text-amber-800">
-                    No room types with availability for these dates and party size. Change dates, adults per room, or
-                    check room types.
-                  </p>
+                  <div className="text-sm text-amber-800 space-y-2">
+                    <p>
+                      No room types with availability for these dates and party size. Change dates, adults per room, or
+                      check room types.
+                    </p>
+                    {plannedAvail?.availability_hint ? (
+                      <p className="rounded-lg border border-amber-200 bg-white/80 px-3 py-2 text-xs">
+                        <strong>{plannedTypeName ?? "Planned type"}:</strong> {plannedAvail.availability_hint}
+                      </p>
+                    ) : null}
+                    <p className="text-xs text-slate-600">
+                      Rooms may exist but show as unavailable if they are out of order, already booked on these dates, not
+                      ready for same-day check-in, or adults exceed max occupancy.
+                    </p>
+                  </div>
                 ) : (
                   <div className="max-h-[min(50vh,420px)] space-y-2 overflow-y-auto pr-1">
                     {availableCatalogTypes.map((rt) => {
@@ -739,10 +772,17 @@ export default function GroupReserveBlockPage() {
                 first.
               </p>
             ) : availableCatalogTypes.length === 0 ? (
-              <p className="text-sm text-amber-800">
-                No room types with availability for these dates and party size. Adjust dates or adults per room, then
-                try again.
-              </p>
+              <div className="text-sm text-amber-800 space-y-2">
+                <p>
+                  No room types with availability for these dates and party size. Adjust dates or adults per room, then
+                  try again.
+                </p>
+                {plannedAvail?.availability_hint ? (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs">
+                    <strong>{plannedTypeName ?? "Planned type"}:</strong> {plannedAvail.availability_hint}
+                  </p>
+                ) : null}
+              </div>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
                 {availableCatalogTypes.map((rt) => {
@@ -1005,6 +1045,23 @@ export default function GroupReserveBlockPage() {
       {blockResult && blockResult.reservations?.length > 0 && (
         <section className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-5">
           <h3 className="font-black text-emerald-900">Block booked</h3>
+          {blockResult.message ? (
+            <p className="mt-2 text-sm text-emerald-900/90">{blockResult.message}</p>
+          ) : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href={staffAppPath("groups", groupId)}
+              className="inline-flex rounded-xl border border-emerald-300 bg-white px-4 py-2 text-xs font-bold text-emerald-900 hover:bg-emerald-50"
+            >
+              Group → Rooms tab (check in all)
+            </Link>
+            <Link
+              href={staffAppPath("groups", groupId)}
+              className="inline-flex rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-indigo-700 hover:bg-slate-50"
+            >
+              Group → Billing
+            </Link>
+          </div>
           <ul className="mt-3 space-y-2 text-sm">
             {blockResult.reservations.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/80 px-3 py-2">

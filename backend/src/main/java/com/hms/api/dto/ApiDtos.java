@@ -3,6 +3,7 @@ package com.hms.api.dto;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
@@ -478,6 +479,19 @@ public final class ApiDtos {
             List<CreateReservationResponse> reservations,
             String message) {}
 
+    public record GroupBulkCheckInFailure(
+            @JsonProperty("reservation_id") UUID reservationId,
+            String confirmationCode,
+            String errorCode,
+            String message) {}
+
+    public record GroupBulkCheckInResponse(
+            UUID groupId,
+            int attempted,
+            @JsonProperty("checked_in") int checkedIn,
+            int skipped,
+            List<GroupBulkCheckInFailure> failures) {}
+
     public record CorporateAccountCreateRequest(
             @NotBlank String companyName,
             String billingEmail,
@@ -505,14 +519,14 @@ public final class ApiDtos {
             UUID id, String companyName, String billingEmail, BigDecimal creditLimit, String paymentTerms, String status) {}
 
     public record GroupBillingDashboardMasterFolio(
-            UUID reservationId,
+            @JsonProperty("reservation_id") @JsonAlias("reservationId") UUID reservationId,
             String confirmationCode,
             @JsonProperty("guest_name") String guestName,
             @JsonProperty("balance_due") BigDecimal balanceDue,
             String currency) {}
 
     public record GroupBillingDashboardMember(
-            UUID reservationId,
+            @JsonProperty("reservation_id") @JsonAlias("reservationId") UUID reservationId,
             String confirmationCode,
             @JsonProperty("guest_name") String guestName,
             @JsonProperty("room_number") String roomNumber,
@@ -996,7 +1010,32 @@ public final class ApiDtos {
             int nights,
             @JsonProperty("available_count") int availableCount,
             List<String> amenities,
-            List<String> images) {}
+            List<String> images,
+            @JsonProperty("availability_hint") String availabilityHint) {
+
+        public RoomTypeAvailabilityItem(
+                UUID roomTypeId,
+                String name,
+                BigDecimal basePricePerNight,
+                BigDecimal totalPrice,
+                String currency,
+                int nights,
+                int availableCount,
+                List<String> amenities,
+                List<String> images) {
+            this(
+                    roomTypeId,
+                    name,
+                    basePricePerNight,
+                    totalPrice,
+                    currency,
+                    nights,
+                    availableCount,
+                    amenities,
+                    images,
+                    null);
+        }
+    }
 
     public record RoomTypesAvailabilityResponse(
             @JsonProperty("available_room_types") List<RoomTypeAvailabilityItem> availableRoomTypes) {}

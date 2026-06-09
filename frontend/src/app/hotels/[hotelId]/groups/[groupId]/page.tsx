@@ -1,12 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Building2, CalendarRange, Copy, CreditCard, Crown, Plus, Users } from "lucide-react";
 import { apiFetch, getToken } from "@/lib/api";
+import { GroupEventPackagesTab } from "@/components/groups/GroupEventPackagesTab";
+import { GroupWorkflowNav } from "@/components/groups/GroupWorkflowNav";
+import { type EventBillingSummary, type EventListItem, downloadEventPdf, money } from "@/lib/eventApi";
 import { useHotelContext } from "@/lib/useHotelContext";
 import { staffAppPath } from "@/lib/staffAppRoutes";
+import {
+  BEO_COPY,
+  BILLING_COPY,
+  GROUP_TABS,
+  GROUP_WORKFLOW_HINT,
+  beoStatusHint,
+  formatBeoStatus,
+  formatQuoteStatus,
+  quoteStatusHint,
+} from "@/lib/groupEventsCopy";
 
 type CorporateRow = {
   id: string;
@@ -33,14 +46,16 @@ type BillingDashboard = {
     status: string;
   } | null;
   masterFolio: {
-    reservationId: string;
+    reservationId?: string;
+    reservation_id?: string;
     confirmationCode: string;
     guest_name: string;
     balance_due: number | string;
     currency: string;
   } | null;
   members: Array<{
-    reservationId: string;
+    reservationId?: string;
+    reservation_id?: string;
     confirmationCode: string;
     guest_name: string;
     room_number: string;
@@ -68,7 +83,11 @@ type GroupBookingDetail = {
   billingPreference?: string | null;
   preferredRoomTypeId?: string | null;
   notes?: string | null;
+  usesRoomBlock?: boolean;
+  uses_room_block?: boolean;
 };
+
+type GroupTab = "overview" | "rooms" | "events" | "packages" | "beo" | "billing";
 
 function toMoney(v: unknown): number {
   if (v == null) return 0;
@@ -78,6 +97,21 @@ function toMoney(v: unknown): number {
     return Number.isFinite(n) ? n : 0;
   }
   return 0;
+}
+
+/** Reservation id for group / event guest bill links (API may use reservation_id or reservationId). */
+function resolveGroupFolioReservationId(dash: BillingDashboard): string | null {
+  const mf = dash.masterFolio;
+  const fromMaster = mf?.reservation_id ?? mf?.reservationId;
+  if (fromMaster && fromMaster.length > 10) return fromMaster;
+  const masterMember = dash.members.find((m) => m.is_master) ?? dash.members[0];
+  const fromMember = masterMember?.reservation_id ?? masterMember?.reservationId;
+  return fromMember && fromMember.length > 10 ? fromMember : null;
+}
+
+function staffReservationHref(reservationId: string | null | undefined): string | null {
+  if (!reservationId || reservationId.length < 32) return null;
+  return staffAppPath("reservations", reservationId);
 }
 
 function formatYmd(v: string | string[] | null | undefined): string {
@@ -90,8 +124,29 @@ function formatYmd(v: string | string[] | null | undefined): string {
   return "—";
 }
 
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.replace("T", " ").slice(0, 16);
+  return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+
+function eventStatusClass(status: string): string {
+  switch (status) {
+    case "CONFIRMED":
+      return "bg-emerald-100 text-emerald-800 ring-emerald-200";
+    case "CANCELLED":
+      return "bg-rose-100 text-rose-800 ring-rose-200";
+    default:
+      return "bg-amber-100 text-amber-800 ring-amber-200";
+  }
+}
+
+const GROUP_TAB_KEYS = new Set<GroupTab>(["overview", "rooms", "events", "packages", "beo", "billing"]);
+
 export default function GroupBillingDashboardPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const hotelId = String(params.hotelId);
   const groupId = String(params.groupId);
   const { hotel } = useHotelContext(hotelId);
@@ -99,7 +154,10 @@ export default function GroupBillingDashboardPage() {
 
   const [dash, setDash] = useState<BillingDashboard | null>(null);
   const [group, setGroup] = useState<GroupBookingDetail | null>(null);
+  const [events, setEvents] = useState<EventListItem[]>([]);
+  const [eventBilling, setEventBilling] = useState<EventBillingSummary | null>(null);
   const [corporate, setCorporate] = useState<CorporateRow[]>([]);
+  const [activeTab, setActiveTab] = useState<GroupTab>("overview");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [masterId, setMasterId] = useState("");
@@ -115,6 +173,7 @@ export default function GroupBillingDashboardPage() {
   const [newCorpTerms, setNewCorpTerms] = useState("");
   const [newCorpStatus, setNewCorpStatus] = useState("ACTIVE");
   const [creatingCorp, setCreatingCorp] = useState(false);
+  const [pdfEventId, setPdfEventId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -125,14 +184,18 @@ export default function GroupBillingDashboardPage() {
     }
     setLoading(true);
     try {
-      const [d, g, c] = await Promise.all([
+      const [d, g, c, ev, eb] = await Promise.all([
         apiFetch<BillingDashboard>(`/api/v1/hotels/${hotelId}/groups/${groupId}/billing-dashboard`),
         apiFetch<GroupBookingDetail>(`/api/v1/hotels/${hotelId}/groups/${groupId}`),
         apiFetch<CorporateRow[]>(`/api/v1/hotels/${hotelId}/corporate-accounts`).catch(() => [] as CorporateRow[]),
+        apiFetch<EventListItem[]>(`/api/v1/hotels/${hotelId}/groups/${groupId}/events`).catch(() => [] as EventListItem[]),
+        apiFetch<EventBillingSummary>(`/api/v1/hotels/${hotelId}/groups/${groupId}/event-billing-summary`, { quiet: true }).catch(() => null),
       ]);
       setDash(d);
       setGroup(g);
       setCorporate(Array.isArray(c) ? c : []);
+      setEvents(Array.isArray(ev) ? ev : []);
+      setEventBilling(eb);
       const billing =
         d.billing_preference?.trim() ||
         (typeof g.billingPreference === "string" ? g.billingPreference.trim() : "") ||
@@ -142,6 +205,8 @@ export default function GroupBillingDashboardPage() {
       setError(e instanceof Error ? e.message : "Failed to load group");
       setDash(null);
       setGroup(null);
+      setEvents([]);
+      setEventBilling(null);
     } finally {
       setLoading(false);
     }
@@ -150,6 +215,69 @@ export default function GroupBillingDashboardPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const usesRoomBlock = useMemo(
+    () => group?.usesRoomBlock ?? group?.uses_room_block ?? true,
+    [group?.usesRoomBlock, group?.uses_room_block],
+  );
+
+  const visibleTabs = useMemo(() => {
+    const all = [
+      ["overview", GROUP_TABS.overview],
+      ["rooms", GROUP_TABS.rooms],
+      ["events", GROUP_TABS.events],
+      ["packages", GROUP_TABS.packages],
+      ["beo", GROUP_TABS.beo],
+      ["billing", GROUP_TABS.billing],
+    ] as const;
+    return usesRoomBlock ? all : all.filter(([key]) => key !== "rooms");
+  }, [usesRoomBlock]);
+
+  const workflowSteps = useMemo(
+    () =>
+      visibleTabs.map(([key, tab]) => ({
+        key,
+        label: tab.label,
+        hint: tab.hint,
+      })),
+    [visibleTabs],
+  );
+
+  const goToStep = useCallback((key: GroupTab) => {
+    setActiveTab(key);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, []);
+
+  const downloadBeoPdf = useCallback(
+    async (eventId: string) => {
+      setPdfEventId(eventId);
+      setError(null);
+      try {
+        const name = await downloadEventPdf(hotelId, groupId, eventId, "beo");
+        setBanner(`Downloaded ${name}`);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not download banquet order PDF");
+      } finally {
+        setPdfEventId(null);
+      }
+    },
+    [groupId, hotelId],
+  );
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab && GROUP_TAB_KEYS.has(tab as GroupTab)) {
+      setActiveTab(tab as GroupTab);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!usesRoomBlock && activeTab === "rooms") {
+      setActiveTab("events");
+    }
+  }, [usesRoomBlock, activeTab]);
 
   async function saveBilling() {
     setSaving(true);
@@ -199,6 +327,28 @@ export default function GroupBillingDashboardPage() {
     }
   }
 
+  async function postEventCharges(eventId: string) {
+    if (!dash?.masterFolio) {
+      setError(BILLING_COPY.postRequiresMaster);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setBanner(null);
+    try {
+      await apiFetch(
+        `/api/v1/hotels/${hotelId}/groups/${groupId}/events/${eventId}/quote/post-charges`,
+        { method: "POST" },
+      );
+      setBanner("Function charges posted to the master guest bill.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not post charges");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function linkMasterReservation(reservationId: string) {
     setSaving(true);
     setError(null);
@@ -209,10 +359,56 @@ export default function GroupBillingDashboardPage() {
         body: JSON.stringify({ master_reservation_id: reservationId }),
       });
       setMasterId("");
-      setBanner("Master folio linked to this group.");
+      setBanner("Master guest bill linked to this group.");
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not set master reservation");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function checkInMember(reservationId: string) {
+    setSaving(true);
+    setError(null);
+    setBanner(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/check-in`, {
+        method: "POST",
+        body: JSON.stringify({ guest_id_verified: true }),
+      });
+      setBanner("Guest checked in.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Check-in failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function checkInAllConfirmed() {
+    setSaving(true);
+    setError(null);
+    setBanner(null);
+    try {
+      const res = await apiFetch<{
+        attempted: number;
+        checked_in?: number;
+        checkedIn?: number;
+        failures?: Array<{ confirmationCode?: string; message?: string }>;
+      }>(`/api/v1/hotels/${hotelId}/groups/${groupId}/check-in-all`, { method: "POST" });
+      const checkedIn = res.checked_in ?? res.checkedIn ?? 0;
+      const failures = res.failures ?? [];
+      if (failures.length > 0) {
+        const detail = failures
+          .map((f) => `${f.confirmationCode ?? "—"}: ${f.message ?? "failed"}`)
+          .join("; ");
+        setError(`${failures.length} room(s) could not check in — ${detail}`);
+      }
+      setBanner(`Checked in ${checkedIn} of ${res.attempted} confirmed room(s).`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Bulk check-in failed");
     } finally {
       setSaving(false);
     }
@@ -313,6 +509,14 @@ export default function GroupBillingDashboardPage() {
     group?.billingPreference?.trim() ||
     null;
 
+  const eventGuestBillHref = useMemo(() => {
+    if (!dash) return null;
+    if (!usesRoomBlock) {
+      return staffAppPath("groups", groupId, "guest-bill");
+    }
+    return staffReservationHref(resolveGroupFolioReservationId(dash));
+  }, [dash, usesRoomBlock, groupId]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-100/80 via-background to-muted/20 pb-16">
       <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6">
@@ -323,19 +527,24 @@ export default function GroupBillingDashboardPage() {
                 ← Groups
               </Link>
             </p>
-            <h1 className="text-3xl font-black tracking-tight text-slate-900">Group billing & routing</h1>
+            <h1 className="text-3xl font-black tracking-tight text-slate-900">
+              {usesRoomBlock ? "Group billing & routing" : "Function billing"}
+            </h1>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-              Master folio receives routed charges per preference. Members cannot check out while the master folio still
-              owes (unless a manager overrides checkout on the reservation).
+              {usesRoomBlock
+                ? "The master guest bill receives routed charges per preference. Members cannot check out while the master bill still has a balance (unless a manager overrides checkout on the reservation)."
+                : BILLING_COPY.functionsOnlyBilling}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link
-              href={staffAppPath("groups", groupId, "reserve")}
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
-            >
-              Book / extend block
-            </Link>
+            {usesRoomBlock ? (
+              <Link
+                href={staffAppPath("groups", groupId, "reserve")}
+                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+              >
+                Book / extend block
+              </Link>
+            ) : null}
             <button type="button" className="hms-btn-outline text-sm" onClick={() => void load()}>
               Refresh
             </button>
@@ -356,6 +565,17 @@ export default function GroupBillingDashboardPage() {
         {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
         {!loading && group && (
+          <>
+            <p className="text-xs text-muted-foreground">{GROUP_WORKFLOW_HINT}</p>
+            <GroupWorkflowNav
+              steps={workflowSteps}
+              activeKey={activeTab}
+              onStepChange={(key) => goToStep(key as GroupTab)}
+            />
+          </>
+        )}
+
+        {!loading && group && activeTab === "overview" && (
           <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-card shadow-md ring-1 ring-slate-200/50">
             <div className="border-b border-slate-100 bg-gradient-to-r from-indigo-50/80 to-white px-5 py-4 sm:px-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -383,8 +603,16 @@ export default function GroupBillingDashboardPage() {
                     {formatYmd(group.targetCheckIn)} → {formatYmd(group.targetCheckOut)}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {group.expectedGuests != null ? `${group.expectedGuests} guests expected` : "Guests TBD"} ·{" "}
-                    {group.roomsNeeded != null ? `${group.roomsNeeded} rooms targeted` : "Rooms TBD"}
+                    {!usesRoomBlock ? (
+                      <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-bold text-teal-900">
+                        Functions only — no room block
+                      </span>
+                    ) : (
+                      <>
+                        {group.expectedGuests != null ? `${group.expectedGuests} guests expected` : "Guests TBD"} ·{" "}
+                        {group.roomsNeeded != null ? `${group.roomsNeeded} rooms targeted` : "Rooms TBD"}
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
@@ -421,8 +649,542 @@ export default function GroupBillingDashboardPage() {
           </div>
         )}
 
-        {!loading && dash && (
+        {!loading && dash && activeTab === "rooms" && (
+          <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-card shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-5 py-4 sm:px-6">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Rooming list</h3>
+                <p className="text-xs text-muted-foreground">
+                  {dash.members.length} reservation{dash.members.length === 1 ? "" : "s"} linked to this group
+                  {dash.masterFolio
+                    ? ` · Master bill: room ${dash.members.find((x) => x.is_master)?.room_number?.trim() || dash.masterFolio.confirmationCode}`
+                    : " · No master guest bill yet"}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {dash.members.some((m) => m.status === "CONFIRMED") ? (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void checkInAllConfirmed()}
+                    className="inline-flex rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-900 shadow-sm hover:bg-emerald-100 disabled:opacity-50"
+                    title="Check in every confirmed room on this list (ID verified as a group action)."
+                  >
+                    {BILLING_COPY.roomsCheckInAll} (
+                    {dash.members.filter((m) => m.status === "CONFIRMED").length})
+                  </button>
+                ) : null}
+                {!dash.masterFolio && dash.members.length > 0 ? (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void linkMasterReservation(dash.members[0].reservationId)}
+                    className="inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-900 shadow-sm hover:bg-indigo-100 disabled:opacity-50"
+                  >
+                    <Crown className="h-3.5 w-3.5" aria-hidden />
+                    {BILLING_COPY.roomsSetMaster}
+                  </button>
+                ) : null}
+                <Link
+                  href={staffAppPath("groups", groupId, "reserve")}
+                  className="inline-flex rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
+                >
+                  Book / extend block
+                </Link>
+              </div>
+            </div>
+            <div className="overflow-x-auto p-2 sm:p-0">
+              <table className="w-full min-w-[760px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-3">Room</th>
+                    <th className="px-4 py-3">Guest</th>
+                    <th className="px-4 py-3">Confirmation</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dash.members.map((m) => (
+                    <tr key={m.reservationId} className="border-t border-slate-100 hover:bg-slate-50/60">
+                      <td className="px-4 py-2.5 font-mono text-slate-900">{m.room_number?.trim() || "—"}</td>
+                      <td className="px-4 py-2.5 font-medium text-slate-900">
+                        {m.guest_name?.trim() || "—"}
+                        {m.is_master ? (
+                          <span className="ml-2 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-indigo-800">
+                            Master
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-slate-600">{m.confirmationCode}</td>
+                      <td className="px-4 py-2.5 text-slate-700">{m.status.replaceAll("_", " ")}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <div className="flex flex-wrap justify-end gap-1.5">
+                          {m.status === "CONFIRMED" ? (
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => void checkInMember(m.reservationId)}
+                              className="inline-flex rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                            >
+                              {BILLING_COPY.roomsCheckInOne}
+                            </button>
+                          ) : null}
+                          {!m.is_master ? (
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => void linkMasterReservation(m.reservationId)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-bold text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+                            >
+                              <Crown className="h-3 w-3" aria-hidden />
+                              Set master
+                            </button>
+                          ) : null}
+                          {(m.reservation_id ?? m.reservationId) && staffReservationHref(m.reservation_id ?? m.reservationId) ? (
+                            <Link
+                              href={staffReservationHref(m.reservation_id ?? m.reservationId)!}
+                              className="inline-flex rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
+                            >
+                              Open guest bill
+                            </Link>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {dash.members.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                        No rooms are linked yet. Start with Book / extend block.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {!loading && group && activeTab === "events" && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div>
+                <h3 className="text-lg font-black text-slate-900">Functions schedule</h3>
+                <p className="text-sm text-muted-foreground">
+                  Track conferences, weddings, galas, meetings, and other functions attached to this group.
+                </p>
+              </div>
+              <Link href={staffAppPath("groups", groupId, "events/new")} className="hms-btn-solid text-sm">
+                New function
+              </Link>
+            </div>
+            {events.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
+                <p className="font-semibold text-slate-900">No events added yet</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Add the first banquet/event function and select a facility venue if applicable.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {events.map((row) => {
+                  const event = row.event;
+                  const venue = event.venueName || "Venue TBD";
+                  const canGenBeo =
+                    !row.beoStatus &&
+                    (row.quoteStatus === "SENT" ||
+                      row.quoteStatus === "ACCEPTED" ||
+                      row.quoteStatus === "CONTRACTED");
+                  return (
+                    <div
+                      key={event.id}
+                      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                    >
+                      <Link
+                        href={staffAppPath("groups", groupId, "events", event.id)}
+                        className="block transition hover:opacity-90"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-wider text-indigo-700">
+                              {event.eventType.replaceAll("_", " ")}
+                            </p>
+                            <h4 className="mt-1 text-lg font-black text-slate-900">{event.eventName}</h4>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] font-black uppercase ring-1 ${eventStatusClass(event.status)}`}>
+                            {event.status.replaceAll("_", " ")}
+                          </span>
+                        </div>
+                        <div className="mt-4 grid gap-2 text-sm text-slate-700">
+                          <p>
+                            <strong>Date/time:</strong> {formatDateTime(event.startDatetime)} → {formatDateTime(event.endDatetime)}
+                          </p>
+                          <p><strong>Venue:</strong> {venue}</p>
+                          <p>
+                            <strong>Guests:</strong>{" "}
+                            {event.guaranteedPax != null
+                              ? `${event.guaranteedPax} guaranteed`
+                              : event.expectedPax != null
+                                ? `${event.expectedPax} expected`
+                                : "TBD"}
+                          </p>
+                        </div>
+                      </Link>
+                      <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                        {row.quoteStatus ? (
+                          <span
+                            className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700"
+                            title={quoteStatusHint(row.quoteStatus)}
+                          >
+                            Quote: {formatQuoteStatus(row.quoteStatus)}
+                          </span>
+                        ) : null}
+                        {row.beoStatus ? (
+                          <>
+                            <span
+                              className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-bold text-teal-800"
+                              title={beoStatusHint(row.beoStatus)}
+                            >
+                              Banquet order: {formatBeoStatus(row.beoStatus)}
+                            </span>
+                            <button
+                              type="button"
+                              className="rounded-lg border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-bold text-teal-900 disabled:opacity-50"
+                              disabled={pdfEventId === event.id}
+                              onClick={() => void downloadBeoPdf(event.id)}
+                            >
+                              {pdfEventId === event.id ? "Preparing…" : BEO_COPY.viewPrint}
+                            </button>
+                          </>
+                        ) : canGenBeo ? (
+                          <button
+                            type="button"
+                            className="rounded-lg border border-teal-200 bg-teal-50 px-2 py-1 text-[11px] font-bold text-teal-900"
+                            title={BEO_COPY.intro}
+                            onClick={() =>
+                              void apiFetch(`/api/v1/hotels/${hotelId}/groups/${groupId}/events/${event.id}/beo`, {
+                                method: "POST",
+                              }).then(() => void load())
+                            }
+                          >
+                            {BEO_COPY.generate}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!loading && activeTab === "packages" && (
+          <GroupEventPackagesTab
+            hotelId={hotelId}
+            groupId={groupId}
+            events={events.map((e) => ({
+              id: e.event.id,
+              eventName: e.event.eventName,
+              quoteId: e.quoteId,
+              quoteStatus: e.quoteStatus,
+              guaranteedPax: e.event.guaranteedPax,
+              expectedPax: e.event.expectedPax,
+            }))}
+            onDataChange={load}
+          />
+        )}
+
+        {!loading && activeTab === "beo" && (
+          <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="font-bold text-slate-900">{BEO_COPY.title}</h3>
+            <p className="text-sm text-muted-foreground">{BEO_COPY.intro}</p>
+            <p className="text-xs text-amber-900 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">{BEO_COPY.deliveryNote}</p>
+            <ul className="space-y-2">
+              {events.map((row) => {
+                const canGen =
+                  !row.beoStatus &&
+                  (row.quoteStatus === "SENT" ||
+                    row.quoteStatus === "ACCEPTED" ||
+                    row.quoteStatus === "CONTRACTED");
+                return (
+                  <li key={row.event.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 px-3 py-2 text-sm">
+                    <div>
+                      <span className="font-semibold">{row.event.eventName}</span>
+                      <p className="text-xs text-slate-500">
+                        Quote: {row.quoteStatus ? formatQuoteStatus(row.quoteStatus) : "none"}
+                        {row.beoStatus ? ` · Banquet order: ${formatBeoStatus(row.beoStatus)}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {row.beoStatus ? (
+                        <>
+                          <button
+                            type="button"
+                            className="font-bold text-indigo-700 hover:underline disabled:opacity-50"
+                            disabled={pdfEventId === row.event.id}
+                            onClick={() => void downloadBeoPdf(row.event.id)}
+                          >
+                            {pdfEventId === row.event.id ? "Preparing PDF…" : BEO_COPY.viewPrint}
+                          </button>
+                          <Link
+                            href={staffAppPath("groups", groupId, "events", row.event.id, "beo")}
+                            className="text-xs text-slate-600 hover:underline"
+                          >
+                            {BEO_COPY.editNotes}
+                          </Link>
+                        </>
+                      ) : canGen ? (
+                        <button
+                          type="button"
+                          className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-bold text-teal-900"
+                          onClick={() =>
+                            void apiFetch(`/api/v1/hotels/${hotelId}/groups/${groupId}/events/${row.event.id}/beo`, {
+                              method: "POST",
+                            }).then(() => void load())
+                          }
+                        >
+                          {BEO_COPY.generate}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-amber-800">{BEO_COPY.needQuote}</span>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        {!loading && dash && activeTab === "billing" && (
           <>
+            {!usesRoomBlock ? (
+              <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-950 shadow-sm">
+                <p className="font-bold">{BILLING_COPY.functionsOnlyBilling}</p>
+              </div>
+            ) : null}
+            {!dash.masterFolio ? (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-sm">
+                <p className="font-bold">
+                  {usesRoomBlock
+                    ? "Link a master room before posting function charges"
+                    : "Event guest bill required"}
+                </p>
+                <p className="mt-1">
+                  {usesRoomBlock ? BILLING_COPY.masterRequiredAlert : BILLING_COPY.functionsOnlyNoMaster}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {usesRoomBlock && dash.members.length > 0 ? (
+                    <button
+                      type="button"
+                      disabled={saving}
+                      className="inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-950 hover:bg-indigo-100 disabled:opacity-50"
+                      onClick={() => void linkMasterReservation(dash.members[0].reservationId)}
+                    >
+                      <Crown className="h-3.5 w-3.5" aria-hidden />
+                      Use first room as master
+                    </button>
+                  ) : null}
+                  {usesRoomBlock ? (
+                    <button
+                      type="button"
+                      className="rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-xs font-bold text-amber-950 hover:bg-amber-100"
+                      onClick={() => setActiveTab("rooms")}
+                    >
+                      Go to Rooms tab
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            {eventBilling ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+                <h3
+                  className="text-sm font-bold uppercase tracking-wide text-slate-500"
+                  title={usesRoomBlock ? BILLING_COPY.eventChargesHint : BILLING_COPY.eventGuestBillHint}
+                >
+                  {BILLING_COPY.eventCharges}
+                </h3>
+                <p className="text-sm" title={usesRoomBlock ? BILLING_COPY.eventChargesHint : BILLING_COPY.eventGuestBillHint}>
+                  {BILLING_COPY.quoted} {money(eventBilling.totalQuoted).toFixed(2)} · {BILLING_COPY.accepted}{" "}
+                  {money(eventBilling.totalAccepted).toFixed(2)} · {BILLING_COPY.posted}{" "}
+                  {money(eventBilling.totalPosted).toFixed(2)} · {BILLING_COPY.balance}{" "}
+                  {money(eventBilling.outstandingBalance).toFixed(2)}
+                </p>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-xs uppercase text-slate-500">
+                      <th className="py-2">Function</th>
+                      <th className="py-2">Quote</th>
+                      <th className="py-2 text-right">Total</th>
+                      <th className="py-2 text-right" title={usesRoomBlock ? BILLING_COPY.masterFolioHint : BILLING_COPY.eventGuestBillHint}>
+                        Guest bill
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {eventBilling.events.map((row) => (
+                      <tr key={row.eventId} className="border-b border-slate-50">
+                        <td className="py-2">{row.eventName}</td>
+                        <td className="py-2" title={quoteStatusHint(row.quoteStatus)}>
+                          {formatQuoteStatus(row.quoteStatus)}
+                        </td>
+                        <td className="py-2 text-right">{money(row.totalAmount).toFixed(2)}</td>
+                        <td className="py-2 text-right">
+                          {row.chargesPosted ? (
+                            <span title="Charges are on the event guest bill.">On guest bill</span>
+                          ) : usesRoomBlock && !dash.masterFolio ? (
+                            <span className="text-xs font-medium text-amber-800" title={BILLING_COPY.postRequiresMaster}>
+                              {BILLING_COPY.needsMaster}
+                            </span>
+                          ) : !usesRoomBlock && !dash.masterFolio ? (
+                            <span className="text-xs font-medium text-amber-800">{BILLING_COPY.functionsOnlyNoMaster}</span>
+                          ) : row.quoteStatus === "ACCEPTED" ? (
+                            <span className="text-xs text-slate-500" title={BILLING_COPY.postRequiresContract}>
+                              {BILLING_COPY.contractFirst}
+                            </span>
+                          ) : row.quoteStatus === "CONTRACTED" ? (
+                            <button
+                              type="button"
+                              className="text-xs font-bold text-indigo-700 disabled:opacity-50"
+                              disabled={saving}
+                              title={
+                                usesRoomBlock
+                                  ? "Use if Contract did not post automatically (master room must be linked)."
+                                  : "Use if Contract did not post automatically."
+                              }
+                              onClick={() => void postEventCharges(row.eventId)}
+                            >
+                              {BILLING_COPY.postChargesRetry}
+                            </button>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+
+            {!usesRoomBlock ? (
+              <>
+                {dash.masterFolio ? (
+                  <div className="rounded-2xl border border-teal-200/80 bg-card p-5 shadow-sm sm:p-6">
+                    <h3 className="text-sm font-bold text-slate-900" title={BILLING_COPY.eventGuestBillHint}>
+                      {BILLING_COPY.eventGuestBill}
+                    </h3>
+                    <p className="mt-1 text-xs text-muted-foreground">{BILLING_COPY.eventGuestBillHint}</p>
+                    <p className="mt-3 text-sm text-slate-800">
+                      {dash.masterFolio.guest_name} ·{" "}
+                      <span className="font-mono text-xs">{dash.masterFolio.confirmationCode}</span>
+                    </p>
+                    <p className="mt-3 text-2xl font-black text-rose-600 tabular-nums">
+                      {toMoney(dash.masterFolio.balance_due).toFixed(2)} {dash.masterFolio.currency}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">{BILLING_COPY.functionsOnlyBalance}</p>
+                    {eventGuestBillHref ? (
+                      <Link
+                        href={eventGuestBillHref}
+                        className="mt-4 inline-flex rounded-xl border border-teal-200 bg-teal-50 px-4 py-2 text-xs font-bold text-teal-900 shadow-sm hover:bg-teal-100"
+                      >
+                        {BILLING_COPY.openEventGuestBill}
+                      </Link>
+                    ) : (
+                      <p className="mt-4 text-xs font-medium text-amber-800">
+                        Guest bill link unavailable — refresh this page or contact support.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+
+                <div className="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm sm:p-6 space-y-4">
+                  <h3 className="text-sm font-bold text-slate-900">Corporate account</h3>
+                  <p className="text-xs text-muted-foreground">{BILLING_COPY.functionsOnlyCorporateHint}</p>
+                  {dash.corporateAccount ? (
+                    <>
+                      <p className="font-semibold text-slate-900">{dash.corporateAccount.companyName}</p>
+                      <p className="text-xs text-slate-700">{dash.corporateAccount.billingEmail || "—"}</p>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
+                      onClick={() => {
+                        setNewCorpCompany(group?.companyName?.trim() ?? "");
+                        setNewCorpEmail(group?.contactEmail?.trim() ?? "");
+                        setShowNewCorp(true);
+                      }}
+                    >
+                      <Plus className="h-3.5 w-3.5" aria-hidden />
+                      New corporate account
+                    </button>
+                  )}
+                  <label className="block text-xs font-semibold text-muted-foreground">
+                    {BILLING_COPY.functionsOnlyLinkCorporate}
+                    <select
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm shadow-inner"
+                      value={corpId}
+                      onChange={(e) => setCorpId(e.target.value)}
+                    >
+                      <option value="">— none linked —</option>
+                      <option value="__clear__">Clear link</option>
+                      {corporate.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.companyName}
+                          {a.billingEmail ? ` · ${a.billingEmail}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="hms-btn-solid text-sm"
+                    disabled={saving}
+                    onClick={() => void saveBilling()}
+                  >
+                    {saving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+
+                {showNewCorp ? (
+                  <div className="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm sm:p-6">
+                    <h3 className="text-sm font-bold text-slate-900">New corporate account</h3>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <label className="block text-xs font-semibold text-slate-600 sm:col-span-2">
+                        Company name *
+                        <input
+                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                          value={newCorpCompany}
+                          onChange={(e) => setNewCorpCompany(e.target.value)}
+                        />
+                      </label>
+                      <label className="block text-xs font-semibold text-slate-600 sm:col-span-2">
+                        Billing email
+                        <input
+                          type="email"
+                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                          value={newCorpEmail}
+                          onChange={(e) => setNewCorpEmail(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button type="button" className="hms-btn-solid text-sm" disabled={creatingCorp} onClick={() => void createCorporateAndLink()}>
+                        {creatingCorp ? "Working…" : "Create & link"}
+                      </button>
+                      <button type="button" className="hms-btn-outline text-sm" onClick={() => setShowNewCorp(false)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <>
             <div className="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm sm:p-6">
               <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Billing snapshot</h3>
               <p className="mt-2 text-sm text-slate-700">
@@ -438,7 +1200,9 @@ export default function GroupBillingDashboardPage() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm sm:p-6">
-                <h3 className="mb-2 text-sm font-bold text-slate-900">Master folio</h3>
+                <h3 className="mb-2 text-sm font-bold text-slate-900" title={BILLING_COPY.masterFolioHint}>
+                  {BILLING_COPY.masterFolio}
+                </h3>
                 {dash.masterFolio ? (
                   <>
                     <p className="text-sm text-slate-800">
@@ -449,12 +1213,14 @@ export default function GroupBillingDashboardPage() {
                       {toMoney(dash.masterFolio.balance_due).toFixed(2)} {dash.masterFolio.currency}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">Balance due on consolidated bill</p>
-                    <Link
-                      href={staffAppPath("reservations", dash.masterFolio.reservationId)}
-                      className="mt-4 inline-flex rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
-                    >
-                      Open master reservation
-                    </Link>
+                    {eventGuestBillHref ? (
+                      <Link
+                        href={eventGuestBillHref}
+                        className="mt-4 inline-flex rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
+                      >
+                        Open master reservation
+                      </Link>
+                    ) : null}
                   </>
                 ) : (
                   <div className="space-y-3">
@@ -636,7 +1402,9 @@ export default function GroupBillingDashboardPage() {
                       <th className="px-4 py-3">Guest</th>
                       <th className="px-4 py-3">Confirmation</th>
                       <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3 text-right">Folio due</th>
+                      <th className="px-4 py-3 text-right" title="Outstanding balance on this room's guest bill.">
+                        Bill due
+                      </th>
                       <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -682,12 +1450,14 @@ export default function GroupBillingDashboardPage() {
                                   Set master
                                 </button>
                               ) : null}
-                              <Link
-                                href={staffAppPath("reservations", m.reservationId)}
-                                className="inline-flex rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
-                              >
-                                Folio
-                              </Link>
+                              {staffReservationHref(m.reservation_id ?? m.reservationId) ? (
+                                <Link
+                                  href={staffReservationHref(m.reservation_id ?? m.reservationId)!}
+                                  className="inline-flex rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
+                                >
+                                  Guest bill
+                                </Link>
+                              ) : null}
                             </div>
                           </td>
                         </tr>
@@ -767,7 +1537,18 @@ export default function GroupBillingDashboardPage() {
                 </button>
               </div>
             </div>
+              </>
+            )}
           </>
+        )}
+
+        {!loading && group && (
+          <GroupWorkflowNav
+            steps={workflowSteps}
+            activeKey={activeTab}
+            onStepChange={(key) => goToStep(key as GroupTab)}
+            className="mt-6"
+          />
         )}
       </div>
     </div>

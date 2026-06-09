@@ -61,6 +61,19 @@ public interface FacilityBookingRepository extends JpaRepository<FacilityBooking
 
     @Query(
             """
+            select count(b) from FacilityBooking b
+            where b.facility.id = :facilityId
+              and b.slot.startTime < :endExclusive
+              and b.slot.endTime > :startInclusive
+              and b.status <> com.hms.domain.FacilityBookingStatus.CANCELLED
+            """)
+    long countActiveOverlappingFacilityWindow(
+            @Param("facilityId") UUID facilityId,
+            @Param("startInclusive") java.time.LocalDateTime startInclusive,
+            @Param("endExclusive") java.time.LocalDateTime endExclusive);
+
+    @Query(
+            """
             select coalesce(sum(b.amountPaid), 0) from FacilityBooking b
             where b.facility.id = :facilityId
               and b.slot.startTime >= :startInclusive

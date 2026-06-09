@@ -27,8 +27,8 @@ public class RoomCharge {
     @JoinColumn(name = "originating_reservation_id")
     private Reservation originatingReservation;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "room_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "room_id")
     private Room room;
 
     @Column(nullable = false, length = 512)
