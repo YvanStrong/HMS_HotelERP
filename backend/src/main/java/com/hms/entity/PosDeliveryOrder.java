@@ -40,6 +40,10 @@ public class PosDeliveryOrder {
     @Column(name = "location_label", length = 255)
     private String locationLabel;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "staff_user_id")
+    private AppUser staffUser;
+
     @Column(name = "total_amount", nullable = false, precision = 14, scale = 2)
     private BigDecimal totalAmount = BigDecimal.ZERO;
 

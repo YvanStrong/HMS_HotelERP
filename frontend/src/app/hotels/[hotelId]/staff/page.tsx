@@ -22,6 +22,8 @@ const ROLE_OPTIONS = [
   "HOUSEKEEPING_SUPERVISOR",
   "MAINTENANCE",
   "FNB_STAFF",
+  "WAITER",
+  "CASHIER",
   "FINANCE",
 ] as const;
 const PAGE_SIZE = 10;

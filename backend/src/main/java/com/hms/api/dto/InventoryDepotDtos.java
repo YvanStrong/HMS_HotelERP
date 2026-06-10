@@ -80,20 +80,27 @@ public final class InventoryDepotDtos {
             Boolean taxable,
             Boolean active) {}
 
-    public record SaleLineInput(@NotNull UUID productId, @NotNull BigDecimal quantity) {}
+    /** unitPrice is optional; when set (e.g. from a table ticket snapshot) it overrides catalog price. */
+    public record SaleLineInput(
+            @NotNull UUID productId, @NotNull BigDecimal quantity, String notes, BigDecimal unitPrice) {}
 
     public record CreateSaleRequest(
             String customerName,
             @NotNull UUID depotId,
             @NotEmpty List<SaleLineInput> lines,
             Boolean chargeToRoom,
-            UUID reservationId) {}
+            UUID reservationId,
+            /** CASH or CARD (ROOM when chargeToRoom is true). */
+            String paymentMethod,
+            String tableLabel,
+            UUID staffId) {}
 
     public record CreateDeliveryOrderRequest(
             String customerName,
             String locationLabel,
             @NotNull UUID depotId,
-            @NotEmpty List<SaleLineInput> lines) {}
+            @NotEmpty List<SaleLineInput> lines,
+            UUID staffId) {}
 
     public record SaleLineRow(
             String productName,

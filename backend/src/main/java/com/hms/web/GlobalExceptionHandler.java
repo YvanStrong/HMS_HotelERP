@@ -22,6 +22,14 @@ public class GlobalExceptionHandler {
                             subscription.getMessage(),
                             req.getRequestURI()));
         }
+        if (ex instanceof PosShiftException shiftEx) {
+            return ResponseEntity.status(shiftEx.getStatus())
+                    .body(ApiErrorResponse.of(
+                            shiftEx.getErrorCode(),
+                            shiftEx.getMessage(),
+                            req.getRequestURI(),
+                            shiftEx.getFields()));
+        }
         return ResponseEntity.status(ex.getStatus())
                 .body(ApiErrorResponse.of(ex.getErrorCode(), ex.getMessage(), req.getRequestURI()));
     }
