@@ -8,8 +8,16 @@
     },
     "staging": {
       "distribution": "internal",
-      "android": { "buildType": "apk" },
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
+      },
       "envFile": ".env.staging"
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": { "buildType": "apk" },
+      "envFile": ".env"
     },
     "production": {
       "distribution": "store",

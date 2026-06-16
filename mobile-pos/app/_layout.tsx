@@ -1,7 +1,6 @@
 import "../global.css";
 import { useEffect } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
-import * as Notifications from "expo-notifications";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import Toast from "react-native-toast-message";
 import { hydrateApiBaseUrl } from "../src/api/settings";
@@ -59,26 +58,15 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     if (!isAuthenticated) return;
     const hotelId = useAuthStore.getState().user?.hotelId;
     if (!hotelId) return;
-    void import("../src/notifications/setup").then((m) => m.registerPushToken(hotelId));
-    const subTap = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as Record<string, string>;
-      if (data?.ticketId) {
-        router.push(`/(main)/ticket/${data.ticketId}`);
-      }
+
+    let detach: (() => void) | undefined;
+    void import("../src/notifications/setup").then(async (m) => {
+      await m.registerPushToken(hotelId);
+      detach = m.attachNotificationListeners(router, (opts) => Toast.show(opts));
     });
-    const subFg = Notifications.addNotificationReceivedListener((notification) => {
-      const data = notification.request.content.data as Record<string, string>;
-      if (data?.type === "LINE_READY") {
-        Toast.show({
-          type: "success",
-          text1: notification.request.content.title ?? "Order ready",
-          text2: notification.request.content.body ?? undefined,
-        });
-      }
-    });
+
     return () => {
-      subTap.remove();
-      subFg.remove();
+      detach?.();
     };
   }, [isAuthenticated, router]);
 
