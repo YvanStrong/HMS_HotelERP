@@ -43,7 +43,7 @@ public class GuestController {
 
     @GetMapping("/search")
     @PreAuthorize(
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE','ROLE_FNB_STAFF')")
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_WAITER','ROLE_CASHIER')")
     public List<GuestDtos.GuestSearchHit> searchGuests(
             @PathVariable UUID hotelId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,

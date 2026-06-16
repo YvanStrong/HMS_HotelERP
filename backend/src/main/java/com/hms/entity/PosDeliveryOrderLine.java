@@ -38,4 +38,7 @@ public class PosDeliveryOrderLine {
 
     @Column(nullable = false)
     private boolean taxable = true;
+
+    @Column(name = "line_notes", columnDefinition = "TEXT")
+    private String lineNotes;
 }

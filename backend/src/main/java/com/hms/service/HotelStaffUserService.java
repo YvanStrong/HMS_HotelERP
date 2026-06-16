@@ -32,6 +32,8 @@ public class HotelStaffUserService {
                     Role.HOUSEKEEPING_SUPERVISOR,
                     Role.MAINTENANCE,
                     Role.FNB_STAFF,
+                    Role.WAITER,
+                    Role.CASHIER,
                     Role.FINANCE);
 
     private static final EnumSet<Role> CREATABLE_BY_MANAGER =
@@ -40,7 +42,9 @@ public class HotelStaffUserService {
                     Role.HOUSEKEEPING,
                     Role.HOUSEKEEPING_SUPERVISOR,
                     Role.MAINTENANCE,
-                    Role.FNB_STAFF);
+                    Role.FNB_STAFF,
+                    Role.WAITER,
+                    Role.CASHIER);
 
     private static final EnumSet<Role> VISIBLE_STAFF_ROLES =
             EnumSet.of(
@@ -51,6 +55,8 @@ public class HotelStaffUserService {
                     Role.HOUSEKEEPING_SUPERVISOR,
                     Role.MAINTENANCE,
                     Role.FNB_STAFF,
+                    Role.WAITER,
+                    Role.CASHIER,
                     Role.FINANCE);
 
     private final AppUserRepository appUserRepository;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { PaginationBar } from "@/components/PaginationBar";
 import { apiFetch } from "@/lib/api";
 import {
@@ -217,10 +217,18 @@ type ProformaDetail = {
 
 export default function InvoicesPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const hotelId = String(params.hotelId);
   const { hotel } = useHotelContext(hotelId);
 
   const [tab, setTab] = useState<"reservation" | "sales" | "recentSales" | "proforma" | "deliveries">("reservation");
+
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t === "deliveries" || t === "sales" || t === "recentSales" || t === "proforma" || t === "reservation") {
+      setTab(t);
+    }
+  }, [searchParams]);
   const [loading, setLoading] = useState(false);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [salesLoading, setSalesLoading] = useState(false);
@@ -460,17 +468,6 @@ export default function InvoicesPage() {
         createdAt: row.invoiceDate,
         action: "sales" as const,
       })),
-      ...recentSales.map((row) => ({
-        id: row.saleId,
-        source: "POS" as const,
-        invoiceNumber: row.saleNumber,
-        customer: row.customerName || "Walk-in",
-        reference: row.depotName,
-        totalAmount: Number(row.totalAmount ?? 0),
-        currency: "FRW",
-        createdAt: row.soldAt,
-        action: "pos" as const,
-      })),
       ...facilityInvoices.map((row) => ({
         id: row.bookingId,
         source: "Facility" as const,
@@ -495,7 +492,7 @@ export default function InvoicesPage() {
       })),
     ];
     return rows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [eventInvoices, facilityInvoices, invoices, recentSales, salesInvoices]);
+  }, [eventInvoices, facilityInvoices, invoices, salesInvoices]);
 
   const unifiedTotal = useMemo(
     () => unifiedInvoices.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0),
@@ -1379,7 +1376,8 @@ export default function InvoicesPage() {
           <div>
             <h2 className="mb-1 text-lg font-semibold">Deliveries</h2>
             <p className="mb-3 text-sm text-muted-foreground">
-              Pending POS delivery orders and contracted events with no payment yet.
+              Waiter and mobile POS orders land here first. Use <strong>Make invoice</strong> when the guest pays.
+              Event contracts with no payment also appear below.
             </p>
             {(deliveriesLoading || eventDocsLoading) && (
               <p className="text-sm text-muted-foreground" aria-live="polite">

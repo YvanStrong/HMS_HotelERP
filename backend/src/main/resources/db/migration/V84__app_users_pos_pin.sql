@@ -1,0 +1,3 @@
+ALTER TABLE app_users
+    ADD COLUMN IF NOT EXISTS pos_pin_hash VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS pos_pin_set_at TIMESTAMPTZ;

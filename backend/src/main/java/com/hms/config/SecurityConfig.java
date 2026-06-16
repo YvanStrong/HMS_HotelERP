@@ -79,6 +79,8 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers("/api/v1/auth/**")
                         .permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/hotels/*/auth/pos/pin-login")
+                        .permitAll()
                         .requestMatchers("/api/v1/webhooks/stripe")
                         .permitAll()
                         .requestMatchers("/ws/**")

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, getToken } from "@/lib/api";
+import { HMS_POS_ORDER_EVENT, posOrderEventKey, type PosOrderNotification as PosOrderRow } from "@/lib/posOrderNotification";
 import { staffAppPath } from "@/lib/staffAppRoutes";
 
 type ReservationRow = {
@@ -42,11 +43,21 @@ type SubscriptionStatus = {
 type StaffAlert = {
   id: string;
   signature: string;
-  section: "Reservations" | "Rooms" | "Guests" | "Tasks" | "System";
+  section: "Reservations" | "Rooms" | "Guests" | "Tasks" | "System" | "POS";
   tone: "red" | "amber" | "blue" | "green";
   title: string;
   body: string;
   href: string;
+};
+
+type PosOrderNotification = {
+  eventId: string;
+  eventType: string;
+  title: string;
+  body: string;
+  staffDisplayName: string | null;
+  staffUsername: string | null;
+  at: string;
 };
 
 const READ_KEY_PREFIX = "hms:staff-notifications:read:";
@@ -156,10 +167,14 @@ export function StaffNotificationBell({ hotelId }: { hotelId: string }) {
       if (!getToken()) return;
       setLoading(true);
       try {
-        const [reservations, dashboard, subscription] = await Promise.all([
+        const since = new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString();
+        const [reservations, dashboard, subscription, posOrders] = await Promise.all([
           apiFetch<ReservationRow[]>(`/api/v1/hotels/${hotelId}/reservations?status=CONFIRMED,CHECKED_IN`),
           apiFetch<ExecutiveDashboard>(`/api/v1/hotels/${hotelId}/reports/executive-dashboard`).catch(() => null),
           apiFetch<SubscriptionStatus>(`/api/v1/hotels/${hotelId}/subscription-status`).catch(() => null),
+          apiFetch<PosOrderNotification[]>(`/api/v1/hotels/${hotelId}/pos/notifications?since=${encodeURIComponent(since)}`, {
+            quiet: true,
+          }).catch(() => [] as PosOrderNotification[]),
         ]);
         if (cancelled) return;
         const today = todayYmd();
@@ -250,16 +265,31 @@ export function StaffNotificationBell({ hotelId }: { hotelId: string }) {
             href: card.actionPath || staffAppPath("dashboard"),
           });
         }
+        for (const order of posOrders.slice(0, 12)) {
+          const who = order.staffDisplayName || order.staffUsername || "Staff";
+          nextAlerts.push({
+            id: `pos:${order.eventId}`,
+            signature: `pos:${posOrderEventKey(order as PosOrderRow)}`,
+            section: "POS",
+            tone: order.eventType === "KITCHEN_ORDER" ? "green" : "blue",
+            title: order.title,
+            body: `${who} — ${order.body}`,
+            href: staffAppPath("invoices?tab=deliveries"),
+          });
+        }
         setAlerts(nextAlerts);
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
+    const onPosOrder = () => void loadAlerts();
     void loadAlerts();
     const timer = window.setInterval(() => void loadAlerts(), 60_000);
+    window.addEventListener(HMS_POS_ORDER_EVENT, onPosOrder);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      window.removeEventListener(HMS_POS_ORDER_EVENT, onPosOrder);
     };
   }, [hotelId]);
 

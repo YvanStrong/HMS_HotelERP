@@ -8,6 +8,8 @@ public enum Role {
     HOUSEKEEPING_SUPERVISOR,
     MAINTENANCE,
     FNB_STAFF,
+    WAITER,
+    CASHIER,
     FINANCE,
     MANAGER,
     GUEST,

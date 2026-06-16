@@ -109,6 +109,11 @@ function resolveGroupFolioReservationId(dash: BillingDashboard): string | null {
   return fromMember && fromMember.length > 10 ? fromMember : null;
 }
 
+function memberResId(m: { reservationId?: string; reservation_id?: string }): string | null {
+  const id = m.reservation_id ?? m.reservationId;
+  return id && id.length > 10 ? id : null;
+}
+
 function staffReservationHref(reservationId: string | null | undefined): string | null {
   if (!reservationId || reservationId.length < 32) return null;
   return staffAppPath("reservations", reservationId);
@@ -678,7 +683,10 @@ export default function GroupBillingDashboardPage() {
                   <button
                     type="button"
                     disabled={saving}
-                    onClick={() => void linkMasterReservation(dash.members[0].reservationId)}
+                    onClick={() => {
+                      const rid = memberResId(dash.members[0]);
+                      if (rid) void linkMasterReservation(rid);
+                    }}
                     className="inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-900 shadow-sm hover:bg-indigo-100 disabled:opacity-50"
                   >
                     <Crown className="h-3.5 w-3.5" aria-hidden />
@@ -706,7 +714,7 @@ export default function GroupBillingDashboardPage() {
                 </thead>
                 <tbody>
                   {dash.members.map((m) => (
-                    <tr key={m.reservationId} className="border-t border-slate-100 hover:bg-slate-50/60">
+                    <tr key={memberResId(m) ?? m.confirmationCode} className="border-t border-slate-100 hover:bg-slate-50/60">
                       <td className="px-4 py-2.5 font-mono text-slate-900">{m.room_number?.trim() || "—"}</td>
                       <td className="px-4 py-2.5 font-medium text-slate-900">
                         {m.guest_name?.trim() || "—"}
@@ -724,7 +732,10 @@ export default function GroupBillingDashboardPage() {
                             <button
                               type="button"
                               disabled={saving}
-                              onClick={() => void checkInMember(m.reservationId)}
+                              onClick={() => {
+                                const rid = memberResId(m);
+                                if (rid) void checkInMember(rid);
+                              }}
                               className="inline-flex rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
                             >
                               {BILLING_COPY.roomsCheckInOne}
@@ -734,16 +745,19 @@ export default function GroupBillingDashboardPage() {
                             <button
                               type="button"
                               disabled={saving}
-                              onClick={() => void linkMasterReservation(m.reservationId)}
+                              onClick={() => {
+                                const rid = memberResId(m);
+                                if (rid) void linkMasterReservation(rid);
+                              }}
                               className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-bold text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
                             >
                               <Crown className="h-3 w-3" aria-hidden />
                               Set master
                             </button>
                           ) : null}
-                          {(m.reservation_id ?? m.reservationId) && staffReservationHref(m.reservation_id ?? m.reservationId) ? (
+                          {memberResId(m) && staffReservationHref(memberResId(m)) ? (
                             <Link
-                              href={staffReservationHref(m.reservation_id ?? m.reservationId)!}
+                              href={staffReservationHref(memberResId(m))!}
                               className="inline-flex rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
                             >
                               Open guest bill
@@ -981,7 +995,10 @@ export default function GroupBillingDashboardPage() {
                       type="button"
                       disabled={saving}
                       className="inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-950 hover:bg-indigo-100 disabled:opacity-50"
-                      onClick={() => void linkMasterReservation(dash.members[0].reservationId)}
+                      onClick={() => {
+                      const rid = memberResId(dash.members[0]);
+                      if (rid) void linkMasterReservation(rid);
+                    }}
                     >
                       <Crown className="h-3.5 w-3.5" aria-hidden />
                       Use first room as master
@@ -1234,12 +1251,15 @@ export default function GroupBillingDashboardPage() {
                         <div className="mt-2 flex flex-wrap gap-2">
                           {dash.members.slice(0, 8).map((m) => (
                             <button
-                              key={m.reservationId}
+                              key={memberResId(m) ?? m.confirmationCode}
                               type="button"
                               disabled={saving || m.is_master}
-                              onClick={() => void linkMasterReservation(m.reservationId)}
+                              onClick={() => {
+                                const rid = memberResId(m);
+                                if (rid) void linkMasterReservation(rid);
+                              }}
                               className="inline-flex max-w-full items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50/80 px-2.5 py-1.5 text-left text-xs font-semibold text-indigo-900 shadow-sm hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
-                              title={m.reservationId}
+                              title={memberResId(m) ?? m.confirmationCode}
                             >
                               <Crown className="h-3.5 w-3.5 shrink-0" aria-hidden />
                               <span className="truncate">
@@ -1413,7 +1433,7 @@ export default function GroupBillingDashboardPage() {
                       const due = toMoney(m.folio_balance_due);
                       const cur = dash.masterFolio?.currency || hotelCurrency;
                       return (
-                        <tr key={m.reservationId} className="border-t border-slate-100 hover:bg-slate-50/60">
+                        <tr key={memberResId(m) ?? m.confirmationCode} className="border-t border-slate-100 hover:bg-slate-50/60">
                           <td className="px-4 py-2.5 font-mono text-slate-900">{m.room_number?.trim() || "—"}</td>
                           <td className="px-4 py-2.5 font-medium text-slate-900">
                             {m.guest_name?.trim() || "—"}
@@ -1435,7 +1455,10 @@ export default function GroupBillingDashboardPage() {
                                 type="button"
                                 className="inline-flex items-center rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600 hover:bg-slate-50"
                                 title="Copy reservation ID"
-                                onClick={() => void navigator.clipboard.writeText(m.reservationId)}
+                                onClick={() => {
+                                  const rid = memberResId(m);
+                                  if (rid) void navigator.clipboard.writeText(rid);
+                                }}
                               >
                                 <Copy className="h-3.5 w-3.5" aria-hidden />
                               </button>
@@ -1443,16 +1466,19 @@ export default function GroupBillingDashboardPage() {
                                 <button
                                   type="button"
                                   disabled={saving}
-                                  onClick={() => void linkMasterReservation(m.reservationId)}
+                                  onClick={() => {
+                                const rid = memberResId(m);
+                                if (rid) void linkMasterReservation(rid);
+                              }}
                                   className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-bold text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
                                 >
                                   <Crown className="h-3 w-3" aria-hidden />
                                   Set master
                                 </button>
                               ) : null}
-                              {staffReservationHref(m.reservation_id ?? m.reservationId) ? (
+                              {memberResId(m) && staffReservationHref(memberResId(m)) ? (
                                 <Link
-                                  href={staffReservationHref(m.reservation_id ?? m.reservationId)!}
+                                  href={staffReservationHref(memberResId(m))!}
                                   className="inline-flex rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-indigo-700 shadow-sm hover:bg-slate-50"
                                 >
                                   Guest bill

@@ -39,4 +39,7 @@ public class DepotSaleLine {
     /** Snapshot of product.taxable at sale time. */
     @Column(name = "taxable", nullable = false)
     private boolean taxable = true;
+
+    @Column(name = "line_notes", columnDefinition = "TEXT")
+    private String lineNotes;
 }

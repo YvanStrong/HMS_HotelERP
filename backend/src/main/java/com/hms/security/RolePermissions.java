@@ -20,6 +20,8 @@ public final class RolePermissions {
         put(Role.HOUSEKEEPING_SUPERVISOR, "hotel:read", "room:*", "housekeeping:*");
         put(Role.MAINTENANCE, "hotel:read", "room:read", "room:maintenance");
         put(Role.FNB_STAFF, "hotel:read", "room:read", "fb:*", "folio:charge");
+        put(Role.WAITER, "hotel:read", "room:read", "fb:*", "folio:charge");
+        put(Role.CASHIER, "hotel:read", "room:read", "fb:*", "folio:charge", "folio:read");
         put(Role.FINANCE, "hotel:read", "billing:*", "report:*", "folio:read");
         put(Role.GUEST, "guest:self", "reservation:self");
         put(Role.CORPORATE_BOOKER, "guest:self", "reservation:*");

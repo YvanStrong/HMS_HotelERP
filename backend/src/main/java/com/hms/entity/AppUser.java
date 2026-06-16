@@ -35,6 +35,10 @@ public class AppUser {
     @JoinColumn(name = "hotel_id")
     private Hotel hotel;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "active_depot_id")
+    private InventoryDepot activeDepot;
+
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 
@@ -43,6 +47,12 @@ public class AppUser {
 
     @Column(name = "mfa_enabled", nullable = false)
     private boolean mfaEnabled;
+
+    @Column(name = "pos_pin_hash", length = 128)
+    private String posPinHash;
+
+    @Column(name = "pos_pin_set_at")
+    private Instant posPinSetAt;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;

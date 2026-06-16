@@ -9,6 +9,7 @@ import { loadAuthUser } from "@/lib/auth";
 import { canAccessHotelNav, navHint, type HotelNavKey } from "@/lib/hotelNavAccess";
 import { staffAppPath } from "@/lib/staffAppRoutes";
 import { useHotelContext } from "@/lib/useHotelContext";
+import { PosOrderToastHost } from "@/components/PosOrderToastHost";
 import { StaffNotificationBell } from "@/components/StaffNotificationBell";
 import { ModuleDisabledPage } from "@/components/ModuleDisabledPage";
 
@@ -403,6 +404,7 @@ export function HotelStaffShell({
         <div className="fixed right-4 top-4 z-40">
           <StaffNotificationBell hotelId={hotelId} />
         </div>
+        <PosOrderToastHost hotelId={hotelId} />
 
         {/* Mobile header */}
         <header className="bg-white border-b border-border px-4 py-3 flex items-center justify-start gap-3 pr-16 lg:hidden">

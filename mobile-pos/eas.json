@@ -1,0 +1,34 @@
+{
+  "cli": { "version": ">= 7.0.0" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": { "EXPO_PUBLIC_API_URL": "http://localhost:8080" }
+    },
+    "staging": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "envFile": ".env.staging"
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": { "buildType": "apk" },
+      "envFile": ".env"
+    },
+    "production": {
+      "distribution": "store",
+      "android": { "buildType": "app-bundle" },
+      "envFile": ".env.production"
+    }
+  },
+  "submit": {
+    "production": {
+      "android": { "track": "internal" },
+      "ios": { "appleId": "REPLACE", "ascAppId": "REPLACE" }
+    }
+  }
+}

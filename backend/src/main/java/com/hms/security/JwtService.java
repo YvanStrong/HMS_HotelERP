@@ -29,8 +29,13 @@ public class JwtService {
     }
 
     public String generateToken(UserPrincipal user) {
+        return generateToken(user, null);
+    }
+
+    public String generateToken(UserPrincipal user, String clientType) {
         Date now = new Date();
-        Date exp = new Date(now.getTime() + props.getExpirationMs());
+        long expiryMs = accessTokenExpiryMs(clientType);
+        Date exp = new Date(now.getTime() + expiryMs);
         var builder = Jwts.builder()
                 .subject(user.getId().toString())
                 .claim("username", user.getUsername())
@@ -41,6 +46,21 @@ public class JwtService {
             builder.claim("hotelId", user.getHotelId().toString());
         }
         return builder.signWith(key()).compact();
+    }
+
+    public long accessTokenExpirySeconds(String clientType) {
+        return accessTokenExpiryMs(clientType) / 1000L;
+    }
+
+    private long accessTokenExpiryMs(String clientType) {
+        if (clientType != null && "mobile".equalsIgnoreCase(clientType.trim())) {
+            if (props.getAccessTokenExpiryMs() > 0) {
+                return props.getAccessTokenExpiryMs();
+            }
+        } else if (props.getWebAccessTokenExpiryMs() > 0) {
+            return props.getWebAccessTokenExpiryMs();
+        }
+        return props.getExpirationMs() > 0 ? props.getExpirationMs() : 86400000L;
     }
 
     /** Long-lived refresh token (v2.3); claim {@code typ=refresh}. */
@@ -97,11 +117,6 @@ public class JwtService {
         return UserPrincipal.authenticated(id, username, role, hotelId);
     }
 
-    /**
-     * Short-lived token: {@link Role#HOTEL_ADMIN} scoped to {@code hotelId} for support impersonation.
-     * Caller must send normal Authorization Bearer (super admin) plus optional {@code X-Impersonate-Token} — or use
-     * this token alone as Bearer when calling hotel APIs (principal is synthetic, not an app_users row).
-     */
     public String generateImpersonationToken(
             UUID impersonationSessionId,
             UUID impersonatorUserId,
