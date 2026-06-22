@@ -36,6 +36,9 @@ public class Invoice {
     @Column(name = "pdf_url", length = 1024)
     private String pdfUrl;
 
+    @Column(name = "status", nullable = false, length = 16)
+    private String status = "ISSUED";
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

@@ -35,7 +35,8 @@ export type HotelNavKey =
   | "auditLogs"
   | "serviceRequests"
   | "subscription"
-  | "settings";
+  | "settings"
+  | "hr";
 
 const REALTIME_DASHBOARD_ROLES = [
   "SUPER_ADMIN",
@@ -148,6 +149,23 @@ function canFb(user: AuthUser | null): boolean {
   return userHasPermission(user, "fb:*") || userHasRole(user, ["HOTEL_ADMIN", "MANAGER", "FNB_STAFF"]);
 }
 
+const HR_STAFF_ROLES = [
+  "HOTEL_ADMIN",
+  "MANAGER",
+  "FINANCE",
+  "RECEPTIONIST",
+  "HOUSEKEEPING",
+  "HOUSEKEEPING_SUPERVISOR",
+  "MAINTENANCE",
+  "FNB_STAFF",
+] as const;
+
+function canHr(user: AuthUser | null): boolean {
+  if (!user) return false;
+  if (isSuperAdmin(user)) return true;
+  return userHasRole(user, HR_STAFF_ROLES);
+}
+
 function canSettings(user: AuthUser | null): boolean {
   if (!user) return false;
   if (isSuperAdmin(user)) return true;
@@ -248,6 +266,8 @@ export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): bool
       return canSettings(user) || canAccounting(user);
     case "settings":
       return canSettings(user);
+    case "hr":
+      return canHr(user);
     default:
       return false;
   }
@@ -286,6 +306,7 @@ export function navHint(key: HotelNavKey): string {
     serviceRequests: "Guest in-stay requests for housekeeping, room service, or maintenance.",
     subscription: "SaaS subscription billing, next renewal date, and platform payment instructions.",
     settings: "Hotel settings: hotel admin or manager.",
+    hr: "HR: staff can request leave; hotel admin, manager, and finance manage employees, payroll, and recruitment.",
   };
   return hints[key];
 }

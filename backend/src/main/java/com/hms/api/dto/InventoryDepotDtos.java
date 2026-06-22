@@ -87,7 +87,8 @@ public final class InventoryDepotDtos {
             @NotNull UUID depotId,
             @NotEmpty List<SaleLineInput> lines,
             Boolean chargeToRoom,
-            UUID reservationId) {}
+            UUID reservationId,
+            String paymentMethod) {}
 
     public record CreateDeliveryOrderRequest(
             String customerName,
@@ -111,9 +112,18 @@ public final class InventoryDepotDtos {
             Instant soldAt,
             List<SaleLineRow> lines,
             UUID roomChargeId,
+            String paymentMethod,
             String message) {}
 
-    public record SaleRow(UUID saleId, String saleNumber, String depotName, String customerName, BigDecimal totalAmount, Instant soldAt) {}
+    public record SaleRow(
+            UUID saleId,
+            String saleNumber,
+            String depotName,
+            String customerName,
+            BigDecimal totalAmount,
+            Instant soldAt,
+            String paymentMethod,
+            String status) {}
 
     /** Full sale for receipts / reprint (lines included). */
     public record SaleDetailResponse(
@@ -123,7 +133,45 @@ public final class InventoryDepotDtos {
             String customerName,
             BigDecimal totalAmount,
             Instant soldAt,
+            String paymentMethod,
+            String status,
             List<SaleLineRow> lines) {}
+
+    public record CreateRefundRequest(String reason) {}
+
+    public record RefundLineRow(
+            String productName,
+            String productCode,
+            BigDecimal quantityRefunded,
+            BigDecimal unitPrice,
+            BigDecimal lineTotal) {}
+
+    public record RefundResponse(
+            UUID refundId,
+            String refundNumber,
+            UUID saleId,
+            String saleNumber,
+            String depotName,
+            String customerName,
+            BigDecimal refundAmount,
+            String refundMethod,
+            String reason,
+            Instant refundedAt,
+            List<RefundLineRow> lines,
+            String message) {}
+
+    public record RefundRow(
+            UUID refundId,
+            String refundNumber,
+            UUID saleId,
+            String saleNumber,
+            String depotName,
+            String customerName,
+            BigDecimal refundAmount,
+            String refundMethod,
+            String reason,
+            Instant refundedAt,
+            String createdBy) {}
 
     public record DeliveryOrderRow(
             UUID deliveryOrderId,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
 import { printDepotSaleInvoice } from "@/lib/printDepotSaleInvoice";
@@ -17,6 +17,7 @@ type InventoryItemRow = {
   id: string;
   name: string;
   sku?: string;
+  barcode?: string | null;
   category?: string;
   currentStock?: number | string;
   sellingPrice?: number | string | null;
@@ -51,6 +52,7 @@ type PosCatalogItem = {
   depotProductId: string | null;
   name: string;
   sku: string;
+  barcode: string;
   category: string;
   currentStock: number | string | null | undefined;
   stockType: "STOCK" | "NON_STOCK";
@@ -79,6 +81,7 @@ type CreateSaleResponse = {
     taxable?: boolean;
   }[];
   roomChargeId?: string | null;
+  paymentMethod?: string | null;
   message: string;
 };
 
@@ -122,6 +125,9 @@ type ReservationOption = {
 
 const ORDER_TYPES = ["Dine In", "Take Away", "Delivery", "Table"] as const;
 type OrderType = (typeof ORDER_TYPES)[number];
+
+const POS_PAYMENT_METHODS = ["MOMO", "CASH", "CREDIT CARD", "BANK"] as const;
+type PosPaymentMethod = (typeof POS_PAYMENT_METHODS)[number];
 
 const DRAFT_KEY = (hotelId: string) => `hms_pos_draft_${hotelId}`;
 const ALL_DEPOTS = "__ALL_DEPOTS__";
@@ -168,6 +174,8 @@ export default function PosPage() {
   const [guestSuggestions, setGuestSuggestions] = useState<GuestSearchHit[]>([]);
   const [guestSearchLoading, setGuestSearchLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [scanCode, setScanCode] = useState("");
+  const scanInputRef = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState<string>("All");
   const [cart, setCart] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -216,6 +224,10 @@ export default function PosPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!loading) scanInputRef.current?.focus();
+  }, [loading]);
 
   useEffect(() => {
     const q = customerLabel.trim();
@@ -307,6 +319,7 @@ export default function PosPage() {
           depotProductId: linked?.id ?? null,
           name: inv.name,
           sku: inv.sku ?? "",
+          barcode: (inv.barcode ?? "").trim(),
           category: categoryLabel(inv.category),
           currentStock: inv.currentStock,
           stockType: inv.stockType === "NON_STOCK" ? "NON_STOCK" : "STOCK",
@@ -329,6 +342,7 @@ export default function PosPage() {
           depotProductId: dp.id,
           name: inv?.name ?? dp.productName,
           sku: inv?.sku ?? dp.productCode,
+          barcode: (inv?.barcode ?? "").trim(),
           category: categoryLabel(inv?.category),
           currentStock: dp.stockQty,
           stockType: dp.stockType === "NON_STOCK" || inv?.stockType === "NON_STOCK" ? "NON_STOCK" : "STOCK",
@@ -355,6 +369,7 @@ export default function PosPage() {
       return (
         item.name.toLowerCase().includes(q) ||
         item.sku.toLowerCase().includes(q) ||
+        item.barcode.toLowerCase().includes(q) ||
         item.category.toLowerCase().includes(q)
       );
     });
@@ -485,6 +500,72 @@ export default function PosPage() {
       setError(e instanceof Error ? e.message : "Could not add item");
     } finally {
       setAddingItemId(null);
+    }
+  }
+
+  const findCatalogKeyByScan = useCallback(
+    (raw: string): string | null => {
+      const code = raw.trim();
+      if (!code) return null;
+      const norm = code.toLowerCase();
+
+      const exact = catalogItems.find(
+        (item) =>
+          item.sku.toLowerCase() === norm ||
+          (item.barcode && item.barcode.toLowerCase() === norm),
+      );
+      if (exact) return exact.key;
+
+      const dp = depotProducts.find(
+        (p) =>
+          p.active &&
+          p.productCode.toLowerCase() === norm &&
+          (depotId === ALL_DEPOTS || p.depotId === depotId),
+      );
+      if (!dp) return null;
+
+      const row = catalogItems.find((item) => item.depotProductId === dp.id || item.key === dp.id);
+      return row?.key ?? null;
+    },
+    [catalogItems, depotProducts, depotId],
+  );
+
+  async function scanAndAddToCart(raw: string) {
+    const code = raw.trim();
+    if (!code) return false;
+
+    setError(null);
+    const localKey = findCatalogKeyByScan(code);
+    if (localKey) {
+      const row = catalogItems.find((x) => x.key === localKey);
+      await addLine(localKey);
+      if (row) setMsg(`Added ${row.name} to cart`);
+      setScanCode("");
+      setSearch("");
+      scanInputRef.current?.focus();
+      return true;
+    }
+
+    try {
+      let item: InventoryItemRow;
+      try {
+        item = await apiFetch<InventoryItemRow>(
+          `/api/v1/hotels/${hotelId}/inventory/items/lookup?barcode=${encodeURIComponent(code)}`,
+        );
+      } catch {
+        item = await apiFetch<InventoryItemRow>(
+          `/api/v1/hotels/${hotelId}/inventory/items/lookup?sku=${encodeURIComponent(code)}`,
+        );
+      }
+      await addLine(item.id);
+      setMsg(`Added ${item.name} to cart`);
+      setScanCode("");
+      setSearch("");
+      scanInputRef.current?.focus();
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : `No product found for “${code}”`);
+      return false;
     }
   }
 
@@ -671,7 +752,7 @@ export default function PosPage() {
     }
   }
 
-  async function submitSale(quickInvoice: boolean) {
+  async function submitSale(paymentMethod?: PosPaymentMethod) {
     if (cartRows.length === 0) {
       setError("Add at least one item to the order.");
       return;
@@ -702,6 +783,7 @@ export default function PosPage() {
           lines: cartRows.map((r) => ({ productId: r.productId, quantity: r.qty })),
           chargeToRoom: chargeToFolio,
           reservationId: chargeToFolio ? folioReservationId.trim() : null,
+          paymentMethod: paymentMethod ?? "CASH",
         }),
       });
       const depotName = depots.find((d) => d.id === saleDepotId)?.name ?? "Outlet";
@@ -716,6 +798,7 @@ export default function PosPage() {
             customerTin: customerTin.trim() || null,
             totalAmount: Number(res.totalAmount),
             soldAt: res.soldAt,
+            paymentMethod: res.paymentMethod ?? paymentMethod ?? "CASH",
             lines: (res.lines ?? []).map((ln) => ({
               productName: ln.productName,
               productCode: ln.productCode,
@@ -729,13 +812,17 @@ export default function PosPage() {
           "FRW",
         );
       } catch {
-        if (!quickInvoice) {
+        if (paymentMethod) {
           setError("Sale recorded; allow pop-ups to print the receipt.");
         }
       }
       resetRunningOrderFields();
       sessionStorage.removeItem(DRAFT_KEY(hotelId));
-      setMsg(quickInvoice ? "Invoice printed." : "Order placed.");
+      setMsg(
+        paymentMethod
+          ? `Invoice printed — ${paymentMethod}`
+          : "Order placed.",
+      );
       if (res.roomChargeId) {
         setMsg(`POS sale charged to room folio. Charge ID: ${res.roomChargeId}`);
       }
@@ -1081,10 +1168,10 @@ export default function PosPage() {
               <span className="text-sm font-medium text-muted-foreground">Total payable</span>
               <span className="text-xl font-bold tabular-nums text-primary">{formatMoney(totalPayable)}</span>
             </div>
-            <div className="grid grid-cols-2 gap-2 max-[380px]:grid-cols-1 sm:grid-cols-5">
+            <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
               <button
                 type="button"
-                className="rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                className="rounded-lg bg-red-600 px-1 py-2 text-[11px] font-semibold leading-tight text-white hover:bg-red-700 disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-xs"
                 disabled={placing}
                 onClick={clearCart}
               >
@@ -1092,7 +1179,7 @@ export default function PosPage() {
               </button>
               <button
                 type="button"
-                className="rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+                className="rounded-lg bg-violet-600 px-1 py-2 text-[11px] font-semibold leading-tight text-white hover:bg-violet-700 disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-xs"
                 disabled={placing}
                 onClick={saveDraft}
               >
@@ -1100,15 +1187,7 @@ export default function PosPage() {
               </button>
               <button
                 type="button"
-                className="rounded-xl bg-sky-600 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
-                disabled={placing || cartRows.length === 0 || orderType === "Delivery"}
-                onClick={() => void submitSale(true)}
-              >
-                {placing ? "…" : "Quick invoice"}
-              </button>
-              <button
-                type="button"
-                className="rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+                className="rounded-lg bg-amber-500 px-1 py-2 text-[11px] font-semibold leading-tight text-white hover:bg-amber-600 disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-xs"
                 disabled={placing || cartRows.length === 0 || orderType === "Delivery"}
                 onClick={() => void printProforma()}
               >
@@ -1116,12 +1195,31 @@ export default function PosPage() {
               </button>
               <button
                 type="button"
-                className="rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="rounded-lg bg-emerald-600 px-1 py-2 text-[11px] font-semibold leading-tight text-white hover:bg-emerald-700 disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-xs"
                 disabled={placing || cartRows.length === 0}
-                onClick={() => (orderType === "Delivery" ? void submitDeliveryOrder() : void submitSale(false))}
+                onClick={() => (orderType === "Delivery" ? void submitDeliveryOrder() : void submitSale())}
               >
                 {placing ? "…" : orderType === "Delivery" ? "Save delivery" : "Place order"}
               </button>
+              {POS_PAYMENT_METHODS.map((method) => (
+                <button
+                  key={method}
+                  type="button"
+                  className={`rounded-lg px-1 py-2 text-[10px] font-semibold leading-tight text-white disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-[11px] ${
+                    method === "MOMO"
+                      ? "bg-yellow-600 hover:bg-yellow-700"
+                      : method === "CASH"
+                        ? "bg-lime-700 hover:bg-lime-800"
+                        : method === "CREDIT CARD"
+                          ? "bg-sky-700 hover:bg-sky-800"
+                          : "bg-indigo-700 hover:bg-indigo-800"
+                  }`}
+                  disabled={placing || cartRows.length === 0 || orderType === "Delivery"}
+                  onClick={() => void submitSale(method)}
+                >
+                  {placing ? "…" : method}
+                </button>
+              ))}
             </div>
             {orderType === "Delivery" && (
               <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-900">
@@ -1132,12 +1230,38 @@ export default function PosPage() {
         </section>
 
         <section className="order-1 flex min-h-[min(420px,60dvh)] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft lg:order-1">
-          <div className="shrink-0 border-b border-border/60 p-2 sm:p-3">
+          <div className="shrink-0 space-y-2 border-b border-border/60 p-2 sm:p-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="pos-barcode-scan">
+                Scan barcode
+              </label>
+              <input
+                id="pos-barcode-scan"
+                ref={scanInputRef}
+                className="hms-input w-full min-w-0 text-sm ring-2 ring-primary/20"
+                placeholder="Scan barcode — adds to cart automatically"
+                value={scanCode}
+                autoComplete="off"
+                onChange={(e) => setScanCode(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void scanAndAddToCart(scanCode);
+                  }
+                }}
+              />
+            </div>
             <input
               className="hms-input w-full min-w-0 text-sm"
-              placeholder="Search name, SKU, category…"
+              placeholder="Search name, SKU, barcode, category…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && search.trim()) {
+                  e.preventDefault();
+                  void scanAndAddToCart(search);
+                }
+              }}
             />
           </div>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">

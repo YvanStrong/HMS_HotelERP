@@ -92,7 +92,12 @@ function userFacingApiMessage(status: number, body: ApiErrorBody | null): string
   };
   if (code && fallbacks[code]) return fallbacks[code];
 
-  if (code) return "Something went wrong. Please try again or contact support if it keeps happening.";
+  if (code) {
+    if (code === "Not Found" || code === "NOT_FOUND") {
+      return "The requested item or action was not found. If you just updated the app, restart the backend and try again.";
+    }
+    return "Something went wrong. Please try again or contact support if it keeps happening.";
+  }
   return status >= 500 ? "The server had a problem. Please try again in a moment." : "The request could not be completed.";
 }
 

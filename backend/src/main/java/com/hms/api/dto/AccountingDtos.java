@@ -23,11 +23,14 @@ public final class AccountingDtos {
             BigDecimal posSales,
             BigDecimal totalSales,
             BigDecimal totalExpenses,
+            BigDecimal payrollExpenses,
             BigDecimal netAfterExpenses,
             long invoiceCount,
             long posSaleCount,
             long pendingPettyCashCount,
             BigDecimal pettyCashDisbursed) {}
+
+    public record PayrollAccountingSyncResponse(int postedCount, String message) {}
 
     public record ExpenseRow(
             UUID id,
@@ -126,6 +129,140 @@ public final class AccountingDtos {
             BigDecimal balanceAmount,
             String sourceBank) {}
 
+    public record ReceivableRow(
+            UUID id,
+            String customerName,
+            String invoiceRef,
+            LocalDate issueDate,
+            LocalDate dueDate,
+            BigDecimal amount,
+            BigDecimal amountPaid,
+            BigDecimal balance,
+            String status,
+            String notes) {}
+
+    public record CreateReceivableRequest(
+            @NotBlank String customerName,
+            String invoiceRef,
+            LocalDate issueDate,
+            LocalDate dueDate,
+            @NotNull @DecimalMin(value = "0.01") BigDecimal amount,
+            BigDecimal amountPaid,
+            String status,
+            String notes) {}
+
+    public record PayableRow(
+            UUID id,
+            String supplierName,
+            String billRef,
+            LocalDate billDate,
+            LocalDate dueDate,
+            BigDecimal amount,
+            BigDecimal amountPaid,
+            BigDecimal balance,
+            String status,
+            String notes) {}
+
+    public record CreatePayableRequest(
+            @NotBlank String supplierName,
+            String billRef,
+            LocalDate billDate,
+            LocalDate dueDate,
+            @NotNull @DecimalMin(value = "0.01") BigDecimal amount,
+            BigDecimal amountPaid,
+            String status,
+            String notes) {}
+
+    public record BudgetRow(
+            UUID id,
+            Integer fiscalYear,
+            Integer month,
+            String accountCode,
+            String accountName,
+            BigDecimal budgetAmount,
+            BigDecimal actualAmount,
+            BigDecimal variance,
+            String notes) {}
+
+    public record CreateBudgetRequest(
+            @NotNull Integer fiscalYear,
+            Integer month,
+            @NotBlank String accountCode,
+            @NotBlank String accountName,
+            @NotNull @DecimalMin(value = "0.00") BigDecimal budgetAmount,
+            String notes) {}
+
+    public record TaxFilingRow(
+            UUID id,
+            String taxType,
+            LocalDate periodStart,
+            LocalDate periodEnd,
+            BigDecimal taxableSales,
+            BigDecimal taxCollected,
+            BigDecimal taxPaid,
+            BigDecimal taxDue,
+            String status,
+            String filingReference,
+            Instant filedAt,
+            String notes) {}
+
+    public record CreateTaxFilingRequest(
+            @NotBlank String taxType,
+            @NotNull LocalDate periodStart,
+            @NotNull LocalDate periodEnd,
+            BigDecimal taxableSales,
+            BigDecimal taxCollected,
+            BigDecimal taxPaid,
+            String status,
+            String filingReference,
+            String notes) {}
+
+    public record AccountingPeriodRow(
+            UUID id,
+            String periodName,
+            LocalDate startDate,
+            LocalDate endDate,
+            String status,
+            Instant closedAt,
+            String closedBy,
+            String notes) {}
+
+    public record CreateAccountingPeriodRequest(
+            @NotBlank String periodName,
+            @NotNull LocalDate startDate,
+            @NotNull LocalDate endDate,
+            String notes) {}
+
+    public record ReconciliationRow(
+            UUID id,
+            String bankName,
+            LocalDate statementStart,
+            LocalDate statementEnd,
+            BigDecimal statementBalance,
+            BigDecimal systemBalance,
+            BigDecimal difference,
+            String status,
+            Instant reconciledAt,
+            String reconciledBy,
+            String notes) {}
+
+    public record CreateReconciliationRequest(
+            @NotBlank String bankName,
+            @NotNull LocalDate statementStart,
+            @NotNull LocalDate statementEnd,
+            @NotNull BigDecimal statementBalance,
+            BigDecimal systemBalance,
+            String status,
+            String notes) {}
+
+    public record AdvancedAccountingWorkspace(
+            List<ReceivableRow> receivables,
+            List<PayableRow> payables,
+            List<BudgetRow> budgets,
+            List<TaxFilingRow> taxFilings,
+            List<AccountingPeriodRow> periods,
+            List<ReconciliationRow> reconciliations) {}
+
     public record LedgerEntryRow(
             LocalDate date,
             String reference,
@@ -179,5 +316,6 @@ public final class AccountingDtos {
             List<AccountRow> accounts,
             List<ExpenseRow> expenses,
             List<PettyCashRow> pettyCashRequests,
-            AccountingReports reports) {}
+            AccountingReports reports,
+            AdvancedAccountingWorkspace advanced) {}
 }

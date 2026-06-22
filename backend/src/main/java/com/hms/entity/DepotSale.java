@@ -36,6 +36,12 @@ public class DepotSale {
     @Column(name = "total_amount", nullable = false, precision = 14, scale = 2)
     private BigDecimal totalAmount = BigDecimal.ZERO;
 
+    @Column(name = "payment_method", nullable = false, length = 32)
+    private String paymentMethod = "CASH";
+
+    @Column(name = "status", nullable = false, length = 16)
+    private String status = "COMPLETED";
+
     @OneToMany(mappedBy = "sale", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DepotSaleLine> lines = new ArrayList<>();
 

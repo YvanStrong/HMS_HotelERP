@@ -39,4 +39,7 @@ public class DepotSaleLine {
     /** Snapshot of product.taxable at sale time. */
     @Column(name = "taxable", nullable = false)
     private boolean taxable = true;
+
+    @Column(name = "quantity_refunded", nullable = false, precision = 14, scale = 3)
+    private BigDecimal quantityRefunded = BigDecimal.ZERO;
 }

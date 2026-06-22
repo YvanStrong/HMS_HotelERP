@@ -366,7 +366,24 @@ public final class ApiDtos {
             BigDecimal totalAmount,
             String currency,
             Instant createdAt,
-            String pdfUrl) {}
+            String pdfUrl,
+            String status) {}
+
+    public record CreateInvoiceRefundRequest(String reason) {}
+
+    public record UnifiedRefundRow(
+            UUID refundId,
+            String refundNumber,
+            String sourceType,
+            UUID sourceId,
+            String sourceNumber,
+            String customerName,
+            String reference,
+            BigDecimal refundAmount,
+            String refundMethod,
+            String reason,
+            Instant refundedAt,
+            String createdBy) {}
 
     /** Paged final invoices; {@code totalInvoicedSumAll} sums {@code totalAmount} over every invoice for the hotel. */
     public record InvoiceListPageResponse(

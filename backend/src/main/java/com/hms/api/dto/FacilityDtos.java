@@ -205,7 +205,8 @@ public final class FacilityDtos {
             String facilityName,
             String guestName,
             BigDecimal amount,
-            Instant invoicedAt) {}
+            Instant invoicedAt,
+            String paymentStatus) {}
 
     // ── Water Quality ──────────────────────────────────────────────────────────
 

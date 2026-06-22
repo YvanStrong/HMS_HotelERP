@@ -103,7 +103,8 @@ public class HotelSettingsController {
         if (body.checkInTime() != null) h.setCheckInTime(trimOrNull(body.checkInTime()));
         if (body.checkOutTime() != null) h.setCheckOutTime(trimOrNull(body.checkOutTime()));
         if (body.taxRate() != null) h.setTaxRate(body.taxRate());
-        return toResponse(hotelRepository.save(h));
+        Hotel saved = hotelRepository.save(h);
+        return toResponse(mustHotel(saved.getId()));
     }
 
     private Hotel mustHotel(UUID hotelId) {

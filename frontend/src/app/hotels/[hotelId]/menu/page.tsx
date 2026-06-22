@@ -61,7 +61,16 @@ type CreateDepotProductApiResponse = {
   message: string;
   product: DepotProductRow;
 };
-type SaleRow = { saleId: string; saleNumber: string; depotName: string; customerName?: string | null; totalAmount: number; soldAt: string };
+type SaleRow = {
+  saleId: string;
+  saleNumber: string;
+  depotName: string;
+  customerName?: string | null;
+  totalAmount: number;
+  soldAt: string;
+  paymentMethod?: string | null;
+  status?: string | null;
+};
 
 type SaleDetailResponse = {
   saleId: string;
@@ -70,6 +79,7 @@ type SaleDetailResponse = {
   customerName?: string | null;
   totalAmount: number | string;
   soldAt: string;
+  paymentMethod?: string | null;
   lines: {
     productName: string;
     productCode: string;
@@ -94,6 +104,7 @@ type CreateSaleResponse = {
     lineTotal: number | string;
     taxable?: boolean;
   }[];
+  paymentMethod?: string | null;
   message: string;
 };
 
@@ -466,6 +477,7 @@ export default function MenuPage() {
           customerName: clientLabel,
           depotId: selectedDepotId,
           lines: cartRows.map((r) => ({ productId: r.productId, quantity: r.qty })),
+          paymentMethod: "CASH",
         }),
       });
       const depotName = depots.find((d) => d.id === selectedDepotId)?.name ?? "Depot";
@@ -478,6 +490,7 @@ export default function MenuPage() {
             customerName: clientLabel,
             totalAmount: Number(res.totalAmount),
             soldAt: res.soldAt,
+            paymentMethod: res.paymentMethod ?? "CASH",
             lines: (res.lines ?? []).map((ln) => ({
               productName: ln.productName,
               productCode: ln.productCode,
@@ -520,6 +533,7 @@ export default function MenuPage() {
             customerName: clientLabel,
             totalAmount: Number(detail.totalAmount),
             soldAt: detail.soldAt,
+            paymentMethod: detail.paymentMethod ?? "CASH",
             lines: (detail.lines ?? []).map((ln) => ({
               productName: ln.productName,
               productCode: ln.productCode,
@@ -944,6 +958,7 @@ export default function MenuPage() {
                 <th>Sale #</th>
                 <th>Depot</th>
                 <th>Client</th>
+                <th>Payment</th>
                 <th>Total</th>
                 <th>Sold At</th>
                 <th className="w-[1%] whitespace-nowrap text-right">Action</th>
@@ -955,6 +970,7 @@ export default function MenuPage() {
                   <td>{s.saleNumber}</td>
                   <td>{s.depotName}</td>
                   <td>{s.customerName || "Walk-in"}</td>
+                  <td>{s.paymentMethod ?? "CASH"}</td>
                   <td>{Number(s.totalAmount).toFixed(2)}</td>
                   <td>{new Date(s.soldAt).toLocaleString()}</td>
                   <td className="text-right">
@@ -971,7 +987,7 @@ export default function MenuPage() {
               ))}
               {sales.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center text-muted-foreground">
+                  <td colSpan={7} className="text-center text-muted-foreground">
                     No sales yet.
                   </td>
                 </tr>
