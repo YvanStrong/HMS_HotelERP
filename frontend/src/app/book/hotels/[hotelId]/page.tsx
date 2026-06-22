@@ -228,7 +228,7 @@ function BookHotelStayPageInner() {
       children: String(children),
     });
     if (roomTypeId) q.set("roomTypeId", roomTypeId);
-    return `/api/v1/hotels/${hotelId}/reservations/availability?${q.toString()}`;
+    return `/api/v1/public/hotels/${hotelId}/reservations/availability?${q.toString()}`;
   }, [hotelId, checkIn, checkOut, adults, children, roomTypeId]);
 
   const refreshAvailability = useCallback(async () => {
@@ -277,7 +277,7 @@ function BookHotelStayPageInner() {
               roomTypeId: t.id,
             });
             const data = await publicFetch<AvailabilityResponse>(
-              `/api/v1/hotels/${hotelId}/reservations/availability?${q.toString()}`,
+              `/api/v1/public/hotels/${hotelId}/reservations/availability?${q.toString()}`,
             );
             return {
               roomTypeId: t.id,

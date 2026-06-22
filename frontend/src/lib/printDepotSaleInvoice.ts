@@ -22,6 +22,8 @@ export type DepotSalePrintPayload = {
   lines: DepotSaleLine[];
   /** VAT rate for extraction from VAT-inclusive line totals (Rwanda default 18). */
   vatPercent?: number;
+  /** Payment method shown on invoice (e.g. MOMO, CASH, CREDIT CARD, BANK). */
+  paymentMethod?: string | null;
 };
 
 function esc(v: unknown): string {
@@ -231,6 +233,7 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
       <div><span class="muted">Client</span><span>${esc(payload.customerName || "Walk-in")}</span></div>
       ${payload.customerTin?.trim() ? `<div><span class="muted">TIN</span><span>${esc(payload.customerTin.trim())}</span></div>` : ""}
       <div><span class="muted">Date</span><span>${esc(soldAtLabel)}</span></div>
+      ${payload.paymentMethod?.trim() ? `<div><span class="muted">Payment</span><span class="strong">${esc(payload.paymentMethod.trim())}</span></div>` : ""}
     </div>
     <table class="lines">
       <colgroup>

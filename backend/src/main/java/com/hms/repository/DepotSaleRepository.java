@@ -79,6 +79,19 @@ public interface DepotSaleRepository extends JpaRepository<DepotSale, UUID> {
     Optional<DepotSale> findFetchedByIdAndHotelId(
             @Param("saleId") UUID saleId, @Param("hotelId") UUID hotelId);
 
+    Optional<DepotSale> findByIdAndHotel_Id(UUID id, UUID hotelId);
+
+    @Query(
+            """
+            select distinct s from DepotSale s
+            join fetch s.depot d
+            left join fetch s.lines sl
+            left join fetch sl.product p
+            where s.id = :saleId and s.hotel.id = :hotelId
+            """)
+    Optional<DepotSale> findForRefundByIdAndHotelId(
+            @Param("saleId") UUID saleId, @Param("hotelId") UUID hotelId);
+
     @Query(
             """
             select distinct s from DepotSale s

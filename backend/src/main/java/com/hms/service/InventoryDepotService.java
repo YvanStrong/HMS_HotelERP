@@ -9,6 +9,8 @@ import com.hms.entity.AppUser;
 import com.hms.entity.DepotProduct;
 import com.hms.entity.DepotSale;
 import com.hms.entity.DepotSaleLine;
+import com.hms.entity.DepotSaleRefund;
+import com.hms.entity.DepotSaleRefundLine;
 import com.hms.entity.Hotel;
 import com.hms.entity.InvWarehouse;
 import com.hms.entity.InventoryDepot;
@@ -23,6 +25,7 @@ import com.hms.entity.StockTransaction;
 import com.hms.repository.AppUserRepository;
 import com.hms.repository.DepotProductRepository;
 import com.hms.repository.DepotSaleRepository;
+import com.hms.repository.DepotSaleRefundRepository;
 import com.hms.repository.HotelRepository;
 import com.hms.repository.InvWarehouseRepository;
 import com.hms.repository.InventoryDepotRepository;
@@ -61,6 +64,7 @@ public class InventoryDepotService {
     private final InventoryDepotRepository inventoryDepotRepository;
     private final DepotProductRepository depotProductRepository;
     private final DepotSaleRepository depotSaleRepository;
+    private final DepotSaleRefundRepository depotSaleRefundRepository;
     private final PosProformaRepository posProformaRepository;
     private final PosDeliveryOrderRepository posDeliveryOrderRepository;
     private final HotelRepository hotelRepository;
@@ -77,6 +81,7 @@ public class InventoryDepotService {
             InventoryDepotRepository inventoryDepotRepository,
             DepotProductRepository depotProductRepository,
             DepotSaleRepository depotSaleRepository,
+            DepotSaleRefundRepository depotSaleRefundRepository,
             PosProformaRepository posProformaRepository,
             PosDeliveryOrderRepository posDeliveryOrderRepository,
             HotelRepository hotelRepository,
@@ -91,6 +96,7 @@ public class InventoryDepotService {
         this.inventoryDepotRepository = inventoryDepotRepository;
         this.depotProductRepository = depotProductRepository;
         this.depotSaleRepository = depotSaleRepository;
+        this.depotSaleRefundRepository = depotSaleRefundRepository;
         this.posProformaRepository = posProformaRepository;
         this.posDeliveryOrderRepository = posDeliveryOrderRepository;
         this.hotelRepository = hotelRepository;
@@ -358,6 +364,7 @@ public class InventoryDepotService {
         sale.setDepot(depot);
         sale.setSaleNumber(nextSaleNumber(hotelId));
         sale.setCustomerName(req.customerName() == null ? null : req.customerName().trim());
+        sale.setPaymentMethod(normalizePaymentMethod(req.paymentMethod()));
         sale.setCreatedBy(tenantAccessService.currentUser().getUsername());
         applyMobileSaleFields(sale, req, hotelId);
 
@@ -464,6 +471,7 @@ public class InventoryDepotService {
                 sale.getCreatedAt(),
                 responseLines,
                 folioCharge != null ? folioCharge.getId() : null,
+                sale.getPaymentMethod(),
                 "Sale completed");
     }
 
@@ -477,7 +485,9 @@ public class InventoryDepotService {
                         s.getDepot().getName(),
                         s.getCustomerName(),
                         s.getTotalAmount(),
-                        s.getCreatedAt()))
+                        s.getCreatedAt(),
+                        s.getPaymentMethod(),
+                        s.getStatus()))
                 .toList();
     }
 
@@ -486,6 +496,7 @@ public class InventoryDepotService {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         DepotSale sale = depotSaleRepository
                 .findFetchedByIdAndHotelId(saleId, hotelId)
+                .or(() -> depotSaleRepository.findByIdAndHotel_Id(saleId, hotelId))
                 .orElseThrow(() -> notFound("Sale"));
         List<InventoryDepotDtos.SaleLineRow> lineRows = sale.getLines().stream()
                 .sorted(Comparator.comparing(DepotSaleLine::getLineOrder))
@@ -504,7 +515,140 @@ public class InventoryDepotService {
                 sale.getCustomerName(),
                 sale.getTotalAmount(),
                 sale.getCreatedAt(),
+                sale.getPaymentMethod(),
+                sale.getStatus(),
                 lineRows);
+    }
+
+    @Transactional
+    public InventoryDepotDtos.RefundResponse refundSaleFull(
+            UUID hotelId, String hotelHeader, UUID saleId, InventoryDepotDtos.CreateRefundRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        DepotSale sale = depotSaleRepository
+                .findForRefundByIdAndHotelId(saleId, hotelId)
+                .orElseThrow(() -> notFound("Sale"));
+        if ("REFUNDED".equalsIgnoreCase(sale.getStatus())) {
+            throw new ApiException(HttpStatus.CONFLICT, "Sale is already refunded");
+        }
+        if (depotSaleRefundRepository.existsBySale_IdAndHotel_Id(saleId, hotelId)) {
+            throw new ApiException(HttpStatus.CONFLICT, "A refund already exists for this sale");
+        }
+        if (sale.getLines() == null || sale.getLines().isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Sale has no lines to refund");
+        }
+
+        Hotel hotel = sale.getHotel();
+        InventoryDepot depot = sale.getDepot();
+        String who = tenantAccessService.currentUser().getUsername();
+
+        DepotSaleRefund refund = new DepotSaleRefund();
+        refund.setHotel(hotel);
+        refund.setSale(sale);
+        refund.setRefundNumber(nextRefundNumber(hotelId));
+        refund.setRefundAmount(sale.getTotalAmount());
+        refund.setRefundMethod(sale.getPaymentMethod());
+        refund.setReason(req != null && req.reason() != null ? req.reason().trim() : null);
+        refund.setCreatedBy(who);
+
+        int lineOrder = 0;
+        List<InventoryDepotDtos.RefundLineRow> responseLines = new ArrayList<>();
+        for (DepotSaleLine sl : sale.getLines().stream()
+                .sorted(Comparator.comparing(DepotSaleLine::getLineOrder))
+                .toList()) {
+            BigDecimal qty = sl.getQuantity();
+            if (qty == null || qty.signum() <= 0) {
+                continue;
+            }
+            restoreStockForRefundLine(hotelId, depot, sale, sl, qty, who);
+
+            DepotSaleRefundLine rl = new DepotSaleRefundLine();
+            rl.setRefund(refund);
+            rl.setSaleLine(sl);
+            rl.setProduct(sl.getProduct());
+            rl.setQuantityRefunded(qty);
+            rl.setUnitPrice(sl.getUnitPrice());
+            rl.setLineTotal(sl.getLineTotal());
+            rl.setLineOrder(lineOrder++);
+            refund.getLines().add(rl);
+
+            sl.setQuantityRefunded(qty.setScale(3, RoundingMode.HALF_UP));
+            responseLines.add(new InventoryDepotDtos.RefundLineRow(
+                    sl.getProduct().getProductName(),
+                    sl.getProduct().getProductCode(),
+                    rl.getQuantityRefunded(),
+                    rl.getUnitPrice(),
+                    rl.getLineTotal()));
+        }
+
+        sale.setStatus("REFUNDED");
+        depotSaleRepository.save(sale);
+        refund = depotSaleRefundRepository.save(refund);
+
+        return new InventoryDepotDtos.RefundResponse(
+                refund.getId(),
+                refund.getRefundNumber(),
+                sale.getId(),
+                sale.getSaleNumber(),
+                depot.getName(),
+                sale.getCustomerName(),
+                refund.getRefundAmount(),
+                refund.getRefundMethod(),
+                refund.getReason(),
+                refund.getCreatedAt(),
+                responseLines,
+                "Refund completed — stock restored to " + depot.getName());
+    }
+
+    @Transactional(readOnly = true)
+    public List<InventoryDepotDtos.RefundRow> listRefunds(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        return depotSaleRefundRepository.findByHotelIdOrderByCreatedAtDesc(hotelId).stream()
+                .map(r -> new InventoryDepotDtos.RefundRow(
+                        r.getId(),
+                        r.getRefundNumber(),
+                        r.getSale().getId(),
+                        r.getSale().getSaleNumber(),
+                        r.getSale().getDepot().getName(),
+                        r.getSale().getCustomerName(),
+                        r.getRefundAmount(),
+                        r.getRefundMethod(),
+                        r.getReason(),
+                        r.getCreatedAt(),
+                        r.getCreatedBy()))
+                .toList();
+    }
+
+    private void restoreStockForRefundLine(
+            UUID hotelId,
+            InventoryDepot depot,
+            DepotSale sale,
+            DepotSaleLine sl,
+            BigDecimal qty,
+            String who) {
+        DepotProduct p = depotProductRepository
+                .findByIdAndHotel_Id(sl.getProduct().getId(), hotelId)
+                .orElseThrow(() -> notFound("Product"));
+        if (!isManagedStockType(p.getStockType())) {
+            return;
+        }
+        p.setStockQty(p.getStockQty().add(qty).setScale(3, RoundingMode.HALF_UP));
+        depotProductRepository.save(p);
+        if (p.getInventoryItem() != null) {
+            InventoryItem ii = inventoryItemRepository
+                    .findByIdAndHotel_Id(p.getInventoryItem().getId(), hotelId)
+                    .orElseThrow(() -> notFound("Inventory item"));
+            ii.setCurrentStock(ii.getCurrentStock().add(qty).setScale(4, RoundingMode.HALF_UP));
+            inventoryItemRepository.save(ii);
+            StockTransaction st = new StockTransaction();
+            st.setItem(ii);
+            st.setType(StockTransactionType.ADJUSTMENT);
+            st.setQuantity(qty);
+            st.setReference("POS_REFUND:" + sale.getSaleNumber());
+            st.setNotes("POS refund — stock restored @ " + depot.getName());
+            st.setPerformedBy(who);
+            st.setToLocation(depot.getName());
+            stockTransactionRepository.save(st);
+        }
     }
 
     @Transactional
@@ -609,6 +753,7 @@ public class InventoryDepotService {
         sale.setDepot(order.getDepot());
         sale.setSaleNumber(nextSaleNumber(hotelId));
         sale.setCustomerName(order.getCustomerName());
+        sale.setPaymentMethod("CASH");
         sale.setCreatedBy(tenantAccessService.currentUser().getUsername());
 
         BigDecimal total = BigDecimal.ZERO;
@@ -678,6 +823,7 @@ public class InventoryDepotService {
                 sale.getCreatedAt(),
                 responseLines,
                 null,
+                sale.getPaymentMethod(),
                 "Delivery converted to invoice");
     }
 
@@ -798,6 +944,7 @@ public class InventoryDepotService {
         sale.setDepot(proforma.getDepot());
         sale.setSaleNumber(nextSaleNumber(hotelId));
         sale.setCustomerName(proforma.getCustomerName());
+        sale.setPaymentMethod("CASH");
         sale.setCreatedBy(tenantAccessService.currentUser().getUsername());
 
         BigDecimal total = BigDecimal.ZERO;
@@ -862,7 +1009,22 @@ public class InventoryDepotService {
                 sale.getCreatedAt(),
                 responseLines,
                 null,
+                sale.getPaymentMethod(),
                 "Proforma converted to invoice");
+    }
+
+    private static String normalizePaymentMethod(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "CASH";
+        }
+        String normalized = raw.trim().toUpperCase(java.util.Locale.ROOT);
+        return switch (normalized) {
+            case "MOMO", "MOBILE MONEY", "MOBILE_MONEY" -> "MOMO";
+            case "CREDIT CARD", "CREDIT_CARD", "CARD" -> "CREDIT CARD";
+            case "BANK", "BANK TRANSFER", "BANK_TRANSFER" -> "BANK";
+            case "CASH" -> "CASH";
+            default -> normalized.length() > 32 ? normalized.substring(0, 32) : normalized;
+        };
     }
 
     private static String normalizeMenuName(String raw) {
@@ -1024,6 +1186,11 @@ public class InventoryDepotService {
         String value = raw.trim().toUpperCase(Locale.ROOT);
         if ("PATISRY".equals(value) || "PASTRY".equals(value)) return DepotType.PATISSERIE;
         return DepotType.valueOf(value);
+    }
+
+    private String nextRefundNumber(UUID hotelId) {
+        long next = depotSaleRefundRepository.countByHotelId(hotelId) + 1;
+        return "DR-" + Year.now().getValue() + "-" + String.format("%06d", next);
     }
 
     private String nextSaleNumber(UUID hotelId) {

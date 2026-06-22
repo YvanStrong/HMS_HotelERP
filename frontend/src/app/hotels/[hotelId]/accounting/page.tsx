@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { loadAuthUser, type AuthUser } from "@/lib/auth";
@@ -13,6 +13,7 @@ type SalesAnalytics = {
   posSales: number;
   totalSales: number;
   totalExpenses: number;
+  payrollExpenses: number;
   netAfterExpenses: number;
   invoiceCount: number;
   posSaleCount: number;
@@ -182,6 +183,7 @@ export default function AccountingPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeReport, setActiveReport] = useState<ReportKey>("profitLoss");
+  const [bankFilter, setBankFilter] = useState("ALL");
 
   const [expense, setExpense] = useState({
     expenseDate: today,
@@ -242,6 +244,23 @@ export default function AccountingPage() {
     if (!mounted) return;
     void load();
   }, [mounted, load]);
+
+  async function syncPayrollToAccounting() {
+    setBusy("payroll-sync");
+    setError(null);
+    try {
+      const result = await apiFetch<{ postedCount: number; message: string }>(
+        `/api/v1/hotels/${hotelId}/accounting/payroll/sync`,
+        { method: "POST" },
+      );
+      setMsg(result.message);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not sync payroll to accounting");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function submitExpense(e: React.FormEvent) {
     e.preventDefault();
@@ -432,6 +451,15 @@ export default function AccountingPage() {
 
   const analytics = data?.analytics;
   const reports = data?.reports;
+  const bankStatementLines = reports?.bankStatementLines ?? [];
+  const bankFilterOptions = useMemo(
+    () => Array.from(new Set(bankStatementLines.map((line) => line.sourceBank).filter(Boolean))).sort(),
+    [bankStatementLines],
+  );
+  const filteredBankStatementLines = useMemo(
+    () => bankFilter === "ALL" ? bankStatementLines : bankStatementLines.filter((line) => line.sourceBank === bankFilter),
+    [bankFilter, bankStatementLines],
+  );
 
   if (!mounted) {
     return (
@@ -469,6 +497,14 @@ export default function AccountingPage() {
             <button type="button" className="hms-btn-outline" onClick={() => void load()}>
               Refresh
             </button>
+            <button
+              type="button"
+              className="hms-btn-solid"
+              disabled={busy === "payroll-sync"}
+              onClick={() => void syncPayrollToAccounting()}
+            >
+              {busy === "payroll-sync" ? "Syncing…" : "Post paid payroll"}
+            </button>
           </div>
         ) : null}
       </div>
@@ -477,7 +513,7 @@ export default function AccountingPage() {
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div> : null}
 
       {canManage ? (
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {[
             [
               "Sales",
@@ -485,6 +521,11 @@ export default function AccountingPage() {
               `POS ${money(analytics?.posSales)} · Invoice ${money(analytics?.inventoryInvoiceSales)}`,
             ],
             ["Expenses", analytics?.totalExpenses],
+            [
+              "Payroll / salaries",
+              analytics?.payrollExpenses,
+              "Posted from HR when payroll is marked paid",
+            ],
             ["Net", analytics?.netAfterExpenses],
             ["Petty cash disbursed", analytics?.pettyCashDisbursed],
           ].map(([label, value, sub]) => (
@@ -572,15 +613,15 @@ export default function AccountingPage() {
           </form>
           <div className="mt-4 rounded-xl border border-dashed border-border/80 p-3">
             <label className="block text-sm font-medium text-foreground" htmlFor="bank-pdf">
-              Import BK statement PDF
+              Import bank / Momo statement
             </label>
             <p className="mb-2 text-xs text-muted-foreground">
-              Upload the PDF statement and the system will read rows like book date, value date, reference, narration, debit, credit, and balance.
+              Upload BK, Equity Bank, or Access Bank PDF statements, or a Momo XLSX export. The system will read dates, reference, narration, debit, credit, and balance where available.
             </p>
             <input
               id="bank-pdf"
               type="file"
-              accept="application/pdf,.pdf"
+              accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
               disabled={busy === "bank-pdf"}
               onChange={(e) => {
                 const file = e.target.files?.[0] ?? null;
@@ -588,7 +629,7 @@ export default function AccountingPage() {
                 e.currentTarget.value = "";
               }}
             />
-            {busy === "bank-pdf" ? <p className="mt-2 text-sm text-muted-foreground">Reading PDF…</p> : null}
+            {busy === "bank-pdf" ? <p className="mt-2 text-sm text-muted-foreground">Reading statement…</p> : null}
           </div>
         </section>
       ) : null}
@@ -702,22 +743,41 @@ export default function AccountingPage() {
               <p className="mb-2 text-xs text-muted-foreground">
                 This table shows all saved bank statement lines from the database. The date filter still controls how bank lines feed Ledger, Trial Balance, Balance Sheet, and Profit & Loss.
               </p>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="bank-statement-bank-filter">
+                  Filter by bank
+                </label>
+                <select
+                  id="bank-statement-bank-filter"
+                  className="h-9 w-full max-w-xs rounded-lg border border-border bg-background px-3 text-sm"
+                  value={bankFilter}
+                  onChange={(e) => setBankFilter(e.target.value)}
+                >
+                  <option value="ALL">All banks</option>
+                  {bankFilterOptions.map((bank) => (
+                    <option key={bank} value={bank}>{bank}</option>
+                  ))}
+                </select>
+              </div>
             <div id="accounting-report-bankStatement" className="max-h-[32rem] overflow-auto rounded-xl border border-border/70">
               <table>
-                <thead><tr><th>Book date</th><th>Value date</th><th>Reference</th><th>Narration</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead>
+                <thead><tr><th>Book date</th><th>Value date</th><th>Reference</th><th>Narration / Bank name</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead>
                 <tbody>
-                  {(reports?.bankStatementLines ?? []).map((r) => (
+                  {filteredBankStatementLines.map((r) => (
                     <tr key={r.id}>
                       <td>{r.bookDate}</td>
                       <td>{r.valueDate ?? "—"}</td>
                       <td>{r.reference ?? "—"}</td>
-                      <td>{r.narration}</td>
+                      <td>
+                        {r.narration}
+                        <span className="text-muted-foreground"> / {r.sourceBank}</span>
+                      </td>
                       <td className="text-right">{money(r.debitAmount)}</td>
                       <td className="text-right">{money(r.creditAmount)}</td>
                       <td className="text-right">{money(r.balanceAmount)}</td>
                     </tr>
                   ))}
-                  {(reports?.bankStatementLines ?? []).length === 0 ? <tr><td colSpan={7} className="text-muted-foreground">No bank statement lines recorded.</td></tr> : null}
+                  {filteredBankStatementLines.length === 0 ? <tr><td colSpan={7} className="text-muted-foreground">No bank statement lines recorded for this bank.</td></tr> : null}
                 </tbody>
               </table>
             </div>
@@ -753,7 +813,11 @@ export default function AccountingPage() {
             <form className="grid gap-3" onSubmit={submitExpense}>
               <div className="grid gap-3 sm:grid-cols-3">
                 <input type="date" value={expense.expenseDate} onChange={(e) => setExpense({ ...expense, expenseDate: e.target.value })} />
-                <input placeholder="Category" value={expense.category} onChange={(e) => setExpense({ ...expense, category: e.target.value })} required />
+                <select value={expense.category} onChange={(e) => setExpense({ ...expense, category: e.target.value })} required>
+                  {["General", "Fuel", "Repairs", "Supplies", "Salaries & Wages", "Other"].map((x) => (
+                    <option key={x} value={x}>{x}</option>
+                  ))}
+                </select>
                 <input type="number" min="0.01" step="0.01" placeholder="Amount" value={expense.amount} onChange={(e) => setExpense({ ...expense, amount: e.target.value })} required />
               </div>
               <input placeholder="Vendor / supplier" value={expense.vendor} onChange={(e) => setExpense({ ...expense, vendor: e.target.value })} />
@@ -806,14 +870,24 @@ export default function AccountingPage() {
 
           <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-soft">
             <h2 className="text-lg font-semibold">Recorded expenses</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Employee salaries appear here automatically when payroll is marked paid in HR (account 5100 Salaries &amp; Wages).
+            </p>
             <div className="mt-3 overflow-x-auto">
               <table>
                 <thead><tr><th>Date</th><th>Expense</th><th>Payment</th><th>Amount</th></tr></thead>
                 <tbody>
                   {(data?.expenses ?? []).map((e) => (
-                    <tr key={e.id}>
+                    <tr key={e.id} className={e.category === "Salaries & Wages" ? "bg-sky-50/60" : undefined}>
                       <td>{e.expenseDate}</td>
-                      <td><strong>{e.category}</strong><br /><span className="text-xs text-muted-foreground">{e.description}{e.vendor ? ` · ${e.vendor}` : ""}</span></td>
+                      <td>
+                        <strong>{e.category}</strong>
+                        {e.category === "Salaries & Wages" ? (
+                          <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-sky-800">Payroll</span>
+                        ) : null}
+                        <br />
+                        <span className="text-xs text-muted-foreground">{e.description}{e.vendor ? ` · ${e.vendor}` : ""}</span>
+                      </td>
                       <td>{e.paymentMethod ?? "—"}<br /><span className="text-xs text-muted-foreground">{e.referenceNo ?? ""}</span></td>
                       <td>{money(e.amount)}</td>
                     </tr>

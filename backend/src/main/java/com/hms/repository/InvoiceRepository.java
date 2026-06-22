@@ -59,7 +59,13 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
     @EntityGraph(attributePaths = {"hotel", "reservation", "reservation.guest", "reservation.room"})
     Page<Invoice> findByHotel_IdOrderByCreatedAtDesc(UUID hotelId, Pageable pageable);
 
-    @Query("select coalesce(sum(i.totalAmount), 0) from Invoice i where i.hotel.id = :hotelId")
+    @Query(
+            """
+            select coalesce(sum(i.totalAmount), 0)
+            from Invoice i
+            where i.hotel.id = :hotelId
+              and upper(i.status) <> 'REFUNDED'
+            """)
     BigDecimal sumTotalAmountByHotelId(@Param("hotelId") UUID hotelId);
 
     @Query(
