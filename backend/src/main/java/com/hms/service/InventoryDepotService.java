@@ -5,6 +5,7 @@ import com.hms.domain.ChargeType;
 import com.hms.domain.DepotType;
 import com.hms.domain.ReservationStatus;
 import com.hms.domain.StockTransactionType;
+import com.hms.entity.AppUser;
 import com.hms.entity.DepotProduct;
 import com.hms.entity.DepotSale;
 import com.hms.entity.DepotSaleLine;
@@ -21,6 +22,7 @@ import com.hms.entity.PosDeliveryOrderLine;
 import com.hms.entity.Reservation;
 import com.hms.entity.RoomCharge;
 import com.hms.entity.StockTransaction;
+import com.hms.repository.AppUserRepository;
 import com.hms.repository.DepotProductRepository;
 import com.hms.repository.DepotSaleRepository;
 import com.hms.repository.DepotSaleRefundRepository;
@@ -41,6 +43,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -70,6 +73,8 @@ public class InventoryDepotService {
     private final StockTransactionRepository stockTransactionRepository;
     private final ReservationRepository reservationRepository;
     private final ChargeService chargeService;
+    private final AppUserRepository appUserRepository;
+    private final PosOrderNotificationService posOrderNotificationService;
 
     public InventoryDepotService(
             TenantAccessService tenantAccessService,
@@ -84,7 +89,9 @@ public class InventoryDepotService {
             InvWarehouseRepository invWarehouseRepository,
             StockTransactionRepository stockTransactionRepository,
             ReservationRepository reservationRepository,
-            ChargeService chargeService) {
+            ChargeService chargeService,
+            AppUserRepository appUserRepository,
+            PosOrderNotificationService posOrderNotificationService) {
         this.tenantAccessService = tenantAccessService;
         this.inventoryDepotRepository = inventoryDepotRepository;
         this.depotProductRepository = depotProductRepository;
@@ -98,6 +105,8 @@ public class InventoryDepotService {
         this.stockTransactionRepository = stockTransactionRepository;
         this.reservationRepository = reservationRepository;
         this.chargeService = chargeService;
+        this.appUserRepository = appUserRepository;
+        this.posOrderNotificationService = posOrderNotificationService;
     }
 
     @Transactional(readOnly = true)
@@ -357,6 +366,7 @@ public class InventoryDepotService {
         sale.setCustomerName(req.customerName() == null ? null : req.customerName().trim());
         sale.setPaymentMethod(normalizePaymentMethod(req.paymentMethod()));
         sale.setCreatedBy(tenantAccessService.currentUser().getUsername());
+        applyMobileSaleFields(sale, req, hotelId);
 
         BigDecimal total = BigDecimal.ZERO;
         int lineOrder = 0;
@@ -376,7 +386,7 @@ public class InventoryDepotService {
             if (managedStock && p.getStockQty().compareTo(line.quantity()) < 0) {
                 throw new ApiException(HttpStatus.CONFLICT, "Insufficient stock for " + p.getProductCode());
             }
-            BigDecimal unitPrice = scale2(p.getSellingPrice());
+            BigDecimal unitPrice = resolveLineUnitPrice(line, p);
             BigDecimal lineTotal = scale2(unitPrice.multiply(line.quantity()));
             total = total.add(lineTotal);
 
@@ -388,6 +398,9 @@ public class InventoryDepotService {
             sl.setUnitPrice(unitPrice);
             sl.setLineTotal(lineTotal);
             sl.setTaxable(p.isTaxable());
+            if (line.notes() != null && !line.notes().isBlank()) {
+                sl.setLineNotes(line.notes().trim());
+            }
             sale.getLines().add(sl);
 
             if (managedStock) {
@@ -446,6 +459,9 @@ public class InventoryDepotService {
                     ChargeType.FNB,
                     sale.getCreatedBy(),
                     "{\"depotSaleId\":\"" + sale.getId() + "\",\"saleNumber\":\"" + sale.getSaleNumber() + "\"}");
+        }
+        if (isMobilePosActivity(sale.getTableLabel(), sale.getStaffUser())) {
+            posOrderNotificationService.publishSale(sale);
         }
         return new InventoryDepotDtos.CreateSaleResponse(
                 sale.getId(),
@@ -651,6 +667,7 @@ public class InventoryDepotService {
         order.setCustomerName(req.customerName() == null ? null : req.customerName().trim());
         order.setLocationLabel(req.locationLabel() == null ? null : req.locationLabel().trim());
         order.setCreatedBy(tenantAccessService.currentUser().getUsername());
+        resolveStaffUser(req.staffId(), hotelId).ifPresent(order::setStaffUser);
 
         BigDecimal total = BigDecimal.ZERO;
         int lineOrder = 0;
@@ -665,7 +682,7 @@ public class InventoryDepotService {
             if (!p.getDepot().getId().equals(depot.getId())) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "Product does not belong to selected depot");
             }
-            BigDecimal unitPrice = scale2(p.getSellingPrice());
+            BigDecimal unitPrice = resolveLineUnitPrice(line, p);
             BigDecimal lineTotal = scale2(unitPrice.multiply(line.quantity()));
             total = total.add(lineTotal);
 
@@ -677,6 +694,9 @@ public class InventoryDepotService {
             dl.setUnitPrice(unitPrice);
             dl.setLineTotal(lineTotal);
             dl.setTaxable(p.isTaxable());
+            if (line.notes() != null && !line.notes().isBlank()) {
+                dl.setLineNotes(line.notes().trim());
+            }
             order.getLines().add(dl);
 
             responseLines.add(new InventoryDepotDtos.SaleLineRow(
@@ -684,6 +704,9 @@ public class InventoryDepotService {
         }
         order.setTotalAmount(scale2(total));
         order = posDeliveryOrderRepository.save(order);
+        if (isMobilePosActivity(order.getLocationLabel(), order.getStaffUser())) {
+            posOrderNotificationService.publishDelivery(order);
+        }
         return new InventoryDepotDtos.CreateDeliveryOrderResponse(
                 order.getId(),
                 order.getDeliveryNumber(),
@@ -834,7 +857,7 @@ public class InventoryDepotService {
             if (!p.getDepot().getId().equals(depot.getId())) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "Product does not belong to selected depot");
             }
-            BigDecimal unitPrice = scale2(p.getSellingPrice());
+            BigDecimal unitPrice = resolveLineUnitPrice(line, p);
             BigDecimal lineTotal = scale2(unitPrice.multiply(line.quantity()));
             total = total.add(lineTotal);
 
@@ -1009,6 +1032,13 @@ public class InventoryDepotService {
         return raw.trim().toUpperCase(Locale.ROOT).replace(' ', '_');
     }
 
+    private static BigDecimal resolveLineUnitPrice(InventoryDepotDtos.SaleLineInput line, DepotProduct product) {
+        if (line.unitPrice() != null && line.unitPrice().signum() > 0) {
+            return scale2(line.unitPrice());
+        }
+        return scale2(product.getSellingPrice());
+    }
+
     private static BigDecimal scale2(BigDecimal n) {
         return n == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : n.setScale(2, RoundingMode.HALF_UP);
     }
@@ -1176,6 +1206,29 @@ public class InventoryDepotService {
     private String nextDeliveryNumber(UUID hotelId) {
         long next = posDeliveryOrderRepository.countByHotelId(hotelId) + 1;
         return "DEL-" + Year.now().getValue() + "-" + String.format("%06d", next);
+    }
+
+    private void applyMobileSaleFields(DepotSale sale, InventoryDepotDtos.CreateSaleRequest req, UUID hotelId) {
+        if (req.tableLabel() != null && !req.tableLabel().isBlank()) {
+            sale.setTableLabel(req.tableLabel().trim());
+        }
+        if (Boolean.TRUE.equals(req.chargeToRoom())) {
+            sale.setPaymentMethod("ROOM");
+        } else if (req.paymentMethod() != null && !req.paymentMethod().isBlank()) {
+            sale.setPaymentMethod(req.paymentMethod().trim().toUpperCase(Locale.ROOT));
+        }
+        resolveStaffUser(req.staffId(), hotelId).ifPresent(sale::setStaffUser);
+    }
+
+    private Optional<AppUser> resolveStaffUser(UUID staffId, UUID hotelId) {
+        UUID id = staffId != null ? staffId : tenantAccessService.currentUser().getId();
+        return appUserRepository
+                .findByIdWithHotel(id)
+                .filter(u -> u.getHotel() != null && hotelId.equals(u.getHotel().getId()));
+    }
+
+    private static boolean isMobilePosActivity(String tableOrLocation, AppUser staffUser) {
+        return staffUser != null || (tableOrLocation != null && !tableOrLocation.isBlank());
     }
 
     private static ApiException notFound(String what) {

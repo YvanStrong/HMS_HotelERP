@@ -1,6 +1,7 @@
 package com.hms.repository;
 
 import com.hms.entity.PosDeliveryOrder;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,4 +35,19 @@ public interface PosDeliveryOrderRepository extends JpaRepository<PosDeliveryOrd
             """)
     Optional<PosDeliveryOrder> findFetchedByIdAndHotelId(
             @Param("orderId") UUID orderId, @Param("hotelId") UUID hotelId);
+
+    @Query(
+            """
+            select distinct o from PosDeliveryOrder o
+            join fetch o.depot
+            left join fetch o.staffUser
+            left join fetch o.lines l
+            left join fetch l.product
+            where o.hotel.id = :hotelId
+              and o.createdAt >= :since
+              and (o.staffUser is not null or o.locationLabel is not null)
+            order by o.createdAt desc
+            """)
+    List<PosDeliveryOrder> findRecentStaffDeliveries(
+            @Param("hotelId") UUID hotelId, @Param("since") Instant since);
 }

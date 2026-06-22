@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
@@ -225,6 +226,11 @@ export default function HotelSettingsPage() {
               </div>
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.22em] text-primary">Hotel settings</p>
+                <p className="mt-1 text-sm">
+                  <Link href={`/hotels/${hotelId}/settings/catering-packages`} className="font-semibold text-indigo-700 hover:underline">
+                    Catering packages (events)
+                  </Link>
+                </p>
                 <h1 className="mt-1 text-3xl font-black tracking-tight text-foreground">{form.name || "Hotel"}</h1>
                 <p className="mt-3 text-sm text-muted-foreground">{headerCopy}</p>
               </div>

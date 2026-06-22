@@ -2,6 +2,7 @@ package com.hms.service;
 
 import com.hms.api.dto.ApiDtos;
 import com.hms.domain.GroupBillingPreference;
+import com.hms.domain.ReservationStatus;
 import com.hms.entity.CorporateAccount;
 import com.hms.entity.GroupBooking;
 import com.hms.entity.Guest;
@@ -61,13 +62,46 @@ public class GroupBookingService {
         if (group.getGroupCode() != null && groupBookingRepository.existsByGroupCodeIgnoreCase(group.getGroupCode())) {
             throw new ApiException(HttpStatus.CONFLICT, "Group code already exists");
         }
-        if (group.getPreferredRoomTypeId() != null
-                && roomTypeRepository.findByIdAndHotel_Id(group.getPreferredRoomTypeId(), hotelId).isEmpty()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Preferred room type not found for this hotel");
+        if (group.isUsesRoomBlock()) {
+            if (group.getPreferredRoomTypeId() != null
+                    && roomTypeRepository.findByIdAndHotel_Id(group.getPreferredRoomTypeId(), hotelId).isEmpty()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Preferred room type not found for this hotel");
+            }
+        } else {
+            group.setExpectedGuests(null);
+            group.setRoomsNeeded(null);
+            group.setPreferredRoomTypeId(null);
+            group.setRoomMixSummary(null);
         }
 
-        log.info("Creating group booking: {} for hotel {}", group.getGroupName(), hotelId);
-        return groupBookingRepository.save(group);
+        log.info(
+                "Creating group booking: {} for hotel {} (usesRoomBlock={})",
+                group.getGroupName(),
+                hotelId,
+                group.isUsesRoomBlock());
+        GroupBooking saved = groupBookingRepository.save(group);
+        if (!saved.isUsesRoomBlock()) {
+            UUID guestId = getOrCreateGroupBlockPlaceholderGuest(hotelId, saved);
+            LocalDate checkIn =
+                    saved.getTargetCheckIn() != null ? saved.getTargetCheckIn() : LocalDate.now();
+            LocalDate checkOut = saved.getTargetCheckOut() != null
+                    ? saved.getTargetCheckOut()
+                    : checkIn;
+            if (!checkOut.isAfter(checkIn)) {
+                // Same-day function: one calendar day; folio uses exclusive checkout next morning.
+                checkOut = checkIn.plusDays(1);
+            } else {
+                checkOut = bookingDateNormalizer.toStorageCheckOutExclusive(checkIn, checkOut);
+                if (!checkIn.isBefore(checkOut)) {
+                    checkOut = checkIn.plusDays(1);
+                }
+            }
+            Reservation anchor = reservationService.createGroupEventFolioAnchor(
+                    hotelId, saved.getId(), guestId, checkIn, checkOut);
+            assignMasterReservation(saved, hotelId, anchor.getId());
+            log.info("Event-only group folio anchor reservationId={} groupId={}", anchor.getId(), saved.getId());
+        }
+        return saved;
     }
 
     @Transactional
@@ -119,6 +153,12 @@ public class GroupBookingService {
         GroupBooking group = groupBookingRepository
                 .findByIdAndHotel_Id(groupId, hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Group not found"));
+        if (!group.isUsesRoomBlock()) {
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "GROUP_FUNCTIONS_ONLY",
+                    "This group is functions-only and does not use room blocks. Add functions and bill on the Billing tab.");
+        }
         UUID leadGuestId = resolveLeadGuestId(hotelId, req.leadGuestId(), group);
         LocalDate exclusiveOut =
                 bookingDateNormalizer.toStorageCheckOutExclusive(req.checkInDate(), req.checkOutDate());
@@ -149,9 +189,70 @@ public class GroupBookingService {
                 + n
                 + " confirmed reservation(s) linked to group \""
                 + group.getGroupName()
-                + "\". Each has its own room key path on the reservation screen.";
+                + "\".";
+        if (!created.isEmpty() && group.getMasterReservation() == null) {
+            assignMasterReservation(group, hotelId, created.get(0).id());
+            msg += " First room is set as the master guest bill for function charges.";
+        }
         log.info("Group block reserve: groupId={} rooms={} leadGuest={}", groupId, n, leadGuestId);
         return new ApiDtos.GroupBlockReserveResponse(group.getId(), created.size(), created, msg);
+    }
+
+    private void assignMasterReservation(GroupBooking group, UUID hotelId, UUID reservationId) {
+        Reservation master = reservationRepository
+                .findByIdAndHotel_IdWithGroupBilling(reservationId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation not found"));
+        GroupBooking linked = master.getGroupBooking();
+        if (linked == null || !linked.getId().equals(group.getId())) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST, "Master reservation must belong to this group (link it first).");
+        }
+        group.setMasterReservation(master);
+        groupBookingRepository.save(group);
+        log.info("Set group master reservation: groupId={} reservationId={}", group.getId(), reservationId);
+    }
+
+    /**
+     * Checks in every CONFIRMED reservation on the group rooming list (skips already checked-in / other statuses).
+     * Failures are collected per room so one bad stay does not block the rest.
+     */
+    @Transactional
+    public ApiDtos.GroupBulkCheckInResponse checkInAllConfirmed(
+            UUID hotelId, String hotelHeader, UUID groupId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        groupBookingRepository
+                .findByIdAndHotel_Id(groupId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Group not found"));
+        List<Reservation> members = reservationRepository.findByGroupBooking_Id(groupId);
+        ApiDtos.CheckInRequest req = new ApiDtos.CheckInRequest(null, null, null, true, null, null, null);
+        int attempted = 0;
+        int checkedIn = 0;
+        int skipped = 0;
+        List<ApiDtos.GroupBulkCheckInFailure> failures = new ArrayList<>();
+        for (Reservation r : members) {
+            if (r.getStatus() != ReservationStatus.CONFIRMED) {
+                skipped++;
+                continue;
+            }
+            attempted++;
+            try {
+                reservationService.checkIn(hotelId, hotelHeader, r.getId(), req);
+                checkedIn++;
+            } catch (ApiException ex) {
+                failures.add(new ApiDtos.GroupBulkCheckInFailure(
+                        r.getId(),
+                        r.getConfirmationCode(),
+                        ex.getErrorCode(),
+                        ex.getMessage()));
+            }
+        }
+        if (attempted == 0) {
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "NO_CONFIRMED_MEMBERS",
+                    "No confirmed reservations to check in on this group.");
+        }
+        return new ApiDtos.GroupBulkCheckInResponse(groupId, attempted, checkedIn, skipped, failures);
     }
 
     /**
@@ -234,15 +335,7 @@ public class GroupBookingService {
         if (Boolean.TRUE.equals(req.clearMasterReservation())) {
             g.setMasterReservation(null);
         } else if (req.masterReservationId() != null) {
-            Reservation master = reservationRepository
-                    .findByIdAndHotel_IdWithGroupBilling(req.masterReservationId(), hotelId)
-                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Master reservation not found"));
-            GroupBooking linked = master.getGroupBooking();
-            if (linked == null || !linked.getId().equals(groupId)) {
-                throw new ApiException(
-                        HttpStatus.BAD_REQUEST, "Master reservation must belong to this group (link it first).");
-            }
-            g.setMasterReservation(master);
+            assignMasterReservation(g, hotelId, req.masterReservationId());
         }
         if (Boolean.TRUE.equals(req.clearCorporateAccount())) {
             g.setCorporateAccount(null);

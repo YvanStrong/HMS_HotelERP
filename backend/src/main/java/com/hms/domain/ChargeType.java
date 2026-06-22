@@ -10,6 +10,7 @@ public enum ChargeType {
     DAMAGE,
     PHONE,
     SPA,
+    BANQUET,
     RECREATION,
     EARLY_CHECKIN,
     LATE_CHECKOUT,

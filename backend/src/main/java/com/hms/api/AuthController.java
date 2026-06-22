@@ -78,6 +78,7 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<ApiDtos.LoginResponse> login(
             @Valid @RequestBody ApiDtos.LoginRequest request, HttpServletRequest httpRequest) {
+        String clientType = clientType(httpRequest);
         String loginKey = loginKey(request, httpRequest);
         loginAttemptService.assertAllowed(loginKey);
         Optional<AppUser> resolved = resolveUser(request);
@@ -118,7 +119,7 @@ public class AuthController {
                     log.warn("Could not persist platform audit row for super admin login: {}", ex.getMessage());
                 }
             }
-            return ResponseEntity.ok(buildLoginResponse(principal));
+            return ResponseEntity.ok(buildLoginResponse(principal, clientType));
         } catch (BadCredentialsException e) {
             loginAttemptService.onFailure(loginKey);
             securityAuditService.logEvent(
@@ -144,7 +145,9 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<ApiDtos.LoginResponse> refresh(@Valid @RequestBody ApiDtos.RefreshTokenRequest request) {
+    public ResponseEntity<ApiDtos.LoginResponse> refresh(
+            @Valid @RequestBody ApiDtos.RefreshTokenRequest request, HttpServletRequest httpRequest) {
+        String clientType = clientType(httpRequest);
         var userId = jwtService.parseRefreshTokenUserId(request.refreshToken());
         AppUser user = appUserRepository
                 .findByIdWithHotel(userId)
@@ -159,7 +162,7 @@ public class AuthController {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "ACCOUNT_DISABLED", "This staff account is deactivated");
         }
         tenantSubscriptionGuard.assertRefreshAllowed(user);
-        return ResponseEntity.ok(buildLoginResponse(UserPrincipal.fromEntity(user)));
+        return ResponseEntity.ok(buildLoginResponse(UserPrincipal.fromEntity(user), clientType));
     }
 
     private Optional<AppUser> resolveUser(ApiDtos.LoginRequest request) {
@@ -189,14 +192,22 @@ public class AuthController {
         return addr != null && !addr.isBlank() ? addr : "unknown";
     }
 
-    private ApiDtos.LoginResponse buildLoginResponse(UserPrincipal principal) {
+    private static String clientType(HttpServletRequest req) {
+        if (req == null) {
+            return null;
+        }
+        String v = req.getHeader("X-Client-Type");
+        return v != null && !v.isBlank() ? v.trim() : null;
+    }
+
+    private ApiDtos.LoginResponse buildLoginResponse(UserPrincipal principal, String clientType) {
         AppUser u = appUserRepository
                 .findById(principal.getId())
                 .orElseThrow(() -> new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "USER_NOT_FOUND", "User missing"));
         return new ApiDtos.LoginResponse(
-                jwtService.generateToken(principal),
+                jwtService.generateToken(principal, clientType),
                 jwtService.generateRefreshToken(principal),
-                jwtProperties.getExpirationMs() / 1000,
+                jwtService.accessTokenExpirySeconds(clientType),
                 "Bearer",
                 new ApiDtos.AuthUserInfo(
                         u.getId(),

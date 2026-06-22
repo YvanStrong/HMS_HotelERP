@@ -26,7 +26,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class StompTenantSecurityChannelInterceptor implements ChannelInterceptor {
 
-    private static final Pattern HOTEL_TOPIC = Pattern.compile("^/topic/hotel/([0-9a-fA-F-]{36})/(rooms|facilities)$");
+    private static final Pattern HOTEL_TOPIC = Pattern.compile(
+            "^/topic/hotel/([0-9a-fA-F-]{36})/(rooms|facilities|pos-orders|pos/kitchen|pos/tables|pos/line-ready)$");
     private static final Pattern RES_FOLIO_TOPIC = Pattern.compile("^/topic/reservations/([0-9a-fA-F-]{36})/folio$");
 
     private final JwtService jwtService;

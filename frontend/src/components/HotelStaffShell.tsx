@@ -9,6 +9,7 @@ import { loadAuthUser } from "@/lib/auth";
 import { canAccessHotelNav, navHint, type HotelNavKey } from "@/lib/hotelNavAccess";
 import { staffAppPath } from "@/lib/staffAppRoutes";
 import { useHotelContext } from "@/lib/useHotelContext";
+import { PosOrderToastHost } from "@/components/PosOrderToastHost";
 import { StaffNotificationBell } from "@/components/StaffNotificationBell";
 import { ModuleDisabledPage } from "@/components/ModuleDisabledPage";
 
@@ -134,7 +135,8 @@ export function HotelStaffShell({
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
-  const { hotel, hasModule, isModuleVisibleWhenDisabled, loading: hotelLoading } = useHotelContext(hotelId);
+  const { hotel, hasModule, isModuleVisibleWhenDisabled, entitlementsLoaded, loading: hotelLoading } =
+    useHotelContext(hotelId);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<string[]>([
@@ -169,7 +171,9 @@ export function HotelStaffShell({
       : pathname === href || pathname?.startsWith(`${href}/`) || pathname?.includes(`/${item.segment}`);
   });
   const currentModuleKey = currentNavItem ? NAV_MODULES[currentNavItem.key] : null;
-  const currentModuleDisabled = Boolean(currentModuleKey && !hasModule(currentModuleKey));
+  const currentModuleDisabled = Boolean(
+    entitlementsLoaded && currentModuleKey && !hasModule(currentModuleKey),
+  );
 
   return (
     <div className="h-screen overflow-hidden bg-gradient-to-br from-[hsl(204,94%,98%)] to-[hsl(38,92%,94%)] flex">
@@ -399,8 +403,13 @@ export function HotelStaffShell({
 
       {/* Main content */}
       <div className="flex-1 min-w-0 flex flex-col">
+        <div className="fixed right-4 top-4 z-40">
+          <StaffNotificationBell hotelId={hotelId} />
+        </div>
+        <PosOrderToastHost hotelId={hotelId} />
+
         {/* Mobile header */}
-        <header className="bg-white border-b border-border px-4 py-3 flex items-center justify-between lg:hidden">
+        <header className="bg-white border-b border-border px-4 py-3 flex items-center justify-start gap-3 pr-16 lg:hidden">
           <button
             onClick={() => {
               if (window.innerWidth >= 1024) {
@@ -417,11 +426,6 @@ export function HotelStaffShell({
             </svg>
           </button>
           <span className="font-semibold text-foreground">{hotelLoading ? "Loading..." : hotel.name}</span>
-          <StaffNotificationBell hotelId={hotelId} />
-        </header>
-
-        <header className="hidden lg:flex items-center justify-end gap-3 border-b border-border/60 bg-white/70 px-8 py-3 backdrop-blur">
-          <StaffNotificationBell hotelId={hotelId} />
         </header>
 
         {/* Page content */}

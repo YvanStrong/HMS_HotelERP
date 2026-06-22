@@ -42,4 +42,7 @@ public class DepotSaleLine {
 
     @Column(name = "quantity_refunded", nullable = false, precision = 14, scale = 3)
     private BigDecimal quantityRefunded = BigDecimal.ZERO;
+
+    @Column(name = "line_notes", columnDefinition = "TEXT")
+    private String lineNotes;
 }

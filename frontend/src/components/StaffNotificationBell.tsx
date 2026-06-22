@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, getToken } from "@/lib/api";
+import { HMS_POS_ORDER_EVENT, posOrderEventKey, type PosOrderNotification as PosOrderRow } from "@/lib/posOrderNotification";
 import { staffAppPath } from "@/lib/staffAppRoutes";
 
 type ReservationRow = {
@@ -42,14 +43,28 @@ type SubscriptionStatus = {
 type StaffAlert = {
   id: string;
   signature: string;
-  section: "Reservations" | "Rooms" | "Guests" | "Tasks" | "System";
+  section: "Reservations" | "Rooms" | "Guests" | "Tasks" | "System" | "POS";
   tone: "red" | "amber" | "blue" | "green";
   title: string;
   body: string;
   href: string;
 };
 
+type PosOrderNotification = {
+  eventId: string;
+  eventType: string;
+  title: string;
+  body: string;
+  staffDisplayName: string | null;
+  staffUsername: string | null;
+  at: string;
+};
+
 const READ_KEY_PREFIX = "hms:staff-notifications:read:";
+const CLEARED_KEY_PREFIX = "hms:staff-notifications:cleared:";
+const REMINDER_SNOOZE_MS = 30 * 60 * 1000;
+
+type SignatureExpiryMap = Record<string, number>;
 
 function todayYmd() {
   const d = new Date();
@@ -60,21 +75,53 @@ function readStorageKey(hotelId: string) {
   return `${READ_KEY_PREFIX}${hotelId}`;
 }
 
-function loadReadSignatures(hotelId: string): string[] {
-  if (typeof window === "undefined") return [];
+function clearedStorageKey(hotelId: string) {
+  return `${CLEARED_KEY_PREFIX}${hotelId}`;
+}
+
+function pruneExpiryMap(map: SignatureExpiryMap, now = Date.now()): SignatureExpiryMap {
+  return Object.fromEntries(Object.entries(map).filter(([, expiresAt]) => expiresAt > now));
+}
+
+function parseExpiryMap(raw: string | null): SignatureExpiryMap {
+  if (!raw) return {};
   try {
-    const raw = window.localStorage.getItem(readStorageKey(hotelId));
-    return raw ? (JSON.parse(raw) as string[]) : [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const entries = Object.entries(parsed as Record<string, unknown>)
+        .filter(([, value]) => typeof value === "number")
+        .map(([key, value]) => [key, value as number] as const);
+      return pruneExpiryMap(Object.fromEntries(entries));
+    }
   } catch {
-    return [];
+    return {};
+  }
+  return {};
+}
+
+function loadReadSignatures(hotelId: string): SignatureExpiryMap {
+  if (typeof window === "undefined") return {};
+  return parseExpiryMap(window.localStorage.getItem(readStorageKey(hotelId)));
+}
+
+function loadClearedSignatures(hotelId: string): SignatureExpiryMap {
+  if (typeof window === "undefined") return {};
+  return parseExpiryMap(window.localStorage.getItem(clearedStorageKey(hotelId)));
+}
+
+function saveReadSignatures(hotelId: string, signatures: SignatureExpiryMap) {
+  try {
+    window.localStorage.setItem(readStorageKey(hotelId), JSON.stringify(pruneExpiryMap(signatures)));
+  } catch {
+    // Best effort. Notification read state should never block operations.
   }
 }
 
-function saveReadSignatures(hotelId: string, signatures: string[]) {
+function saveClearedSignatures(hotelId: string, signatures: SignatureExpiryMap) {
   try {
-    window.localStorage.setItem(readStorageKey(hotelId), JSON.stringify(signatures.slice(-250)));
+    window.localStorage.setItem(clearedStorageKey(hotelId), JSON.stringify(pruneExpiryMap(signatures)));
   } catch {
-    // Best effort. Notification read state should never block operations.
+    // Best effort. Notification clear state should never block operations.
   }
 }
 
@@ -88,13 +135,21 @@ function toneClasses(tone: StaffAlert["tone"]) {
 export function StaffNotificationBell({ hotelId }: { hotelId: string }) {
   const [open, setOpen] = useState(false);
   const [alerts, setAlerts] = useState<StaffAlert[]>([]);
-  const [read, setRead] = useState<string[]>([]);
+  const [read, setRead] = useState<SignatureExpiryMap>({});
+  const [cleared, setCleared] = useState<SignatureExpiryMap>({});
   const [loading, setLoading] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setRead(loadReadSignatures(hotelId));
+    setCleared(loadClearedSignatures(hotelId));
   }, [hotelId]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     function onPointerDown(event: MouseEvent) {
@@ -112,10 +167,14 @@ export function StaffNotificationBell({ hotelId }: { hotelId: string }) {
       if (!getToken()) return;
       setLoading(true);
       try {
-        const [reservations, dashboard, subscription] = await Promise.all([
+        const since = new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString();
+        const [reservations, dashboard, subscription, posOrders] = await Promise.all([
           apiFetch<ReservationRow[]>(`/api/v1/hotels/${hotelId}/reservations?status=CONFIRMED,CHECKED_IN`),
           apiFetch<ExecutiveDashboard>(`/api/v1/hotels/${hotelId}/reports/executive-dashboard`).catch(() => null),
           apiFetch<SubscriptionStatus>(`/api/v1/hotels/${hotelId}/subscription-status`).catch(() => null),
+          apiFetch<PosOrderNotification[]>(`/api/v1/hotels/${hotelId}/pos/notifications?since=${encodeURIComponent(since)}`, {
+            quiet: true,
+          }).catch(() => [] as PosOrderNotification[]),
         ]);
         if (cancelled) return;
         const today = todayYmd();
@@ -206,38 +265,88 @@ export function StaffNotificationBell({ hotelId }: { hotelId: string }) {
             href: card.actionPath || staffAppPath("dashboard"),
           });
         }
+        for (const order of posOrders.slice(0, 12)) {
+          const who = order.staffDisplayName || order.staffUsername || "Staff";
+          nextAlerts.push({
+            id: `pos:${order.eventId}`,
+            signature: `pos:${posOrderEventKey(order as PosOrderRow)}`,
+            section: "POS",
+            tone: order.eventType === "KITCHEN_ORDER" ? "green" : "blue",
+            title: order.title,
+            body: `${who} — ${order.body}`,
+            href: staffAppPath("invoices?tab=deliveries"),
+          });
+        }
         setAlerts(nextAlerts);
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
+    const onPosOrder = () => void loadAlerts();
     void loadAlerts();
     const timer = window.setInterval(() => void loadAlerts(), 60_000);
+    window.addEventListener(HMS_POS_ORDER_EVENT, onPosOrder);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      window.removeEventListener(HMS_POS_ORDER_EVENT, onPosOrder);
     };
   }, [hotelId]);
 
-  const unread = useMemo(() => alerts.filter((alert) => !read.includes(alert.signature)), [alerts, read]);
+  const visibleAlerts = useMemo(
+    () => alerts.filter((alert) => (cleared[alert.signature] ?? 0) <= now),
+    [alerts, cleared, now],
+  );
+  const unread = useMemo(
+    () => visibleAlerts.filter((alert) => (read[alert.signature] ?? 0) <= now),
+    [visibleAlerts, read, now],
+  );
 
   function markRead(signature: string) {
-    const next = Array.from(new Set([...read, signature]));
+    const next = pruneExpiryMap({ ...read, [signature]: Date.now() + REMINDER_SNOOZE_MS });
     setRead(next);
     saveReadSignatures(hotelId, next);
   }
 
   function markAllRead() {
-    const next = Array.from(new Set([...read, ...alerts.map((alert) => alert.signature)]));
+    const expiresAt = Date.now() + REMINDER_SNOOZE_MS;
+    const next = pruneExpiryMap({
+      ...read,
+      ...Object.fromEntries(visibleAlerts.map((alert) => [alert.signature, expiresAt])),
+    });
     setRead(next);
     saveReadSignatures(hotelId, next);
+  }
+
+  function clearAll() {
+    const expiresAt = Date.now() + REMINDER_SNOOZE_MS;
+    const nextCleared = pruneExpiryMap({
+      ...cleared,
+      ...Object.fromEntries(visibleAlerts.map((alert) => [alert.signature, expiresAt])),
+    });
+    const nextRead = pruneExpiryMap({
+      ...read,
+      ...Object.fromEntries(visibleAlerts.map((alert) => [alert.signature, expiresAt])),
+    });
+    setCleared(nextCleared);
+    setRead(nextRead);
+    saveClearedSignatures(hotelId, nextCleared);
+    saveReadSignatures(hotelId, nextRead);
+  }
+
+  function toggleOpen() {
+    setOpen((value) => {
+      const next = !value;
+      if (next) markAllRead();
+      return next;
+    });
   }
 
   return (
     <div ref={menuRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-border/70 bg-white/90 text-foreground shadow-sm transition hover:border-primary/30 hover:bg-primary/5"
         aria-label="Open notifications"
       >
@@ -260,22 +369,31 @@ export function StaffNotificationBell({ hotelId }: { hotelId: string }) {
                 <h2 className="mt-1 text-lg font-black text-foreground">Operations inbox</h2>
                 <p className="mt-1 text-xs text-muted-foreground">{loading ? "Refreshing signals..." : `${unread.length} unread signal${unread.length === 1 ? "" : "s"}`}</p>
               </div>
-              {unread.length > 0 && (
-                <button type="button" onClick={markAllRead} className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-bold text-foreground hover:bg-muted/70">
-                  Mark all read
-                </button>
-              )}
+              <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                {unread.length > 0 && (
+                  <button type="button" onClick={markAllRead} className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-bold text-foreground hover:bg-muted/70">
+                    Mark all read
+                  </button>
+                )}
+                {visibleAlerts.length > 0 && (
+                  <button type="button" onClick={clearAll} className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold text-red-700 hover:bg-red-100">
+                    Clear all
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="max-h-[calc(100vh-6rem)] overflow-y-auto p-3">
-              {unread.length === 0 ? (
+              {visibleAlerts.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-6 text-center">
                   <p className="text-sm font-bold text-foreground">All caught up</p>
                   <p className="mt-1 text-xs text-muted-foreground">New or changed operational signals will appear here.</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {unread.map((alert) => (
+                  {visibleAlerts.map((alert) => {
+                    const isRead = (read[alert.signature] ?? 0) > now;
+                    return (
                     <Link
                       key={alert.signature}
                       href={alert.href}
@@ -283,18 +401,26 @@ export function StaffNotificationBell({ hotelId }: { hotelId: string }) {
                         markRead(alert.signature);
                         setOpen(false);
                       }}
-                      className="block rounded-2xl border border-border/70 p-3 no-underline transition hover:border-primary/30 hover:bg-muted/40"
+                      className={`block rounded-2xl border p-3 no-underline transition hover:border-primary/30 hover:bg-muted/40 ${
+                        isRead ? "border-border/60 bg-white" : "border-blue-200 bg-blue-50/50"
+                      }`}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${toneClasses(alert.tone)}`}>
-                          {alert.section}
+                        <div className="flex items-center gap-2">
+                          <span className={`h-3 w-3 rounded-full ${isRead ? "bg-slate-300" : "bg-blue-600 shadow-[0_0_0_4px_rgba(37,99,235,0.12)]"}`} />
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${toneClasses(alert.tone)}`}>
+                            {alert.section}
+                          </span>
+                        </div>
+                        <span className={`text-[10px] font-semibold uppercase tracking-wide ${isRead ? "text-slate-400" : "text-blue-700"}`}>
+                          {isRead ? "Read" : "Unread"}
                         </span>
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Open</span>
                       </div>
                       <p className="mt-2 text-sm font-black text-foreground">{alert.title}</p>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">{alert.body}</p>
                     </Link>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -156,6 +156,9 @@ export async function apiFetch<T>(
   if (xHotel) headers.set("X-Hotel-ID", xHotel);
   const res = await fetch(`${API_BASE}${path}`, { ...rest, headers });
   if (!res.ok) {
+    if (quiet && res.status === 404) {
+      return undefined as T;
+    }
     let msg = res.statusText;
     let body: ApiErrorBody | null = null;
     try {

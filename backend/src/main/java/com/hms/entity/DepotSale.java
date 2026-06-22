@@ -33,11 +33,18 @@ public class DepotSale {
     @Column(name = "customer_name", length = 160)
     private String customerName;
 
-    @Column(name = "total_amount", nullable = false, precision = 14, scale = 2)
-    private BigDecimal totalAmount = BigDecimal.ZERO;
+    @Column(name = "table_label", length = 255)
+    private String tableLabel;
 
     @Column(name = "payment_method", nullable = false, length = 32)
     private String paymentMethod = "CASH";
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "staff_user_id")
+    private AppUser staffUser;
+
+    @Column(name = "total_amount", nullable = false, precision = 14, scale = 2)
+    private BigDecimal totalAmount = BigDecimal.ZERO;
 
     @Column(name = "status", nullable = false, length = 16)
     private String status = "COMPLETED";

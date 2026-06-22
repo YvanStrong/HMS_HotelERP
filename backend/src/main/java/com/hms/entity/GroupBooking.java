@@ -2,6 +2,7 @@ package com.hms.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -51,6 +52,14 @@ public class GroupBooking {
 
     @Column(name = "status", nullable = false, length = 30)
     private String status = "TENTATIVE"; // TENTATIVE, CONFIRMED, CANCELLED, COMPLETED
+
+    /**
+     * When true, the group expects a room block (reservations / rooming list). When false, only functions
+     * (catering, banquet, billing) — no inventory hold; an event folio anchor is created for charges.
+     */
+    @JsonProperty("uses_room_block")
+    @Column(name = "uses_room_block", nullable = false)
+    private boolean usesRoomBlock = true;
 
     @OneToMany(mappedBy = "groupBooking", cascade = CascadeType.ALL)
     @JsonIgnore

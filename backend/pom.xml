@@ -18,8 +18,8 @@
     <description>Hotel Management System — Room module</description>
 
     <properties>
-        <java.version>17</java.version>
-        <lombok.version>1.18.40</lombok.version>
+        <java.version>22</java.version>
+        <lombok.version>1.18.42</lombok.version>
     </properties>
 
     <dependencies>

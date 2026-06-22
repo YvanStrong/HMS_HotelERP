@@ -888,6 +888,17 @@ export default function PosPage() {
           <p className="text-sm text-muted-foreground">
             Catalog from Inventory products — categories and stock match the products table.
           </p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+            <a href="/app/pos/tables" className="font-semibold text-primary hover:underline">
+              Tables
+            </a>
+            <a href="/app/pos/tickets" className="font-semibold text-primary hover:underline">
+              Tickets
+            </a>
+            <a href="/app/pos/kitchen" className="font-semibold text-primary hover:underline">
+              Kitchen
+            </a>
+          </div>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <label className="sr-only text-xs text-muted-foreground">Outlet</label>

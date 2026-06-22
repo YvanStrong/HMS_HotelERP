@@ -50,7 +50,7 @@ public class ReservationController {
 
     @GetMapping
     @PreAuthorize(
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE','ROLE_HOUSEKEEPING','ROLE_HOUSEKEEPING_SUPERVISOR')")
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_RECEPTIONIST','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_WAITER','ROLE_CASHIER','ROLE_HOUSEKEEPING','ROLE_HOUSEKEEPING_SUPERVISOR')")
     public List<ApiDtos.ReservationListItem> listReservations(
             @PathVariable UUID hotelId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,

@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { PaginationBar } from "@/components/PaginationBar";
 import { apiFetch } from "@/lib/api";
 import { loadAuthUser, type AuthUser } from "@/lib/auth";
+import {
+  type EventBillingDocumentRow,
+  downloadEventBillingDocumentPdf,
+  eventBillingDocumentLabel,
+  loadEventBillingDocuments,
+} from "@/lib/eventApi";
 import { printDepotSaleInvoice } from "@/lib/printDepotSaleInvoice";
 import { useHotelContext } from "@/lib/useHotelContext";
 import {
@@ -154,7 +160,7 @@ type FacilityInvoiceRow = {
 
 type UnifiedInvoiceRow = {
   id: string;
-  source: "Reservation" | "Inventory Sales" | "POS" | "Facility";
+  source: "Reservation" | "Inventory Sales" | "POS" | "Facility" | "Event";
   invoiceNumber: string;
   customer: string;
   reference: string;
@@ -163,7 +169,7 @@ type UnifiedInvoiceRow = {
   createdAt: string;
   paymentMethod?: string | null;
   refundStatus?: string | null;
-  action?: "reservation" | "sales" | "pos" | "facility";
+  action?: "reservation" | "sales" | "pos" | "facility" | "event";
 };
 
 type InvoiceProductLine = {
@@ -289,6 +295,7 @@ type ProformaDetail = {
 
 export default function InvoicesPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const hotelId = String(params.hotelId);
   const { hotel } = useHotelContext(hotelId);
 
@@ -296,6 +303,13 @@ export default function InvoicesPage() {
   const canRefund = canRefundInvoices(user?.role);
 
   const [tab, setTab] = useState<"reservation" | "sales" | "recentSales" | "proforma" | "deliveries" | "refunds">("reservation");
+
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t === "deliveries" || t === "sales" || t === "recentSales" || t === "proforma" || t === "reservation" || t === "refunds") {
+      setTab(t);
+    }
+  }, [searchParams]);
   const [loading, setLoading] = useState(false);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [salesLoading, setSalesLoading] = useState(false);
@@ -314,6 +328,8 @@ export default function InvoicesPage() {
   const [salesInvoices, setSalesInvoices] = useState<SalesInvoiceSummary[]>([]);
   const [recentSales, setRecentSales] = useState<RecentSaleRow[]>([]);
   const [facilityInvoices, setFacilityInvoices] = useState<FacilityInvoiceRow[]>([]);
+  const [eventBillingDocs, setEventBillingDocs] = useState<EventBillingDocumentRow[]>([]);
+  const [eventDocsLoading, setEventDocsLoading] = useState(false);
   const [posProformas, setPosProformas] = useState<PosProformaRow[]>([]);
   const [deliveries, setDeliveries] = useState<DeliveryOrderRow[]>([]);
   const [refunds, setRefunds] = useState<RefundRow[]>([]);
@@ -499,6 +515,24 @@ export default function InvoicesPage() {
   }, [hotelId]);
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setEventDocsLoading(true);
+      try {
+        const rows = await loadEventBillingDocuments(hotelId);
+        if (!cancelled) setEventBillingDocs(rows ?? []);
+      } catch {
+        if (!cancelled) setEventBillingDocs([]);
+      } finally {
+        if (!cancelled) setEventDocsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hotelId]);
+
+  useEffect(() => {
     if (tab !== "reservation") {
       setSelectedInvoiceId(null);
       setInvoiceDetail(null);
@@ -513,6 +547,19 @@ export default function InvoicesPage() {
     setSelectedInvoiceId(null);
     setInvoiceDetail(null);
   }, [invoicePage]);
+
+  const eventProformas = useMemo(
+    () => eventBillingDocs.filter((d) => d.documentType === "PROFORMA"),
+    [eventBillingDocs],
+  );
+  const eventDeliveries = useMemo(
+    () => eventBillingDocs.filter((d) => d.documentType === "DELIVERY"),
+    [eventBillingDocs],
+  );
+  const eventInvoices = useMemo(
+    () => eventBillingDocs.filter((d) => d.documentType === "INVOICE"),
+    [eventBillingDocs],
+  );
 
   const unifiedInvoices = useMemo<UnifiedInvoiceRow[]>(() => {
     const rows: UnifiedInvoiceRow[] = [
@@ -566,9 +613,20 @@ export default function InvoicesPage() {
         action: "facility" as const,
         refundStatus: row.paymentStatus === "REFUNDED" ? "REFUNDED" : "PAID",
       })),
+      ...eventInvoices.map((row) => ({
+        id: row.id,
+        source: "Event" as const,
+        invoiceNumber: row.documentNumber,
+        customer: row.contactPerson || row.groupName,
+        reference: `${row.eventName} (${eventBillingDocumentLabel(row.documentType)})`,
+        totalAmount: Number(row.totalAmount ?? 0),
+        currency: row.currency || "USD",
+        createdAt: row.updatedAt || row.createdAt,
+        action: "event" as const,
+      })),
     ];
     return rows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [facilityInvoices, invoices, recentSales, salesInvoices]);
+  }, [eventInvoices, facilityInvoices, invoices, recentSales, salesInvoices]);
 
   const filteredUnifiedInvoices = useMemo(() => {
     const q = invoiceSearch.trim().toLowerCase();
@@ -621,6 +679,15 @@ export default function InvoicesPage() {
   useEffect(() => {
     setInvoicePage(1);
   }, [invoiceSearch, unifiedInvoices.length]);
+
+  async function printEventBillingDocument(documentId: string) {
+    setError(null);
+    try {
+      await downloadEventBillingDocumentPdf(hotelId, documentId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not download event billing PDF");
+    }
+  }
 
   function printSelectedTaxInvoice() {
     if (!invoiceDetail) return;
@@ -1207,14 +1274,14 @@ export default function InvoicesPage() {
             className={tab === "proforma" ? "hms-btn-solid hms-btn-sm" : "hms-btn-outline hms-btn-sm"}
             onClick={() => setTab("proforma")}
           >
-            POS Proformas ({posProformas.length})
+            POS Proformas ({posProformas.length + eventProformas.length})
           </button>
           <button
             type="button"
             className={tab === "deliveries" ? "hms-btn-solid hms-btn-sm" : "hms-btn-outline hms-btn-sm"}
             onClick={() => setTab("deliveries")}
           >
-            Deliveries ({deliveries.length})
+            Deliveries ({deliveries.length + eventDeliveries.length})
           </button>
           <button
             type="button"
@@ -1238,7 +1305,7 @@ export default function InvoicesPage() {
             </p>
           )}
           <p className="text-sm text-muted-foreground">
-            All invoice sources are shown together: Reservation, Inventory Sales, POS, and Facility.
+            Final invoices and fully paid event billing documents. Proformas and delivery notes are on their tabs.
           </p>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <label className="text-sm font-medium text-foreground" htmlFor="invoice-search">
@@ -1347,6 +1414,14 @@ export default function InvoicesPage() {
                               </button>
                             )}
                           </>
+                        ) : row.action === "event" ? (
+                          <button
+                            type="button"
+                            className="hms-btn-outline hms-btn-sm"
+                            onClick={() => void printEventBillingDocument(row.id)}
+                          >
+                            Download PDF
+                          </button>
                         ) : (
                           <>
                             <button
@@ -1660,10 +1735,13 @@ export default function InvoicesPage() {
       {!loading && tab === "proforma" && (
         <section className="hms-section-card space-y-6">
           <div>
-            <h2 className="mb-3 text-lg font-semibold">POS Proformas</h2>
-            {posProformasLoading && (
+            <h2 className="mb-1 text-lg font-semibold">Proformas</h2>
+            <p className="mb-3 text-sm text-muted-foreground">
+              POS estimates and event quotes with partial payment (balance still due on the group guest bill).
+            </p>
+            {(posProformasLoading || eventDocsLoading) && (
               <p className="text-sm text-muted-foreground" aria-live="polite">
-                Loading POS proformas…
+                Loading proformas…
               </p>
             )}
             <div className="hms-table-wrap">
@@ -1671,7 +1749,8 @@ export default function InvoicesPage() {
                 <thead>
                   <tr>
                     <th>Proforma #</th>
-                    <th>Depot</th>
+                    <th>Source</th>
+                    <th>Reference</th>
                     <th>Client</th>
                     <th>Total</th>
                     <th>Created</th>
@@ -1680,8 +1759,9 @@ export default function InvoicesPage() {
                 </thead>
                 <tbody>
                   {posProformas.map((row) => (
-                    <tr key={row.proformaId}>
+                    <tr key={`pos-${row.proformaId}`}>
                       <td className="font-medium">{row.proformaNumber}</td>
+                      <td>POS</td>
                       <td>{row.depotName}</td>
                       <td>{row.customerName || "Walk-in"}</td>
                       <td>{Number(row.totalAmount).toFixed(2)}</td>
@@ -1706,10 +1786,36 @@ export default function InvoicesPage() {
                       </td>
                     </tr>
                   ))}
-                  {posProformas.length === 0 && (
+                  {eventProformas.map((row) => (
+                    <tr key={`event-${row.id}`}>
+                      <td className="font-medium">{row.documentNumber}</td>
+                      <td>Event</td>
+                      <td>{row.eventName}</td>
+                      <td>{row.contactPerson || row.groupName}</td>
+                      <td>
+                        {Number(row.totalAmount).toFixed(2)} {row.currency}
+                        {Number(row.amountPaid) > 0 ? (
+                          <span className="block text-xs text-muted-foreground">
+                            Paid {Number(row.amountPaid).toFixed(2)} · Due {Number(row.balanceDue).toFixed(2)}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td>{new Date(row.updatedAt || row.createdAt).toLocaleString()}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="hms-btn-outline hms-btn-sm"
+                          onClick={() => void printEventBillingDocument(row.id)}
+                        >
+                          Download PDF
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {posProformas.length + eventProformas.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="text-center text-muted-foreground">
-                        No saved POS proformas yet.
+                      <td colSpan={7} className="text-center text-muted-foreground">
+                        No proformas yet.
                       </td>
                     </tr>
                   )}
@@ -1724,11 +1830,12 @@ export default function InvoicesPage() {
       {!loading && tab === "deliveries" && (
         <section className="hms-section-card space-y-6">
           <div>
-            <h2 className="mb-1 text-lg font-semibold">Pending Deliveries</h2>
+            <h2 className="mb-1 text-lg font-semibold">Deliveries</h2>
             <p className="mb-3 text-sm text-muted-foreground">
-              Delivery orders are not invoices. Convert them here only after the delivery is finished.
+              Waiter and mobile POS orders land here first. Use <strong>Make invoice</strong> when the guest pays.
+              Event contracts with no payment also appear below.
             </p>
-            {deliveriesLoading && (
+            {(deliveriesLoading || eventDocsLoading) && (
               <p className="text-sm text-muted-foreground" aria-live="polite">
                 Loading deliveries...
               </p>
@@ -1738,7 +1845,8 @@ export default function InvoicesPage() {
                 <thead>
                   <tr>
                     <th>Delivery #</th>
-                    <th>Depot</th>
+                    <th>Source</th>
+                    <th>Reference</th>
                     <th>Client</th>
                     <th>Location</th>
                     <th>Total</th>
@@ -1748,8 +1856,9 @@ export default function InvoicesPage() {
                 </thead>
                 <tbody>
                   {deliveries.map((row) => (
-                    <tr key={row.deliveryOrderId}>
+                    <tr key={`pos-${row.deliveryOrderId}`}>
                       <td className="font-medium">{row.deliveryNumber}</td>
+                      <td>POS</td>
                       <td>{row.depotName}</td>
                       <td>{row.customerName || "Walk-in"}</td>
                       <td>{row.locationLabel || "-"}</td>
@@ -1775,10 +1884,32 @@ export default function InvoicesPage() {
                       </td>
                     </tr>
                   ))}
-                  {deliveries.length === 0 && (
+                  {eventDeliveries.map((row) => (
+                    <tr key={`event-${row.id}`}>
+                      <td className="font-medium">{row.documentNumber}</td>
+                      <td>Event</td>
+                      <td>{row.eventName}</td>
+                      <td>{row.contactPerson || row.groupName}</td>
+                      <td>{row.groupName}</td>
+                      <td>
+                        {Number(row.totalAmount).toFixed(2)} {row.currency}
+                      </td>
+                      <td>{new Date(row.updatedAt || row.createdAt).toLocaleString()}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="hms-btn-outline hms-btn-sm"
+                          onClick={() => void printEventBillingDocument(row.id)}
+                        >
+                          Download PDF
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {deliveries.length + eventDeliveries.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="text-center text-muted-foreground">
-                        No pending delivery orders.
+                      <td colSpan={8} className="text-center text-muted-foreground">
+                        No delivery notes yet.
                       </td>
                     </tr>
                   )}
