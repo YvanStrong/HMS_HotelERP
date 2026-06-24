@@ -34,6 +34,9 @@ HMS_FRONTEND_BASE_URL=http://localhost:3000
 # The JAR file name (e.g. Hotel.jar) does not set this; you configure it explicitly or via reverse proxy.
 # server.servlet.context-path=/Hotel
 
+# Mobile POS: require shift before orders (default true). Override per hotel via hotels.pos_require_shift.
+# hms.pos.require-shift=true
+
 # Guest self-order READY alerts (optional). VAPID = browser push; Twilio = SMS if guest left a phone on the order.
 # hms.self-order.notify.vapid-public-key=
 # hms.self-order.notify.vapid-private-key=

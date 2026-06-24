@@ -44,7 +44,10 @@ public final class InventoryDtos {
             String imageUrl,
             String stockType,
             String taxCategory,
-            boolean taxable) {}
+            boolean taxable,
+            List<String> allergens,
+            List<String> dietaryFlags,
+            java.util.Map<String, String> nameTranslations) {}
 
     public record InventoryListSummary(
             long totalItems, long lowStockCount, long outOfStockCount, BigDecimal totalValue) {}
@@ -167,7 +170,10 @@ public final class InventoryDtos {
             Boolean active,
             String valuationMethod,
             String stockType,
-            String taxCategory) {}
+            String taxCategory,
+            List<String> allergens,
+            List<String> dietaryFlags,
+            java.util.Map<String, String> nameTranslations) {}
 
     public record CreatedIdResponse(UUID id) {}
 

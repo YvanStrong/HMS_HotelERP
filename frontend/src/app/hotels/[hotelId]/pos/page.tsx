@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
 import { printDepotSaleInvoice } from "@/lib/printDepotSaleInvoice";
+import { PosAnnouncementsButton } from "@/components/PosAnnouncementsModal";
 
 type DepotRow = {
   id: string;
@@ -836,6 +837,7 @@ export default function PosPage() {
           <button type="button" className="hms-btn-outline text-sm" onClick={loadDraft}>
             Load draft
           </button>
+          {hotelId ? <PosAnnouncementsButton hotelId={hotelId} /> : null}
         </div>
       </div>
       {selectedOutlet ? (

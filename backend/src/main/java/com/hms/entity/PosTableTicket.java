@@ -80,6 +80,13 @@ public class PosTableTicket {
     @Column(name = "payment_method", length = 20)
     private String paymentMethod;
 
+    @Column(name = "tip_amount", precision = 10, scale = 2)
+    private BigDecimal tipAmount = BigDecimal.ZERO;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tip_waiter_id")
+    private AppUser tipWaiter;
+
     @Column(name = "opened_at", nullable = false)
     private Instant openedAt;
 

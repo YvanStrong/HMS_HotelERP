@@ -142,6 +142,14 @@ public class Hotel {
     @Column(name = "self_order_push_enabled", nullable = false)
     private boolean selfOrderPushEnabled = true;
 
+    /** When set, overrides {@code hms.pos.require-shift} for mobile POS at this hotel. */
+    @Column(name = "pos_require_shift")
+    private Boolean posRequireShift;
+
+    /** When set, overrides {@code hms.pos.low-stock-threshold} for menu low-stock badges. */
+    @Column(name = "pos_low_stock_threshold")
+    private Integer posLowStockThreshold;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

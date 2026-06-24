@@ -1,4 +1,5 @@
 import { Pressable, Text, View } from "react-native";
+import { hapticSelection } from "../lib/haptics";
 
 
 
@@ -22,6 +23,8 @@ export function PinPad({ value, onChange, onComplete, maxLength = 4 }: Props) {
 
     if (value.length >= maxLength) return;
 
+    void hapticSelection();
+
     const next = value + digit;
 
     onChange(next);
@@ -33,6 +36,8 @@ export function PinPad({ value, onChange, onComplete, maxLength = 4 }: Props) {
 
 
   function backspace() {
+
+    void hapticSelection();
 
     onChange(value.slice(0, -1));
 

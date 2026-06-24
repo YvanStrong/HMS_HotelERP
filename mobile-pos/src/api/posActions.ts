@@ -26,7 +26,7 @@ import { getPrinter } from "../printing/PrinterConfig";
 
 import {
   fireAndForgetPrint,
-  isBarMenuCategory,
+  isBarItem,
   printKitchenTicket,
 } from "../printing/PrinterService";
 
@@ -97,6 +97,8 @@ export async function openTicketAction(
     customerName?: string;
 
     guestCount?: number;
+
+    reservationId?: string;
 
     lines?: CartLine[];
 
@@ -196,7 +198,11 @@ export async function addLinesAction(
 
 
 
-export async function sendKitchenAction(hotelId: string, ticketId: string): Promise<TicketDetail | null> {
+export async function sendKitchenAction(
+  hotelId: string,
+  ticketId: string,
+  options?: { fireHeld?: boolean },
+): Promise<TicketDetail | null> {
 
   const resolved = useOfflineQueueStore.getState().resolveTicketId(ticketId) ?? ticketId;
 
@@ -210,7 +216,7 @@ export async function sendKitchenAction(hotelId: string, ticketId: string): Prom
 
   try {
 
-    const detail = await sendTicketToKitchen(hotelId, resolved);
+    const detail = await sendTicketToKitchen(hotelId, resolved, options);
 
     void autoPrintKitchenTickets(detail);
 
@@ -248,7 +254,7 @@ function autoPrintKitchenTickets(detail: TicketDetail): void {
 
   if (getPrinter("bar")) {
 
-    const barLines = roundLines.filter((l) => isBarMenuCategory(l.productName));
+    const barLines = roundLines.filter((l) => isBarItem(l));
 
     if (barLines.length > 0) {
 
@@ -283,6 +289,8 @@ export async function closeTicketAction(
     reservationId?: string;
 
     customerName?: string;
+
+    tipAmount?: number;
 
   },
 

@@ -154,6 +154,9 @@ export default function PosShiftsPage() {
           <Link href={staffAppPath("pos/analytics")} className="hms-btn-outline hms-btn-sm">
             Analytics
           </Link>
+          <Link href={staffAppPath("pos/voids")} className="hms-btn-outline hms-btn-sm">
+            Voids &amp; Discounts
+          </Link>
         </div>
       </div>
 

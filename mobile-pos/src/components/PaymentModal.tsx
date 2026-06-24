@@ -19,15 +19,22 @@ import { money, type TicketDetail } from "../api/tickets";
 import type { GuestSearchHit, ReservationListItem } from "../types";
 import { useAuthStore } from "../store/authStore";
 import { useCartStore } from "../store/cartStore";
+import { buildClosedSummary, saveLastClosedTicket } from "../storage/lastReceipt";
+
+type PayMethod = "CASH" | "CARD";
+type TipPreset = 10 | 15 | 20 | "custom" | "none" | null;
 
 type Props = {
   visible: boolean;
   onClose: () => void;
   onSuccess: (message: string, closedTicket?: TicketDetail | null) => void;
   ticketId?: string | null;
-  /** Open ticket from server — required for correct totals when items are on the ticket, not in cart. */
   ticket?: TicketDetail | null;
 };
+
+function fmtRwf(n: number): string {
+  return `RWF ${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
 
 export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: Props) {
   const hotelId = useAuthStore((s) => s.user?.hotelId);
@@ -46,6 +53,9 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
   const [reservations, setReservations] = useState<ReservationListItem[]>([]);
   const [guestHits, setGuestHits] = useState<GuestSearchHit[]>([]);
   const [selectedReservation, setSelectedReservation] = useState<ReservationListItem | null>(null);
+  const [payMethod, setPayMethod] = useState<PayMethod | null>(null);
+  const [tipPreset, setTipPreset] = useState<TipPreset>(null);
+  const [customTip, setCustomTip] = useState("");
 
   const ticketLines = useMemo(
     () => (ticket?.lines ?? []).filter((l) => l.lineStatus !== "CANCELLED"),
@@ -61,7 +71,6 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
     let t = fromTicketTax + pendingTax;
     let tot = fromTicketTotal + pendingTotal;
 
-    // Fallback: derive from line rows if API totals are missing/zero but lines exist
     if (ticketLines.length > 0 && sub === 0) {
       sub = ticketLines.reduce((s, l) => s + money(l.lineTotal), 0);
     }
@@ -75,8 +84,22 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
     return { subtotal: sub, tax: t, total: tot || sub + t };
   }, [ticket, ticketLines, pendingSubtotal, pendingTax, pendingTotal]);
 
+  const tipAmount = useMemo(() => {
+    if (tipPreset === "none" || tipPreset === null) return 0;
+    if (tipPreset === "custom") return money(customTip);
+    return Math.round((subtotal * tipPreset) / 100);
+  }, [tipPreset, customTip, subtotal]);
+
+  const grandTotal = total + tipAmount;
+
   useEffect(() => {
-    if (!visible || !hotelId) return;
+    if (!visible) {
+      setPayMethod(null);
+      setTipPreset(null);
+      setCustomTip("");
+      return;
+    }
+    if (!hotelId) return;
     void fetchCheckedInReservations(hotelId).then(setReservations).catch(() => setReservations([]));
   }, [visible, hotelId]);
 
@@ -107,13 +130,21 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
     clearPendingLines();
   }
 
-  function finish(message: string, closed?: TicketDetail | null) {
+  function finish(message: string, closed?: TicketDetail | null, paymentMethod?: string) {
+    if (closed && depot) {
+      saveLastClosedTicket(buildClosedSummary(closed, depot.name, paymentMethod));
+    }
     clearCart();
     onClose();
     onSuccess(message, closed ?? null);
   }
 
-  async function submitPayNow(method: "CASH" | "CARD") {
+  function selectPayMethod(method: PayMethod) {
+    setPayMethod(method);
+    if (tipPreset === null) setTipPreset("none");
+  }
+
+  async function submitPayNow(method: "CASH" | "CARD", tip: number) {
     if (!hotelId || !depot) return;
     if (!ticketId && pendingLines.length === 0) return;
     setBusy(true);
@@ -124,11 +155,12 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
           mode: method,
           paymentMethod: method,
           customerName: tableLabel ?? ticket?.tableLabel ?? "Walk-in",
+          tipAmount: tip > 0 ? tip : undefined,
         });
         if (res?.saleNumber) {
-          finish(`Paid — invoice ${res.saleNumber}`, res);
+          finish(`Paid — invoice ${res.saleNumber}`, res, method);
         } else if (res) {
-          finish("Ticket closed — sale recorded", res);
+          finish("Ticket closed — sale recorded", res, method);
         } else {
           finish("Saved offline — will sync when connected", null);
         }
@@ -169,6 +201,7 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
             ? `Charged to room ${selectedReservation.roomNumber ?? "?"} — ${res.saleNumber}`
             : `Charged to room ${selectedReservation.roomNumber ?? "?"}`,
           res,
+          "ROOM",
         );
         return;
       }
@@ -279,38 +312,116 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
             </View>
           ) : null}
 
-          <View className="mb-4 rounded-2xl bg-white p-4">
-            <View className="flex-row justify-between">
-              <Text className="text-slate-600">Subtotal</Text>
-              <Text className="font-medium text-slate-900">{subtotal.toFixed(2)}</Text>
-            </View>
-            <View className="mt-2 flex-row justify-between">
-              <Text className="text-slate-600">Tax</Text>
-              <Text className="font-medium text-slate-900">{tax.toFixed(2)}</Text>
-            </View>
-            <View className="mt-3 flex-row justify-between border-t border-slate-200 pt-3">
-              <Text className="text-base font-bold text-slate-900">Total</Text>
-              <Text className="text-2xl font-bold text-indigo-600">{total.toFixed(2)}</Text>
-            </View>
-          </View>
-
           <Text className="mb-2 text-sm font-semibold text-slate-700">Pay now</Text>
-          <View className="mb-6 flex-row gap-3">
+          <View className="mb-4 flex-row gap-3">
             <Pressable
               disabled={busy || !hasItems}
-              onPress={() => void submitPayNow("CASH")}
-              className={`flex-1 rounded-xl p-4 ${hasItems ? "bg-emerald-600" : "bg-slate-300"}`}
+              onPress={() => selectPayMethod("CASH")}
+              className={`flex-1 rounded-xl p-4 ${
+                payMethod === "CASH" ? "bg-emerald-700 ring-2 ring-emerald-300" : hasItems ? "bg-emerald-600" : "bg-slate-300"
+              }`}
             >
               <Text className="text-center font-semibold text-white">Cash</Text>
             </Pressable>
             <Pressable
               disabled={busy || !hasItems}
-              onPress={() => void submitPayNow("CARD")}
-              className={`flex-1 rounded-xl p-4 ${hasItems ? "bg-indigo-600" : "bg-slate-300"}`}
+              onPress={() => selectPayMethod("CARD")}
+              className={`flex-1 rounded-xl p-4 ${
+                payMethod === "CARD" ? "bg-indigo-700 ring-2 ring-indigo-300" : hasItems ? "bg-indigo-600" : "bg-slate-300"
+              }`}
             >
               <Text className="text-center font-semibold text-white">Card</Text>
             </Pressable>
           </View>
+
+          {payMethod ? (
+            <View className="mb-4 rounded-2xl bg-white p-4">
+              <Text className="mb-3 text-sm font-semibold text-slate-700">Add a tip? (Optional)</Text>
+              <View className="mb-2 flex-row flex-wrap gap-2">
+                {([10, 15, 20] as const).map((pct) => (
+                  <Pressable
+                    key={pct}
+                    onPress={() => setTipPreset(pct)}
+                    className={`rounded-lg px-4 py-2 ${
+                      tipPreset === pct ? "bg-indigo-600" : "bg-slate-100"
+                    }`}
+                  >
+                    <Text className={`font-semibold ${tipPreset === pct ? "text-white" : "text-slate-700"}`}>
+                      {pct}%
+                    </Text>
+                  </Pressable>
+                ))}
+                <Pressable
+                  onPress={() => setTipPreset("custom")}
+                  className={`rounded-lg px-4 py-2 ${tipPreset === "custom" ? "bg-indigo-600" : "bg-slate-100"}`}
+                >
+                  <Text className={`font-semibold ${tipPreset === "custom" ? "text-white" : "text-slate-700"}`}>
+                    Custom
+                  </Text>
+                </Pressable>
+              </View>
+              {tipPreset !== null && tipPreset !== "none" && tipPreset !== "custom" ? (
+                <Text className="mb-2 text-sm font-medium text-indigo-600">= {fmtRwf(tipAmount)}</Text>
+              ) : null}
+              {tipPreset === "custom" ? (
+                <View className="mb-2">
+                  <Text className="mb-1 text-xs text-slate-500">Enter tip amount (RWF)</Text>
+                  <TextInput
+                    value={customTip}
+                    onChangeText={setCustomTip}
+                    keyboardType="decimal-pad"
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-lg font-semibold"
+                    placeholder="0"
+                  />
+                </View>
+              ) : null}
+              <Pressable onPress={() => setTipPreset("none")} className="py-1">
+                <Text className="text-center text-sm text-slate-500 underline">No tip</Text>
+              </Pressable>
+
+              <View className="mt-4 border-t border-slate-200 pt-3">
+                <View className="flex-row justify-between py-1">
+                  <Text className="text-slate-600">Subtotal</Text>
+                  <Text className="font-medium text-slate-900">{fmtRwf(subtotal)}</Text>
+                </View>
+                <View className="flex-row justify-between py-1">
+                  <Text className="text-slate-600">Tax</Text>
+                  <Text className="font-medium text-slate-900">{fmtRwf(tax)}</Text>
+                </View>
+                <View className="flex-row justify-between py-1">
+                  <Text className="text-slate-600">Tip</Text>
+                  <Text className="font-medium text-slate-900">{fmtRwf(tipAmount)}</Text>
+                </View>
+                <View className="mt-2 flex-row justify-between border-t border-slate-200 pt-2">
+                  <Text className="text-base font-bold text-slate-900">TOTAL</Text>
+                  <Text className="text-xl font-bold text-indigo-600">{fmtRwf(grandTotal)}</Text>
+                </View>
+              </View>
+
+              <Pressable
+                disabled={busy}
+                onPress={() => void submitPayNow(payMethod, tipAmount)}
+                className="mt-4 items-center rounded-xl bg-indigo-600 py-4"
+              >
+                <Text className="font-semibold text-white">Confirm Payment — {fmtRwf(grandTotal)}</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View className="mb-4 rounded-2xl bg-white p-4">
+              <View className="flex-row justify-between">
+                <Text className="text-slate-600">Subtotal</Text>
+                <Text className="font-medium text-slate-900">{subtotal.toFixed(2)}</Text>
+              </View>
+              <View className="mt-2 flex-row justify-between">
+                <Text className="text-slate-600">Tax</Text>
+                <Text className="font-medium text-slate-900">{tax.toFixed(2)}</Text>
+              </View>
+              <View className="mt-3 flex-row justify-between border-t border-slate-200 pt-3">
+                <Text className="text-base font-bold text-slate-900">Total</Text>
+                <Text className="text-2xl font-bold text-indigo-600">{total.toFixed(2)}</Text>
+              </View>
+            </View>
+          )}
 
           <Text className="mb-2 text-sm font-semibold text-slate-700">Charge to room</Text>
           <TextInput

@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { loginWithEmail } from "../api/auth";
 
 import { fetchModuleEntitlements } from "../api/modules";
+import { fetchHotelContext } from "../api/hotel";
 
 import { clearStoredTokens, configureApiClient, storeTokens } from "../api/client";
 
@@ -52,6 +53,10 @@ type AuthState = {
 
   enabledModules: string[];
 
+  posRequireShift: boolean;
+
+  posLowStockThreshold: number;
+
   isAuthenticated: boolean;
 
   isHydrated: boolean;
@@ -65,6 +70,8 @@ type AuthState = {
   setTokens: (access: string, refresh: string, user: AuthUser) => Promise<void>;
 
   setHydrated: () => void;
+
+  loadHotelSettings: (hotelId: string) => Promise<void>;
 
   hasModule: (key: string) => boolean;
 
@@ -100,6 +107,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   enabledModules: [],
 
+  posRequireShift: true,
+
+  posLowStockThreshold: 5,
+
   isAuthenticated: false,
 
   isHydrated: false,
@@ -112,7 +123,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   hasModule: (key) => get().enabledModules.includes(key),
 
-
+  loadHotelSettings: async (hotelId) => {
+    try {
+      const ctx = await fetchHotelContext(hotelId);
+      set({
+        posRequireShift: ctx.posRequireShift !== false,
+        posLowStockThreshold: ctx.posLowStockThreshold && ctx.posLowStockThreshold > 0 ? ctx.posLowStockThreshold : 5,
+      });
+    } catch {
+      set({ posRequireShift: true, posLowStockThreshold: 5 });
+    }
+  },
 
   savedEmail: () => mmkvGetString(SAVED_EMAIL_KEY) ?? null,
 
@@ -125,6 +146,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user));
 
     const modules = user.hotelId ? await loadModules(user.hotelId) : [];
+    let posRequireShift = true;
+    let posLowStockThreshold = 5;
+    if (user.hotelId) {
+      try {
+        const ctx = await fetchHotelContext(user.hotelId);
+        posRequireShift = ctx.posRequireShift !== false;
+        posLowStockThreshold =
+          ctx.posLowStockThreshold && ctx.posLowStockThreshold > 0 ? ctx.posLowStockThreshold : 5;
+      } catch {
+        /* defaults */
+      }
+    }
 
     set({
 
@@ -135,6 +168,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user,
 
       enabledModules: modules,
+
+      posRequireShift,
+
+      posLowStockThreshold,
 
       isAuthenticated: true,
 
@@ -223,6 +260,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user: null,
 
       enabledModules: [],
+
+      posRequireShift: true,
+
+      posLowStockThreshold: 5,
 
       isAuthenticated: false,
 

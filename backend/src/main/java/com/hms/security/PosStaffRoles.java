@@ -19,5 +19,11 @@ public final class PosStaffRoles {
     public static final String SHIFT_STAFF =
             "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FNB_STAFF','ROLE_WAITER')";
 
+    public static final String AUDIT_STAFF =
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_CASHIER')";
+
+    public static final String FNB_ADMIN =
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_FNB_STAFF')";
+
     private PosStaffRoles() {}
 }

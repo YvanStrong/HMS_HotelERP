@@ -1,4 +1,5 @@
 import { Pressable, Text, View } from "react-native";
+import { useTranslation } from "react-i18next";
 
 type Props = {
   tables: string[];
@@ -8,9 +9,13 @@ type Props = {
 };
 
 export function TablePicker({ tables, occupied, onSelect, onWalkIn }: Props) {
+  const { t } = useTranslation();
+
   return (
     <View>
-      <Text className="mb-3 text-base font-semibold text-slate-800">Tables</Text>
+      <Text allowFontScaling={false} className="mb-3 text-base font-semibold text-slate-800">
+        {t("tables")}
+      </Text>
       <View className="mb-6 flex-row flex-wrap">
         {tables.map((table) => {
           const busy = occupied?.has(table);
@@ -18,26 +23,37 @@ export function TablePicker({ tables, occupied, onSelect, onWalkIn }: Props) {
             <Pressable
               key={table}
               onPress={() => onSelect(table)}
-              className={`m-1 h-16 w-[22%] items-center justify-center rounded-xl border ${
+              className={`m-1 min-h-[44px] min-w-[44px] h-16 w-[22%] items-center justify-center rounded-xl border ${
                 busy ? "border-amber-300 bg-amber-50" : "border-emerald-200 bg-emerald-50"
               }`}
             >
-              <Text className="font-semibold text-slate-800">{table}</Text>
-              <Text className={`text-[10px] ${busy ? "text-amber-700" : "text-emerald-700"}`}>
-                {busy ? "Occupied" : "Available"}
+              <Text allowFontScaling={true} className="font-semibold text-slate-900">
+                {table}
+              </Text>
+              <Text
+                allowFontScaling={false}
+                className={`text-[10px] font-medium ${busy ? "text-amber-800" : "text-emerald-800"}`}
+              >
+                {busy ? t("occupied") : t("available")}
               </Text>
             </Pressable>
           );
         })}
       </View>
 
-      <Text className="mb-3 text-base font-semibold text-slate-800">Walk-in / Counter</Text>
+      <Text allowFontScaling={false} className="mb-3 text-base font-semibold text-slate-800">
+        {t("walkInCounter")}
+      </Text>
       <Pressable
         onPress={onWalkIn}
-        className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 active:bg-indigo-100"
+        className="min-h-[44px] rounded-2xl border border-indigo-200 bg-indigo-50 p-4 active:bg-indigo-100"
       >
-        <Text className="text-center font-semibold text-indigo-700">Counter sale</Text>
-        <Text className="mt-1 text-center text-xs text-indigo-500">Quick order without a table</Text>
+        <Text allowFontScaling={false} className="text-center font-semibold text-indigo-800">
+          {t("counterSale")}
+        </Text>
+        <Text allowFontScaling={false} className="mt-1 text-center text-xs text-indigo-700">
+          {t("counterSaleHint")}
+        </Text>
       </Pressable>
     </View>
   );

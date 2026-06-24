@@ -6,7 +6,7 @@
 import Constants from "expo-constants";
 import { money as shiftMoney, type PosShiftSummaryDTO } from "../api/shifts";
 import { money, type TicketDetail } from "../api/tickets";
-import { getPrinter, setPrinter, type PrinterDevice, type PrinterRole } from "./PrinterConfig";
+import { getBarCategories, getPrinter, setPrinter, type PrinterDevice, type PrinterRole } from "./PrinterConfig";
 import { mmkvDelete, mmkvGetString, mmkvSetString } from "../storage/mmkv";
 
 const LEGACY_KEY = "hms_printer_address";
@@ -154,7 +154,12 @@ export async function printReceipt(
 export async function printKitchenTicket(
   tableLabel: string,
   round: number,
-  lines: { productName: string; quantity: number | string; notes?: string | null }[],
+  lines: {
+    productName: string;
+    quantity: number | string;
+    notes?: string | null;
+    allergens?: string[];
+  }[],
   role: PrinterRole = "kitchen",
 ): Promise<void> {
   const device = getPrinter(role);
@@ -165,7 +170,13 @@ export async function printKitchenTicket(
     `Table: ${tableLabel}  Round: ${round}`,
     `Time: ${new Date().toLocaleTimeString()}`,
     "--------------------------------",
-    ...lines.map((l) => `${l.productName} x${l.quantity}${l.notes ? `\n  ${l.notes}` : ""}`),
+    ...lines.flatMap((l) => {
+      const rows = [`${l.productName} x${l.quantity}${l.notes ? `\n  ${l.notes}` : ""}`];
+      if (l.allergens && l.allergens.length > 0) {
+        rows.push(`  *** ALLERGEN: ${l.allergens.join(", ").toUpperCase()} ***`);
+      }
+      return rows;
+    }),
     "--------------------------------",
   ].join("\n");
 
@@ -174,9 +185,18 @@ export async function printKitchenTicket(
 
 const BAR_MENU_RE = /bar|beverage|drink|cocktail|wine|beer|spirit|coffee|café|juice/i;
 
+/** @deprecated Prefer isBarItem with menuCategory from ticket lines. */
 export function isBarMenuCategory(menuName: string | null | undefined): boolean {
   if (!menuName) return false;
   return BAR_MENU_RE.test(menuName.replace(/_/g, " "));
+}
+
+export function isBarItem(line: { menuCategory?: string | null; productName?: string | null }): boolean {
+  const menu = line.menuCategory?.toLowerCase() ?? "";
+  if (menu) {
+    return getBarCategories().some((cat) => menu.includes(cat.toLowerCase()));
+  }
+  return isBarMenuCategory(line.productName);
 }
 
 export async function testPrintForRole(role: PrinterRole): Promise<void> {
@@ -255,6 +275,7 @@ export async function printShiftSummary(
     receiptLr("Card:", `RWF ${fmtRw(summary.totalCard)}`),
     receiptLr("Room:", `RWF ${fmtRw(summary.totalRoomCharge)}`),
     receiptLr("Tax:", `RWF ${fmtRw(summary.totalTax)}`),
+    receiptLr("Tips:", `RWF ${fmtRw(summary.totalTips ?? 0)}`),
     `[B]${receiptLr("TOTAL:", `RWF ${fmtRw(summary.totalRevenue)}`)}`,
     "--------------------------------",
     receiptCenter("CASH RECONCILIATION"),

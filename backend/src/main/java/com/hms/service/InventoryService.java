@@ -259,6 +259,15 @@ public class InventoryService {
         if (req.active() != null) {
             i.setActive(req.active());
         }
+        if (req.allergens() != null) {
+            i.setAllergens(new ArrayList<>(req.allergens()));
+        }
+        if (req.dietaryFlags() != null) {
+            i.setDietaryFlags(new ArrayList<>(req.dietaryFlags()));
+        }
+        if (req.nameTranslations() != null) {
+            i.setNameTranslations(req.nameTranslations());
+        }
         if (req.valuationMethod() != null && !req.valuationMethod().isBlank()) {
             i.setValuation(ValuationMethod.valueOf(req.valuationMethod().trim().toUpperCase()));
         }
@@ -304,7 +313,10 @@ public class InventoryService {
                 i.getImageUrl(),
                 normalizeStockType(i.getStockType()),
                 normalizeTaxCategory(i.getTaxCategory()),
-                isTaxableCategory(i.getTaxCategory()));
+                isTaxableCategory(i.getTaxCategory()),
+                i.getAllergens() != null ? i.getAllergens() : List.of(),
+                i.getDietaryFlags() != null ? i.getDietaryFlags() : List.of(),
+                i.getNameTranslations());
     }
 
     private static String stockStatus(InventoryItem i) {

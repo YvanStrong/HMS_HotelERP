@@ -2,6 +2,7 @@ package com.hms.service;
 
 import com.hms.api.dto.ApiDtos;
 import com.hms.config.JwtProperties;
+import com.hms.domain.Role;
 import com.hms.entity.AppUser;
 import com.hms.repository.AppUserRepository;
 import com.hms.security.JwtService;
@@ -12,6 +13,7 @@ import com.hms.security.UserPrincipal;
 import com.hms.web.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
@@ -118,6 +120,38 @@ public class PosPinAuthService {
                         principal.getRole().name(),
                         principal.getHotelId(),
                         RolePermissions.forRole(principal.getRole())));
+    }
+
+    private static final List<Role> MANAGER_AUTHORIZER_ROLES =
+            List.of(Role.SUPER_ADMIN, Role.HOTEL_ADMIN, Role.MANAGER, Role.CASHIER);
+
+    /**
+     * Resolves a manager/cashier/admin user by PIN for void/discount authorization.
+     * Any hotel staff may submit the request; the PIN must belong to an authorized role.
+     */
+    @Transactional(readOnly = true)
+    public AppUser authorizeManagerPin(UUID hotelId, String pin) {
+        validatePinFormat(pin);
+        boolean pinMatchedNonAuthorizer = false;
+        for (AppUser user : appUserRepository.findByHotel_IdWithPosPin(hotelId)) {
+            if (!user.isActive() || user.getPosPinHash() == null) {
+                continue;
+            }
+            if (!passwordEncoder.matches(pin, user.getPosPinHash())) {
+                continue;
+            }
+            if (MANAGER_AUTHORIZER_ROLES.contains(user.getRole())) {
+                return user;
+            }
+            pinMatchedNonAuthorizer = true;
+        }
+        if (pinMatchedNonAuthorizer) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "INSUFFICIENT_ROLE",
+                    "Only managers can authorize voids");
+        }
+        throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_PIN", "Incorrect PIN");
     }
 
     @Transactional(readOnly = true)

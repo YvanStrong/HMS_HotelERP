@@ -22,13 +22,17 @@ export function productPrice(p: DepotProduct): number {
 }
 
 export function normalizeDepotProduct(raw: Record<string, unknown>): DepotProduct {
+  const stockType = String(raw.stockType ?? raw.stock_type ?? "STOCK");
+  const isTracked = stockType.toUpperCase() !== "NON_STOCK";
   return {
     id: String(raw.id ?? ""),
     depotId: String(raw.depotId ?? raw.depot_id ?? ""),
     productName: String(raw.productName ?? raw.product_name ?? ""),
     productCode: String(raw.productCode ?? raw.product_code ?? ""),
     sellingPrice: parseMoney(raw.sellingPrice ?? raw.selling_price),
-    stockQty: (raw.stockQty ?? raw.stock_qty) as number | string | undefined,
+    stockQty: (raw.stockQty ?? raw.stock_qty) as number | string | null | undefined,
+    stockType,
+    isTracked,
     photoUrl: (raw.photoUrl ?? raw.photo_url ?? null) as string | null,
     menuName: String(raw.menuName ?? raw.menu_name ?? "General"),
     taxable: Boolean(raw.taxable ?? true),

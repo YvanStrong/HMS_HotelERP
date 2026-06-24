@@ -49,6 +49,28 @@ public class PosOrderNotificationService {
         posWebSocketPublisher.publishPosOrder(ticket.getHotel().getId(), row);
     }
 
+    public void publishTicketAllServed(PosTableTicket ticket) {
+        String table = ticket.getTableLabel() != null ? ticket.getTableLabel() : "—";
+        StaffRef staff = staffRef(ticket.getStaffUser(), null);
+        String depot = ticket.getDepot() != null ? ticket.getDepot().getName() : "Outlet";
+        MobilePosDtos.PosOrderNotificationRow row = new MobilePosDtos.PosOrderNotificationRow(
+                ticket.getId(),
+                "ALL_SERVED",
+                "All items served — " + table,
+                "All items served for " + table + " · " + depot,
+                staff.username(),
+                staff.displayName(),
+                table,
+                depot,
+                ticket.getLines().size(),
+                "",
+                ticket.getUpdatedAt() != null ? ticket.getUpdatedAt() : ticket.getCreatedAt(),
+                ticket.getId(),
+                null,
+                null);
+        posWebSocketPublisher.publishPosOrder(ticket.getHotel().getId(), row);
+    }
+
     public void publishTicketItemsAdded(PosTableTicket ticket) {
         MobilePosDtos.PosOrderNotificationRow row = fromTicket(ticket, "TICKET_ITEMS_ADDED");
         posWebSocketPublisher.publishPosOrder(ticket.getHotel().getId(), row);
@@ -175,6 +197,7 @@ public class PosOrderNotificationService {
         return switch (eventType) {
             case "KITCHEN_ORDER" -> "Kitchen order — " + table;
             case "TICKET_ITEMS_ADDED" -> "Items added — " + table;
+            case "ALL_SERVED" -> "All items served — " + table;
             default -> "Table order — " + table;
         };
     }

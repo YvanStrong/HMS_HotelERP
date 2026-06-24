@@ -1,9 +1,13 @@
 package com.hms.api;
 
 import com.hms.api.dto.MobilePosDtos;
+import com.hms.api.dto.PosShiftDtos;
 import com.hms.security.CheckModuleEntitlement;
 import com.hms.security.PosStaffRoles;
+import com.hms.security.TenantAccessService;
+import com.hms.service.PosAnnouncementService;
 import com.hms.service.PosOrderNotificationService;
+import com.hms.service.PosShiftService;
 import com.hms.service.PosTableTicketService;
 import jakarta.validation.Valid;
 import java.time.Instant;
@@ -11,6 +15,9 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -34,6 +41,9 @@ public class MobilePosController {
 
     private final PosTableTicketService posTableTicketService;
     private final PosOrderNotificationService posOrderNotificationService;
+    private final PosAnnouncementService posAnnouncementService;
+    private final PosShiftService posShiftService;
+    private final TenantAccessService tenantAccessService;
 
     @GetMapping("/tables")
     @PreAuthorize(PosStaffRoles.ANY)
@@ -73,6 +83,15 @@ public class MobilePosController {
             @PathVariable UUID tableId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         posTableTicketService.deactivateTable(hotelId, hotelHeader, tableId);
+    }
+
+    @GetMapping("/tables/{tableId}/reservation-hint")
+    @PreAuthorize(PosStaffRoles.ANY)
+    public MobilePosDtos.ReservationHintResponse tableReservationHint(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID tableId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return posTableTicketService.getTableReservationHint(hotelId, hotelHeader, tableId);
     }
 
     @GetMapping("/tickets")
@@ -119,8 +138,19 @@ public class MobilePosController {
     public MobilePosDtos.TicketDetailResponse sendToKitchen(
             @PathVariable UUID hotelId,
             @PathVariable UUID ticketId,
-            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
-        return posTableTicketService.sendToKitchen(hotelId, hotelHeader, ticketId);
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestBody(required = false) MobilePosDtos.SendToKitchenRequest body) {
+        return posTableTicketService.sendToKitchen(hotelId, hotelHeader, ticketId, body);
+    }
+
+    @PostMapping("/tickets/{ticketId}/fire")
+    @PreAuthorize(PosStaffRoles.WAITER)
+    public MobilePosDtos.TicketDetailResponse fireHeld(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID ticketId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestBody(required = false) MobilePosDtos.FireHeldRequest body) {
+        return posTableTicketService.fireHeld(hotelId, hotelHeader, ticketId, body);
     }
 
     @PatchMapping("/tickets/{ticketId}/lines/{lineId}/ready")
@@ -143,6 +173,66 @@ public class MobilePosController {
         return posTableTicketService.markLineServed(hotelId, hotelHeader, lineId);
     }
 
+    @DeleteMapping("/tickets/{ticketId}/lines/{lineId}")
+    @PreAuthorize(PosStaffRoles.ANY)
+    public MobilePosDtos.TicketDetailResponse removePendingLine(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID ticketId,
+            @PathVariable UUID lineId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return posTableTicketService.removePendingLine(hotelId, hotelHeader, ticketId, lineId);
+    }
+
+    @PostMapping("/tickets/{ticketId}/lines/{lineId}/void")
+    @PreAuthorize(PosStaffRoles.ANY)
+    public MobilePosDtos.TicketDetailResponse voidLine(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID ticketId,
+            @PathVariable UUID lineId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody MobilePosDtos.VoidLineRequest body) {
+        UUID requester = tenantAccessService.currentUser().getId();
+        return posTableTicketService.voidLine(hotelId, hotelHeader, ticketId, lineId, body, requester);
+    }
+
+    @PostMapping("/tickets/{ticketId}/lines/{lineId}/discount")
+    @PreAuthorize(PosStaffRoles.ANY)
+    public MobilePosDtos.TicketDetailResponse applyLineDiscount(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID ticketId,
+            @PathVariable UUID lineId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody MobilePosDtos.LineDiscountRequest body) {
+        UUID requester = tenantAccessService.currentUser().getId();
+        return posTableTicketService.applyLineDiscount(hotelId, hotelHeader, ticketId, lineId, body, requester);
+    }
+
+    @GetMapping("/tickets/{ticketId}/audit")
+    @PreAuthorize(PosStaffRoles.AUDIT_STAFF)
+    public List<MobilePosDtos.PosLineAuditRow> ticketAudit(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID ticketId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return posTableTicketService.getLineAuditForTicket(hotelId, hotelHeader, ticketId);
+    }
+
+    @GetMapping("/voids")
+    @PreAuthorize(PosStaffRoles.MANAGER)
+    public Page<MobilePosDtos.PosLineAuditRow> voidReport(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam LocalDate from,
+            @RequestParam LocalDate to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        return posTableTicketService.getVoidReport(
+                hotelId,
+                hotelHeader,
+                from,
+                to,
+                PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
+    }
+
     @PostMapping("/tickets/{ticketId}/cancel")
     @PreAuthorize(PosStaffRoles.ANY)
     public MobilePosDtos.TicketDetailResponse cancelTicket(
@@ -150,6 +240,39 @@ public class MobilePosController {
             @PathVariable UUID ticketId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         return posTableTicketService.cancelTicket(hotelId, hotelHeader, ticketId);
+    }
+
+    @PostMapping("/tickets/{ticketId}/transfer")
+    @PreAuthorize(PosStaffRoles.WAITER)
+    public MobilePosDtos.TicketDetailResponse transferTicket(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID ticketId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody MobilePosDtos.TransferTicketRequest body) {
+        UUID requester = tenantAccessService.currentUser().getId();
+        return posTableTicketService.transferTicket(hotelId, hotelHeader, ticketId, body, requester);
+    }
+
+    @PostMapping("/tickets/{ticketId}/merge")
+    @PreAuthorize(PosStaffRoles.FNB_ADMIN)
+    public MobilePosDtos.TicketDetailResponse mergeTickets(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID ticketId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody MobilePosDtos.MergeTicketsRequest body) {
+        UUID requester = tenantAccessService.currentUser().getId();
+        return posTableTicketService.mergeTickets(hotelId, hotelHeader, ticketId, body, requester);
+    }
+
+    @PostMapping("/tickets/{ticketId}/reassign")
+    @PreAuthorize(PosStaffRoles.WAITER)
+    public MobilePosDtos.TicketDetailResponse reassignTicket(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID ticketId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody MobilePosDtos.ReassignTicketRequest body) {
+        UUID requester = tenantAccessService.currentUser().getId();
+        return posTableTicketService.reassignTicket(hotelId, hotelHeader, ticketId, body, requester);
     }
 
     @PostMapping("/tickets/{ticketId}/close")
@@ -189,5 +312,61 @@ public class MobilePosController {
             @RequestParam(required = false) UUID depotId) {
         LocalDate day = date != null ? date : LocalDate.now();
         return posTableTicketService.dailySummary(hotelId, hotelHeader, day, depotId);
+    }
+
+    @PostMapping("/announcements")
+    @PreAuthorize(PosStaffRoles.MANAGER)
+    public MobilePosDtos.AnnouncementRow createAnnouncement(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody MobilePosDtos.CreateAnnouncementRequest body) {
+        return posAnnouncementService.create(hotelId, hotelHeader, body);
+    }
+
+    @GetMapping("/announcements/active")
+    @PreAuthorize(PosStaffRoles.ANY)
+    public List<MobilePosDtos.AnnouncementRow> activeAnnouncements(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) UUID depotId) {
+        return posAnnouncementService.activeUnread(hotelId, hotelHeader, depotId);
+    }
+
+    @GetMapping("/announcements")
+    @PreAuthorize(PosStaffRoles.MANAGER)
+    public List<MobilePosDtos.AnnouncementRow> listAnnouncements(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return posAnnouncementService.listActive(hotelId, hotelHeader);
+    }
+
+    @PostMapping("/announcements/{announcementId}/read")
+    @PreAuthorize(PosStaffRoles.ANY)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void markAnnouncementRead(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID announcementId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        posAnnouncementService.markRead(hotelId, hotelHeader, announcementId);
+    }
+
+    @DeleteMapping("/announcements/{announcementId}")
+    @PreAuthorize(PosStaffRoles.MANAGER)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteAnnouncement(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID announcementId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        posAnnouncementService.deactivate(hotelId, hotelHeader, announcementId);
+    }
+
+    @GetMapping("/end-of-day")
+    @PreAuthorize(PosStaffRoles.MANAGER)
+    public PosShiftDtos.EndOfDayReport endOfDay(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) LocalDate date) {
+        LocalDate day = date != null ? date : LocalDate.now();
+        return posShiftService.endOfDay(hotelId, hotelHeader, day);
     }
 }

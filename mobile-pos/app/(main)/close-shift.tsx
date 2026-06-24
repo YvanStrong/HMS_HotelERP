@@ -23,6 +23,7 @@ import {
 } from "../../src/api/shifts";
 import { PrintShiftModal } from "../../src/components/PrintShiftModal";
 import { ScreenHeaderActions } from "../../src/components/ScreenHeaderActions";
+import { useHeaderPadding } from "../../src/hooks/useScreenInsets";
 import { printShiftSummary } from "../../src/printing/PrinterService";
 import { useAuthStore } from "../../src/store/authStore";
 import { useCartStore } from "../../src/store/cartStore";
@@ -40,6 +41,7 @@ function fmtMoney(v: number | string): string {
 export default function CloseShiftScreen() {
   const router = useRouter();
   const hotelId = useAuthStore((s) => s.user?.hotelId) ?? "";
+  const headerPad = useHeaderPadding();
   const user = useAuthStore((s) => s.user);
   const activeShift = useShiftStore((s) => s.activeShift);
   const clearShift = useShiftStore((s) => s.clearShift);
@@ -135,7 +137,7 @@ export default function CloseShiftScreen() {
 
   return (
     <View className="flex-1 bg-slate-50">
-      <View className="border-b border-slate-200 bg-white px-4 pb-4 pt-12">
+      <View className="border-b border-slate-200 bg-white px-4 pb-4" style={{ paddingTop: headerPad }}>
         <View className="flex-row items-start justify-between">
           <View className="flex-1">
             <Text className="text-xl font-bold text-slate-900">Close Shift</Text>
@@ -166,6 +168,7 @@ export default function CloseShiftScreen() {
             <Text className="text-slate-700">Cash sales: {fmtMoney(summary.totalCash)}</Text>
             <Text className="text-slate-700">Card sales: {fmtMoney(summary.totalCard)}</Text>
             <Text className="text-slate-700">Room charges: {fmtMoney(summary.totalRoomCharge)}</Text>
+            <Text className="text-slate-700">Tips collected: {fmtMoney(summary.totalTips ?? 0)}</Text>
             <View className="my-3 border-t border-slate-100" />
             <Text className="text-2xl font-bold text-indigo-600">
               Total Revenue: {fmtMoney(summary.totalRevenue)}
@@ -173,6 +176,11 @@ export default function CloseShiftScreen() {
             <Text className="text-slate-700">Total Tax: {fmtMoney(summary.totalTax)}</Text>
             <View className="my-3 border-t border-slate-100" />
             <Text className="text-slate-600">Cancelled tickets: {summary.totalCancelled}</Text>
+            {money(summary.totalDiscounts) > 0 ? (
+              <Text className="text-slate-600">
+                Discounts given: RWF {money(summary.totalDiscounts).toLocaleString()}
+              </Text>
+            ) : null}
             <Text className="text-slate-600">Avg ticket value: {fmtMoney(summary.avgTicketValue)}</Text>
           </View>
 

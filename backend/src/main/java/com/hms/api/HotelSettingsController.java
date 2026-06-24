@@ -5,6 +5,7 @@ import com.hms.repository.HotelRepository;
 import com.hms.security.TenantAccessService;
 import com.hms.service.HotelModuleEntitlementService;
 import com.hms.service.PlatformTenantService;
+import com.hms.service.PosSettingsService;
 import com.hms.api.dto.PlatformDtos;
 import com.hms.web.ApiException;
 import java.math.BigDecimal;
@@ -27,16 +28,19 @@ public class HotelSettingsController {
     private final TenantAccessService tenantAccessService;
     private final HotelModuleEntitlementService hotelModuleEntitlementService;
     private final PlatformTenantService platformTenantService;
+    private final PosSettingsService posSettingsService;
 
     public HotelSettingsController(
             HotelRepository hotelRepository,
             TenantAccessService tenantAccessService,
             HotelModuleEntitlementService hotelModuleEntitlementService,
-            PlatformTenantService platformTenantService) {
+            PlatformTenantService platformTenantService,
+            PosSettingsService posSettingsService) {
         this.hotelRepository = hotelRepository;
         this.tenantAccessService = tenantAccessService;
         this.hotelModuleEntitlementService = hotelModuleEntitlementService;
         this.platformTenantService = platformTenantService;
+        this.posSettingsService = posSettingsService;
     }
 
     @GetMapping
@@ -103,6 +107,8 @@ public class HotelSettingsController {
         if (body.checkInTime() != null) h.setCheckInTime(trimOrNull(body.checkInTime()));
         if (body.checkOutTime() != null) h.setCheckOutTime(trimOrNull(body.checkOutTime()));
         if (body.taxRate() != null) h.setTaxRate(body.taxRate());
+        if (body.posRequireShift() != null) h.setPosRequireShift(body.posRequireShift());
+        if (body.posLowStockThreshold() != null) h.setPosLowStockThreshold(body.posLowStockThreshold());
         hotelRepository.save(h);
         return toResponse(mustHotel(hotelId));
     }
@@ -119,7 +125,7 @@ public class HotelSettingsController {
         return out.isEmpty() ? null : out;
     }
 
-    private static HotelContextResponse toResponse(Hotel h) {
+    private HotelContextResponse toResponse(Hotel h) {
         return new HotelContextResponse(
                 h.getId(),
                 h.getName(),
@@ -140,7 +146,9 @@ public class HotelSettingsController {
                 h.getPhoneCountryCode(),
                 h.getTaxRate(),
                 h.getBusinessCategory() != null ? h.getBusinessCategory().getId() : null,
-                h.getBusinessCategory() != null ? h.getBusinessCategory().getCode() : null);
+                h.getBusinessCategory() != null ? h.getBusinessCategory().getCode() : null,
+                posSettingsService.resolveRequireShift(h),
+                posSettingsService.resolveLowStockThreshold(h));
     }
 
     public record HotelContextResponse(
@@ -163,7 +171,9 @@ public class HotelSettingsController {
             String phoneCountryCode,
             BigDecimal taxRate,
             UUID businessCategoryId,
-            String businessCategoryCode) {}
+            String businessCategoryCode,
+            boolean posRequireShift,
+            int posLowStockThreshold) {}
 
     public record UpdateHotelSettingsRequest(
             String name,
@@ -182,6 +192,8 @@ public class HotelSettingsController {
             String currency,
             String checkInTime,
             String checkOutTime,
-            BigDecimal taxRate) {}
+            BigDecimal taxRate,
+            Boolean posRequireShift,
+            Integer posLowStockThreshold) {}
 }
 

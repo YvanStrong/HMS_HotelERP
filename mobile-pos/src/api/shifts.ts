@@ -48,7 +48,9 @@ export type PosShiftSummaryDTO = PosShiftDTO & {
   totalCard: number | string;
   totalRoomCharge: number | string;
   totalTax: number | string;
+  totalTips?: number | string;
   totalCancelled: number;
+  totalDiscounts?: number | string;
   avgTicketValue: number | string;
   avgServeTimeMin: number | string;
   expectedCash?: number | string | null;

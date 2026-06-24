@@ -41,7 +41,12 @@ type ItemRow = {
   stockType?: "STOCK" | "NON_STOCK";
   taxCategory?: "A" | "B";
   taxable?: boolean;
+  allergens?: string[];
+  dietaryFlags?: string[];
 };
+
+const ALLERGEN_OPTS = ["NUTS", "GLUTEN", "DAIRY", "EGGS", "SHELLFISH", "SOY", "SESAME", "FISH"] as const;
+const DIETARY_OPTS = ["VEGAN", "VEGETARIAN", "HALAL", "KOSHER", "GLUTEN_FREE", "DAIRY_FREE"] as const;
 
 type SalesReportPayload = {
   fromDate: string;
@@ -416,6 +421,8 @@ export function InventoryErpClient() {
     expiryDate: "",
     active: true,
     unitOfMeasure: "piece",
+    allergens: [] as string[],
+    dietaryFlags: [] as string[],
   });
 
   const load = useCallback(async () => {
@@ -1071,6 +1078,8 @@ export function InventoryErpClient() {
       expiryDate: (it.expiryDate as string) ?? "",
       active: it.active !== false,
       unitOfMeasure: it.unitOfMeasure?.trim() || "piece",
+      allergens: it.allergens ?? [],
+      dietaryFlags: it.dietaryFlags ?? [],
     });
   }
 
@@ -1100,6 +1109,8 @@ export function InventoryErpClient() {
           manufactureDate: null,
           valuationMethod: null,
           unitOfMeasure: editForm.unitOfMeasure || "piece",
+          allergens: editForm.allergens,
+          dietaryFlags: editForm.dietaryFlags,
         }),
       });
       setMsg("Product updated.");
@@ -1634,6 +1645,50 @@ export function InventoryErpClient() {
                       value={editForm.description}
                       onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
                     />
+                  </div>
+                  <div>
+                    <label>Allergens</label>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      {ALLERGEN_OPTS.map((a) => (
+                        <label key={a} className="flex items-center gap-1 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={editForm.allergens.includes(a)}
+                            onChange={(e) =>
+                              setEditForm((f) => ({
+                                ...f,
+                                allergens: e.target.checked
+                                  ? [...f.allergens, a]
+                                  : f.allergens.filter((x) => x !== a),
+                              }))
+                            }
+                          />
+                          {a}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label>Dietary flags</label>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      {DIETARY_OPTS.map((d) => (
+                        <label key={d} className="flex items-center gap-1 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={editForm.dietaryFlags.includes(d)}
+                            onChange={(e) =>
+                              setEditForm((f) => ({
+                                ...f,
+                                dietaryFlags: e.target.checked
+                                  ? [...f.dietaryFlags, d]
+                                  : f.dietaryFlags.filter((x) => x !== d),
+                              }))
+                            }
+                          />
+                          {d.replace(/_/g, " ")}
+                        </label>
+                      ))}
+                    </div>
                   </div>
                   <div>
                     <label>Barcode</label>
