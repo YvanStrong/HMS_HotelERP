@@ -27,6 +27,8 @@ public class PosPinAuthController {
 
     public record SetPinRequest(@NotBlank String pin) {}
 
+    public record ChangePinRequest(String currentPin, @NotBlank String newPin) {}
+
     public record PinLoginRequest(@NotBlank String email, @NotBlank String pin) {}
 
     public record HasPinResponse(boolean hasPin) {}
@@ -38,6 +40,25 @@ public class PosPinAuthController {
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
             @Valid @RequestBody SetPinRequest body) {
         posPinAuthService.setPin(hotelId, hotelHeader, body.pin());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/change-pin")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> changePin(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody ChangePinRequest body) {
+        posPinAuthService.changePin(hotelId, hotelHeader, body.currentPin(), body.newPin());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/clear-pin")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> clearPin(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        posPinAuthService.clearPin(hotelId, hotelHeader);
         return ResponseEntity.noContent().build();
     }
 

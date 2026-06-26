@@ -74,7 +74,7 @@ export function OfflineBanner() {
 
   if (!isOnline) {
     return (
-      <Pressable onPress={() => void syncOfflineQueue()} className="bg-red-600 px-4 py-2">
+      <Pressable onPress={() => void syncOfflineQueue().catch(() => {})} className="bg-red-600 px-4 py-2">
         <Text className="text-center text-sm font-semibold text-white">
           You are offline — orders will sync when connected
           {pending > 0 ? ` (${pending} pending)` : ""}
@@ -85,7 +85,7 @@ export function OfflineBanner() {
 
   if (pending > 0) {
     return (
-      <Pressable onPress={() => void syncOfflineQueue()} className="bg-amber-600 px-4 py-2">
+      <Pressable onPress={() => void syncOfflineQueue().catch(() => {})} className="bg-amber-600 px-4 py-2">
         <Text className="text-center text-sm font-semibold text-white">
           {pending} order{pending === 1 ? "" : "s"} pending sync — tap to retry
         </Text>

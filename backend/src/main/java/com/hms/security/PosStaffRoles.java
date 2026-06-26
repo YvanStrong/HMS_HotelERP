@@ -17,7 +17,11 @@ public final class PosStaffRoles {
             "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_FNB_STAFF','ROLE_WAITER')";
 
     public static final String SHIFT_STAFF =
-            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FNB_STAFF','ROLE_WAITER')";
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FNB_STAFF','ROLE_WAITER','ROLE_CASHIER')";
+
+    /** Open / read own shift (waiter tablet flow). */
+    public static final String SHIFT_WAITER =
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FNB_STAFF','ROLE_WAITER','ROLE_CASHIER')";
 
     public static final String AUDIT_STAFF =
             "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_CASHIER')";

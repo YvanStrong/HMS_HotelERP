@@ -751,9 +751,10 @@ export default function TicketScreen() {
 
 
 
+      {paymentOpen ? (
       <PaymentModal
 
-        visible={paymentOpen}
+        visible
 
         ticketId={ticketId}
 
@@ -792,6 +793,7 @@ export default function TicketScreen() {
         }}
 
       />
+      ) : null}
 
       <PrinterModal
 

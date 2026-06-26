@@ -7,7 +7,7 @@ import { loginWithEmail } from "../api/auth";
 import { fetchModuleEntitlements } from "../api/modules";
 import { fetchHotelContext } from "../api/hotel";
 
-import { clearStoredTokens, configureApiClient, storeTokens } from "../api/client";
+import { clearStoredTokens, configureApiClient, resetUnauthorizedGuard, storeTokens } from "../api/client";
 
 import { mmkvGetString, mmkvSetString } from "../storage/mmkv";
 
@@ -68,6 +68,8 @@ type AuthState = {
   logout: () => Promise<void>;
 
   setTokens: (access: string, refresh: string, user: AuthUser) => Promise<void>;
+
+  restoreSession: () => Promise<boolean>;
 
   setHydrated: () => void;
 
@@ -140,43 +142,67 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
 
   setTokens: async (access, refresh, user) => {
-
+    resetUnauthorizedGuard();
     await storeTokens(access, refresh);
-
     await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user));
+    // Set auth state before follow-up API calls (X-Hotel-ID header, gated screens).
+    set({
+      token: access,
+      refreshToken: refresh,
+      user,
+      enabledModules: ["RESTAURANT_POS"],
+      isAuthenticated: true,
+    });
 
-    const modules = user.hotelId ? await loadModules(user.hotelId) : [];
+    let modules = ["RESTAURANT_POS"];
     let posRequireShift = true;
     let posLowStockThreshold = 5;
     if (user.hotelId) {
+      try {
+        modules = await loadModules(user.hotelId);
+      } catch {
+        /* keep default */
+      }
       try {
         const ctx = await fetchHotelContext(user.hotelId);
         posRequireShift = ctx.posRequireShift !== false;
         posLowStockThreshold =
           ctx.posLowStockThreshold && ctx.posLowStockThreshold > 0 ? ctx.posLowStockThreshold : 5;
       } catch {
-        /* defaults */
+        /* keep defaults */
       }
     }
 
-    set({
+    set({ enabledModules: modules, posRequireShift, posLowStockThreshold });
+  },
 
-      token: access,
+  restoreSession: async () => {
+    const session = await hydrateAuthFromSecureStore();
+    if (!session) return false;
 
-      refreshToken: refresh,
-
-      user,
-
-      enabledModules: modules,
-
-      posRequireShift,
-
-      posLowStockThreshold,
-
-      isAuthenticated: true,
-
-    });
-
+    try {
+      const axios = (await import("axios")).default;
+      const { getApiBaseUrl } = await import("../api/settings");
+      const { data } = await axios.post<{
+        accessToken: string;
+        refreshToken: string;
+        user: AuthUser;
+      }>(
+        `${getApiBaseUrl()}/api/v1/auth/refresh`,
+        { refreshToken: session.refresh },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "X-Client-Type": "mobile",
+          },
+        },
+      );
+      await get().setTokens(data.accessToken, data.refreshToken, data.user ?? session.user);
+      return true;
+    } catch {
+      await get().logout();
+      return false;
+    }
   },
 
 

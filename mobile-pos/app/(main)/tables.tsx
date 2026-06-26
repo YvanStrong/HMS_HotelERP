@@ -49,7 +49,7 @@ export default function TablesScreen() {
     if (!hotelId) return;
     void getActiveShift(hotelId).then((shift) => {
       if (shift) setActiveShift(shift);
-    });
+    }).catch(() => {});
   }, [hotelId, setActiveShift]);
 
   const refreshTables = useCallback(() => {

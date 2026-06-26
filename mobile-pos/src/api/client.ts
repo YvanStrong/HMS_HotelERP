@@ -9,6 +9,8 @@ type RetryConfig = InternalAxiosRequestConfig & { _retry?: boolean };
 
 let hotelIdGetter: (() => string | null) | null = null;
 let onUnauthorized: (() => void) | null = null;
+let refreshInFlight: Promise<string> | null = null;
+let unauthorizedFired = false;
 
 export function configureApiClient(opts: {
   getHotelId: () => string | null;
@@ -16,6 +18,46 @@ export function configureApiClient(opts: {
 }) {
   hotelIdGetter = opts.getHotelId;
   onUnauthorized = opts.onUnauthorized;
+  unauthorizedFired = false;
+}
+
+async function refreshAccessToken(): Promise<string> {
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    const refresh = await getStoredRefreshToken();
+    if (!refresh) throw new Error("NO_REFRESH_TOKEN");
+    const res = await axios.post(
+      `${getApiBaseUrl()}/api/v1/auth/refresh`,
+      { refreshToken: refresh },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Client-Type": "mobile",
+        },
+      },
+    );
+    const accessToken = res.data.accessToken as string;
+    const refreshToken = res.data.refreshToken as string;
+    await storeTokens(accessToken, refreshToken);
+    return accessToken;
+  })();
+
+  try {
+    return await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
+  }
+}
+
+function fireUnauthorized(): void {
+  if (unauthorizedFired) return;
+  unauthorizedFired = true;
+  onUnauthorized?.();
+}
+
+export function resetUnauthorizedGuard(): void {
+  unauthorizedFired = false;
 }
 
 export async function getStoredToken(): Promise<string | null> {
@@ -68,28 +110,16 @@ apiClient.interceptors.response.use(
     const refresh = await getStoredRefreshToken();
     if (!refresh) {
       await clearStoredTokens();
-      onUnauthorized?.();
+      fireUnauthorized();
       return Promise.reject(error);
     }
     try {
-      const res = await axios.post(
-        `${getApiBaseUrl()}/api/v1/auth/refresh`,
-        { refreshToken: refresh },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "X-Client-Type": "mobile",
-          },
-        },
-      );
-      const accessToken = res.data.accessToken as string;
-      const refreshToken = res.data.refreshToken as string;
-      await storeTokens(accessToken, refreshToken);
+      const accessToken = await refreshAccessToken();
       original.headers.Authorization = `Bearer ${accessToken}`;
       return apiClient(original);
     } catch {
       await clearStoredTokens();
-      onUnauthorized?.();
+      fireUnauthorized();
       return Promise.reject(error);
     }
   },
@@ -101,7 +131,12 @@ export function apiErrorMessage(err: unknown): string {
       return "Request timed out. Check your connection and try again.";
     }
     const data = err.response?.data as { message?: string; error?: string } | undefined;
-    return data?.message ?? data?.error ?? err.message;
+    const code = data?.error;
+    const detail = data?.message ?? data?.error ?? err.message;
+    if (code && detail && detail !== code) {
+      return `${code}: ${detail}`;
+    }
+    return code ?? detail;
   }
   return err instanceof Error ? err.message : "Request failed";
 }

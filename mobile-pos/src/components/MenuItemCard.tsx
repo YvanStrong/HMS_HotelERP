@@ -1,12 +1,10 @@
 import { useState } from "react";
-import { Pressable, Text, View } from "react-native";
-import { Image } from "expo-image";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 import Toast from "react-native-toast-message";
 import type { DepotProduct } from "../types";
 import { productPrice } from "../api/menu";
-import { resolveMediaUrl } from "../lib/mediaUrl";
 import { isLowStock, isOutOfStock, menuCategoryLabel } from "../lib/stockHelpers";
 import {
   ALLERGEN_ICONS,
@@ -15,7 +13,32 @@ import {
   productConflictsWithGuest,
 } from "../lib/allergens";
 import { HighlightedText } from "./HighlightedText";
+import { ProductPhoto } from "./ProductPhoto";
 
+const styles = StyleSheet.create({
+  card: {
+    marginBottom: 12,
+    width: "48%",
+    overflow: "hidden",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#fff",
+  },
+  cardConflict: {
+    borderColor: "#f97316",
+    borderWidth: 2,
+  },
+  cardSoldOut: {
+    opacity: 0.5,
+  },
+  imageWrap: {
+    position: "relative",
+  },
+  body: {
+    padding: 12,
+  },
+});
 type Props = {
   product: DepotProduct;
   onAdd: () => void;
@@ -70,7 +93,6 @@ export function MenuItemCard({
 }: Props) {
   const { t, i18n } = useTranslation();
   const price = productPrice(product);
-  const imageUri = resolveMediaUrl(product.photoUrl);
   const soldOut = isOutOfStock(product);
   const lowStock = !soldOut && isLowStock(product, lowStockThreshold);
   const displayName = localizedProductName(product, i18n.language);
@@ -90,27 +112,17 @@ export function MenuItemCard({
 
   return (
     <View
-      className={`mb-3 w-[48%] overflow-hidden rounded-2xl border bg-white shadow-sm ${
-        conflict.conflict ? "border-orange-500 border-2" : "border-slate-200"
-      } ${soldOut ? "opacity-50" : ""}`}
+      style={[
+        styles.card,
+        conflict.conflict ? styles.cardConflict : null,
+        soldOut ? styles.cardSoldOut : null,
+      ]}
     >
-      <View className="relative">
-        {imageUri ? (
-          <>
-            <Image
-              source={{ uri: imageUri }}
-              className="h-32 w-full bg-slate-100"
-              contentFit="cover"
-              cachePolicy="disk"
-              transition={200}
-            />
-            <Pressable onPress={onPreviewImage} className="absolute inset-0" accessibilityLabel={displayName} />
-          </>
-        ) : (
-          <View className="h-32 items-center justify-center bg-slate-100">
-            <Ionicons name="fast-food-outline" size={32} color="#64748b" />
-          </View>
-        )}
+      <View style={styles.imageWrap}>
+        <ProductPhoto photoUrl={product.photoUrl} />
+        {onPreviewImage && product.photoUrl ? (
+          <Pressable onPress={onPreviewImage} style={StyleSheet.absoluteFill} accessibilityLabel={displayName} />
+        ) : null}
         {onToggleFavorite ? (
           <Pressable
             onPress={onToggleFavorite}
@@ -133,7 +145,7 @@ export function MenuItemCard({
           </View>
         ) : null}
       </View>
-      <Pressable onPress={handleAdd} onLongPress={onLongPress} className="p-3">
+      <Pressable onPress={handleAdd} onLongPress={onLongPress} style={styles.body}>
         <HighlightedText text={displayName} query={searchQuery} numberOfLines={2} />
         {showCategoryLabel ? (
           <Text allowFontScaling={false} className="mt-0.5 text-xs text-slate-600">

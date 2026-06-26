@@ -14,6 +14,7 @@ type StaffUserRow = {
   email: string | null;
   role: string;
   isActive: boolean;
+  hasPosPin?: boolean;
   createdAt: string;
 };
 

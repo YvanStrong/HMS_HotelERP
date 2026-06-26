@@ -20,7 +20,7 @@ export function useOfflineSync() {
 
       if (online) {
 
-        void syncOfflineQueue();
+        void syncOfflineQueue().catch(() => {});
 
       }
 

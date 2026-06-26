@@ -6,7 +6,14 @@
 import Constants from "expo-constants";
 import { money as shiftMoney, type PosShiftSummaryDTO } from "../api/shifts";
 import { money, type TicketDetail } from "../api/tickets";
-import { getBarCategories, getPrinter, setPrinter, type PrinterDevice, type PrinterRole } from "./PrinterConfig";
+import {
+  getBarCategories,
+  getPrinter,
+  setPrinter,
+  type PrinterDevice,
+  type PrinterRole,
+} from "./PrinterConfig";
+import { ensureBluetoothPermissions } from "./bluetoothPermissions";
 import { mmkvDelete, mmkvGetString, mmkvSetString } from "../storage/mmkv";
 
 const LEGACY_KEY = "hms_printer_address";
@@ -56,6 +63,10 @@ export function clearPrinterAddress(): void {
 export async function scanForPrinters(): Promise<PrinterDevice[]> {
   const native = loadNative();
   if (!native?.getDeviceList) return [];
+  const ok = await ensureBluetoothPermissions();
+  if (!ok) {
+    throw new Error("Bluetooth permissions are required to scan for printers.");
+  }
   return native.getDeviceList();
 }
 
@@ -63,6 +74,10 @@ export async function connectPrinterForRole(role: PrinterRole, device: PrinterDe
   const native = loadNative();
   if (!native?.connectPrinter) {
     throw new Error("Bluetooth printer requires a dev build with native module installed.");
+  }
+  const ok = await ensureBluetoothPermissions();
+  if (!ok) {
+    throw new Error("Bluetooth permissions are required to connect to a printer.");
   }
   await native.connectPrinter(device.address);
   setPrinter(role, device);
@@ -76,6 +91,10 @@ async function printRawToAddress(address: string, text: string): Promise<void> {
   const native = loadNative();
   if (!native?.printText) {
     throw new Error("Printer module not available in Expo Go. Use a dev build.");
+  }
+  const ok = await ensureBluetoothPermissions();
+  if (!ok) {
+    throw new Error("Bluetooth permissions are required to print.");
   }
   if (native.connectPrinter) await native.connectPrinter(address);
   await native.printText(text + "\n\n\x1D\x56\x00");
@@ -193,10 +212,8 @@ export function isBarMenuCategory(menuName: string | null | undefined): boolean 
 
 export function isBarItem(line: { menuCategory?: string | null; productName?: string | null }): boolean {
   const menu = line.menuCategory?.toLowerCase() ?? "";
-  if (menu) {
-    return getBarCategories().some((cat) => menu.includes(cat.toLowerCase()));
-  }
-  return isBarMenuCategory(line.productName);
+  if (!menu) return false;
+  return getBarCategories().some((cat) => menu.includes(cat.toLowerCase()));
 }
 
 export async function testPrintForRole(role: PrinterRole): Promise<void> {

@@ -54,17 +54,28 @@ public class PosPinAuthService {
     @Transactional
     public void setPin(UUID hotelId, String hotelHeader, String pin) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
-        validatePinFormat(pin);
-        UUID userId = tenantAccessService.currentUser().getId();
-        if (userId == null) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        applyPin(requireCurrentHotelUser(hotelId), pin);
+    }
+
+    @Transactional
+    public void changePin(UUID hotelId, String hotelHeader, String currentPin, String newPin) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        validatePinFormat(newPin);
+        AppUser user = requireCurrentHotelUser(hotelId);
+        if (user.getPosPinHash() != null && !user.getPosPinHash().isBlank()) {
+            if (currentPin == null || !passwordEncoder.matches(currentPin.trim(), user.getPosPinHash())) {
+                throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_PIN", "Current PIN is incorrect");
+            }
         }
-        AppUser user = appUserRepository.findByIdWithHotel(userId).orElseThrow(() -> notFound("User"));
-        if (user.getHotel() == null || !user.getHotel().getId().equals(hotelId)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "User does not belong to hotel");
-        }
-        user.setPosPinHash(passwordEncoder.encode(pin));
-        user.setPosPinSetAt(Instant.now());
+        applyPin(user, newPin);
+    }
+
+    @Transactional
+    public void clearPin(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        AppUser user = requireCurrentHotelUser(hotelId);
+        user.setPosPinHash(null);
+        user.setPosPinSetAt(null);
         appUserRepository.save(user);
     }
 
@@ -167,8 +178,27 @@ public class PosPinAuthService {
 
     private static void validatePinFormat(String pin) {
         if (pin == null || !PIN_PATTERN.matcher(pin.trim()).matches()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "PIN must be 4–6 digits");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PIN_FORMAT", "PIN must be 4–6 digits");
         }
+    }
+
+    private AppUser requireCurrentHotelUser(UUID hotelId) {
+        UUID userId = tenantAccessService.currentUser().getId();
+        if (userId == null) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+        AppUser user = appUserRepository.findByIdWithHotel(userId).orElseThrow(() -> notFound("User"));
+        if (user.getHotel() == null || !user.getHotel().getId().equals(hotelId)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "User does not belong to hotel");
+        }
+        return user;
+    }
+
+    private void applyPin(AppUser user, String pin) {
+        validatePinFormat(pin);
+        user.setPosPinHash(passwordEncoder.encode(pin.trim()));
+        user.setPosPinSetAt(Instant.now());
+        appUserRepository.save(user);
     }
 
     private static String pinLoginKey(String email, HttpServletRequest req) {

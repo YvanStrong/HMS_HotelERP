@@ -37,7 +37,7 @@ public class PosShiftController {
     private final TenantAccessService tenantAccessService;
 
     @PostMapping
-    @PreAuthorize(PosStaffRoles.WAITER)
+    @PreAuthorize(PosStaffRoles.SHIFT_WAITER)
     public PosShiftDtos.PosShiftDTO openShift(
             @PathVariable UUID hotelId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
@@ -47,7 +47,7 @@ public class PosShiftController {
     }
 
     @GetMapping("/active")
-    @PreAuthorize(PosStaffRoles.WAITER)
+    @PreAuthorize(PosStaffRoles.SHIFT_WAITER)
     public ResponseEntity<PosShiftDtos.PosShiftDTO> getActiveShift(
             @PathVariable UUID hotelId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {

@@ -84,12 +84,17 @@ export async function openShift(
   return data;
 }
 
-/** Returns the waiter's single open shift for this hotel (all outlets). */
+/** Returns the waiter's single open shift for this hotel (all outlets). Never throws. */
 export async function getActiveShift(hotelId: string): Promise<PosShiftDTO | null> {
-  const res = await apiClient.get<PosShiftDTO>(`/api/v1/hotels/${hotelId}/pos/shifts/active`, {
-    validateStatus: (s) => s === 200 || s === 204,
-  });
-  return res.status === 204 ? null : res.data;
+  try {
+    const res = await apiClient.get<PosShiftDTO>(`/api/v1/hotels/${hotelId}/pos/shifts/active`, {
+      validateStatus: (s) => s === 200 || s === 204 || s === 403 || s === 404,
+    });
+    if (res.status === 204 || res.status === 403 || res.status === 404) return null;
+    return res.data;
+  } catch {
+    return null;
+  }
 }
 
 export async function getShiftSummary(hotelId: string, shiftId: string): Promise<PosShiftSummaryDTO> {

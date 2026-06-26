@@ -275,6 +275,9 @@ public class InventoryService {
         if (taxCategoryChanged) {
             syncDepotProductTaxability(hotelId, i);
         }
+        if (req.imageUrl() != null) {
+            syncDepotProductImage(hotelId, i);
+        }
         return toRow(i);
     }
 
@@ -804,6 +807,15 @@ public class InventoryService {
         List<DepotProduct> products = depotProductRepository.findByHotel_IdAndInventoryItem_Id(hotelId, item.getId());
         for (DepotProduct product : products) {
             product.setTaxable(taxable);
+            depotProductRepository.save(product);
+        }
+    }
+
+    private void syncDepotProductImage(UUID hotelId, InventoryItem item) {
+        String imageUrl = item.getImageUrl();
+        List<DepotProduct> products = depotProductRepository.findByHotel_IdAndInventoryItem_Id(hotelId, item.getId());
+        for (DepotProduct product : products) {
+            product.setPhotoUrl(imageUrl == null || imageUrl.isBlank() ? null : imageUrl.trim());
             depotProductRepository.save(product);
         }
     }

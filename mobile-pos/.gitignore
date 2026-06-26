@@ -30,6 +30,10 @@ yarn-error.*
 .DS_Store
 *.pem
 
+# Firebase admin keys (never commit)
+secrets/
+*-firebase-adminsdk-*.json
+
 # local env files
 .env*.local
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Alert,
@@ -10,7 +10,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Toast from "react-native-toast-message";
@@ -23,10 +22,10 @@ import { AnnouncementBannerStack } from "../../../src/components/AnnouncementBan
 import { patchDepotProductPhoto } from "../../../src/api/inventory";
 import { addLinesAction } from "../../../src/api/posActions";
 import { MenuItemCard } from "../../../src/components/MenuItemCard";
+import { ProductPhoto } from "../../../src/components/ProductPhoto";
 import { ScreenHeaderActions } from "../../../src/components/ScreenHeaderActions";
 import { SearchBar, useDebouncedValue } from "../../../src/components/SearchBar";
 import { productPrice } from "../../../src/api/menu";
-import { resolveMediaUrl } from "../../../src/lib/mediaUrl";
 import { menuCategoryLabel } from "../../../src/lib/stockHelpers";
 import {
   FAVORITES_TAB,
@@ -83,7 +82,16 @@ export default function MenuScreen() {
     queryKey: ["menu", hotelId, resolvedDepotId],
     queryFn: () => fetchMenuForDepot(hotelId, resolvedDepotId),
     enabled: !!hotelId && !!resolvedDepotId,
+    staleTime: 0,
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      if (hotelId && resolvedDepotId) {
+        void refetch();
+      }
+    }, [hotelId, resolvedDepotId, refetch]),
+  );
 
   const { data: linkedTicket } = useQuery({
     queryKey: ["pos-ticket-menu", hotelId, ticketId],
@@ -345,11 +353,7 @@ export default function MenuScreen() {
         <Pressable className="flex-1 items-center justify-center bg-black/90 px-4" onPress={() => setPreviewProduct(null)}>
           {previewProduct ? (
             <>
-              <Image
-                source={{ uri: resolveMediaUrl(previewProduct.photoUrl) ?? undefined }}
-                className="h-72 w-full max-w-md rounded-2xl bg-slate-800"
-                contentFit="contain"
-              />
+              <ProductPhoto photoUrl={previewProduct.photoUrl} contentFit="contain" height={288} />
               <Text className="mt-4 text-center text-lg font-semibold text-white">{previewProduct.productName}</Text>
               <Text className="mt-1 text-indigo-300">{productPrice(previewProduct).toFixed(2)}</Text>
             </>

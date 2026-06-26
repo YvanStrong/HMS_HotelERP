@@ -10,6 +10,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { useTranslation } from "react-i18next";
 import Toast from "react-native-toast-message";
 import {
   fetchAnalyticsExportCsv,
@@ -69,6 +70,7 @@ function varianceColor(status: string): string {
 }
 
 export default function ManagerScreen() {
+  const { t: tr } = useTranslation();
   const router = useRouter();
   const hotelId = useAuthStore((s) => s.user?.hotelId) ?? "";
   const headerPad = useHeaderPadding();
@@ -132,7 +134,7 @@ export default function ManagerScreen() {
       const report = await fetchEndOfDayReport(hotelId, toIsoDate(eodDate));
       setEodReport(report);
     } catch (e) {
-      Toast.show({ type: "error", text1: "Report failed", text2: String(e) });
+      Toast.show({ type: "error", text1: tr("reportFailed"), text2: String(e) });
     } finally {
       setEodLoading(false);
     }
@@ -140,20 +142,35 @@ export default function ManagerScreen() {
 
   async function shareEod(report: EndOfDayReport) {
     const lines = [
-      `End of Day — ${report.date}`,
-      `Total Revenue: ${fmtRwf(report.totalRevenue)}`,
-      `Cash: ${fmtRwf(report.totalCash)} | Card: ${fmtRwf(report.totalCard)} | Room: ${fmtRwf(report.totalRoomCharge)}`,
-      `Tips: ${fmtRwf(report.totalTips)}`,
-      `Expected in drawers: ${fmtRwf(report.expectedCashInDrawers)}`,
-      `Variance: ${fmtRwf(report.totalCashVariance)} (${report.cashVarianceStatus})`,
-      `Discounts: ${fmtRwf(report.totalDiscounts)} | Voids: ${report.totalVoids}`,
+      tr("eodLineDate", { date: report.date }),
+      tr("eodLineRevenue", { amount: fmtRwf(report.totalRevenue) }),
+      tr("eodLinePayments", {
+        cash: fmtRwf(report.totalCash),
+        card: fmtRwf(report.totalCard),
+        room: fmtRwf(report.totalRoomCharge),
+      }),
+      tr("eodLineTips", { amount: fmtRwf(report.totalTips) }),
+      tr("eodLineExpected", { amount: fmtRwf(report.expectedCashInDrawers) }),
+      tr("eodLineVariance", {
+        amount: fmtRwf(report.totalCashVariance),
+        status: report.cashVarianceStatus,
+      }),
+      tr("eodLineDiscountsVoids", {
+        discounts: fmtRwf(report.totalDiscounts),
+        voids: String(report.totalVoids),
+      }),
       "",
-      ...report.perShift.map(
-        (s) =>
-          `${s.waiterName} @ ${s.depotName}: Cash ${fmtRwf(s.totalCash)}, variance ${fmtRwf(s.cashVariance)}, ${s.orderCount} orders`,
+      ...report.perShift.map((s) =>
+        tr("eodShiftLine", {
+          waiter: s.waiterName,
+          depot: s.depotName,
+          cash: fmtRwf(s.totalCash),
+          variance: fmtRwf(s.cashVariance),
+          orders: String(s.orderCount),
+        }),
       ),
     ];
-    await sharePlainText("End of Day Report", lines.join("\n"));
+    await sharePlainText(tr("eodReportTitle"), lines.join("\n"));
   }
 
   async function exportAnalytics() {
@@ -162,7 +179,7 @@ export default function ManagerScreen() {
       const csv = await fetchAnalyticsExportCsv(hotelId, range.from, range.to);
       await shareCsvFile(`pos-analytics-${range.from}-${range.to}.csv`, csv);
     } catch (e) {
-      Toast.show({ type: "error", text1: "Export failed", text2: String(e) });
+      Toast.show({ type: "error", text1: tr("exportFailed"), text2: String(e) });
     } finally {
       setExportBusy(false);
     }
@@ -170,16 +187,16 @@ export default function ManagerScreen() {
 
   async function handleReprint(ticketId: string, depotName: string) {
     if (!getPrinter("receipt")) {
-      Toast.show({ type: "error", text1: "No receipt printer configured" });
+      Toast.show({ type: "error", text1: tr("noReceiptPrinter") });
       return;
     }
     setReprintBusy(ticketId);
     try {
       const ticket = await fetchTicket(hotelId, ticketId);
       await printReceipt(ticket, depotName);
-      Toast.show({ type: "success", text1: "Receipt sent to printer" });
+      Toast.show({ type: "success", text1: tr("receiptSent") });
     } catch (e) {
-      Toast.show({ type: "error", text1: "Reprint failed", text2: String(e) });
+      Toast.show({ type: "error", text1: tr("reprintFailed"), text2: String(e) });
     } finally {
       setReprintBusy(null);
     }
@@ -188,31 +205,31 @@ export default function ManagerScreen() {
   if (!MANAGER_ROLES.has(role)) {
     return (
       <View className="flex-1 items-center justify-center bg-slate-50 px-6">
-        <Text className="text-center text-slate-600">Manager dashboard is for hotel admin only.</Text>
+        <Text className="text-center text-slate-600">{tr("managerOnly")}</Text>
       </View>
     );
   }
 
   const presets: { id: RangePreset; label: string }[] = [
-    { id: "today", label: "Today" },
-    { id: "yesterday", label: "Yesterday" },
-    { id: "week", label: "This Week" },
-    { id: "month", label: "This Month" },
-    { id: "custom", label: "Custom" },
+    { id: "today", label: tr("today") },
+    { id: "yesterday", label: tr("yesterday") },
+    { id: "week", label: tr("thisWeek") },
+    { id: "month", label: tr("thisMonth") },
+    { id: "custom", label: tr("customRange") },
   ];
 
   return (
     <ScrollView className="flex-1 bg-slate-50">
       <View className="border-b border-slate-200 bg-white px-4 pb-4" style={{ paddingTop: headerPad }}>
-        <Text className="text-xl font-bold text-slate-900">Manager</Text>
-        <Text className="text-sm text-slate-500">Live floor, analytics & end of day</Text>
+        <Text className="text-xl font-bold text-slate-900">{tr("manager")}</Text>
+        <Text className="text-sm text-slate-500">{tr("managerSubtitle")}</Text>
         <View className="mt-3 flex-row gap-2">
           <Pressable
             onPress={() => setTab("analytics")}
             className={`flex-1 rounded-xl py-2 ${tab === "analytics" ? "bg-indigo-600" : "bg-slate-100"}`}
           >
             <Text className={`text-center font-semibold ${tab === "analytics" ? "text-white" : "text-slate-600"}`}>
-              Analytics
+              {tr("analytics")}
             </Text>
           </Pressable>
           <Pressable
@@ -220,36 +237,36 @@ export default function ManagerScreen() {
             className={`flex-1 rounded-xl py-2 ${tab === "eod" ? "bg-indigo-600" : "bg-slate-100"}`}
           >
             <Text className={`text-center font-semibold ${tab === "eod" ? "text-white" : "text-slate-600"}`}>
-              End of Day
+              {tr("endOfDay")}
             </Text>
           </Pressable>
         </View>
       </View>
 
       <View className="px-4 py-4">
-        <Text className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Live floor</Text>
+        <Text className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">{tr("liveFloor")}</Text>
         <View className="mb-6 flex-row flex-wrap gap-2">
-          {allTables.map((t) => (
-            <View key={`${t.depotId}-${t.id}`} className="min-w-[88px]">
+          {allTables.map((row) => (
+            <View key={`${row.depotId}-${row.id}`} className="min-w-[88px]">
               <Pressable
                 onPress={() => {
-                  if (t.activeTicketId) router.push(`/(main)/ticket/${t.activeTicketId}`);
+                  if (row.activeTicketId) router.push(`/(main)/ticket/${row.activeTicketId}`);
                 }}
                 className={`rounded-xl border px-3 py-2 ${
-                  t.occupied ? "border-amber-300 bg-amber-50" : "border-emerald-200 bg-emerald-50"
+                  row.occupied ? "border-amber-300 bg-amber-50" : "border-emerald-200 bg-emerald-50"
                 }`}
               >
-                <Text className="text-center text-xs font-bold">{t.tableLabel}</Text>
-                <Text className="text-center text-[10px] text-slate-500">{t.depotName}</Text>
+                <Text className="text-center text-xs font-bold">{row.tableLabel}</Text>
+                <Text className="text-center text-[10px] text-slate-500">{row.depotName}</Text>
               </Pressable>
-              {t.occupied && t.activeTicketId ? (
+              {row.occupied && row.activeTicketId ? (
                 <Pressable
-                  disabled={reprintBusy === t.activeTicketId}
-                  onPress={() => void handleReprint(t.activeTicketId!, t.depotName)}
+                  disabled={reprintBusy === row.activeTicketId}
+                  onPress={() => void handleReprint(row.activeTicketId!, row.depotName)}
                   className="mt-1 rounded-lg bg-white px-2 py-1"
                 >
                   <Text className="text-center text-[10px] font-semibold text-indigo-600">
-                    {reprintBusy === t.activeTicketId ? "…" : "Reprint"}
+                    {reprintBusy === row.activeTicketId ? "…" : tr("reprint")}
                   </Text>
                 </Pressable>
               ) : null}
@@ -275,11 +292,11 @@ export default function ManagerScreen() {
             {rangePreset === "custom" ? (
               <View className="mb-4 flex-row gap-2">
                 <Pressable onPress={() => setShowFromPicker(true)} className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                  <Text className="text-xs text-slate-500">From</Text>
+                  <Text className="text-xs text-slate-500">{tr("from")}</Text>
                   <Text className="font-semibold">{toIsoDate(customFrom)}</Text>
                 </Pressable>
                 <Pressable onPress={() => setShowToPicker(true)} className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                  <Text className="text-xs text-slate-500">To</Text>
+                  <Text className="text-xs text-slate-500">{tr("to")}</Text>
                   <Text className="font-semibold">{toIsoDate(customTo)}</Text>
                 </Pressable>
               </View>
@@ -316,10 +333,10 @@ export default function ManagerScreen() {
                 </Text>
                 <View className="mt-3 flex-row flex-wrap gap-2">
                   {[
-                    { label: "Revenue", value: fmtRwf(analytics.totalRevenue) },
-                    { label: "Orders", value: String(analytics.totalOrders) },
-                    { label: "Covers", value: String(analytics.totalCovers) },
-                    { label: "Avg ticket", value: fmtRwf(analytics.avgTicketValue) },
+                    { label: tr("revenue"), value: fmtRwf(analytics.totalRevenue) },
+                    { label: tr("orders"), value: String(analytics.totalOrders) },
+                    { label: tr("covers"), value: String(analytics.totalCovers) },
+                    { label: tr("avgTicket"), value: fmtRwf(analytics.avgTicketValue) },
                   ].map((k) => (
                     <View key={k.label} className="min-w-[46%] flex-1 rounded-xl bg-slate-50 p-3">
                       <Text className="text-xs text-slate-500">{k.label}</Text>
@@ -327,19 +344,19 @@ export default function ManagerScreen() {
                     </View>
                   ))}
                 </View>
-                <Text className="mt-4 text-xs font-bold uppercase text-slate-500">By outlet</Text>
+                <Text className="mt-4 text-xs font-bold uppercase text-slate-500">{tr("byOutlet")}</Text>
                 {analytics.revenueByDepot.map((d) => (
                   <Text key={d.depotName} className="mt-1 text-sm text-slate-700">
                     {d.depotName}: {fmtRwf(d.revenue)} ({d.orders})
                   </Text>
                 ))}
-                <Text className="mt-4 text-xs font-bold uppercase text-slate-500">Top items</Text>
+                <Text className="mt-4 text-xs font-bold uppercase text-slate-500">{tr("topItems")}</Text>
                 {topItems.map((item) => (
                   <Text key={item.productName} className="text-sm text-slate-600">
                     {item.productName} ×{item.qtySold} · {fmtRwf(item.revenue)}
                   </Text>
                 ))}
-                <Text className="mt-4 text-xs font-bold uppercase text-slate-500">Waiters</Text>
+                <Text className="mt-4 text-xs font-bold uppercase text-slate-500">{tr("waiters")}</Text>
                 {waiters.map((w) => (
                   <View key={w.waiterName} className="flex-row justify-between border-b border-slate-100 py-2">
                     <Text className="text-sm text-slate-700">{w.waiterName}</Text>
@@ -353,7 +370,9 @@ export default function ManagerScreen() {
                   onPress={() => void exportAnalytics()}
                   className="mt-4 items-center rounded-xl border border-indigo-200 py-3"
                 >
-                  <Text className="font-semibold text-indigo-600">{exportBusy ? "Exporting…" : "Export CSV"}</Text>
+                  <Text className="font-semibold text-indigo-600">
+                    {exportBusy ? tr("exporting") : tr("exportCsv")}
+                  </Text>
                 </Pressable>
               </View>
             ) : null}
@@ -364,7 +383,7 @@ export default function ManagerScreen() {
               onPress={() => setShowEodPicker(true)}
               className="mb-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
             >
-              <Text className="text-xs text-slate-500">Report date</Text>
+              <Text className="text-xs text-slate-500">{tr("reportDate")}</Text>
               <Text className="text-lg font-semibold text-slate-900">{toIsoDate(eodDate)}</Text>
             </Pressable>
             {showEodPicker ? (
@@ -383,18 +402,20 @@ export default function ManagerScreen() {
               onPress={() => void generateEod()}
               className="mb-4 items-center rounded-xl bg-indigo-600 py-3"
             >
-              <Text className="font-semibold text-white">{eodLoading ? "Generating…" : "Generate Report"}</Text>
+              <Text className="font-semibold text-white">
+                {eodLoading ? tr("generating") : tr("generateReport")}
+              </Text>
             </Pressable>
             {eodReport ? (
               <View className="rounded-2xl bg-white p-4">
-                <Text className="mb-3 text-sm font-semibold text-slate-800">Revenue summary</Text>
+                <Text className="mb-3 text-sm font-semibold text-slate-800">{tr("revenueSummary")}</Text>
                 <View className="flex-row flex-wrap gap-2">
                   {[
-                    { label: "Revenue", v: eodReport.totalRevenue },
-                    { label: "Cash", v: eodReport.totalCash },
-                    { label: "Card", v: eodReport.totalCard },
-                    { label: "Room", v: eodReport.totalRoomCharge },
-                    { label: "Tips", v: eodReport.totalTips },
+                    { label: tr("revenue"), v: eodReport.totalRevenue },
+                    { label: tr("cash"), v: eodReport.totalCash },
+                    { label: tr("card"), v: eodReport.totalCard },
+                    { label: tr("roomCharges"), v: eodReport.totalRoomCharge },
+                    { label: tr("tip"), v: eodReport.totalTips },
                   ].map((k) => (
                     <View key={k.label} className="min-w-[30%] flex-1 rounded-lg bg-slate-50 p-2">
                       <Text className="text-[10px] text-slate-500">{k.label}</Text>
@@ -402,42 +423,46 @@ export default function ManagerScreen() {
                     </View>
                   ))}
                 </View>
-                <Text className="mt-4 text-sm font-semibold text-slate-800">Cash position</Text>
+                <Text className="mt-4 text-sm font-semibold text-slate-800">{tr("cashPosition")}</Text>
                 <Text className="text-sm text-slate-700">
-                  Expected in drawers: {fmtRwf(eodReport.expectedCashInDrawers)}
+                  {tr("expectedDrawers")}: {fmtRwf(eodReport.expectedCashInDrawers)}
                 </Text>
                 <Text className="text-sm text-slate-700">
-                  Total variances: {fmtRwf(eodReport.totalCashVariance)}
+                  {tr("totalVariances")}: {fmtRwf(eodReport.totalCashVariance)}
                 </Text>
                 <Text
                   className={`mt-1 text-sm font-semibold ${
                     eodReport.cashVarianceStatus === "BALANCED" ? "text-emerald-600" : "text-orange-600"
                   }`}
                 >
-                  {eodReport.cashVarianceStatus === "BALANCED" ? "✅ All Balanced" : "⚠️ Issues Found"}
+                  {eodReport.cashVarianceStatus === "BALANCED" ? tr("allBalanced") : tr("issuesFound")}
                 </Text>
-                <Text className="mt-4 text-xs font-bold uppercase text-slate-500">Shifts</Text>
+                <Text className="mt-4 text-xs font-bold uppercase text-slate-500">{tr("shifts")}</Text>
                 {eodReport.perShift.map((s) => (
                   <View key={s.shiftId} className="border-b border-slate-100 py-2">
                     <Text className="font-medium text-slate-800">
                       {s.waiterName} · {s.depotName}
                     </Text>
                     <Text className="text-sm text-slate-600">
-                      Cash {fmtRwf(s.totalCash)} · {s.orderCount} orders ·{" "}
+                      {tr("cashSalesLabel", { amount: fmtRwf(s.totalCash) })} ·{" "}
+                      {tr("ordersCount", { count: String(s.orderCount) })} ·{" "}
                       <Text className={varianceColor(s.varianceStatus)}>
-                        Var {fmtRwf(s.cashVariance)}
+                        {tr("varianceLabel", { amount: fmtRwf(s.cashVariance) })}
                       </Text>
                     </Text>
                   </View>
                 ))}
                 <Text className="mt-4 text-sm text-slate-700">
-                  Discounts: {fmtRwf(eodReport.totalDiscounts)} · Voids: {eodReport.totalVoids}
+                  {tr("discountsVoidsLine", {
+                    discounts: fmtRwf(eodReport.totalDiscounts),
+                    voids: String(eodReport.totalVoids),
+                  })}
                 </Text>
                 <Pressable
                   onPress={() => void shareEod(eodReport)}
                   className="mt-4 items-center rounded-xl bg-emerald-600 py-3"
                 >
-                  <Text className="font-semibold text-white">Share Report</Text>
+                  <Text className="font-semibold text-white">{tr("shareReport")}</Text>
                 </Pressable>
               </View>
             ) : null}

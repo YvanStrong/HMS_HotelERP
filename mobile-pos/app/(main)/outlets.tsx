@@ -52,6 +52,8 @@ export default function OutletsScreen() {
     void getActiveShift(hotelId).then((shift) => {
       if (shift) setActiveShift(shift);
       else if (useShiftStore.getState().isShiftOpen) clearShift();
+    }).catch(() => {
+      if (useShiftStore.getState().isShiftOpen) clearShift();
     });
   }, [hotelId, setActiveShift, clearShift, loadHotelSettings]);
 

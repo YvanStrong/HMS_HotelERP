@@ -8,3 +8,5 @@ target/
 .env.local
 ~$*
 tsconfig.tsbuildinfo
+secrets/
+*-firebase-adminsdk-*.json

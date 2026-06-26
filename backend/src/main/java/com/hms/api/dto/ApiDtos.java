@@ -51,7 +51,14 @@ public final class ApiDtos {
     public record AuthUserInfo(
             UUID id, String email, String username, String role, UUID hotelId, List<String> permissions) {}
 
-    public record HotelStaffUserRow(UUID id, String username, String email, String role, boolean isActive, Instant createdAt) {}
+    public record HotelStaffUserRow(
+            UUID id,
+            String username,
+            String email,
+            String role,
+            boolean isActive,
+            boolean hasPosPin,
+            Instant createdAt) {}
 
     public record HotelStaffCreateRequest(
             @NotBlank String username,
@@ -62,6 +69,8 @@ public final class ApiDtos {
     public record HotelStaffRoleUpdateRequest(@NotBlank String role) {}
 
     public record HotelStaffPasswordResetRequest(@NotBlank String newPassword) {}
+
+    public record HotelStaffPosPinRequest(@NotBlank String pin) {}
 
     public record LoginResponse(
             String accessToken,

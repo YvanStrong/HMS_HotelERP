@@ -158,6 +158,8 @@ export default function MainLayout() {
 
         <Tabs.Screen name="printer-settings" options={{ href: null }} />
 
+        <Tabs.Screen name="pin-settings" options={{ href: null }} />
+
         <Tabs.Screen name="close-shift" options={{ href: null }} />
 
       </Tabs>

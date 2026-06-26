@@ -1,15 +1,20 @@
+/* @jsxImportSource react */
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Modal,
+  BackHandler,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Toast from "react-native-toast-message";
+import { useTranslation } from "react-i18next";
 import { searchGuests } from "../api/guests";
 import { fetchCheckedInReservations } from "../api/reservations";
 import { buildDeliveryPayload, buildSalePayload, createDelivery, createSale } from "../api/orders";
@@ -37,6 +42,7 @@ function fmtRwf(n: number): string {
 }
 
 export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: Props) {
+  const { t } = useTranslation();
   const hotelId = useAuthStore((s) => s.user?.hotelId);
   const staffId = useAuthStore((s) => s.user?.id);
   const depot = useCartStore((s) => s.selectedDepot);
@@ -114,6 +120,15 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
     return () => clearTimeout(timer);
   }, [roomQuery, visible, hotelId]);
 
+  useEffect(() => {
+    if (!visible) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [visible, onClose]);
+
   const filteredReservations = reservations.filter((r) => {
     const q = roomQuery.trim().toLowerCase();
     if (!q) return true;
@@ -154,15 +169,15 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
         const res = await closeTicketAction(hotelId, ticketId, {
           mode: method,
           paymentMethod: method,
-          customerName: tableLabel ?? ticket?.tableLabel ?? "Walk-in",
+          customerName: tableLabel ?? ticket?.tableLabel ?? t("walkInCustomer"),
           tipAmount: tip > 0 ? tip : undefined,
         });
         if (res?.saleNumber) {
-          finish(`Paid — invoice ${res.saleNumber}`, res, method);
+          finish(t("paidInvoice", { number: res.saleNumber }), res, method);
         } else if (res) {
-          finish("Ticket closed — sale recorded", res, method);
+          finish(t("ticketClosedSale"), res, method);
         } else {
-          finish("Saved offline — will sync when connected", null);
+          finish(t("savedOffline"), null);
         }
         return;
       }
@@ -174,9 +189,9 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
         staffId,
       });
       const res = await createSale(hotelId, payload);
-      finish(`Paid — invoice ${res.saleNumber}`);
+      finish(t("paidInvoice", { number: res.saleNumber }));
     } catch (err) {
-      Toast.show({ type: "error", text1: "Payment failed", text2: apiErrorMessage(err) });
+      Toast.show({ type: "error", text1: t("paymentFailed"), text2: apiErrorMessage(err) });
     } finally {
       setBusy(false);
     }
@@ -198,8 +213,11 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
         });
         finish(
           res?.saleNumber
-            ? `Charged to room ${selectedReservation.roomNumber ?? "?"} — ${res.saleNumber}`
-            : `Charged to room ${selectedReservation.roomNumber ?? "?"}`,
+            ? t("chargedToRoom", {
+                room: selectedReservation.roomNumber ?? "?",
+                number: res.saleNumber,
+              })
+            : t("chargedToRoomNoInvoice", { room: selectedReservation.roomNumber ?? "?" }),
           res,
           "ROOM",
         );
@@ -215,9 +233,14 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
         staffId,
       });
       const res = await createSale(hotelId, payload);
-      finish(`Charged to room ${selectedReservation.roomNumber ?? "?"} — ${res.saleNumber}`);
+      finish(
+        t("chargedToRoom", {
+          room: selectedReservation.roomNumber ?? "?",
+          number: res.saleNumber,
+        }),
+      );
     } catch (err) {
-      Toast.show({ type: "error", text1: "Room charge failed", text2: apiErrorMessage(err) });
+      Toast.show({ type: "error", text1: t("roomChargeFailed"), text2: apiErrorMessage(err) });
     } finally {
       setBusy(false);
     }
@@ -232,12 +255,12 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
         await flushPendingLines();
         const res = await closeTicketAction(hotelId, ticketId, {
           mode: "BILL_LATER",
-          customerName: tableLabel ?? ticket?.tableLabel ?? "Walk-in",
+          customerName: tableLabel ?? ticket?.tableLabel ?? t("walkInCustomer"),
         });
         finish(
           res?.deliveryNumber
-            ? `Bill later — delivery ${res.deliveryNumber} (HMS Invoices → Deliveries)`
-            : "Order sent — ticket is open on Deliveries",
+            ? t("deliveryBillLater", { number: res.deliveryNumber })
+            : t("orderSentDeliveries"),
           res,
         );
         return;
@@ -246,14 +269,14 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
         depotId: depot.id,
         lines: pendingLines,
         tableLabel,
-        customerName: tableLabel ?? "Walk-in",
+        customerName: tableLabel ?? t("walkInCustomer"),
         staffId,
-        paymentNote: "Bill later",
+        paymentNote: t("billLater"),
       });
       const res = await createDelivery(hotelId, payload);
-      finish(`Delivery ${res.deliveryNumber} sent — HMS Invoices → Deliveries`);
+      finish(t("deliverySent", { number: res.deliveryNumber }));
     } catch (err) {
-      Toast.show({ type: "error", text1: "Could not send order", text2: apiErrorMessage(err) });
+      Toast.show({ type: "error", text1: t("couldNotSendOrder"), text2: apiErrorMessage(err) });
     } finally {
       setBusy(false);
     }
@@ -261,223 +284,384 @@ export function PaymentModal({ visible, onClose, onSuccess, ticketId, ticket }: 
 
   const hasItems = ticketLines.length > 0 || pendingLines.length > 0;
 
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View className="flex-1 bg-slate-50">
-        <View className="flex-row items-center justify-between border-b border-slate-200 bg-white px-4 py-4">
-          <View>
-            <Text className="text-lg font-bold text-slate-900">
-              {ticketId ? "Close ticket" : "Payment"}
-            </Text>
-            {ticket?.tableLabel ? (
-              <Text className="text-sm text-slate-500">{ticket.tableLabel}</Text>
-            ) : null}
-          </View>
-          <Pressable onPress={onClose}>
-            <Ionicons name="close" size={24} color="#64748b" />
-          </Pressable>
-        </View>
-
-        <ScrollView className="flex-1 px-4 py-4">
-          {hasItems ? (
-            <View className="mb-4 rounded-2xl bg-white p-4">
-              <Text className="mb-3 text-sm font-semibold text-slate-700">Order items</Text>
-              {ticketLines.map((line) => (
-                <View key={line.id} className="mb-2 flex-row items-start justify-between border-b border-slate-100 pb-2">
-                  <View className="flex-1 pr-2">
-                    <Text className="font-medium text-slate-900">
-                      {line.quantity}× {line.productName}
-                    </Text>
-                    {line.notes ? <Text className="text-xs text-slate-500">{line.notes}</Text> : null}
-                  </View>
-                  <Text className="font-semibold text-slate-800">{money(line.lineTotal).toFixed(2)}</Text>
-                </View>
-              ))}
-              {pendingLines.map((line) => (
-                <View
-                  key={`pending-${line.productId}`}
-                  className="mb-2 flex-row items-start justify-between border-b border-indigo-100 pb-2"
-                >
-                  <View className="flex-1 pr-2">
-                    <Text className="font-medium text-slate-900">
-                      {line.qty}× {line.productName}
-                    </Text>
-                    <Text className="text-xs text-indigo-600">Pending round</Text>
-                  </View>
-                  <Text className="font-semibold text-slate-800">
-                    {(line.unitPrice * line.qty).toFixed(2)}
-                  </Text>
-                </View>
-              ))}
+    <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.flex1}
+      >
+        <View style={styles.flex1}>
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.headerTitle}>
+                {ticketId ? t("closeTicketTitle") : t("paymentTitle")}
+              </Text>
+              {ticket?.tableLabel ? <Text style={styles.headerSub}>{ticket.tableLabel}</Text> : null}
             </View>
-          ) : null}
-
-          <Text className="mb-2 text-sm font-semibold text-slate-700">Pay now</Text>
-          <View className="mb-4 flex-row gap-3">
-            <Pressable
-              disabled={busy || !hasItems}
-              onPress={() => selectPayMethod("CASH")}
-              className={`flex-1 rounded-xl p-4 ${
-                payMethod === "CASH" ? "bg-emerald-700 ring-2 ring-emerald-300" : hasItems ? "bg-emerald-600" : "bg-slate-300"
-              }`}
-            >
-              <Text className="text-center font-semibold text-white">Cash</Text>
-            </Pressable>
-            <Pressable
-              disabled={busy || !hasItems}
-              onPress={() => selectPayMethod("CARD")}
-              className={`flex-1 rounded-xl p-4 ${
-                payMethod === "CARD" ? "bg-indigo-700 ring-2 ring-indigo-300" : hasItems ? "bg-indigo-600" : "bg-slate-300"
-              }`}
-            >
-              <Text className="text-center font-semibold text-white">Card</Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Ionicons name="close" size={24} color="#64748b" />
             </Pressable>
           </View>
 
-          {payMethod ? (
-            <View className="mb-4 rounded-2xl bg-white p-4">
-              <Text className="mb-3 text-sm font-semibold text-slate-700">Add a tip? (Optional)</Text>
-              <View className="mb-2 flex-row flex-wrap gap-2">
-                {([10, 15, 20] as const).map((pct) => (
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+            {hasItems ? (
+              <View style={styles.card}>
+                <Text style={styles.sectionLabel}>{t("orderItems")}</Text>
+                {ticketLines.map((line) => (
+                  <View key={line.id} style={styles.lineRow}>
+                    <View style={styles.lineMain}>
+                      <Text style={styles.lineTitle}>
+                        {line.quantity}× {line.productName}
+                      </Text>
+                      {line.notes ? <Text style={styles.lineNote}>{line.notes}</Text> : null}
+                    </View>
+                    <Text style={styles.lineAmount}>{money(line.lineTotal).toFixed(2)}</Text>
+                  </View>
+                ))}
+                {pendingLines.map((line) => (
+                  <View key={`pending-${line.productId}`} style={styles.pendingRow}>
+                    <View style={styles.lineMain}>
+                      <Text style={styles.lineTitle}>
+                        {line.qty}× {line.productName}
+                      </Text>
+                      <Text style={styles.pendingTag}>{t("pendingRound")}</Text>
+                    </View>
+                    <Text style={styles.lineAmount}>{(line.unitPrice * line.qty).toFixed(2)}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            <Text style={styles.sectionLabel}>{t("payNow")}</Text>
+            <View style={styles.payRow}>
+              <Pressable
+                disabled={busy || !hasItems}
+                onPress={() => selectPayMethod("CASH")}
+                style={[
+                  styles.payBtn,
+                  payMethod === "CASH"
+                    ? styles.payBtnCashActive
+                    : hasItems
+                      ? styles.payBtnCash
+                      : styles.payBtnDisabled,
+                ]}
+              >
+                <Text style={styles.payBtnText}>{t("cash")}</Text>
+              </Pressable>
+              <Pressable
+                disabled={busy || !hasItems}
+                onPress={() => selectPayMethod("CARD")}
+                style={[
+                  styles.payBtn,
+                  payMethod === "CARD"
+                    ? styles.payBtnCardActive
+                    : hasItems
+                      ? styles.payBtnCard
+                      : styles.payBtnDisabled,
+                ]}
+              >
+                <Text style={styles.payBtnText}>{t("card")}</Text>
+              </Pressable>
+            </View>
+
+            {payMethod ? (
+              <View style={styles.card}>
+                <Text style={styles.sectionLabel}>{t("addTipOptional")}</Text>
+                <View style={styles.tipRow}>
+                  {([10, 15, 20] as const).map((pct) => (
+                    <Pressable
+                      key={pct}
+                      onPress={() => setTipPreset(pct)}
+                      style={[styles.tipChip, tipPreset === pct && styles.tipChipActive]}
+                    >
+                      <Text style={[styles.tipChipText, tipPreset === pct && styles.tipChipTextActive]}>
+                        {pct}%
+                      </Text>
+                    </Pressable>
+                  ))}
                   <Pressable
-                    key={pct}
-                    onPress={() => setTipPreset(pct)}
-                    className={`rounded-lg px-4 py-2 ${
-                      tipPreset === pct ? "bg-indigo-600" : "bg-slate-100"
-                    }`}
+                    onPress={() => setTipPreset("custom")}
+                    style={[styles.tipChip, tipPreset === "custom" && styles.tipChipActive]}
                   >
-                    <Text className={`font-semibold ${tipPreset === pct ? "text-white" : "text-slate-700"}`}>
-                      {pct}%
+                    <Text style={[styles.tipChipText, tipPreset === "custom" && styles.tipChipTextActive]}>
+                      {t("custom")}
                     </Text>
                   </Pressable>
-                ))}
+                </View>
+                {tipPreset !== null && tipPreset !== "none" && tipPreset !== "custom" ? (
+                  <Text style={styles.tipAmount}>= {fmtRwf(tipAmount)}</Text>
+                ) : null}
+                {tipPreset === "custom" ? (
+                  <View style={styles.customTipWrap}>
+                    <Text style={styles.customTipLabel}>{t("enterTipAmount")}</Text>
+                    <TextInput
+                      value={customTip}
+                      onChangeText={setCustomTip}
+                      keyboardType="decimal-pad"
+                      style={styles.customTipInput}
+                      placeholder="0"
+                    />
+                  </View>
+                ) : null}
+                <Pressable onPress={() => setTipPreset("none")} style={styles.noTipBtn}>
+                  <Text style={styles.noTipText}>{t("noTip")}</Text>
+                </Pressable>
+
+                <View style={styles.totalsBox}>
+                  <View style={styles.totalRow}>
+                    <Text style={styles.totalLabel}>{t("subtotal")}</Text>
+                    <Text style={styles.totalValue}>{fmtRwf(subtotal)}</Text>
+                  </View>
+                  <View style={styles.totalRow}>
+                    <Text style={styles.totalLabel}>{t("tax")}</Text>
+                    <Text style={styles.totalValue}>{fmtRwf(tax)}</Text>
+                  </View>
+                  <View style={styles.totalRow}>
+                    <Text style={styles.totalLabel}>{t("tip")}</Text>
+                    <Text style={styles.totalValue}>{fmtRwf(tipAmount)}</Text>
+                  </View>
+                  <View style={styles.grandTotalRow}>
+                    <Text style={styles.grandTotalLabel}>{t("total")}</Text>
+                    <Text style={styles.grandTotalValue}>{fmtRwf(grandTotal)}</Text>
+                  </View>
+                </View>
+
                 <Pressable
-                  onPress={() => setTipPreset("custom")}
-                  className={`rounded-lg px-4 py-2 ${tipPreset === "custom" ? "bg-indigo-600" : "bg-slate-100"}`}
+                  disabled={busy}
+                  onPress={() => void submitPayNow(payMethod, tipAmount)}
+                  style={styles.confirmBtn}
                 >
-                  <Text className={`font-semibold ${tipPreset === "custom" ? "text-white" : "text-slate-700"}`}>
-                    Custom
+                  <Text style={styles.confirmBtnText}>
+                    {t("confirmPaymentAmount", { amount: fmtRwf(grandTotal) })}
                   </Text>
                 </Pressable>
               </View>
-              {tipPreset !== null && tipPreset !== "none" && tipPreset !== "custom" ? (
-                <Text className="mb-2 text-sm font-medium text-indigo-600">= {fmtRwf(tipAmount)}</Text>
-              ) : null}
-              {tipPreset === "custom" ? (
-                <View className="mb-2">
-                  <Text className="mb-1 text-xs text-slate-500">Enter tip amount (RWF)</Text>
-                  <TextInput
-                    value={customTip}
-                    onChangeText={setCustomTip}
-                    keyboardType="decimal-pad"
-                    className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-lg font-semibold"
-                    placeholder="0"
-                  />
+            ) : (
+              <View style={styles.card}>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>{t("subtotal")}</Text>
+                  <Text style={styles.totalValue}>{subtotal.toFixed(2)}</Text>
                 </View>
-              ) : null}
-              <Pressable onPress={() => setTipPreset("none")} className="py-1">
-                <Text className="text-center text-sm text-slate-500 underline">No tip</Text>
-              </Pressable>
-
-              <View className="mt-4 border-t border-slate-200 pt-3">
-                <View className="flex-row justify-between py-1">
-                  <Text className="text-slate-600">Subtotal</Text>
-                  <Text className="font-medium text-slate-900">{fmtRwf(subtotal)}</Text>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>{t("tax")}</Text>
+                  <Text style={styles.totalValue}>{tax.toFixed(2)}</Text>
                 </View>
-                <View className="flex-row justify-between py-1">
-                  <Text className="text-slate-600">Tax</Text>
-                  <Text className="font-medium text-slate-900">{fmtRwf(tax)}</Text>
-                </View>
-                <View className="flex-row justify-between py-1">
-                  <Text className="text-slate-600">Tip</Text>
-                  <Text className="font-medium text-slate-900">{fmtRwf(tipAmount)}</Text>
-                </View>
-                <View className="mt-2 flex-row justify-between border-t border-slate-200 pt-2">
-                  <Text className="text-base font-bold text-slate-900">TOTAL</Text>
-                  <Text className="text-xl font-bold text-indigo-600">{fmtRwf(grandTotal)}</Text>
+                <View style={styles.grandTotalRow}>
+                  <Text style={styles.grandTotalLabel}>{t("total")}</Text>
+                  <Text style={styles.grandTotalValueLarge}>{total.toFixed(2)}</Text>
                 </View>
               </View>
+            )}
 
+            <Text style={styles.sectionLabel}>{t("chargeToRoom")}</Text>
+            <TextInput
+              value={roomQuery}
+              onChangeText={setRoomQuery}
+              placeholder={t("searchGuestRoom")}
+              style={styles.searchInput}
+            />
+            {filteredReservations.slice(0, 8).map((r) => (
               <Pressable
-                disabled={busy}
-                onPress={() => void submitPayNow(payMethod, tipAmount)}
-                className="mt-4 items-center rounded-xl bg-indigo-600 py-4"
+                key={r.id}
+                onPress={() => setSelectedReservation(r)}
+                style={[
+                  styles.roomRow,
+                  selectedReservation?.id === r.id && styles.roomRowSelected,
+                ]}
               >
-                <Text className="font-semibold text-white">Confirm Payment — {fmtRwf(grandTotal)}</Text>
+                <Text style={styles.roomRowText}>
+                  {t("roomGuestLine", { room: r.roomNumber ?? "—", name: r.guestName })}
+                </Text>
               </Pressable>
-            </View>
-          ) : (
-            <View className="mb-4 rounded-2xl bg-white p-4">
-              <View className="flex-row justify-between">
-                <Text className="text-slate-600">Subtotal</Text>
-                <Text className="font-medium text-slate-900">{subtotal.toFixed(2)}</Text>
-              </View>
-              <View className="mt-2 flex-row justify-between">
-                <Text className="text-slate-600">Tax</Text>
-                <Text className="font-medium text-slate-900">{tax.toFixed(2)}</Text>
-              </View>
-              <View className="mt-3 flex-row justify-between border-t border-slate-200 pt-3">
-                <Text className="text-base font-bold text-slate-900">Total</Text>
-                <Text className="text-2xl font-bold text-indigo-600">{total.toFixed(2)}</Text>
-              </View>
-            </View>
-          )}
-
-          <Text className="mb-2 text-sm font-semibold text-slate-700">Charge to room</Text>
-          <TextInput
-            value={roomQuery}
-            onChangeText={setRoomQuery}
-            placeholder="Search guest or room number"
-            className="mb-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
-          />
-          {filteredReservations.slice(0, 8).map((r) => (
+            ))}
+            {guestHits.slice(0, 4).map((g) => (
+              <Text key={g.guest?.id ?? g.guest?.email} style={styles.guestHit}>
+                {t("guestLabel", {
+                  name: g.guest?.fullName ?? g.guest?.full_name ?? g.guest?.email ?? "—",
+                })}
+              </Text>
+            ))}
             <Pressable
-              key={r.id}
-              onPress={() => setSelectedReservation(r)}
-              className={`mb-2 rounded-xl border p-3 ${
-                selectedReservation?.id === r.id ? "border-indigo-500 bg-indigo-50" : "border-slate-200 bg-white"
-              }`}
+              disabled={busy || !selectedReservation || !hasItems}
+              onPress={() => void submitRoomCharge()}
+              style={[
+                styles.roomChargeBtn,
+                selectedReservation && hasItems ? styles.roomChargeBtnOn : styles.payBtnDisabled,
+              ]}
             >
-              <Text className="font-semibold text-slate-900">
-                Room {r.roomNumber ?? "—"} · {r.guestName}
+              <Text style={styles.payBtnText}>{t("chargeToRoom")}</Text>
+            </Pressable>
+
+            <Pressable
+              disabled={busy || !hasItems}
+              onPress={() => void submitBillLater()}
+              style={[styles.billLaterBtn, hasItems ? styles.billLaterBtnOn : styles.billLaterBtnOff]}
+            >
+              <Text style={[styles.billLaterTitle, hasItems ? styles.billLaterTitleOn : styles.billLaterTitleOff]}>
+                {t("billLaterDelivery")}
+              </Text>
+              <Text style={[styles.billLaterHint, hasItems ? styles.billLaterHintOn : styles.billLaterHintOff]}>
+                {t("billLaterDeliveryHint")}
               </Text>
             </Pressable>
-          ))}
-          {guestHits.slice(0, 4).map((g) => (
-            <Text key={g.guest?.id ?? g.guest?.email} className="mb-1 text-xs text-slate-500">
-              Guest: {g.guest?.fullName ?? g.guest?.full_name ?? g.guest?.email ?? "—"}
-            </Text>
-          ))}
-          <Pressable
-            disabled={busy || !selectedReservation || !hasItems}
-            onPress={() => void submitRoomCharge()}
-            className={`mb-6 rounded-xl p-4 ${selectedReservation && hasItems ? "bg-violet-600" : "bg-slate-300"}`}
-          >
-            <Text className="text-center font-semibold text-white">Charge to room</Text>
-          </Pressable>
+          </ScrollView>
 
-          <Pressable
-            disabled={busy || !hasItems}
-            onPress={() => void submitBillLater()}
-            className={`mb-8 rounded-xl border p-4 ${
-              hasItems ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-slate-100"
-            }`}
-          >
-            <Text className={`text-center font-semibold ${hasItems ? "text-amber-800" : "text-slate-400"}`}>
-              Bill later (delivery)
-            </Text>
-            <Text className={`mt-1 text-center text-xs ${hasItems ? "text-amber-700" : "text-slate-400"}`}>
-              Appears on HMS Invoices → Deliveries until cashier converts
-            </Text>
-          </Pressable>
-        </ScrollView>
-
-        {busy ? (
-          <View className="absolute inset-0 items-center justify-center bg-black/20">
-            <ActivityIndicator size="large" color="#4f46e5" />
-          </View>
-        ) : null}
-      </View>
-    </Modal>
+          {busy ? (
+            <View style={styles.busyOverlay}>
+              <ActivityIndicator size="large" color="#4f46e5" />
+            </View>
+          ) : null}
+        </View>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1000,
+    elevation: 1000,
+    backgroundColor: "#f8fafc",
+  },
+  flex1: { flex: 1 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+    backgroundColor: "#fff",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: "#0f172a" },
+  headerSub: { fontSize: 14, color: "#64748b", marginTop: 2 },
+  scroll: { flex: 1 },
+  scrollContent: { padding: 16, paddingBottom: 32 },
+  card: {
+    marginBottom: 16,
+    borderRadius: 16,
+    backgroundColor: "#fff",
+    padding: 16,
+  },
+  sectionLabel: {
+    marginBottom: 8,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#334155",
+  },
+  lineRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
+  pendingRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e7ff",
+  },
+  lineMain: { flex: 1, paddingRight: 8 },
+  lineTitle: { fontWeight: "500", color: "#0f172a" },
+  lineNote: { fontSize: 12, color: "#64748b", marginTop: 2 },
+  pendingTag: { fontSize: 12, color: "#4f46e5", marginTop: 2 },
+  lineAmount: { fontWeight: "600", color: "#1e293b" },
+  payRow: { flexDirection: "row", gap: 12, marginBottom: 16 },
+  payBtn: { flex: 1, borderRadius: 12, padding: 16 },
+  payBtnCash: { backgroundColor: "#059669" },
+  payBtnCashActive: { backgroundColor: "#047857" },
+  payBtnCard: { backgroundColor: "#4f46e5" },
+  payBtnCardActive: { backgroundColor: "#4338ca" },
+  payBtnDisabled: { backgroundColor: "#cbd5e1" },
+  payBtnText: { textAlign: "center", fontWeight: "600", color: "#fff" },
+  tipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
+  tipChip: { borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#f1f5f9" },
+  tipChipActive: { backgroundColor: "#4f46e5" },
+  tipChipText: { fontWeight: "600", color: "#334155" },
+  tipChipTextActive: { color: "#fff" },
+  tipAmount: { marginBottom: 8, fontSize: 14, fontWeight: "500", color: "#4f46e5" },
+  customTipWrap: { marginBottom: 8 },
+  customTipLabel: { marginBottom: 4, fontSize: 12, color: "#64748b" },
+  customTipInput: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  noTipBtn: { paddingVertical: 4 },
+  noTipText: { textAlign: "center", fontSize: 14, color: "#64748b", textDecorationLine: "underline" },
+  totalsBox: { marginTop: 16, borderTopWidth: 1, borderTopColor: "#e2e8f0", paddingTop: 12 },
+  totalRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
+  totalLabel: { color: "#475569" },
+  totalValue: { fontWeight: "500", color: "#0f172a" },
+  grandTotalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#e2e8f0",
+  },
+  grandTotalLabel: { fontSize: 16, fontWeight: "700", color: "#0f172a" },
+  grandTotalValue: { fontSize: 20, fontWeight: "700", color: "#4f46e5" },
+  grandTotalValueLarge: { fontSize: 24, fontWeight: "700", color: "#4f46e5" },
+  confirmBtn: {
+    marginTop: 16,
+    alignItems: "center",
+    borderRadius: 12,
+    backgroundColor: "#4f46e5",
+    paddingVertical: 16,
+  },
+  confirmBtnText: { fontWeight: "600", color: "#fff" },
+  searchInput: {
+    marginBottom: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#fff",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  roomRow: {
+    marginBottom: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#fff",
+    padding: 12,
+  },
+  roomRowSelected: { borderColor: "#4f46e5", backgroundColor: "#eef2ff" },
+  roomRowText: { fontWeight: "600", color: "#0f172a" },
+  guestHit: { marginBottom: 4, fontSize: 12, color: "#64748b" },
+  roomChargeBtn: { marginBottom: 24, borderRadius: 12, padding: 16 },
+  roomChargeBtnOn: { backgroundColor: "#7c3aed" },
+  billLaterBtn: { marginBottom: 32, borderRadius: 12, borderWidth: 1, padding: 16 },
+  billLaterBtnOn: { borderColor: "#fcd34d", backgroundColor: "#fffbeb" },
+  billLaterBtnOff: { borderColor: "#e2e8f0", backgroundColor: "#f1f5f9" },
+  billLaterTitle: { textAlign: "center", fontWeight: "600" },
+  billLaterTitleOn: { color: "#92400e" },
+  billLaterTitleOff: { color: "#94a3b8" },
+  billLaterHint: { marginTop: 4, textAlign: "center", fontSize: 12 },
+  billLaterHintOn: { color: "#b45309" },
+  billLaterHintOff: { color: "#94a3b8" },
+  busyOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.2)",
+  },
+});

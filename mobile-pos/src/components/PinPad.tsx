@@ -17,7 +17,7 @@ type Props = {
 
 
 
-export function PinPad({ value, onChange, onComplete, maxLength = 4 }: Props) {
+export function PinPad({ value, onChange, onComplete, maxLength = 6 }: Props) {
 
   function press(digit: string) {
 

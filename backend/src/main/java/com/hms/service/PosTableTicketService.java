@@ -856,6 +856,11 @@ public class PosTableTicketService {
             ticket.setTipWaiter(tipWaiter);
         }
 
+        AppUser shiftWaiter = ticket.getStaffUser() != null ? ticket.getStaffUser() : resolveCurrentStaff();
+        if (ticket.getShift() == null && shiftWaiter != null) {
+            posShiftService.findOpenShiftForWaiter(hotelId, shiftWaiter.getId()).ifPresent(ticket::setShift);
+        }
+
         ticket.setStatus(PosTableTicketStatus.CLOSED);
         ticket.setClosedAt(Instant.now());
         ticket.getLines().stream()
@@ -1299,9 +1304,14 @@ public class PosTableTicketService {
 
     private MobilePosDtos.KitchenTicketRow toKitchenRow(PosTableTicket t) {
         List<MobilePosDtos.TicketLineRow> kitchenLines = t.getLines().stream()
-                .filter(l -> l.getLineStatus() == PosTicketLineStatus.PENDING
-                        || l.getLineStatus() == PosTicketLineStatus.PREPARING
-                        || l.getLineStatus() == PosTicketLineStatus.READY)
+                .filter(l -> {
+                    if (l.isHeld() && l.getLineStatus() == PosTicketLineStatus.PENDING) {
+                        return false;
+                    }
+                    return l.getLineStatus() == PosTicketLineStatus.PENDING
+                            || l.getLineStatus() == PosTicketLineStatus.PREPARING
+                            || l.getLineStatus() == PosTicketLineStatus.READY;
+                })
                 .map(this::toLineRow)
                 .toList();
         return new MobilePosDtos.KitchenTicketRow(

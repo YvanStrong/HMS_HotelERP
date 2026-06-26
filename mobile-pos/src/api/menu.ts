@@ -5,12 +5,18 @@ import { productPrice } from "../lib/productMoney";
 
 export { productPrice };
 
+function isBlankUrl(url: string | null | undefined): boolean {
+  return url == null || url.trim() === "";
+}
+
 function mergeProductImages(products: DepotProduct[], inventoryImages: Map<string, string>): DepotProduct[] {
   return products.map((p) => {
+    const depotPhoto = p.photoUrl?.trim() || null;
+    const invKey = p.inventoryItemId?.trim().toLowerCase() ?? "";
     const fromInventory =
-      p.inventoryItemId && !p.photoUrl ? inventoryImages.get(p.inventoryItemId) ?? null : null;
-    const photoUrl = p.photoUrl ?? fromInventory ?? null;
-    return photoUrl && photoUrl !== p.photoUrl ? { ...p, photoUrl } : p;
+      invKey && isBlankUrl(depotPhoto) ? inventoryImages.get(invKey)?.trim() || null : null;
+    const photoUrl = depotPhoto || fromInventory || null;
+    return photoUrl !== (p.photoUrl?.trim() || null) ? { ...p, photoUrl } : p;
   });
 }
 

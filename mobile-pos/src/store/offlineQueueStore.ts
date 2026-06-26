@@ -164,7 +164,7 @@ export const useOfflineQueueStore = create<OfflineQueueState>()(
         set((s) => ({
           queue: s.queue.map((a) => (a.retryCount >= 3 ? { ...a, retryCount: 0, lastError: null } : a)),
         }));
-        void import("../hooks/offlineSync").then((m) => m.syncOfflineQueue());
+        void import("../hooks/offlineSync").then((m) => m.syncOfflineQueue().catch(() => {}));
       },
 
     }),

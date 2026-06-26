@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PaginationBar } from "@/components/PaginationBar";
-import { getToken } from "@/lib/api";
+import { API_BASE, getToken } from "@/lib/api";
 import {
   auditImpactAmount,
   fetchVoidReport,
@@ -41,10 +41,12 @@ export default function PosVoidsPage() {
   const { hotelId } = useParams<{ hotelId: string }>();
   const [range, setRange] = useState(defaultRange);
   const [actionFilter, setActionFilter] = useState<"" | "VOID" | "DISCOUNT">("");
+  const [waiterFilter, setWaiterFilter] = useState("");
   const [rows, setRows] = useState<PosLineAuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -52,6 +54,7 @@ export default function PosVoidsPage() {
       const res = await fetchVoidReport(hotelId, range.from, range.to, page - 1, PAGE_SIZE);
       setRows(res.content ?? []);
       setTotalPages(Math.max(1, res.totalPages ?? 1));
+      setTotalItems(res.totalElements ?? 0);
     } finally {
       setLoading(false);
     }
@@ -62,9 +65,12 @@ export default function PosVoidsPage() {
   }, [load]);
 
   const filtered = useMemo(() => {
-    if (!actionFilter) return rows;
-    return rows.filter((r) => r.action === actionFilter);
-  }, [rows, actionFilter]);
+    let list = rows;
+    if (actionFilter) list = list.filter((r) => r.action === actionFilter);
+    const w = waiterFilter.trim().toLowerCase();
+    if (w) list = list.filter((r) => (r.waiterName ?? "").toLowerCase().includes(w));
+    return list;
+  }, [rows, actionFilter, waiterFilter]);
 
   const today = new Date().toISOString().slice(0, 10);
   const todayRows = rows.filter((r) => r.createdAt?.slice(0, 10) === today);
@@ -76,7 +82,7 @@ export default function PosVoidsPage() {
   async function exportCsv() {
     const token = getToken();
     const q = new URLSearchParams({ from: range.from, to: range.to, page: "0", size: "5000" });
-    const url = `/api/v1/hotels/${hotelId}/pos/voids?${q}`;
+    const url = `${API_BASE}/api/v1/hotels/${hotelId}/pos/voids?${q}`;
     const res = await fetch(url, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
@@ -170,6 +176,13 @@ export default function PosVoidsPage() {
           <option value="VOID">Void only</option>
           <option value="DISCOUNT">Discount only</option>
         </select>
+        <input
+          type="search"
+          placeholder="Filter waiter"
+          className="rounded border px-2 py-1 text-sm"
+          value={waiterFilter}
+          onChange={(e) => setWaiterFilter(e.target.value)}
+        />
         <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => void load()}>
           Refresh
         </button>
@@ -233,7 +246,14 @@ export default function PosVoidsPage() {
         </table>
       </div>
 
-      <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} className="mt-4" />
+      <PaginationBar
+        page={page}
+        totalPages={totalPages}
+        totalItems={totalItems}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+        noun="audit rows"
+      />
     </div>
   );
 }
