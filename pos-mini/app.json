@@ -1,0 +1,79 @@
+{
+  "expo": {
+    "name": "POS Mini",
+    "slug": "pos-mini",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "posmini",
+    "main": "expo-router/entry",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow POS Mini to scan product barcodes."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow POS Mini to choose product photos."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#1d4ed8"
+        }
+      ],
+      "expo-sqlite"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.posmini.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow POS Mini to scan product barcodes.",
+        "NSPhotoLibraryUsageDescription": "Allow POS Mini to choose product photos.",
+        "NSBluetoothAlwaysUsageDescription": "Connect to Bluetooth receipt printers.",
+        "NSBluetoothPeripheralUsageDescription": "Connect to Bluetooth receipt printers."
+      }
+    },
+    "android": {
+      "package": "com.posmini.app",
+      "softwareKeyboardLayoutMode": "resize",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "87a7cdc8-03d0-49d4-9306-bf37b1b08bf5"
+      }
+    },
+    "owner": "gboy21"
+  }
+}
