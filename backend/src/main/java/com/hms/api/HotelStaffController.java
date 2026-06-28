@@ -79,4 +79,23 @@ public class HotelStaffController {
             @Valid @RequestBody ApiDtos.HotelStaffPasswordResetRequest body) {
         return hotelStaffUserService.resetPassword(hotelId, hotelHeader, userId, body);
     }
+
+    @PostMapping("/{userId}/set-pos-pin")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER')")
+    public ApiDtos.HotelStaffUserRow setPosPin(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID userId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody ApiDtos.HotelStaffPosPinRequest body) {
+        return hotelStaffUserService.setPosPin(hotelId, hotelHeader, userId, body);
+    }
+
+    @PostMapping("/{userId}/clear-pos-pin")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER')")
+    public ApiDtos.HotelStaffUserRow clearPosPin(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID userId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return hotelStaffUserService.clearPosPin(hotelId, hotelHeader, userId);
+    }
 }

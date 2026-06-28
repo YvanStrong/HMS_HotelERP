@@ -1,8 +1,15 @@
 import { Modal, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import Toast from "react-native-toast-message";
 import type { PosShiftSummaryDTO } from "../api/shifts";
 import { money } from "../api/shifts";
 import { cashVarianceStatus, computeExpectedCash, roundMoney } from "../lib/cashReconciliation";
+import { getPrinter } from "../printing/PrinterConfig";
+import { printReceipt } from "../printing/PrinterService";
+import {
+  closedSummaryToTicketDetail,
+  loadLastClosedTicket,
+} from "../storage/lastReceipt";
 
 type Props = {
   visible: boolean;
@@ -28,6 +35,21 @@ export function PrintShiftModal({ visible, summary, busy, onPrint, onDone }: Pro
       : computeExpectedCash(summary.openingFloat, summary.totalCash);
   const variance = roundMoney(money(summary.cashVariance));
   const status = summary.cashVarianceStatus ?? cashVarianceStatus(variance);
+  const lastReceipt = loadLastClosedTicket();
+
+  async function handleReprintReceipt() {
+    if (!lastReceipt) return;
+    if (!getPrinter("receipt")) {
+      Toast.show({ type: "error", text1: "No receipt printer configured" });
+      return;
+    }
+    try {
+      await printReceipt(closedSummaryToTicketDetail(lastReceipt), lastReceipt.depotName);
+      Toast.show({ type: "success", text1: "Receipt reprinted" });
+    } catch (e) {
+      Toast.show({ type: "error", text1: "Print failed", text2: String(e) });
+    }
+  }
 
   return (
     <Modal visible={visible} transparent animationType="slide">
@@ -74,6 +96,16 @@ export function PrintShiftModal({ visible, summary, busy, onPrint, onDone }: Pro
           >
             <Text className="font-semibold text-white">{busy ? "Printing…" : "Print Shift Summary"}</Text>
           </Pressable>
+
+          {lastReceipt ? (
+            <Pressable
+              disabled={busy}
+              onPress={() => void handleReprintReceipt()}
+              className="mt-3 items-center rounded-xl border border-indigo-200 bg-indigo-50 py-3"
+            >
+              <Text className="font-medium text-indigo-700">Reprint Last Receipt</Text>
+            </Pressable>
+          ) : null}
 
           <Pressable disabled={busy} onPress={onDone} className="mt-3 items-center rounded-xl border border-slate-200 py-3">
             <Text className="font-medium text-slate-700">Done</Text>

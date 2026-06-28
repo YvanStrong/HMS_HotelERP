@@ -17,13 +17,17 @@
         "NSBluetoothPeripheralUsageDescription": "Connect to Bluetooth receipt and kitchen printers.",
         "NSCameraUsageDescription": "Take photos of menu items for the POS catalog.",
         "NSPhotoLibraryUsageDescription": "Choose photos for menu items in the POS catalog.",
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       },
       "privacyManifests": {
         "NSPrivacyAccessedAPITypes": [
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
-            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
           }
         ]
       }
@@ -45,7 +49,8 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -53,14 +58,6 @@
     },
     "plugins": [
       "expo-router",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "usesCleartextTraffic": true
-          }
-        }
-      ],
       "expo-secure-store",
       [
         "expo-image-picker",
@@ -82,8 +79,12 @@
     },
     "extra": {
       "eas": {
-        "projectId": "REPLACE_WITH_YOUR_EAS_PROJECT_ID"
-      }
-    }
+        "projectId": "66ffb059-4df9-4086-a14f-f2a765cc9289"
+      },
+      "buildProfile": "local",
+      "allowCleartext": false,
+      "router": {}
+    },
+    "owner": "gboy21"
   }
 }

@@ -1,0 +1,149 @@
+import { getDb } from '../db/database';
+
+export type PaymentMethodSettings = {
+  cardEnabled: boolean;
+  mobileEnabled: boolean;
+  creditEnabled: boolean;
+  mobileMoneyLabel: string;
+};
+
+const DEFAULT_PAYMENT: PaymentMethodSettings = {
+  cardEnabled: true,
+  mobileEnabled: true,
+  creditEnabled: true,
+  mobileMoneyLabel: 'Mobile Money',
+};
+
+async function getMeta(key: string): Promise<string | null> {
+  const db = getDb();
+  const row = await db.getFirstAsync<{ value: string }>(
+    'SELECT value FROM app_meta WHERE key = ?',
+    [key],
+  );
+  return row?.value ?? null;
+}
+
+async function setMeta(key: string, value: string): Promise<void> {
+  const db = getDb();
+  await db.runAsync('INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)', [key, value]);
+}
+
+export async function getPaymentMethodSettings(): Promise<PaymentMethodSettings> {
+  const raw = await getMeta('payment_methods');
+  if (!raw) return { ...DEFAULT_PAYMENT };
+  try {
+    return { ...DEFAULT_PAYMENT, ...JSON.parse(raw) };
+  } catch {
+    return { ...DEFAULT_PAYMENT };
+  }
+}
+
+export async function savePaymentMethodSettings(
+  input: Partial<PaymentMethodSettings>,
+): Promise<PaymentMethodSettings> {
+  const current = await getPaymentMethodSettings();
+  const next = { ...current, ...input };
+  await setMeta('payment_methods', JSON.stringify(next));
+  return next;
+}
+
+export async function getLastBackupAt(): Promise<string | null> {
+  return getMeta('last_backup_at');
+}
+
+export async function setLastBackupAt(iso: string): Promise<void> {
+  await setMeta('last_backup_at', iso);
+}
+
+export type ReceiptDisplayPrefs = {
+  showLogo: boolean;
+  showTax: boolean;
+  showChange: boolean;
+  showBarcode: boolean;
+};
+
+const DEFAULT_RECEIPT_PREFS: ReceiptDisplayPrefs = {
+  showLogo: true,
+  showTax: true,
+  showChange: true,
+  showBarcode: false,
+};
+
+export async function getReceiptDisplayPrefs(): Promise<ReceiptDisplayPrefs> {
+  const raw = await getMeta('receipt_display');
+  if (!raw) return { ...DEFAULT_RECEIPT_PREFS };
+  try {
+    return { ...DEFAULT_RECEIPT_PREFS, ...JSON.parse(raw) };
+  } catch {
+    return { ...DEFAULT_RECEIPT_PREFS };
+  }
+}
+
+export async function saveReceiptDisplayPrefs(
+  input: Partial<ReceiptDisplayPrefs>,
+): Promise<ReceiptDisplayPrefs> {
+  const current = await getReceiptDisplayPrefs();
+  const next = { ...current, ...input };
+  await setMeta('receipt_display', JSON.stringify(next));
+  return next;
+}
+
+export type PrinterSettings = {
+  autoPrint: boolean;
+};
+
+const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
+  autoPrint: false,
+};
+
+export async function getPrinterSettings(): Promise<PrinterSettings> {
+  const raw = await getMeta('printer_settings');
+  if (!raw) return { ...DEFAULT_PRINTER_SETTINGS };
+  try {
+    return { ...DEFAULT_PRINTER_SETTINGS, ...JSON.parse(raw) };
+  } catch {
+    return { ...DEFAULT_PRINTER_SETTINGS };
+  }
+}
+
+export async function savePrinterSettings(input: Partial<PrinterSettings>): Promise<PrinterSettings> {
+  const current = await getPrinterSettings();
+  const next = { ...current, ...input };
+  await setMeta('printer_settings', JSON.stringify(next));
+  return next;
+}
+
+export type ThemeSettings = {
+  mode: 'light' | 'dark';
+};
+
+const DEFAULT_THEME: ThemeSettings = { mode: 'light' };
+
+export async function getThemeSettings(): Promise<ThemeSettings> {
+  const raw = await getMeta('theme_mode');
+  if (!raw) return { ...DEFAULT_THEME };
+  try {
+    return { ...DEFAULT_THEME, ...JSON.parse(raw) };
+  } catch {
+    return { mode: raw === 'dark' ? 'dark' : 'light' };
+  }
+}
+
+export async function saveThemeSettings(input: Partial<ThemeSettings>): Promise<ThemeSettings> {
+  const current = await getThemeSettings();
+  const next = { ...current, ...input };
+  await setMeta('theme_mode', JSON.stringify(next));
+  return next;
+}
+
+export async function getCurrentStaffId(): Promise<string | null> {
+  return getMeta('current_staff_id');
+}
+
+export async function setCurrentStaffId(id: string | null): Promise<void> {
+  if (id) await setMeta('current_staff_id', id);
+  else {
+    const db = getDb();
+    await db.runAsync('DELETE FROM app_meta WHERE key = ?', ['current_staff_id']);
+  }
+}

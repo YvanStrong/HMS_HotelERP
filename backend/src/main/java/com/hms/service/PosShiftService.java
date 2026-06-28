@@ -14,6 +14,7 @@ import com.hms.entity.PosTableTicketLine;
 import com.hms.repository.AppUserRepository;
 import com.hms.repository.HotelRepository;
 import com.hms.repository.InventoryDepotRepository;
+import com.hms.repository.PosLineAuditRepository;
 import com.hms.repository.PosShiftRepository;
 import com.hms.repository.PosTableTicketRepository;
 import com.hms.security.TenantAccessService;
@@ -55,6 +56,7 @@ public class PosShiftService {
     private final AppUserRepository appUserRepository;
     private final HotelRepository hotelRepository;
     private final InventoryDepotRepository inventoryDepotRepository;
+    private final PosLineAuditRepository posLineAuditRepository;
 
     @Transactional
     public PosShiftDtos.PosShiftDTO openShift(
@@ -84,8 +86,15 @@ public class PosShiftService {
         shift.setOpeningFloat(openingFloat);
         shift.setOpenedAt(Instant.now());
 
-        shift = posShiftRepository.save(shift);
-        return toShiftDto(shift, SummaryCalc.empty());
+        try {
+            shift = posShiftRepository.save(shift);
+            return toShiftDto(shift, SummaryCalc.empty());
+        } catch (org.springframework.dao.DataIntegrityViolationException dup) {
+            return posShiftRepository
+                    .findOpenByHotelAndWaiter(hotelId, waiterUserId)
+                    .map(s -> toShiftDto(s, liveSummary(s)))
+                    .orElseThrow(() -> dup);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -101,7 +110,7 @@ public class PosShiftService {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         PosShift shift = loadShift(hotelId, shiftId);
         assertShiftAccess(shift);
-        return buildSummary(shift, calculateFromTickets(shift.getId()), false);
+        return buildSummary(shift, calculateFromTickets(shift), false);
     }
 
     @Transactional(readOnly = true)
@@ -142,7 +151,8 @@ public class PosShiftService {
                     fields);
         }
 
-        SummaryCalc calc = calculateFromTickets(shift.getId());
+        attachOrphanTickets(shift);
+        SummaryCalc calc = calculateFromTickets(shift);
         BigDecimal openingFloat = scaleMoney(nz(shift.getOpeningFloat()));
         BigDecimal cashSales = scaleMoney(calc.totalCash);
         BigDecimal expectedCash = openingFloat.add(cashSales);
@@ -166,6 +176,7 @@ public class PosShiftService {
         shift.setTotalRoomCharge(calc.totalRoomCharge);
         shift.setTotalRevenue(calc.totalRevenue);
         shift.setTotalTax(calc.totalTax);
+        shift.setTotalTips(calc.totalTips);
         shift.setTotalCancelled(calc.totalCancelled);
         shift.setAvgTicketValue(calc.avgTicketValue);
         shift.setAvgServeTimeMin(calc.avgServeTimeMin);
@@ -249,6 +260,7 @@ public class PosShiftService {
                 csv(summary.totalRoomCharge()),
                 csv(summary.totalRevenue()),
                 csv(summary.totalTax()),
+                csv(summary.totalTips()),
                 csv(summary.avgTicketValue()),
                 csv(summary.avgServeTimeMin()),
                 csv(summary.openingFloat()),
@@ -262,8 +274,96 @@ public class PosShiftService {
     public String shiftCsvHeader() {
         return "shift_id,waiter_name,depot_name,opened_at,closed_at,duration_minutes,"
                 + "total_orders,total_covers,total_cancelled,total_cash,total_card,total_room_charge,"
-                + "total_revenue,total_tax,avg_ticket_value,avg_serve_time_min,opening_float,"
+                + "total_revenue,total_tax,total_tips,avg_ticket_value,avg_serve_time_min,opening_float,"
                 + "expected_cash,closing_cash,cash_variance,variance_status,closing_notes";
+    }
+
+    @Transactional(readOnly = true)
+    public PosShiftDtos.EndOfDayReport endOfDay(UUID hotelId, String hotelHeader, LocalDate date) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        ZoneId zone = ZoneId.systemDefault();
+        Instant start = date.atStartOfDay(zone).toInstant();
+        Instant end = date.plusDays(1).atStartOfDay(zone).toInstant();
+
+        List<PosShift> closedShifts = posShiftRepository.findClosedByHotelBetween(hotelId, start, end);
+        BigDecimal totalCash = BigDecimal.ZERO;
+        BigDecimal totalCard = BigDecimal.ZERO;
+        BigDecimal totalRoom = BigDecimal.ZERO;
+        BigDecimal totalTips = BigDecimal.ZERO;
+        BigDecimal totalRevenue = BigDecimal.ZERO;
+        BigDecimal expectedCashInDrawers = BigDecimal.ZERO;
+        BigDecimal totalCashVariance = BigDecimal.ZERO;
+        boolean hasShortage = false;
+        boolean hasOverage = false;
+        List<PosShiftDtos.EndOfDayShiftRow> perShift = new ArrayList<>();
+
+        for (PosShift shift : closedShifts) {
+            BigDecimal cash = scaleMoney(nz(shift.getTotalCash()));
+            BigDecimal card = scaleMoney(nz(shift.getTotalCard()));
+            BigDecimal room = scaleMoney(nz(shift.getTotalRoomCharge()));
+            BigDecimal tips = scaleMoney(nz(shift.getTotalTips()));
+            BigDecimal revenue = scaleMoney(nz(shift.getTotalRevenue()));
+            BigDecimal opening = scaleMoney(nz(shift.getOpeningFloat()));
+            BigDecimal variance = scaleMoney(nz(shift.getCashVariance()));
+            String varStatus = varianceStatus(variance);
+            if ("SHORTAGE".equals(varStatus)) {
+                hasShortage = true;
+            } else if ("OVERAGE".equals(varStatus)) {
+                hasOverage = true;
+            }
+            totalCash = totalCash.add(cash);
+            totalCard = totalCard.add(card);
+            totalRoom = totalRoom.add(room);
+            totalTips = totalTips.add(tips);
+            totalRevenue = totalRevenue.add(revenue).add(tips);
+            expectedCashInDrawers = expectedCashInDrawers.add(opening).add(cash);
+            totalCashVariance = totalCashVariance.add(variance);
+            perShift.add(new PosShiftDtos.EndOfDayShiftRow(
+                    shift.getId(),
+                    shift.getWaiterName(),
+                    shift.getDepot().getName(),
+                    opening,
+                    shift.getClosingCash(),
+                    variance,
+                    varStatus,
+                    cash,
+                    card,
+                    revenue.add(tips),
+                    tips,
+                    shift.getTotalOrders() != null ? shift.getTotalOrders() : 0));
+        }
+
+        BigDecimal totalDiscounts =
+                scaleMoney(nz(posLineAuditRepository.sumDiscountAmountByHotelBetween(hotelId, start, end)));
+        long totalVoids = posLineAuditRepository.countVoidsByHotelBetween(hotelId, start, end);
+        long openShiftCount = posShiftRepository.countOpenByHotel(hotelId);
+        String cashVarianceStatus = aggregateVarianceStatus(hasShortage, hasOverage);
+
+        return new PosShiftDtos.EndOfDayReport(
+                date,
+                totalCash,
+                totalCard,
+                totalRoom,
+                totalTips,
+                totalRevenue,
+                totalDiscounts,
+                totalVoids,
+                closedShifts.size(),
+                openShiftCount,
+                perShift,
+                expectedCashInDrawers,
+                totalCashVariance,
+                cashVarianceStatus);
+    }
+
+    private static String aggregateVarianceStatus(boolean hasShortage, boolean hasOverage) {
+        if (!hasShortage && !hasOverage) {
+            return "BALANCED";
+        }
+        if (hasShortage && hasOverage) {
+            return "MIXED";
+        }
+        return hasShortage ? "HAS_SHORTAGES" : "HAS_OVERAGES";
     }
 
     private static BigDecimal scaleMoney(BigDecimal value) {
@@ -304,7 +404,7 @@ public class PosShiftService {
         if (shift.getStatus() == ShiftStatus.CLOSED) {
             return storedSummary(shift);
         }
-        return calculateFromTickets(shift.getId());
+        return calculateFromTickets(shift);
     }
 
     private SummaryCalc storedSummary(PosShift shift) {
@@ -316,6 +416,7 @@ public class PosShiftService {
                 nz(shift.getTotalRoomCharge()),
                 nz(shift.getTotalRevenue()),
                 nz(shift.getTotalTax()),
+                nz(shift.getTotalTips()),
                 shift.getTotalCancelled() != null ? shift.getTotalCancelled() : 0,
                 nz(shift.getAvgTicketValue()),
                 nz(shift.getAvgServeTimeMin()),
@@ -324,12 +425,37 @@ public class PosShiftService {
                 List.of());
     }
 
-    private SummaryCalc calculateFromTickets(UUID shiftId) {
-        List<PosTableTicket> tickets = posTableTicketRepository.findFetchedByShiftId(shiftId);
-        List<PosTableTicket> closed = tickets.stream()
+    /** Links closed tickets missing shift_id but belonging to this waiter during the shift window. */
+    private void attachOrphanTickets(PosShift shift) {
+        Instant until = shift.getClosedAt() != null ? shift.getClosedAt() : Instant.now();
+        List<PosTableTicket> orphans = posTableTicketRepository.findOrphanClosedForWaiterSince(
+                shift.getHotel().getId(), shift.getWaiterUser().getId(), shift.getOpenedAt(), until);
+        for (PosTableTicket ticket : orphans) {
+            ticket.setShift(shift);
+            posTableTicketRepository.save(ticket);
+        }
+    }
+
+    private List<PosTableTicket> ticketsForShift(PosShift shift) {
+        List<PosTableTicket> tickets = new ArrayList<>(posTableTicketRepository.findFetchedByShiftId(shift.getId()));
+        java.util.Set<UUID> seen = new java.util.HashSet<>();
+        tickets.forEach(t -> seen.add(t.getId()));
+        Instant until = shift.getClosedAt() != null ? shift.getClosedAt() : Instant.now();
+        for (PosTableTicket orphan : posTableTicketRepository.findOrphanClosedForWaiterSince(
+                shift.getHotel().getId(), shift.getWaiterUser().getId(), shift.getOpenedAt(), until)) {
+            if (seen.add(orphan.getId())) {
+                tickets.add(orphan);
+            }
+        }
+        return tickets;
+    }
+
+    private SummaryCalc calculateFromTickets(PosShift shift) {
+        List<PosTableTicket> allTickets = ticketsForShift(shift);
+        List<PosTableTicket> closed = allTickets.stream()
                 .filter(t -> t.getStatus() == PosTableTicketStatus.CLOSED)
                 .toList();
-        int totalCancelled = (int) tickets.stream()
+        int totalCancelled = (int) allTickets.stream()
                 .filter(t -> t.getStatus() == PosTableTicketStatus.CANCELLED)
                 .count();
 
@@ -338,19 +464,26 @@ public class PosShiftService {
         BigDecimal totalRoom = BigDecimal.ZERO;
         BigDecimal totalRevenue = BigDecimal.ZERO;
         BigDecimal totalTax = BigDecimal.ZERO;
+        BigDecimal totalTips = BigDecimal.ZERO;
         int totalCovers = 0;
 
         for (PosTableTicket t : closed) {
-            totalRevenue = totalRevenue.add(nz(t.getTotalAmount()));
+            BigDecimal food = nz(t.getTotalAmount());
+            BigDecimal tip = nz(t.getTipAmount());
+            totalRevenue = totalRevenue.add(food);
             totalTax = totalTax.add(nz(t.getTaxAmount()));
+            totalTips = totalTips.add(tip);
             totalCovers += t.getGuestCount();
+            BigDecimal charged = food.add(tip);
             String pm = t.getPaymentMethod();
             if (isRoomPayment(pm)) {
-                totalRoom = totalRoom.add(nz(t.getTotalAmount()));
+                totalRoom = totalRoom.add(charged);
             } else if (isCardPayment(pm)) {
-                totalCard = totalCard.add(nz(t.getTotalAmount()));
+                totalCard = totalCard.add(charged);
             } else if (isCashPayment(pm)) {
-                totalCash = totalCash.add(nz(t.getTotalAmount()));
+                totalCash = totalCash.add(charged);
+            } else if (isBillLaterPayment(pm)) {
+                // Bill-later / delivery: counted in revenue, not in drawer
             }
         }
 
@@ -395,7 +528,9 @@ public class PosShiftService {
             UUID did = t.getDepot().getId();
             String dname = t.getDepot().getName();
             BigDecimal amount = nz(t.getTotalAmount());
-            BigDecimal cashPart = isCashPayment(t.getPaymentMethod()) ? amount : BigDecimal.ZERO;
+            BigDecimal tip = nz(t.getTipAmount());
+            BigDecimal charged = amount.add(tip);
+            BigDecimal cashPart = isCashPayment(t.getPaymentMethod()) ? charged : BigDecimal.ZERO;
             PosShiftDtos.ShiftDepotRow prev = depotMap.get(did);
             if (prev == null) {
                 depotMap.put(did, new PosShiftDtos.ShiftDepotRow(did, dname, 1, amount, cashPart));
@@ -434,6 +569,7 @@ public class PosShiftService {
                 totalRoom,
                 totalRevenue,
                 totalTax,
+                totalTips,
                 totalCancelled,
                 avgTicket,
                 avgServe,
@@ -448,6 +584,7 @@ public class PosShiftService {
         BigDecimal closingCash = includeClosing ? shift.getClosingCash() : null;
         BigDecimal cashVariance = includeClosing ? shift.getCashVariance() : null;
         String varianceStatus = varianceStatus(cashVariance);
+        BigDecimal totalDiscounts = nz(posLineAuditRepository.sumDiscountAmountByShiftId(shift.getId()));
         return new PosShiftDtos.PosShiftSummaryDTO(
                 base.id(),
                 base.hotelId(),
@@ -467,7 +604,9 @@ public class PosShiftService {
                 calc.totalCard,
                 calc.totalRoomCharge,
                 calc.totalTax,
+                calc.totalTips,
                 calc.totalCancelled,
+                totalDiscounts,
                 calc.avgTicketValue,
                 calc.avgServeTimeMin,
                 expectedCash,
@@ -537,6 +676,14 @@ public class PosShiftService {
         return u.contains("ROOM") || u.contains("CHARGE_ROOM");
     }
 
+    private static boolean isBillLaterPayment(String pm) {
+        if (pm == null || pm.isBlank()) {
+            return false;
+        }
+        String u = pm.toUpperCase(Locale.ROOT);
+        return u.contains("BILL LATER") || u.contains("BILL_LATER") || u.contains("DELIVERY");
+    }
+
     private static String waiterDisplay(AppUser user) {
         if (user.getEmail() != null && !user.getEmail().isBlank()) {
             return user.getEmail();
@@ -571,6 +718,7 @@ public class PosShiftService {
             BigDecimal totalRoomCharge,
             BigDecimal totalRevenue,
             BigDecimal totalTax,
+            BigDecimal totalTips,
             int totalCancelled,
             BigDecimal avgTicketValue,
             BigDecimal avgServeTimeMin,
@@ -582,6 +730,7 @@ public class PosShiftService {
             return new SummaryCalc(
                     0,
                     0,
+                    BigDecimal.ZERO,
                     BigDecimal.ZERO,
                     BigDecimal.ZERO,
                     BigDecimal.ZERO,

@@ -28,4 +28,7 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 
     @Query("select u from AppUser u where u.hotel.id = :hotelId order by u.createdAt desc")
     List<AppUser> findByHotel_IdOrderByCreatedAtDesc(@Param("hotelId") UUID hotelId);
+
+    @Query("select u from AppUser u where u.hotel.id = :hotelId and u.posPinHash is not null")
+    List<AppUser> findByHotel_IdWithPosPin(@Param("hotelId") UUID hotelId);
 }

@@ -110,6 +110,18 @@ export function ShiftSummaryDrawer({ hotelId, shiftId, onClose }: Props) {
                     <dt>Tax</dt>
                     <dd>{fmt(summary.totalTax)}</dd>
                   </div>
+                  {shiftMoney(summary.totalDiscounts) > 0 ? (
+                    <div className="flex justify-between text-amber-800">
+                      <dt>Discounts</dt>
+                      <dd>-{fmt(summary.totalDiscounts)}</dd>
+                    </div>
+                  ) : null}
+                  {shiftMoney(summary.totalTips) > 0 ? (
+                    <div className="flex justify-between">
+                      <dt>Tips</dt>
+                      <dd>{fmt(summary.totalTips)}</dd>
+                    </div>
+                  ) : null}
                   <div className="flex justify-between border-t pt-2 text-base font-semibold">
                     <dt>Total</dt>
                     <dd>{fmt(summary.totalRevenue)}</dd>

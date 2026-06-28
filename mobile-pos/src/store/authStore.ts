@@ -5,8 +5,9 @@ import { create } from "zustand";
 import { loginWithEmail } from "../api/auth";
 
 import { fetchModuleEntitlements } from "../api/modules";
+import { fetchHotelContext } from "../api/hotel";
 
-import { clearStoredTokens, configureApiClient, storeTokens } from "../api/client";
+import { clearStoredTokens, configureApiClient, resetUnauthorizedGuard, storeTokens } from "../api/client";
 
 import { mmkvGetString, mmkvSetString } from "../storage/mmkv";
 
@@ -52,6 +53,10 @@ type AuthState = {
 
   enabledModules: string[];
 
+  posRequireShift: boolean;
+
+  posLowStockThreshold: number;
+
   isAuthenticated: boolean;
 
   isHydrated: boolean;
@@ -64,7 +69,11 @@ type AuthState = {
 
   setTokens: (access: string, refresh: string, user: AuthUser) => Promise<void>;
 
+  restoreSession: () => Promise<boolean>;
+
   setHydrated: () => void;
+
+  loadHotelSettings: (hotelId: string) => Promise<void>;
 
   hasModule: (key: string) => boolean;
 
@@ -100,6 +109,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   enabledModules: [],
 
+  posRequireShift: true,
+
+  posLowStockThreshold: 5,
+
   isAuthenticated: false,
 
   isHydrated: false,
@@ -112,34 +125,84 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   hasModule: (key) => get().enabledModules.includes(key),
 
-
+  loadHotelSettings: async (hotelId) => {
+    try {
+      const ctx = await fetchHotelContext(hotelId);
+      set({
+        posRequireShift: ctx.posRequireShift !== false,
+        posLowStockThreshold: ctx.posLowStockThreshold && ctx.posLowStockThreshold > 0 ? ctx.posLowStockThreshold : 5,
+      });
+    } catch {
+      set({ posRequireShift: true, posLowStockThreshold: 5 });
+    }
+  },
 
   savedEmail: () => mmkvGetString(SAVED_EMAIL_KEY) ?? null,
 
 
 
   setTokens: async (access, refresh, user) => {
-
+    resetUnauthorizedGuard();
     await storeTokens(access, refresh);
-
     await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user));
-
-    const modules = user.hotelId ? await loadModules(user.hotelId) : [];
-
+    // Set auth state before follow-up API calls (X-Hotel-ID header, gated screens).
     set({
-
       token: access,
-
       refreshToken: refresh,
-
       user,
-
-      enabledModules: modules,
-
+      enabledModules: ["RESTAURANT_POS"],
       isAuthenticated: true,
-
     });
 
+    let modules = ["RESTAURANT_POS"];
+    let posRequireShift = true;
+    let posLowStockThreshold = 5;
+    if (user.hotelId) {
+      try {
+        modules = await loadModules(user.hotelId);
+      } catch {
+        /* keep default */
+      }
+      try {
+        const ctx = await fetchHotelContext(user.hotelId);
+        posRequireShift = ctx.posRequireShift !== false;
+        posLowStockThreshold =
+          ctx.posLowStockThreshold && ctx.posLowStockThreshold > 0 ? ctx.posLowStockThreshold : 5;
+      } catch {
+        /* keep defaults */
+      }
+    }
+
+    set({ enabledModules: modules, posRequireShift, posLowStockThreshold });
+  },
+
+  restoreSession: async () => {
+    const session = await hydrateAuthFromSecureStore();
+    if (!session) return false;
+
+    try {
+      const axios = (await import("axios")).default;
+      const { getApiBaseUrl } = await import("../api/settings");
+      const { data } = await axios.post<{
+        accessToken: string;
+        refreshToken: string;
+        user: AuthUser;
+      }>(
+        `${getApiBaseUrl()}/api/v1/auth/refresh`,
+        { refreshToken: session.refresh },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "X-Client-Type": "mobile",
+          },
+        },
+      );
+      await get().setTokens(data.accessToken, data.refreshToken, data.user ?? session.user);
+      return true;
+    } catch {
+      await get().logout();
+      return false;
+    }
   },
 
 
@@ -223,6 +286,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user: null,
 
       enabledModules: [],
+
+      posRequireShift: true,
+
+      posLowStockThreshold: 5,
 
       isAuthenticated: false,
 

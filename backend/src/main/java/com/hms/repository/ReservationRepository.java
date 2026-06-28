@@ -86,6 +86,21 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 
     long countByGroupBooking_Id(UUID groupBookingId);
 
+    @Query(
+            """
+            select r from Reservation r
+            join fetch r.guest g
+            left join fetch r.room rm
+            where r.hotel.id = :hotelId
+            and r.status in :statuses
+            and r.checkInDate <= :today
+            and r.checkOutDate > :today
+            """)
+    List<Reservation> findActiveStaysForHotel(
+            @Param("hotelId") UUID hotelId,
+            @Param("today") LocalDate today,
+            @Param("statuses") List<ReservationStatus> statuses);
+
     List<Reservation> findByHotel_IdAndStatusIn(UUID hotelId, List<ReservationStatus> statuses);
 
     @Query(

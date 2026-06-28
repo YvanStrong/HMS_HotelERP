@@ -15,12 +15,13 @@ type InventoryItemsResponse = {
 export async function fetchInventoryImageMap(hotelId: string): Promise<Map<string, string>> {
   const { data } = await apiClient.get<InventoryItemsResponse>(
     `/api/v1/hotels/${hotelId}/inventory/items`,
+    { timeout: 60_000 },
   );
   const map = new Map<string, string>();
   for (const row of data?.data ?? []) {
     if (row.active === false) continue;
     const img = (row.imageUrl ?? row.image_url)?.trim();
-    if (img) map.set(row.id, img);
+    if (img) map.set(String(row.id).toLowerCase(), img);
   }
   return map;
 }

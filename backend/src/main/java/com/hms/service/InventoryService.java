@@ -259,12 +259,24 @@ public class InventoryService {
         if (req.active() != null) {
             i.setActive(req.active());
         }
+        if (req.allergens() != null) {
+            i.setAllergens(new ArrayList<>(req.allergens()));
+        }
+        if (req.dietaryFlags() != null) {
+            i.setDietaryFlags(new ArrayList<>(req.dietaryFlags()));
+        }
+        if (req.nameTranslations() != null) {
+            i.setNameTranslations(req.nameTranslations());
+        }
         if (req.valuationMethod() != null && !req.valuationMethod().isBlank()) {
             i.setValuation(ValuationMethod.valueOf(req.valuationMethod().trim().toUpperCase()));
         }
         i = inventoryItemRepository.save(i);
         if (taxCategoryChanged) {
             syncDepotProductTaxability(hotelId, i);
+        }
+        if (req.imageUrl() != null) {
+            syncDepotProductImage(hotelId, i);
         }
         return toRow(i);
     }
@@ -304,7 +316,10 @@ public class InventoryService {
                 i.getImageUrl(),
                 normalizeStockType(i.getStockType()),
                 normalizeTaxCategory(i.getTaxCategory()),
-                isTaxableCategory(i.getTaxCategory()));
+                isTaxableCategory(i.getTaxCategory()),
+                i.getAllergens() != null ? i.getAllergens() : List.of(),
+                i.getDietaryFlags() != null ? i.getDietaryFlags() : List.of(),
+                i.getNameTranslations());
     }
 
     private static String stockStatus(InventoryItem i) {
@@ -792,6 +807,15 @@ public class InventoryService {
         List<DepotProduct> products = depotProductRepository.findByHotel_IdAndInventoryItem_Id(hotelId, item.getId());
         for (DepotProduct product : products) {
             product.setTaxable(taxable);
+            depotProductRepository.save(product);
+        }
+    }
+
+    private void syncDepotProductImage(UUID hotelId, InventoryItem item) {
+        String imageUrl = item.getImageUrl();
+        List<DepotProduct> products = depotProductRepository.findByHotel_IdAndInventoryItem_Id(hotelId, item.getId());
+        for (DepotProduct product : products) {
+            product.setPhotoUrl(imageUrl == null || imageUrl.isBlank() ? null : imageUrl.trim());
             depotProductRepository.save(product);
         }
     }

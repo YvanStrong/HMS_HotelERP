@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { AppState, Modal, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, AppState, Modal, Pressable, Text, TextInput, View } from "react-native";
+import { useTranslation } from "react-i18next";
 import { PinPad } from "./PinPad";
 import { fetchHasPin, pinUnlock } from "../api/pinAuth";
 import { apiErrorMessage } from "../api/client";
@@ -7,6 +8,7 @@ import { bumpSessionActivity, idleMsSinceLastActivity, LOCK_MS } from "../lib/se
 import { useAuthStore } from "../store/authStore";
 
 export function SessionLock() {
+  const { t } = useTranslation();
   const [locked, setLocked] = useState(false);
   const [usePin, setUsePin] = useState(true);
   const [pin, setPin] = useState("");
@@ -80,7 +82,23 @@ export function SessionLock() {
           <>
             <Text className="mb-1 text-xl font-bold text-white">Session locked</Text>
             <Text className="mb-6 text-indigo-200">Enter your PIN to continue</Text>
-            <PinPad value={pin} onChange={setPin} onComplete={(p) => void unlockWithPin(p)} />
+            <PinPad
+              value={pin}
+              onChange={setPin}
+              maxLength={6}
+              onComplete={(p) => void unlockWithPin(p)}
+            />
+            <Pressable
+              disabled={busy || pin.length < 4}
+              onPress={() => void unlockWithPin(pin)}
+              className={`mt-4 w-full rounded-xl py-3 ${pin.length >= 4 ? "bg-indigo-600" : "bg-indigo-800/50"}`}
+            >
+              {busy ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text className="text-center font-semibold text-white">{t("signIn")}</Text>
+              )}
+            </Pressable>
           </>
         ) : (
           <>

@@ -31,7 +31,7 @@ type CartState = {
 
   setTicketId: (ticketId: string | null) => void;
 
-  addItem: (product: DepotProduct, note?: string) => void;
+  addItem: (product: DepotProduct, note?: string, hold?: { isHeld?: boolean; holdCourse?: CartLine["holdCourse"] }) => void;
 
   removeItem: (productId: string) => void;
 
@@ -109,50 +109,32 @@ export const useCartStore = create<CartState>()(
 
 
 
-      addItem: (product, note) => {
-
+      addItem: (product, note, hold) => {
         const price = productPrice(product);
-
         const lines = [...get().lines];
-
-        const idx = lines.findIndex((l) => l.productId === product.id);
-
-        if (idx >= 0) {
-
+        const idx = lines.findIndex((l) => l.productId === product.id && !!l.isHeld === !!hold?.isHeld);
+        if (idx >= 0 && !hold?.isHeld) {
           lines[idx] = {
-
             ...lines[idx],
-
             qty: lines[idx].qty + 1,
-
             notes: note ?? lines[idx].notes,
-
           };
-
         } else {
-
           lines.push({
-
             productId: product.id,
-
             productName: product.productName,
-
             qty: 1,
-
             unitPrice: price,
-
             notes: note,
-
             imageUrl: product.photoUrl,
-
             taxable: product.taxable,
-
+            isHeld: hold?.isHeld ?? false,
+            holdCourse: hold?.holdCourse,
+            allergens: product.allergens,
+            dietaryFlags: product.dietaryFlags,
           });
-
         }
-
         set({ lines });
-
       },
 
 

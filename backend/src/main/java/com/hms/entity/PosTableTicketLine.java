@@ -59,4 +59,26 @@ public class PosTableTicketLine {
 
     @Column(name = "served_at")
     private Instant servedAt;
+
+    @Column(name = "is_voided", nullable = false)
+    private boolean voided;
+
+    @Column(name = "void_reason", columnDefinition = "TEXT")
+    private String voidReason;
+
+    @Column(name = "discount_pct", precision = 5, scale = 2)
+    private BigDecimal discountPct;
+
+    @Column(name = "discount_amount", precision = 10, scale = 2)
+    private BigDecimal discountAmount;
+
+    @Column(name = "effective_price", precision = 10, scale = 2)
+    private BigDecimal effectivePrice;
+
+    @Column(name = "is_held", nullable = false)
+    private boolean held;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "hold_course", length = 20)
+    private com.hms.domain.PosHoldCourse holdCourse;
 }

@@ -157,6 +157,9 @@ export default function PosTablesPage() {
           <Link href={staffAppPath("pos/shifts")} className="hms-btn-outline hms-btn-sm">
             Shifts
           </Link>
+          <Link href={staffAppPath("pos/voids")} className="hms-btn-outline hms-btn-sm">
+            Voids &amp; Discounts
+          </Link>
         </div>
       </div>
 

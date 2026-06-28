@@ -14,6 +14,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class HotelStaffUserService {
 
     private static final int MIN_PASSWORD_LEN = 8;
+    private static final Pattern PIN_PATTERN = Pattern.compile("^\\d{4,6}$");
 
     private static final EnumSet<Role> CREATABLE_BY_HOTEL_ADMIN =
             EnumSet.of(
@@ -205,6 +207,58 @@ public class HotelStaffUserService {
         return toRow(saved);
     }
 
+    @Transactional
+    public ApiDtos.HotelStaffUserRow setPosPin(
+            UUID hotelId, String hotelHeader, UUID userId, ApiDtos.HotelStaffPosPinRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        UserPrincipal actor = tenantAccessService.currentUser();
+        tenantAccessService.assertRoleAny(Role.SUPER_ADMIN, Role.HOTEL_ADMIN, Role.MANAGER);
+        validatePinFormat(req.pin());
+        AppUser user = loadHotelStaffUser(hotelId, userId);
+        user.setPosPinHash(passwordEncoder.encode(req.pin().trim()));
+        user.setPosPinSetAt(java.time.Instant.now());
+        AppUser saved = appUserRepository.save(user);
+        securityAuditService.logEvent(
+                "STAFF_POS_PIN_SET",
+                actor.getId(),
+                hotelId,
+                Map.of("targetUserId", userId, "username", saved.getUsername()));
+        return toRow(saved);
+    }
+
+    @Transactional
+    public ApiDtos.HotelStaffUserRow clearPosPin(UUID hotelId, String hotelHeader, UUID userId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        UserPrincipal actor = tenantAccessService.currentUser();
+        tenantAccessService.assertRoleAny(Role.SUPER_ADMIN, Role.HOTEL_ADMIN, Role.MANAGER);
+        AppUser user = loadHotelStaffUser(hotelId, userId);
+        user.setPosPinHash(null);
+        user.setPosPinSetAt(null);
+        AppUser saved = appUserRepository.save(user);
+        securityAuditService.logEvent(
+                "STAFF_POS_PIN_CLEARED",
+                actor.getId(),
+                hotelId,
+                Map.of("targetUserId", userId, "username", saved.getUsername()));
+        return toRow(saved);
+    }
+
+    private AppUser loadHotelStaffUser(UUID hotelId, UUID userId) {
+        AppUser user = appUserRepository
+                .findById(userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Staff user not found"));
+        if (user.getHotel() == null || !hotelId.equals(user.getHotel().getId())) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Staff user not found");
+        }
+        return user;
+    }
+
+    private static void validatePinFormat(String pin) {
+        if (pin == null || !PIN_PATTERN.matcher(pin.trim()).matches()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PIN_FORMAT", "PIN must be 4–6 digits");
+        }
+    }
+
     private static Role parseRole(String roleRaw) {
         if (roleRaw == null || roleRaw.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ROLE_REQUIRED", "Role is required");
@@ -239,6 +293,7 @@ public class HotelStaffUserService {
                 u.getEmail(),
                 u.getRole().name(),
                 u.isActive(),
+                u.getPosPinHash() != null && !u.getPosPinHash().isBlank(),
                 u.getCreatedAt());
     }
 }
