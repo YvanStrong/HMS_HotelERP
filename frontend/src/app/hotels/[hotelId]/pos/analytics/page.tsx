@@ -215,6 +215,9 @@ export default function PosAnalyticsPage() {
           <Link href={staffAppPath("pos/kitchen")} className="hms-btn-outline hms-btn-sm">
             Kitchen
           </Link>
+          <Link href={staffAppPath("pos/voids")} className="hms-btn-outline hms-btn-sm">
+            Voids &amp; Discounts
+          </Link>
         </div>
       </div>
 

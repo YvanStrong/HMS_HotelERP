@@ -14,7 +14,7 @@ export async function fetchDepots(hotelId: string): Promise<Depot[]> {
 export async function fetchDepotProducts(hotelId: string, depotId: string): Promise<DepotProduct[]> {
   const { data } = await apiClient.get<Record<string, unknown>[]>(
     `/api/v1/hotels/${hotelId}/inventory/depot-products`,
-    { params: { depotId, activeOnly: true } },
+    { params: { depotId, activeOnly: true }, timeout: 60_000 },
   );
   return (data ?? []).map(normalizeDepotProduct);
 }

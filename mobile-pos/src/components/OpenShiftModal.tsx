@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ActivityIndicator, Modal, Pressable, Text, TextInput, View } from "react-native";
+import { useTranslation } from "react-i18next";
 import type { Depot } from "../types";
 
 type Props = {
@@ -7,29 +8,44 @@ type Props = {
   depot: Depot;
   waiterName: string;
   busy: boolean;
+  requireShift?: boolean;
   onStart: (openingFloat: number) => void;
   onSkip: () => void;
   onClose: () => void;
 };
 
-export function OpenShiftModal({ visible, depot, waiterName, busy, onStart, onSkip, onClose }: Props) {
+export function OpenShiftModal({
+  visible,
+  depot,
+  waiterName,
+  busy,
+  requireShift = true,
+  onStart,
+  onSkip,
+  onClose,
+}: Props) {
+  const { t } = useTranslation();
   const [floatText, setFloatText] = useState("0");
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View className="flex-1 items-center justify-center bg-black/50 px-6">
         <View className="w-full max-w-md rounded-2xl bg-white p-6">
-          <Text className="text-xl font-bold text-slate-900">Start Your Shift</Text>
-          <Text className="mt-2 text-sm text-slate-600">Waiter: {waiterName}</Text>
-          <Text className="text-sm text-slate-600">Outlet: {depot.name}</Text>
+          <Text allowFontScaling={false} className="text-xl font-bold text-slate-900">{t("startYourShift")}</Text>
+          <Text allowFontScaling={false} className="mt-2 text-sm text-slate-700">
+            {t("waiter")}: {waiterName}
+          </Text>
+          <Text allowFontScaling={false} className="text-sm text-slate-700">
+            {t("outlet")}: {depot.name}
+          </Text>
           <Text className="text-sm text-slate-500">
             {new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
           </Text>
 
-          <Text className="mt-4 text-sm text-slate-600">
-            This shift covers every outlet (restaurant, bar, etc.). Sales from all outlets are combined when you close.
+          <Text allowFontScaling={false} className="mt-4 text-sm text-slate-700">{t("shiftCoversAll")}</Text>
+          <Text allowFontScaling={false} className="mb-2 mt-5 text-sm font-medium text-slate-800">
+            {t("openingFloat")}
           </Text>
-          <Text className="mb-2 mt-5 text-sm font-medium text-slate-700">How much cash is in the drawer?</Text>
           <TextInput
             className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-lg text-slate-900"
             keyboardType="decimal-pad"
@@ -41,18 +57,20 @@ export function OpenShiftModal({ visible, depot, waiterName, busy, onStart, onSk
           <Pressable
             disabled={busy}
             onPress={() => onStart(Number.parseFloat(floatText) || 0)}
-            className="mt-5 items-center rounded-xl bg-indigo-600 py-4"
+            className="mt-5 min-h-[44px] items-center justify-center rounded-xl bg-indigo-600 py-4"
           >
             {busy ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text className="font-semibold text-white">Start Shift</Text>
+              <Text allowFontScaling={false} className="font-semibold text-white">{t("startShift")}</Text>
             )}
           </Pressable>
 
-          <Pressable disabled={busy} onPress={onSkip} className="mt-3 items-center py-2">
-            <Text className="text-sm text-slate-500">Skip (No Shift)</Text>
-          </Pressable>
+          {requireShift === false ? (
+            <Pressable disabled={busy} onPress={onSkip} className="mt-3 min-h-[44px] items-center justify-center py-2">
+              <Text allowFontScaling={false} className="text-sm text-slate-600">{t("skipNoShift")}</Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
     </Modal>

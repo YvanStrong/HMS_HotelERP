@@ -19,10 +19,27 @@ import { useOfflineQueueStore } from "../store/offlineQueueStore";
 import { useCartStore } from "../store/cartStore";
 
 import Toast from "react-native-toast-message";
+import axios from "axios";
 
 
 
 let syncing = false;
+
+const STALE_CONFLICT_CODES = new Set([
+  "TABLE_OCCUPIED",
+  "TICKET_CLOSED",
+  "LINE_ALREADY_VOIDED",
+  "SHIFT_ALREADY_CLOSED",
+]);
+
+function isStaleOfflineConflict(err: unknown): boolean {
+  if (!axios.isAxiosError(err) || err.response?.status !== 409) return false;
+  const data = err.response.data as { error?: string; message?: string } | undefined;
+  const code = data?.error;
+  if (code && STALE_CONFLICT_CODES.has(code)) return true;
+  const message = (data?.message ?? "").toLowerCase();
+  return message.includes("pending lines") || message.includes("ticket is closed");
+}
 
 
 
@@ -173,7 +190,15 @@ export async function syncOfflineQueue(): Promise<void> {
         synced++;
 
       } catch (err) {
-
+        if (isStaleOfflineConflict(err)) {
+          store.dequeue(action.id);
+          Toast.show({
+            type: "info",
+            text1: "Dropped stale offline action",
+            text2: "Table or ticket state changed on the server",
+          });
+          continue;
+        }
         const msg = err instanceof Error ? err.message : "Sync failed";
 
         store.markFailed(action.id, msg);
@@ -218,6 +243,8 @@ export async function syncOfflineQueue(): Promise<void> {
 
     }
 
+  } catch {
+    // Prevent uncaught promise rejections from background sync.
   } finally {
 
     store.setSyncing(false);

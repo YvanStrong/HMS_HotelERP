@@ -47,7 +47,10 @@ public final class InventoryDepotDtos {
             boolean taxable,
             boolean active,
             /** Present when this sellable row is linked to an ERP {@link com.hms.entity.InventoryItem}. */
-            UUID inventoryItemId) {}
+            UUID inventoryItemId,
+            List<String> allergens,
+            List<String> dietaryFlags,
+            java.util.Map<String, String> nameTranslations) {}
 
     public record CreateDepotProductRequest(
             @NotNull UUID depotId,

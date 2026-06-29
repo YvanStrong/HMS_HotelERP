@@ -1,8 +1,26 @@
-import { Pressable, Text, View } from "react-native";
-import { Image } from "expo-image";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { CartLine } from "../types";
-import { resolveMediaUrl } from "../lib/mediaUrl";
+import { ProductPhoto } from "./ProductPhoto";
+
+const styles = StyleSheet.create({
+  thumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 8,
+    marginRight: 12,
+    overflow: "hidden",
+  },
+  thumbPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 8,
+    marginRight: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f1f5f9",
+  },
+});
 
 type Props = {
   line: CartLine;
@@ -13,20 +31,16 @@ type Props = {
 
 export function CartLineItem({ line, onDecrease, onIncrease, onRemove }: Props) {
   const lineTotal = line.qty * line.unitPrice;
-  const imageUri = resolveMediaUrl(line.imageUrl);
 
   return (
     <View className="mb-3 rounded-xl border border-slate-200 bg-white p-3">
       <View className="flex-row items-start justify-between">
-        {imageUri ? (
-          <Image
-            source={{ uri: imageUri }}
-            className="mr-3 h-14 w-14 rounded-lg bg-slate-100"
-            contentFit="cover"
-            cachePolicy="disk"
-          />
+        {line.imageUrl ? (
+          <View style={styles.thumb}>
+            <ProductPhoto photoUrl={line.imageUrl} height={56} />
+          </View>
         ) : (
-          <View className="mr-3 h-14 w-14 items-center justify-center rounded-lg bg-slate-100">
+          <View style={styles.thumbPlaceholder}>
             <Ionicons name="fast-food-outline" size={20} color="#94a3b8" />
           </View>
         )}

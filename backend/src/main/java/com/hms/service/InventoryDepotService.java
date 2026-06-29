@@ -1094,7 +1094,26 @@ public class InventoryDepotService {
     }
 
     private InventoryDepotDtos.DepotProductRow toProductRow(DepotProduct p) {
-        UUID invId = p.getInventoryItem() == null ? null : p.getInventoryItem().getId();
+        InventoryItem inv = p.getInventoryItem();
+        UUID invId = inv == null ? null : inv.getId();
+        List<String> allergens = List.of();
+        List<String> dietaryFlags = List.of();
+        java.util.Map<String, String> nameTranslations = null;
+        if (inv != null) {
+            allergens = inv.getAllergens() != null ? inv.getAllergens() : List.of();
+            dietaryFlags = inv.getDietaryFlags() != null ? inv.getDietaryFlags() : List.of();
+            nameTranslations = inv.getNameTranslations();
+        }
+        String photoUrl = p.getPhotoUrl();
+        if (photoUrl == null || photoUrl.isBlank()) {
+            if (inv != null && inv.getImageUrl() != null && !inv.getImageUrl().isBlank()) {
+                photoUrl = inv.getImageUrl().trim();
+            } else {
+                photoUrl = null;
+            }
+        } else {
+            photoUrl = photoUrl.trim();
+        }
         return new InventoryDepotDtos.DepotProductRow(
                 p.getId(),
                 p.getDepot().getId(),
@@ -1108,11 +1127,14 @@ public class InventoryDepotService {
                 p.getSellingPrice(),
                 p.getStockQty(),
                 canonicalStockTypeForApi(p.getStockType()),
-                p.getPhotoUrl(),
+                photoUrl,
                 p.getMenuName(),
                 p.isTaxable(),
                 p.isActive(),
-                invId);
+                invId,
+                allergens,
+                dietaryFlags,
+                nameTranslations);
     }
 
     private String nextProductCode(UUID hotelId, String productName) {

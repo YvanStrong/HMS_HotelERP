@@ -8,9 +8,12 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(
@@ -106,6 +109,18 @@ public class InventoryItem {
 
     @Column(name = "minibar_reorder_threshold")
     private Integer minibarReorderThreshold;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private List<String> allergens = new ArrayList<>();
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "dietary_flags", columnDefinition = "jsonb")
+    private List<String> dietaryFlags = new ArrayList<>();
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "name_translations", columnDefinition = "jsonb")
+    private Map<String, String> nameTranslations;
 
     @OneToMany(mappedBy = "item", cascade = CascadeType.ALL)
     private List<StockTransaction> transactions = new ArrayList<>();

@@ -4,6 +4,7 @@ import com.hms.domain.ShiftStatus;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -69,7 +70,9 @@ public final class PosShiftDtos {
             BigDecimal totalCard,
             BigDecimal totalRoomCharge,
             BigDecimal totalTax,
+            BigDecimal totalTips,
             int totalCancelled,
+            BigDecimal totalDiscounts,
             BigDecimal avgTicketValue,
             BigDecimal avgServeTimeMin,
             BigDecimal expectedCash,
@@ -80,4 +83,34 @@ public final class PosShiftDtos {
             List<ShiftTopItem> topItems,
             List<ShiftDepotRow> revenueByDepot,
             List<ShiftTicketSummary> tickets) {}
+
+    public record EndOfDayShiftRow(
+            UUID shiftId,
+            String waiterName,
+            String depotName,
+            BigDecimal openingFloat,
+            BigDecimal closingCash,
+            BigDecimal cashVariance,
+            String varianceStatus,
+            BigDecimal totalCash,
+            BigDecimal totalCard,
+            BigDecimal totalRevenue,
+            BigDecimal totalTips,
+            int orderCount) {}
+
+    public record EndOfDayReport(
+            LocalDate date,
+            BigDecimal totalCash,
+            BigDecimal totalCard,
+            BigDecimal totalRoomCharge,
+            BigDecimal totalTips,
+            BigDecimal totalRevenue,
+            BigDecimal totalDiscounts,
+            long totalVoids,
+            int shiftCount,
+            long openShiftCount,
+            List<EndOfDayShiftRow> perShift,
+            BigDecimal expectedCashInDrawers,
+            BigDecimal totalCashVariance,
+            String cashVarianceStatus) {}
 }

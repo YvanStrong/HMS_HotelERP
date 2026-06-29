@@ -1,5 +1,4 @@
 import Constants from "expo-constants";
-import * as Device from "expo-device";
 import type { Router } from "expo-router";
 import { Platform } from "react-native";
 import { apiClient } from "../api/client";
@@ -43,14 +42,19 @@ function deviceId(): string {
   return id;
 }
 
-function pushSupported(): boolean {
+async function pushSupported(): Promise<boolean> {
   if (!notificationsSupported()) return false;
-  if (!Device.isDevice) return false;
-  return true;
+  try {
+    const Device = await import("expo-device");
+    return Device.isDevice;
+  } catch {
+    return false;
+  }
 }
 
 function resolveProjectId(): string | undefined {
   const candidates = [
+    process.env.EXPO_PUBLIC_EAS_PROJECT_ID,
     process.env.EXPO_PUBLIC_PROJECT_ID,
     Constants.expoConfig?.extra?.eas?.projectId as string | undefined,
   ];
@@ -61,7 +65,7 @@ function resolveProjectId(): string | undefined {
 }
 
 export async function registerPushToken(hotelId: string): Promise<void> {
-  if (!pushSupported()) return;
+  if (!(await pushSupported())) return;
 
   try {
     const Notifications = await notifications();
@@ -78,7 +82,14 @@ export async function registerPushToken(hotelId: string): Promise<void> {
     if (!ok) return;
 
     const projectId = resolveProjectId();
-    if (!projectId) return;
+    if (!projectId) {
+      if (__DEV__) {
+        console.warn(
+          "[push] EAS projectId missing — run `eas init` and set EXPO_PUBLIC_EAS_PROJECT_ID, then rebuild (not Expo Go).",
+        );
+      }
+      return;
+    }
 
     const tokenRes = await Notifications.getExpoPushTokenAsync({ projectId });
     const token = tokenRes.data;

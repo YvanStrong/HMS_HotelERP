@@ -103,4 +103,24 @@ public interface PosShiftRepository extends JpaRepository<PosShift, UUID> {
             @Param("depotId") UUID depotId,
             @Param("start") Instant start,
             @Param("end") Instant end);
+
+    @Query(
+            """
+            select s from PosShift s
+            join fetch s.depot
+            join fetch s.waiterUser
+            where s.hotel.id = :hotelId
+              and s.status = 'CLOSED'
+              and s.closedAt >= :start and s.closedAt < :end
+            order by s.closedAt desc
+            """)
+    List<PosShift> findClosedByHotelBetween(
+            @Param("hotelId") UUID hotelId, @Param("start") Instant start, @Param("end") Instant end);
+
+    @Query(
+            """
+            select count(s) from PosShift s
+            where s.hotel.id = :hotelId and s.status = 'OPEN'
+            """)
+    long countOpenByHotel(@Param("hotelId") UUID hotelId);
 }

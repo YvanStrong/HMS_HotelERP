@@ -21,6 +21,7 @@ public interface DepotProductRepository extends JpaRepository<DepotProduct, UUID
             """
             select p from DepotProduct p
             join fetch p.depot d
+            left join fetch p.inventoryItem
             where p.hotel.id = :hotelId
             and (:depotId is null or d.id = :depotId)
             and (:activeOnly = false or p.active = true)

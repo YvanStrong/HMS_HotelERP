@@ -35,7 +35,16 @@ public final class MobilePosDtos {
 
     public record UpdatePosTableRequest(String label, Integer capacity, Boolean isActive, Integer sortOrder) {}
 
-    public record TicketLineInput(@NotNull UUID productId, @NotNull BigDecimal quantity, String notes) {}
+    public record TicketLineInput(
+            @NotNull UUID productId,
+            @NotNull BigDecimal quantity,
+            String notes,
+            Boolean isHeld,
+            String holdCourse) {}
+
+    public record FireHeldRequest(String course) {}
+
+    public record SendToKitchenRequest(Boolean fireHeld) {}
 
     public record CreateTicketRequest(
             @NotNull UUID depotId,
@@ -43,6 +52,7 @@ public final class MobilePosDtos {
             UUID tableId,
             String customerName,
             Integer guestCount,
+            UUID reservationId,
             String notes,
             List<TicketLineInput> lines) {}
 
@@ -55,7 +65,31 @@ public final class MobilePosDtos {
             String paymentMethod,
             Boolean chargeToRoom,
             UUID reservationId,
-            String customerName) {}
+            String customerName,
+            BigDecimal tipAmount) {}
+
+    public record TransferTicketRequest(@NotNull UUID newTableId) {}
+
+    public record MergeTicketsRequest(@NotNull UUID sourceTicketId) {}
+
+    public record ReassignTicketRequest(@NotNull UUID newWaiterUserId) {}
+
+    public record ReservationHintResponse(
+            UUID reservationId,
+            String guestName,
+            int guestCount,
+            String dietaryNotes,
+            String roomNumber,
+            String checkInTime,
+            String specialRequests) {}
+
+    public record VoidLineRequest(@NotBlank String reason, @NotBlank String managerPin) {}
+
+    public record LineDiscountRequest(
+            @NotBlank String discountType,
+            @NotNull BigDecimal discountValue,
+            @NotBlank String reason,
+            @NotBlank String managerPin) {}
 
     public record TicketLineRow(
             UUID id,
@@ -69,7 +103,17 @@ public final class MobilePosDtos {
             boolean taxable,
             int round,
             Instant sentAt,
-            Instant servedAt) {}
+            Instant servedAt,
+            boolean voided,
+            String voidReason,
+            BigDecimal discountPct,
+            BigDecimal discountAmount,
+            BigDecimal effectivePrice,
+            String menuCategory,
+            boolean held,
+            String holdCourse,
+            List<String> allergens,
+            List<String> dietaryFlags) {}
 
     public record TicketRow(
             UUID id,
@@ -116,7 +160,30 @@ public final class MobilePosDtos {
             UUID deliveryOrderId,
             String deliveryNumber,
             String waiterName,
+            BigDecimal discountTotal,
+            Integer guestCount,
+            UUID reservationId,
+            String roomNumber,
+            String dietaryNotes,
+            String reservationSpecialRequests,
+            String reservationCheckInTime,
+            BigDecimal tipAmount,
             List<TicketLineRow> lines) {}
+
+    public record CreateAnnouncementRequest(
+            @NotBlank String message,
+            String type,
+            UUID depotId,
+            Instant expiresAt) {}
+
+    public record AnnouncementRow(
+            UUID id,
+            String message,
+            String type,
+            UUID depotId,
+            String depotName,
+            Instant createdAt,
+            Instant expiresAt) {}
 
     public record KitchenTicketRow(
             UUID ticketId,
@@ -169,4 +236,23 @@ public final class MobilePosDtos {
             UUID ticketId,
             UUID saleId,
             UUID deliveryOrderId) {}
+
+    public record PosLineAuditRow(
+            UUID id,
+            UUID ticketId,
+            UUID lineId,
+            String action,
+            String productName,
+            String tableLabel,
+            String waiterName,
+            BigDecimal originalPrice,
+            int originalQty,
+            BigDecimal discountPct,
+            BigDecimal discountAmount,
+            String reason,
+            UUID authorizedBy,
+            String authorizedByName,
+            UUID createdBy,
+            String createdByName,
+            Instant createdAt) {}
 }

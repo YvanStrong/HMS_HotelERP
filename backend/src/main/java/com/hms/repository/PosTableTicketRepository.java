@@ -102,4 +102,23 @@ public interface PosTableTicketRepository extends JpaRepository<PosTableTicket, 
     List<PosTableTicket> findByShift_IdAndStatusIn(UUID shiftId, List<PosTableTicketStatus> statuses);
 
     long countByShift_IdAndStatusIn(UUID shiftId, List<PosTableTicketStatus> statuses);
+
+    @Query(
+            """
+            select distinct t from PosTableTicket t
+            left join fetch t.depot
+            left join fetch t.lines l
+            left join fetch l.product
+            where t.hotel.id = :hotelId
+              and t.staffUser.id = :waiterUserId
+              and t.status = com.hms.domain.PosTableTicketStatus.CLOSED
+              and t.shift is null
+              and t.closedAt >= :openedAt
+              and t.closedAt <= :until
+            """)
+    List<PosTableTicket> findOrphanClosedForWaiterSince(
+            @Param("hotelId") UUID hotelId,
+            @Param("waiterUserId") UUID waiterUserId,
+            @Param("openedAt") Instant openedAt,
+            @Param("until") Instant until);
 }

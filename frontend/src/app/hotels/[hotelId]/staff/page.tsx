@@ -12,6 +12,7 @@ type StaffUser = {
   email: string | null;
   role: string;
   isActive: boolean;
+  hasPosPin: boolean;
   createdAt: string;
 };
 
@@ -43,6 +44,8 @@ export default function StaffManagementPage() {
   const [activeFilter, setActiveFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showPosPinModal, setShowPosPinModal] = useState(false);
+  const [posPinValue, setPosPinValue] = useState("");
   const [selectedUser, setSelectedUser] = useState<StaffUser | null>(null);
   const [nextRole, setNextRole] = useState<(typeof ROLE_OPTIONS)[number]>("HOUSEKEEPING");
   const [newPassword, setNewPassword] = useState("");
@@ -170,6 +173,49 @@ export default function StaffManagementPage() {
     }
   }
 
+  async function savePosPin() {
+    if (!selectedUser) return;
+    if (!/^\d{4,6}$/.test(posPinValue.trim())) {
+      setError("POS PIN must be 4–6 digits.");
+      return;
+    }
+    setActionLoadingId(selectedUser.id);
+    setError(null);
+    setMsg(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/staff-users/${selectedUser.id}/set-pos-pin`, {
+        method: "POST",
+        body: JSON.stringify({ pin: posPinValue.trim() }),
+      });
+      setMsg(`POS PIN set for ${selectedUser.username}.`);
+      setShowPosPinModal(false);
+      setSelectedUser(null);
+      setPosPinValue("");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "POS PIN update failed");
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function clearPosPin(user: StaffUser) {
+    setActionLoadingId(user.id);
+    setError(null);
+    setMsg(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/staff-users/${user.id}/clear-pos-pin`, {
+        method: "POST",
+      });
+      setMsg(`POS PIN cleared for ${user.username}.`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "POS PIN clear failed");
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
   async function toggleActive(user: StaffUser, activate: boolean) {
     setActionLoadingId(user.id);
     setError(null);
@@ -275,6 +321,7 @@ export default function StaffManagementPage() {
                 <th>Role</th>
                 <th>Email</th>
                 <th>Status</th>
+                <th>POS PIN</th>
                 <th>Created</th>
                 <th>Actions</th>
               </tr>
@@ -290,6 +337,7 @@ export default function StaffManagementPage() {
                   </td>
                   <td>{u.email ?? "—"}</td>
                   <td>{u.isActive ? "ACTIVE" : "INACTIVE"}</td>
+                  <td>{u.hasPosPin ? "SET" : "—"}</td>
                   <td>{u.createdAt ? new Date(u.createdAt).toLocaleString() : "—"}</td>
                   <td>
                     <div className="flex flex-wrap gap-1">
@@ -317,6 +365,28 @@ export default function StaffManagementPage() {
                       >
                         Reset password
                       </button>
+                      <button
+                        type="button"
+                        className="hms-btn-outline text-xs"
+                        disabled={actionLoadingId === u.id}
+                        onClick={() => {
+                          setSelectedUser(u);
+                          setPosPinValue("");
+                          setShowPosPinModal(true);
+                        }}
+                      >
+                        {u.hasPosPin ? "Change POS PIN" : "Set POS PIN"}
+                      </button>
+                      {u.hasPosPin ? (
+                        <button
+                          type="button"
+                          className="hms-btn-outline text-xs"
+                          disabled={actionLoadingId === u.id}
+                          onClick={() => void clearPosPin(u)}
+                        >
+                          Clear POS PIN
+                        </button>
+                      ) : null}
                       {u.isActive ? (
                         <button type="button" className="hms-btn-outline text-xs" disabled={actionLoadingId === u.id} onClick={() => setConfirmDeactivate(u)}>
                           Deactivate
@@ -380,6 +450,42 @@ export default function StaffManagementPage() {
               <button type="button" className="hms-btn-outline" onClick={() => setShowPasswordModal(false)}>Cancel</button>
               <button type="button" className="hms-btn-solid" disabled={actionLoadingId === selectedUser.id} onClick={() => void savePasswordReset()}>
                 {actionLoadingId === selectedUser.id ? "Saving..." : "Reset password"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPosPinModal && selectedUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl">
+            <h3 className="text-lg font-semibold">
+              {selectedUser.hasPosPin ? "Change" : "Set"} POS PIN: {selectedUser.username}
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              4–6 digits. Used for mobile quick login and manager authorization on voids/discounts.
+            </p>
+            <div className="mt-3">
+              <label>New POS PIN</label>
+              <input
+                value={posPinValue}
+                onChange={(e) => setPosPinValue(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="e.g. 1234"
+              />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="hms-btn-outline" onClick={() => setShowPosPinModal(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="hms-btn-solid"
+                disabled={actionLoadingId === selectedUser.id}
+                onClick={() => void savePosPin()}
+              >
+                {actionLoadingId === selectedUser.id ? "Saving..." : "Save POS PIN"}
               </button>
             </div>
           </div>

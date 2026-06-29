@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import Toast from "react-native-toast-message";
+import { useTranslation } from "react-i18next";
 import { apiErrorMessage } from "../../src/api/client";
 import {
   closeShift,
@@ -23,6 +24,7 @@ import {
 } from "../../src/api/shifts";
 import { PrintShiftModal } from "../../src/components/PrintShiftModal";
 import { ScreenHeaderActions } from "../../src/components/ScreenHeaderActions";
+import { useHeaderPadding } from "../../src/hooks/useScreenInsets";
 import { printShiftSummary } from "../../src/printing/PrinterService";
 import { useAuthStore } from "../../src/store/authStore";
 import { useCartStore } from "../../src/store/cartStore";
@@ -38,8 +40,10 @@ function fmtMoney(v: number | string): string {
 }
 
 export default function CloseShiftScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const hotelId = useAuthStore((s) => s.user?.hotelId) ?? "";
+  const headerPad = useHeaderPadding();
   const user = useAuthStore((s) => s.user);
   const activeShift = useShiftStore((s) => s.activeShift);
   const clearShift = useShiftStore((s) => s.clearShift);
@@ -96,7 +100,7 @@ export default function CloseShiftScreen() {
         setOpenTablesModal(tables);
         return;
       }
-      Toast.show({ type: "error", text1: "Could not close shift", text2: apiErrorMessage(err) });
+      Toast.show({ type: "error", text1: t("couldNotCloseShift"), text2: apiErrorMessage(err) });
     } finally {
       setBusy(false);
     }
@@ -108,12 +112,15 @@ export default function CloseShiftScreen() {
     const hint = varianceLabel(variance);
     if (hint.status !== "BALANCED") {
       Alert.alert(
-        hint.status === "OVERAGE" ? "Cash overage" : "Cash shortage",
-        `${hint.text}\n\nExpected in drawer: RWF ${expectedCash.toLocaleString()}\n` +
-          `You counted: RWF ${closingCash.toLocaleString()}\n\nClose shift anyway?`,
+        hint.status === "OVERAGE" ? t("cashOverage") : t("cashShortage"),
+        t("closeShiftConfirmBody", {
+          hint: hint.text,
+          expected: expectedCash.toLocaleString(),
+          counted: closingCash.toLocaleString(),
+        }),
         [
-          { text: "Recount", style: "cancel" },
-          { text: "Close anyway", style: "destructive", onPress: () => void submitClose(withPrint) },
+          { text: t("recount"), style: "cancel" },
+          { text: t("closeAnyway"), style: "destructive", onPress: () => void submitClose(withPrint) },
         ],
       );
       return;
@@ -125,9 +132,9 @@ export default function CloseShiftScreen() {
   if (!activeShift || activeShift.status !== "OPEN") {
     return (
       <View className="flex-1 items-center justify-center bg-slate-50 px-6">
-        <Text className="mb-4 text-center text-slate-600">No open shift. Select an outlet to start one.</Text>
+        <Text className="mb-4 text-center text-slate-600">{t("noOpenShift")}</Text>
         <Pressable onPress={() => router.push("/(main)/outlets")} className="rounded-xl bg-indigo-600 px-4 py-3">
-          <Text className="font-semibold text-white">Choose outlet</Text>
+          <Text className="font-semibold text-white">{t("chooseOutlet")}</Text>
         </Pressable>
       </View>
     );
@@ -135,16 +142,18 @@ export default function CloseShiftScreen() {
 
   return (
     <View className="flex-1 bg-slate-50">
-      <View className="border-b border-slate-200 bg-white px-4 pb-4 pt-12">
+      <View className="border-b border-slate-200 bg-white px-4 pb-4" style={{ paddingTop: headerPad }}>
         <View className="flex-row items-start justify-between">
           <View className="flex-1">
-            <Text className="text-xl font-bold text-slate-900">Close Shift</Text>
+            <Text className="text-xl font-bold text-slate-900">{t("closeShift")}</Text>
             <Text className="text-sm text-slate-500">
-              Started at {activeShift.depotName} · all outlets included
+              {t("startedAtAllOutlets", { depot: activeShift.depotName })}
             </Text>
             <Text className="text-sm text-slate-500">
-              Opened {openedMs != null ? new Date(openedMs).toLocaleString() : "—"} ·{" "}
-              {formatShiftDuration(elapsedMinutes)}
+              {t("openedDuration", {
+                opened: openedMs != null ? new Date(openedMs).toLocaleString() : "—",
+                duration: formatShiftDuration(elapsedMinutes),
+              })}
             </Text>
           </View>
           <ScreenHeaderActions />
@@ -158,31 +167,37 @@ export default function CloseShiftScreen() {
       ) : (
         <ScrollView className="flex-1 px-4 py-4">
           <View className="mb-4 rounded-xl bg-white p-4">
-            <Text className="mb-2 font-semibold text-slate-800">Live Summary</Text>
-            <Text className="text-slate-700">Orders completed: {summary.totalOrders}</Text>
-            <Text className="text-slate-700">Tables served: {summary.tickets.length}</Text>
-            <Text className="text-slate-700">Covers (guests): {summary.totalCovers}</Text>
+            <Text className="mb-2 font-semibold text-slate-800">{t("liveSummary")}</Text>
+            <Text className="text-slate-700">{t("ordersCompleted")}: {summary.totalOrders}</Text>
+            <Text className="text-slate-700">{t("tablesServed")}: {summary.tickets.length}</Text>
+            <Text className="text-slate-700">{t("coversGuests")}: {summary.totalCovers}</Text>
             <View className="my-3 border-t border-slate-100" />
-            <Text className="text-slate-700">Cash sales: {fmtMoney(summary.totalCash)}</Text>
-            <Text className="text-slate-700">Card sales: {fmtMoney(summary.totalCard)}</Text>
-            <Text className="text-slate-700">Room charges: {fmtMoney(summary.totalRoomCharge)}</Text>
+            <Text className="text-slate-700">{t("cashSales")}: {fmtMoney(summary.totalCash)}</Text>
+            <Text className="text-slate-700">{t("cardSales")}: {fmtMoney(summary.totalCard)}</Text>
+            <Text className="text-slate-700">{t("roomCharges")}: {fmtMoney(summary.totalRoomCharge)}</Text>
+            <Text className="text-slate-700">{t("tipsCollected")}: {fmtMoney(summary.totalTips ?? 0)}</Text>
             <View className="my-3 border-t border-slate-100" />
             <Text className="text-2xl font-bold text-indigo-600">
-              Total Revenue: {fmtMoney(summary.totalRevenue)}
+              {t("totalRevenue")}: {fmtMoney(summary.totalRevenue)}
             </Text>
-            <Text className="text-slate-700">Total Tax: {fmtMoney(summary.totalTax)}</Text>
+            <Text className="text-slate-700">{t("totalTax")}: {fmtMoney(summary.totalTax)}</Text>
             <View className="my-3 border-t border-slate-100" />
-            <Text className="text-slate-600">Cancelled tickets: {summary.totalCancelled}</Text>
-            <Text className="text-slate-600">Avg ticket value: {fmtMoney(summary.avgTicketValue)}</Text>
+            <Text className="text-slate-600">{t("cancelledTickets")}: {summary.totalCancelled}</Text>
+            {money(summary.totalDiscounts) > 0 ? (
+              <Text className="text-slate-600">
+                {t("discountsGiven")}: RWF {money(summary.totalDiscounts).toLocaleString()}
+              </Text>
+            ) : null}
+            <Text className="text-slate-600">{t("avgTicketValue")}: {fmtMoney(summary.avgTicketValue)}</Text>
           </View>
 
           {(summary.revenueByDepot?.length ?? 0) > 0 ? (
             <View className="mb-4 rounded-xl bg-white p-4">
-              <Text className="mb-2 font-semibold text-slate-800">Sales by outlet</Text>
+              <Text className="mb-2 font-semibold text-slate-800">{t("salesByOutlet")}</Text>
               {summary.revenueByDepot!.map((row) => (
                 <View key={row.depotId} className="flex-row justify-between py-1">
                   <Text className="text-slate-700">
-                    {row.depotName} ({row.orderCount} orders)
+                    {row.depotName} ({t("ordersCount", { count: String(row.orderCount) })})
                   </Text>
                   <Text className="font-medium text-slate-900">{fmtMoney(row.revenue)}</Text>
                 </View>
@@ -192,37 +207,52 @@ export default function CloseShiftScreen() {
 
           {summary.topItems.length > 0 ? (
             <View className="mb-4 rounded-xl bg-white p-4">
-              <Text className="mb-2 font-semibold text-slate-800">Top Items This Shift</Text>
+              <Text className="mb-2 font-semibold text-slate-800">{t("topItemsShift")}</Text>
               {summary.topItems.map((item) => (
                 <Text key={item.productName} className="py-1 text-slate-700">
-                  {item.productName} — {item.qtySold} sold — {fmtMoney(item.revenue)}
+                  {item.productName} — {t("sold", { qty: String(item.qtySold) })} — {fmtMoney(item.revenue)}
                 </Text>
               ))}
             </View>
           ) : null}
 
+          {summary.tickets.length > 0 ? (
+            <View className="mb-4 rounded-xl bg-white p-4">
+              <Text className="mb-2 font-semibold text-slate-800">{t("closedTicketsShift")}</Text>
+              {summary.tickets.map((tk) => (
+                <View key={tk.ticketId} className="border-b border-slate-100 py-2">
+                  <Text className="font-medium text-slate-900">
+                    {tk.tableLabel} · {fmtMoney(tk.totalAmount)}
+                  </Text>
+                  <Text className="text-xs text-slate-500">
+                    {tk.paymentMethod ?? t("paymentUnknown")} · {tk.lineCount} {t("items")}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
           <View className="mb-4 rounded-xl bg-white p-4">
-            <Text className="mb-2 font-semibold text-slate-800">Cash Reconciliation</Text>
-            <Text className="text-slate-600 text-sm mb-3">
-              Count all cash in the drawer and compare to opening float plus cash sales.
-            </Text>
+            <Text className="mb-2 font-semibold text-slate-800">{t("cashReconciliation")}</Text>
+            <Text className="text-slate-600 text-sm mb-1">{t("countCashHint")}</Text>
+            <Text className="text-xs text-slate-500 mb-3">{t("expectedCashHint")}</Text>
             <View className="rounded-lg bg-slate-50 p-3">
               <View className="flex-row justify-between py-1">
-                <Text className="text-slate-700">Opening float</Text>
+                <Text className="text-slate-700">{t("openingFloatLabel")}</Text>
                 <Text className="font-medium text-slate-900">{fmtMoney(openingFloat)}</Text>
               </View>
               <View className="flex-row justify-between py-1">
-                <Text className="text-slate-700">+ Cash sales</Text>
+                <Text className="text-slate-700">{t("plusCashSales")}</Text>
                 <Text className="font-medium text-slate-900">{fmtMoney(totalCashSales)}</Text>
               </View>
               <View className="my-2 border-t border-slate-200" />
               <View className="flex-row justify-between py-1">
-                <Text className="font-semibold text-slate-800">Expected in drawer</Text>
+                <Text className="font-semibold text-slate-800">{t("expectedInDrawer")}</Text>
                 <Text className="text-lg font-bold text-indigo-600">{fmtMoney(expectedCash)}</Text>
               </View>
             </View>
             <View className="my-3 border-t border-slate-100" />
-            <Text className="mb-2 font-medium text-slate-700">Enter cash counted in drawer:</Text>
+            <Text className="mb-2 font-medium text-slate-700">{t("enterCashCounted")}</Text>
             <TextInput
               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-2xl font-bold text-slate-900"
               keyboardType="decimal-pad"
@@ -235,8 +265,11 @@ export default function CloseShiftScreen() {
                 <Text className={`text-base font-medium ${balanceHint.color}`}>{balanceHint.text}</Text>
                 {balanceHint.status !== "BALANCED" ? (
                   <Text className="mt-1 text-xs text-slate-500">
-                    Difference: RWF {Math.abs(variance).toLocaleString()} (
-                    {balanceHint.status === "OVERAGE" ? "more than expected" : "less than expected"})
+                    {t("differenceLine", {
+                      amount: Math.abs(variance).toLocaleString(),
+                      direction:
+                        balanceHint.status === "OVERAGE" ? t("differenceMore") : t("differenceLess"),
+                    })}
                   </Text>
                 ) : null}
               </View>
@@ -244,13 +277,13 @@ export default function CloseShiftScreen() {
           </View>
 
           <View className="mb-6 rounded-xl bg-white p-4">
-            <Text className="mb-2 font-medium text-slate-700">Closing notes (optional)</Text>
+            <Text className="mb-2 font-medium text-slate-700">{t("closingNotes")}</Text>
             <TextInput
               className="min-h-[80px] rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900"
               multiline
               value={notes}
               onChangeText={setNotes}
-              placeholder="Any issues during shift? e.g. printer offline, price correction on Table 4"
+              placeholder={t("closingNotesPlaceholder")}
             />
           </View>
 
@@ -259,17 +292,17 @@ export default function CloseShiftScreen() {
             onPress={() => void doClose(true)}
             className="mb-3 items-center rounded-xl bg-indigo-600 py-4"
           >
-            <Text className="font-semibold text-white">Close Shift & Print Summary</Text>
+            <Text className="font-semibold text-white">{t("closeShiftPrint")}</Text>
           </Pressable>
           <Pressable
             disabled={busy || !closingCashText}
             onPress={() => void doClose(false)}
             className="mb-3 items-center rounded-xl border border-indigo-200 bg-white py-4"
           >
-            <Text className="font-semibold text-indigo-600">Close Shift (No Print)</Text>
+            <Text className="font-semibold text-indigo-600">{t("closeShiftNoPrint")}</Text>
           </Pressable>
           <Pressable disabled={busy} onPress={() => router.back()} className="mb-8 items-center py-3">
-            <Text className="text-slate-500">Cancel</Text>
+            <Text className="text-slate-500">{t("cancel")}</Text>
           </Pressable>
         </ScrollView>
       )}
@@ -277,10 +310,12 @@ export default function CloseShiftScreen() {
       <Modal visible={openTablesModal != null} transparent animationType="fade">
         <View className="flex-1 items-center justify-center bg-black/50 px-6">
           <View className="w-full rounded-2xl bg-white p-6">
-            <Text className="text-lg font-bold text-slate-900">Open tables remain</Text>
+            <Text className="text-lg font-bold text-slate-900">{t("openTablesRemain")}</Text>
             <Text className="mt-2 text-slate-600">
-              You still have {openTablesModal?.length ?? 0} open table(s):{" "}
-              {openTablesModal?.join(", ")}. Close all tables before ending shift.
+              {t("openTablesBody", {
+                count: openTablesModal?.length ?? 0,
+                tables: openTablesModal?.join(", ") ?? "",
+              })}
             </Text>
             <Pressable
               onPress={() => {
@@ -289,10 +324,10 @@ export default function CloseShiftScreen() {
               }}
               className="mt-5 items-center rounded-xl bg-indigo-600 py-3"
             >
-              <Text className="font-semibold text-white">Go to Tables</Text>
+              <Text className="font-semibold text-white">{t("goToTables")}</Text>
             </Pressable>
             <Pressable onPress={() => setOpenTablesModal(null)} className="mt-2 items-center py-2">
-              <Text className="text-slate-500">Dismiss</Text>
+              <Text className="text-slate-500">{t("dismiss")}</Text>
             </Pressable>
           </View>
         </View>
@@ -308,7 +343,7 @@ export default function CloseShiftScreen() {
           try {
             await printShiftSummary(closedSummary, closedSummary.depotName || "Hotel");
           } catch {
-            Toast.show({ type: "info", text1: "Print simulated", text2: "Check console in Expo Go" });
+            Toast.show({ type: "info", text1: t("printSimulated"), text2: t("printSimulatedHint") });
           } finally {
             setBusy(false);
           }

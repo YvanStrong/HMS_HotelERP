@@ -80,4 +80,34 @@ export function getAllPrinters(): Record<PrinterRole, PrinterDevice | null> {
 
 }
 
+const BAR_CATEGORIES_KEY = "printer_bar_categories";
+
+export const DEFAULT_BAR_CATEGORIES = [
+  "Bar",
+  "Drinks",
+  "Beverages",
+  "Cocktails",
+  "Wine",
+  "Beer",
+  "Spirits",
+  "Soft Drinks",
+];
+
+export function getBarCategories(): string[] {
+  const raw = mmkvGetString(BAR_CATEGORIES_KEY);
+  if (!raw?.trim()) return DEFAULT_BAR_CATEGORIES;
+  const parsed = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return parsed.length > 0 ? parsed : DEFAULT_BAR_CATEGORIES;
+}
+
+export function setBarCategories(categories: string[]): void {
+  mmkvSetString(BAR_CATEGORIES_KEY, categories.join(", "));
+}
+
+export function getBarCategoriesText(): string {
+  return getBarCategories().join(", ");
+}
 

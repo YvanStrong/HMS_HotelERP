@@ -69,6 +69,9 @@ public class PosShift {
     @Column(name = "total_tax", precision = 12, scale = 2)
     private BigDecimal totalTax = BigDecimal.ZERO;
 
+    @Column(name = "total_tips", precision = 12, scale = 2)
+    private BigDecimal totalTips = BigDecimal.ZERO;
+
     @Column(name = "total_cancelled")
     private Integer totalCancelled = 0;
 

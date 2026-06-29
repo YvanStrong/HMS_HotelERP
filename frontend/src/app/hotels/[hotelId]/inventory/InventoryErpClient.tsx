@@ -41,7 +41,57 @@ type ItemRow = {
   stockType?: "STOCK" | "NON_STOCK";
   taxCategory?: "A" | "B";
   taxable?: boolean;
+  allergens?: string[];
+  dietaryFlags?: string[];
 };
+
+const ALLERGEN_OPTS = ["NUTS", "GLUTEN", "DAIRY", "EGGS", "SHELLFISH", "SOY", "SESAME", "FISH"] as const;
+const DIETARY_OPTS = ["VEGAN", "VEGETARIAN", "HALAL", "KOSHER", "GLUTEN_FREE", "DAIRY_FREE"] as const;
+
+function flagLabel(code: string): string {
+  return code
+    .toLowerCase()
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+function InventoryFlagChips({
+  options,
+  selected,
+  onChange,
+}: {
+  options: readonly string[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  function toggle(code: string) {
+    onChange(selected.includes(code) ? selected.filter((x) => x !== code) : [...selected, code]);
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {options.map((code) => {
+        const active = selected.includes(code);
+        return (
+          <button
+            key={code}
+            type="button"
+            aria-pressed={active}
+            onClick={() => toggle(code)}
+            className={`rounded-lg border px-2 py-2 text-center text-sm transition-colors ${
+              active
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border bg-background text-foreground hover:bg-muted/50"
+            }`}
+          >
+            {flagLabel(code)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 type SalesReportPayload = {
   fromDate: string;
@@ -416,6 +466,8 @@ export function InventoryErpClient() {
     expiryDate: "",
     active: true,
     unitOfMeasure: "piece",
+    allergens: [] as string[],
+    dietaryFlags: [] as string[],
   });
 
   const load = useCallback(async () => {
@@ -1071,6 +1123,8 @@ export function InventoryErpClient() {
       expiryDate: (it.expiryDate as string) ?? "",
       active: it.active !== false,
       unitOfMeasure: it.unitOfMeasure?.trim() || "piece",
+      allergens: it.allergens ?? [],
+      dietaryFlags: it.dietaryFlags ?? [],
     });
   }
 
@@ -1100,6 +1154,8 @@ export function InventoryErpClient() {
           manufactureDate: null,
           valuationMethod: null,
           unitOfMeasure: editForm.unitOfMeasure || "piece",
+          allergens: editForm.allergens,
+          dietaryFlags: editForm.dietaryFlags,
         }),
       });
       setMsg("Product updated.");
@@ -1633,6 +1689,22 @@ export function InventoryErpClient() {
                     <input
                       value={editForm.description}
                       onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-1.5 text-sm font-medium text-foreground">Allergens</p>
+                    <InventoryFlagChips
+                      options={ALLERGEN_OPTS}
+                      selected={editForm.allergens}
+                      onChange={(allergens) => setEditForm((f) => ({ ...f, allergens }))}
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-1.5 text-sm font-medium text-foreground">Dietary flags</p>
+                    <InventoryFlagChips
+                      options={DIETARY_OPTS}
+                      selected={editForm.dietaryFlags}
+                      onChange={(dietaryFlags) => setEditForm((f) => ({ ...f, dietaryFlags }))}
                     />
                   </div>
                   <div>

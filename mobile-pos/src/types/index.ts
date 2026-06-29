@@ -30,12 +30,18 @@ export type DepotProduct = {
   productName: string;
   productCode: string;
   sellingPrice: number | string;
-  stockQty?: number | string;
+  stockQty?: number | string | null;
+  stockType?: string | null;
+  /** When false, stock is not tracked and badges are hidden. */
+  isTracked?: boolean;
   photoUrl?: string | null;
   menuName: string;
   taxable: boolean;
   active: boolean;
   inventoryItemId?: string | null;
+  allergens?: string[];
+  dietaryFlags?: string[];
+  nameTranslations?: Record<string, string> | null;
 };
 
 export type CartLine = {
@@ -46,6 +52,10 @@ export type CartLine = {
   notes?: string;
   imageUrl?: string | null;
   taxable?: boolean;
+  isHeld?: boolean;
+  holdCourse?: "STARTER" | "MAIN" | "DESSERT";
+  allergens?: string[];
+  dietaryFlags?: string[];
 };
 
 export type SaleLineInput = {
@@ -111,4 +121,46 @@ export type ReservationListItem = {
   roomNumber?: string | null;
 };
 
+export type ReservationHint = {
+  reservationId: string;
+  guestName: string;
+  guestCount: number;
+  roomNumber?: string | null;
+  dietaryNotes?: string | null;
+  specialRequests?: string | null;
+  checkInTime: string;
+};
+
 export type PaymentMethod = "CASH" | "CARD";
+
+export type VoidLineRequest = {
+  reason: string;
+  managerPin: string;
+};
+
+export type LineDiscountRequest = {
+  discountType: "PERCENT" | "AMOUNT";
+  discountValue: number;
+  reason: string;
+  managerPin: string;
+};
+
+export type PosLineAudit = {
+  id: string;
+  ticketId: string;
+  lineId: string;
+  action: "VOID" | "DISCOUNT";
+  productName?: string;
+  tableLabel?: string;
+  waiterName?: string;
+  originalPrice: number | string;
+  originalQty: number;
+  discountPct?: number | string | null;
+  discountAmount?: number | string | null;
+  reason: string;
+  authorizedBy: string;
+  authorizedByName: string;
+  createdBy?: string;
+  createdByName?: string;
+  createdAt: string;
+};

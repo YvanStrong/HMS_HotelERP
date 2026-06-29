@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import Toast from "react-native-toast-message";
+import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 import { getApiBaseUrl, setApiBaseUrl } from "../../src/api/settings";
 import { apiErrorMessage } from "../../src/api/client";
@@ -20,6 +21,7 @@ import { useAuthStore } from "../../src/store/authStore";
 import { mmkvGetString } from "../../src/storage/mmkv";
 
 export default function LoginScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const login = useAuthStore((s) => s.login);
   const loginWithTokens = useAuthStore((s) => s.loginWithTokens);
@@ -108,7 +110,7 @@ export default function LoginScreen() {
 
   async function savePin() {
     if (!hotelIdForPin || pin.length < 4 || pin !== confirmPin) {
-      Toast.show({ type: "error", text1: "PINs must match (4 digits)" });
+      Toast.show({ type: "error", text1: t("pinMismatch") });
       return;
     }
     await setPosPin(hotelIdForPin, pin);
@@ -150,9 +152,25 @@ export default function LoginScreen() {
                 </View>
                 <Text className="font-medium text-slate-800">{displayEmail}</Text>
               </View>
-              <PinPad value={pin} onChange={setPin} onComplete={(p) => void onPinSubmit(p)} />
+              <PinPad
+                value={pin}
+                onChange={setPin}
+                maxLength={6}
+                onComplete={(p) => void onPinSubmit(p)}
+              />
+              <Pressable
+                disabled={busy || pin.length < 4}
+                onPress={() => void onPinSubmit(pin)}
+                className={`mt-4 rounded-xl py-3 ${pin.length >= 4 ? "bg-indigo-600" : "bg-slate-300"}`}
+              >
+                {busy ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text className="text-center font-semibold text-white">{t("signIn")}</Text>
+                )}
+              </Pressable>
               <Pressable onPress={() => setMode("password")} className="mt-4">
-                <Text className="text-center text-sm text-indigo-600">Use password instead</Text>
+                <Text className="text-center text-sm text-indigo-600">{t("forgotPinUsePassword")}</Text>
               </Pressable>
               <Pressable
                 onPress={() => {
@@ -208,11 +226,11 @@ export default function LoginScreen() {
         <View className="flex-1 justify-end bg-black/40">
           <View className="rounded-t-3xl bg-white p-6">
             <Text className="text-lg font-bold text-slate-900">Set a quick PIN?</Text>
-            <Text className="mt-1 text-sm text-slate-500">Faster login on shared tablets.</Text>
+            <Text className="mt-1 text-sm text-slate-500">{t("pinSetLoginHint")}</Text>
             <Text className="mt-4 text-sm font-medium text-slate-700">Enter PIN</Text>
-            <PinPad value={pin} onChange={setPin} maxLength={4} />
+            <PinPad value={pin} onChange={setPin} maxLength={6} />
             <Text className="mt-4 text-sm font-medium text-slate-700">Confirm PIN</Text>
-            <PinPad value={confirmPin} onChange={setConfirmPin} maxLength={4} />
+            <PinPad value={confirmPin} onChange={setConfirmPin} maxLength={6} />
             <Pressable onPress={() => void savePin()} className="mt-4 rounded-xl bg-indigo-600 py-3">
               <Text className="text-center font-semibold text-white">Save PIN</Text>
             </Pressable>
