@@ -178,6 +178,7 @@ export default function PosPage() {
   const scanInputRef = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState<string>("All");
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [cartPriceOverrides, setCartPriceOverrides] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [placing, setPlacing] = useState(false);
   const [addingItemId, setAddingItemId] = useState<string | null>(null);
@@ -398,7 +399,8 @@ export default function PosPage() {
         const inv = dp.inventoryItemId
           ? inventoryItems.find((x) => x.id === dp.inventoryItemId)
           : undefined;
-        const unit = Number(dp.sellingPrice);
+        const catalogUnit = Number(dp.sellingPrice);
+        const unit = cartPriceOverrides[depotProductId] ?? catalogUnit;
         const dep = depots.find((d) => d.id === dp.depotId);
         return {
           productId: depotProductId,
@@ -407,7 +409,9 @@ export default function PosPage() {
           code: dp.productCode,
           category: categoryLabel(inv?.category),
           stock: dp.stockQty,
+          catalogUnit,
           unit,
+          priceOverridden: depotProductId in cartPriceOverrides,
           qty,
           lineTotal: unit * qty,
           taxable: dp.taxable,
@@ -415,7 +419,15 @@ export default function PosPage() {
         };
       })
       .filter((x): x is NonNullable<typeof x> => Boolean(x));
-  }, [cart, depotProducts, inventoryItems, depots]);
+  }, [cart, cartPriceOverrides, depotProducts, inventoryItems, depots]);
+
+  function buildCartLinePayload() {
+    return cartRows.map((r) => ({
+      productId: r.productId,
+      quantity: r.qty,
+      unitPrice: r.unit,
+    }));
+  }
 
   const totalPayable = useMemo(() => cartRows.reduce((s, r) => s + r.lineTotal, 0), [cartRows]);
 
@@ -595,8 +607,38 @@ export default function PosPage() {
     });
   }
 
+  function setLinePrice(productId: string, rawValue: string) {
+    const dp = depotProducts.find((x) => x.id === productId);
+    const catalog = dp ? Number(dp.sellingPrice) : 0;
+    const trimmed = rawValue.trim();
+    if (trimmed === "") {
+      setCartPriceOverrides((prev) => {
+        const copy = { ...prev };
+        delete copy[productId];
+        return copy;
+      });
+      return;
+    }
+    const next = Number(trimmed);
+    if (!Number.isFinite(next) || next < 0) return;
+    if (Math.abs(next - catalog) < 0.0001) {
+      setCartPriceOverrides((prev) => {
+        const copy = { ...prev };
+        delete copy[productId];
+        return copy;
+      });
+      return;
+    }
+    setCartPriceOverrides((prev) => ({ ...prev, [productId]: next }));
+  }
+
   function removeLine(productId: string) {
     setCart((prev) => {
+      const copy = { ...prev };
+      delete copy[productId];
+      return copy;
+    });
+    setCartPriceOverrides((prev) => {
       const copy = { ...prev };
       delete copy[productId];
       return copy;
@@ -605,11 +647,13 @@ export default function PosPage() {
 
   function clearCart() {
     setCart({});
+    setCartPriceOverrides({});
     setMsg(null);
   }
 
   function resetRunningOrderFields() {
     setCart({});
+    setCartPriceOverrides({});
     setOrderType("Dine In");
     setLocationLabel("Outlet / table");
     setCustomerLabel("Walk-in Customer");
@@ -625,6 +669,7 @@ export default function PosPage() {
     try {
       const payload = {
         cart,
+        cartPriceOverrides,
         orderType,
         locationLabel,
         customerLabel,
@@ -652,6 +697,7 @@ export default function PosPage() {
       }
       const o = JSON.parse(raw) as {
         cart?: Record<string, number>;
+        cartPriceOverrides?: Record<string, number>;
         orderType?: OrderType;
         locationLabel?: string;
         customerLabel?: string;
@@ -662,6 +708,9 @@ export default function PosPage() {
         depotId?: string;
       };
       if (o.cart && typeof o.cart === "object") setCart(o.cart);
+      if (o.cartPriceOverrides && typeof o.cartPriceOverrides === "object") {
+        setCartPriceOverrides(o.cartPriceOverrides);
+      }
       if (o.orderType && ORDER_TYPES.includes(o.orderType)) setOrderType(o.orderType);
       if (typeof o.locationLabel === "string") setLocationLabel(o.locationLabel);
       if (typeof o.customerLabel === "string") setCustomerLabel(o.customerLabel);
@@ -716,7 +765,7 @@ export default function PosPage() {
         body: JSON.stringify({
           customerName: buildCustomerName(),
           depotId: saleDepotId,
-          lines: cartRows.map((r) => ({ productId: r.productId, quantity: r.qty })),
+          lines: buildCartLinePayload(),
         }),
       });
       const depotName = depots.find((d) => d.id === saleDepotId)?.name ?? "Outlet";
@@ -780,7 +829,7 @@ export default function PosPage() {
         body: JSON.stringify({
           customerName: buildCustomerName(),
           depotId: saleDepotId,
-          lines: cartRows.map((r) => ({ productId: r.productId, quantity: r.qty })),
+          lines: buildCartLinePayload(),
           chargeToRoom: chargeToFolio,
           reservationId: chargeToFolio ? folioReservationId.trim() : null,
           paymentMethod: paymentMethod ?? "CASH",
@@ -859,7 +908,7 @@ export default function PosPage() {
           customerName: buildCustomerName(),
           locationLabel: locationLabel.trim() || null,
           depotId: saleDepotId,
-          lines: cartRows.map((r) => ({ productId: r.productId, quantity: r.qty })),
+          lines: buildCartLinePayload(),
         }),
       });
       resetRunningOrderFields();
@@ -881,14 +930,14 @@ export default function PosPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100dvh-10rem)] max-w-full min-w-0 flex-col gap-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">POS</h1>
-          <p className="text-sm text-muted-foreground">
-            Catalog from Inventory products — categories and stock match the products table.
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+      <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">POS</h1>
+          <p className="hidden text-sm text-muted-foreground sm:block">
+            Catalog from Inventory — stock matches the products table.
           </p>
-          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+          <div className="mt-1 hidden flex-wrap gap-2 text-xs sm:flex">
             <a href="/app/pos/tables" className="font-semibold text-primary hover:underline">
               Tables
             </a>
@@ -926,26 +975,26 @@ export default function PosPage() {
         </div>
       </div>
       {selectedOutlet ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="shrink-0 text-xs text-muted-foreground">
           Showing products on <strong className="text-foreground">{selectedOutlet.name}</strong> ({selectedOutlet.code})
           only. Stock shown is this outlet&apos;s transferred stock.
         </p>
       ) : null}
 
       {error && (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className="shrink-0 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </div>
       )}
       {msg && (
-        <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground">
+        <div className="shrink-0 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground">
           {msg}
         </div>
       )}
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 lg:flex-row">
-        <section className="order-2 flex min-h-[min(380px,55dvh)] w-full min-w-0 shrink-0 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft lg:order-2 lg:max-w-xl lg:basis-[40%] xl:max-w-none xl:basis-[40%]">
-          <div className="border-b border-border/60 bg-muted/20 p-3">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden lg:flex-row">
+        <section className="order-2 flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft lg:order-2 lg:basis-0 lg:rounded-l-2xl lg:rounded-r-none lg:border-r-0">
+          <div className="shrink-0 border-b border-border/60 bg-muted/20 p-3">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Running order</p>
             <div className="flex flex-wrap gap-1.5">
               {ORDER_TYPES.map((t) => (
@@ -1102,32 +1151,48 @@ export default function PosPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto p-2 sm:p-3">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain overflow-x-hidden p-2 sm:p-3">
             {cartRows.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">No items yet — add from the catalog.</p>
             ) : (
               <div className="-mx-1 overflow-x-auto px-1 sm:mx-0 sm:px-0">
-                <table className="w-full min-w-[36rem] text-sm">
+                <table className="w-full min-w-[38rem] text-sm table-fixed">
                   <thead>
                     <tr className="border-b border-border/60 text-left text-xs text-muted-foreground">
-                      <th className="pb-2 pr-2">Item</th>
-                      <th className="pb-2 w-14">Stock</th>
-                      <th className="pb-2 w-16">Price</th>
-                      <th className="pb-2 w-40">Qty</th>
-                      <th className="pb-2 w-16 text-right">Total</th>
-                      <th className="pb-2 w-8" />
+                      <th className="pb-2 pr-2 w-auto">Item</th>
+                      <th className="pb-2 w-14 shrink-0">Stock</th>
+                      <th className="pb-2 w-[7.5rem] shrink-0">Price</th>
+                      <th className="pb-2 w-36 shrink-0">Qty</th>
+                      <th className="pb-2 w-[5.5rem] shrink-0 text-right">Total</th>
+                      <th className="pb-2 w-8 shrink-0" />
                     </tr>
                   </thead>
                   <tbody>
                     {cartRows.map((r) => (
                       <tr key={r.productId} className="border-b border-border/40 align-middle">
-                        <td className="py-2 pr-2">
-                          <div className="font-medium">{r.name}</div>
+                        <td className="py-2 pr-2 min-w-0">
+                          <div className="font-medium truncate">{r.name}</div>
                           <div className="text-[10px] text-muted-foreground">{r.category}</div>
-                          <div className="mt-0.5 text-[10px] text-muted-foreground">{r.outletLabel}</div>
+                          <div className="mt-0.5 text-[10px] text-muted-foreground truncate">{r.outletLabel}</div>
                         </td>
-                        <td className="py-2 tabular-nums text-muted-foreground">{formatStock(r.stock)}</td>
-                        <td className="py-2 text-muted-foreground">{formatMoney(r.unit)}</td>
+                        <td className="py-2 tabular-nums text-muted-foreground whitespace-nowrap">{formatStock(r.stock)}</td>
+                        <td className="py-2 whitespace-nowrap">
+                          <input
+                            className={`h-9 w-full min-w-[7rem] max-w-[7.5rem] rounded-lg border bg-background px-2 text-right text-sm font-medium tabular-nums outline-none focus:bg-muted/30 ${
+                              r.priceOverridden ? "border-amber-400/80 bg-amber-50/50" : "border-border/80"
+                            }`}
+                            type="text"
+                            inputMode="decimal"
+                            value={r.priceOverridden ? String(r.unit) : formatMoney(r.unit)}
+                            onChange={(e) => setLinePrice(r.productId, e.target.value)}
+                            aria-label={`Price for ${r.name}`}
+                            title={
+                              r.priceOverridden
+                                ? `Custom price (catalog: ${formatMoney(r.catalogUnit)})`
+                                : "Edit to override catalog price"
+                            }
+                          />
+                        </td>
                         <td className="py-2">
                           <div className="inline-flex items-center rounded-lg border border-border/80 bg-background">
                             <button
@@ -1156,7 +1221,7 @@ export default function PosPage() {
                             </button>
                           </div>
                         </td>
-                        <td className="py-2 text-right font-medium tabular-nums">{formatMoney(r.lineTotal)}</td>
+                        <td className="py-2 text-right font-medium tabular-nums whitespace-nowrap">{formatMoney(r.lineTotal)}</td>
                         <td className="py-2">
                           <button
                             type="button"
@@ -1174,7 +1239,7 @@ export default function PosPage() {
             )}
           </div>
 
-          <div className="space-y-3 border-t border-border/60 bg-muted/10 p-3">
+          <div className="shrink-0 space-y-3 border-t border-border/60 bg-muted/10 p-3">
             <div className="flex items-baseline justify-between">
               <span className="text-sm font-medium text-muted-foreground">Total payable</span>
               <span className="text-xl font-bold tabular-nums text-primary">{formatMoney(totalPayable)}</span>
@@ -1240,7 +1305,7 @@ export default function PosPage() {
           </div>
         </section>
 
-        <section className="order-1 flex min-h-[min(420px,60dvh)] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft lg:order-1">
+        <section className="order-1 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft lg:order-1 lg:basis-0">
           <div className="shrink-0 space-y-2 border-b border-border/60 p-2 sm:p-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="pos-barcode-scan">
@@ -1277,7 +1342,7 @@ export default function PosPage() {
           </div>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
             <nav
-              className="scrollbar-thin flex shrink-0 gap-1.5 overflow-x-auto overflow-y-hidden border-b border-border/60 bg-muted/15 p-2 lg:w-44 lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden lg:border-b-0 lg:border-r"
+              className="scrollbar-thin flex max-h-24 shrink-0 gap-1.5 overflow-x-auto overflow-y-hidden border-b border-border/60 bg-muted/15 p-2 lg:max-h-none lg:w-44 lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden lg:border-b-0 lg:border-r"
               aria-label="Inventory categories"
             >
               {categories.map((c) => (
@@ -1295,7 +1360,7 @@ export default function PosPage() {
                 </button>
               ))}
             </nav>
-            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-2 sm:p-3">
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-2 sm:p-3">
               {catalogItems.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   {selectedOutlet
@@ -1305,7 +1370,7 @@ export default function PosPage() {
               ) : filteredItems.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No products match this filter.</p>
               ) : (
-                <div className="grid w-full min-w-0 grid-cols-1 gap-2 min-[380px]:grid-cols-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:gap-3 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                   {filteredItems.map((item) => {
                     const stockN = Number(item.currentStock ?? 0);
                     const lowStock = item.stockType !== "NON_STOCK" && Number.isFinite(stockN) && stockN <= 0;

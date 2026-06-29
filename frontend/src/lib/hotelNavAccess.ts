@@ -275,11 +275,10 @@ export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): bool
 
 export function navHint(key: HotelNavKey): string {
   const hints: Record<HotelNavKey, string> = {
-    dashboard: "Room status board + occupancy grid; also staff with housekeeping or room read access.",
-    reports: "Permissions: report:* or roles hotel admin, manager, finance.",
-    accounting: "Petty cash requests for staff; sales analytics and expenses for manager/finance/admin.",
-    guestAnalytics:
-      "Guest stay analytics (nationality, repeat, VIP, no-show, LTV): same access as Reports (finance/manager/admin).",
+    dashboard: "All-in-one overview: rooms & guests, sales, and accounting KPIs.",
+    reports: "Merged into Dashboard.",
+    accounting: "Full ledger, expenses, petty cash, and financial reports.",
+    guestAnalytics: "Merged into Dashboard (Rooms section).",
     roomTypes: "GET /room-types: hotel admin, manager, receptionist, maintenance, finance.",
     rooms: "Permission: room:read or room:* (or super admin).",
     roomBlocks: "Courtesy holds / maintenance blocks: admin, manager, receptionist (list); create: admin/manager.",
