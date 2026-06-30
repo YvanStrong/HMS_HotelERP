@@ -147,3 +147,24 @@ export async function setCurrentStaffId(id: string | null): Promise<void> {
     await db.runAsync('DELETE FROM app_meta WHERE key = ?', ['current_staff_id']);
   }
 }
+
+export async function getRequireShift(): Promise<boolean> {
+  const raw = await getMeta('require_shift');
+  if (raw === null) return true;
+  return raw === '1' || raw === 'true';
+}
+
+export async function saveRequireShift(required: boolean): Promise<void> {
+  await setMeta('require_shift', required ? '1' : '0');
+}
+
+export type AppLanguage = 'en' | 'fr';
+
+export async function getAppLanguage(): Promise<AppLanguage> {
+  const raw = await getMeta('app_language');
+  return raw === 'fr' ? 'fr' : 'en';
+}
+
+export async function saveAppLanguage(lang: AppLanguage): Promise<void> {
+  await setMeta('app_language', lang);
+}

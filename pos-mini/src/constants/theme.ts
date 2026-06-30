@@ -43,6 +43,16 @@ export function getThemeColors(mode: 'light' | 'dark'): ThemeColors {
   return (mode === 'dark' ? darkColors : colors) as ThemeColors;
 }
 
+export function getCardStyle(mode: 'light' | 'dark' = 'light') {
+  const palette = getThemeColors(mode);
+  return {
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: 12,
+  } as const;
+}
+
 export const cardStyle = {
   backgroundColor: colors.surface,
   borderWidth: 1,

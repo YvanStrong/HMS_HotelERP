@@ -1,8 +1,15 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import { differenceInDays } from 'date-fns';
+import { countLowStock } from '../repositories/productRepository';
+import { getLastBackupAt } from '../repositories/metaRepository';
+
+const BACKUP_REMINDER_ID = 'pos-mini-backup-reminder';
+const LOW_STOCK_CHECK_ID = 'pos-mini-low-stock-weekly';
 
 let sessionLowStockShown = false;
 let sessionBackupShown = false;
+let backgroundRegistered = false;
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -53,4 +60,67 @@ export async function showBackupReminderNotification(daysSince: number): Promise
 export function resetSessionNotifications(): void {
   sessionLowStockShown = false;
   sessionBackupShown = false;
+}
+
+async function cancelScheduled(id: string): Promise<void> {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(id);
+  } catch {
+    // ignore missing scheduled notification
+  }
+}
+
+export async function registerBackgroundAlerts(): Promise<void> {
+  if (Platform.OS === 'web' || backgroundRegistered) return;
+  const ok = await ensureNotificationPermissions();
+  if (!ok) return;
+  backgroundRegistered = true;
+
+  await cancelScheduled(BACKUP_REMINDER_ID);
+  await Notifications.scheduleNotificationAsync({
+    identifier: BACKUP_REMINDER_ID,
+    content: {
+      title: 'Backup reminder',
+      body: 'Export a backup in Settings to protect your data.',
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour: 9,
+      minute: 0,
+    },
+  });
+
+  await cancelScheduled(LOW_STOCK_CHECK_ID);
+  await Notifications.scheduleNotificationAsync({
+    identifier: LOW_STOCK_CHECK_ID,
+    content: {
+      title: 'Low stock check',
+      body: 'Review low-stock products in Stock → Alerts.',
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+      weekday: 2,
+      hour: 8,
+      minute: 30,
+    },
+  });
+}
+
+export async function runScheduledLowStockCheck(): Promise<void> {
+  if (sessionLowStockShown) return;
+  const count = await countLowStock();
+  if (count > 0) {
+    await showLowStockNotification(count);
+  }
+}
+
+export async function runScheduledBackupCheck(): Promise<void> {
+  if (sessionBackupShown) return;
+  const lastBackup = await getLastBackupAt();
+  if (!lastBackup) {
+    await showBackupReminderNotification(8);
+    return;
+  }
+  const days = differenceInDays(new Date(), new Date(lastBackup));
+  await showBackupReminderNotification(days);
 }

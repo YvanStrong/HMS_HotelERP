@@ -17,6 +17,7 @@ export default function ReceiptSettingsScreen() {
   const updateSettings = useAppStore((s) => s.updateSettings);
   const [receiptHeader, setReceiptHeader] = useState('');
   const [receiptFooter, setReceiptFooter] = useState('');
+  const [taxName, setTaxName] = useState('Tax');
   const [display, setDisplay] = useState<ReceiptDisplayPrefs>({
     showLogo: true,
     showTax: true,
@@ -29,6 +30,7 @@ export default function ReceiptSettingsScreen() {
       if (settings) {
         setReceiptHeader(settings.receiptHeader);
         setReceiptFooter(settings.receiptFooter);
+        setTaxName(settings.taxName ?? 'Tax');
       }
       void getReceiptDisplayPrefs().then(setDisplay);
     }, [settings]),
@@ -36,7 +38,7 @@ export default function ReceiptSettingsScreen() {
 
   const save = async () => {
     try {
-      await updateSettings({ receiptHeader, receiptFooter });
+      await updateSettings({ receiptHeader, receiptFooter, taxName: taxName.trim() || 'Tax' });
       await saveReceiptDisplayPrefs(display);
       Toast.show({ type: 'success', text1: 'Receipt settings saved' });
     } catch (e) {
@@ -64,6 +66,13 @@ export default function ReceiptSettingsScreen() {
         onChangeText={setReceiptFooter}
         placeholder="Thank you for your purchase!"
         multiline
+      />
+      <FormField
+        label="Tax label"
+        hint="Shown on receipts when tax is collected (e.g. VAT, GST)"
+        value={taxName}
+        onChangeText={setTaxName}
+        placeholder="Tax"
       />
 
       <Text className="mb-2 text-sm font-semibold text-app-text">Show on receipt</Text>

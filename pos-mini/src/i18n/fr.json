@@ -1,0 +1,32 @@
+{
+  "home": {
+    "title": "POS Mini",
+    "todaySales": "Ventes du jour",
+    "products": "Produits",
+    "modules": "Modules",
+    "newSale": "Nouvelle vente",
+    "transactions": "transactions",
+    "lowStock": "stock bas"
+  },
+  "sales": {
+    "title": "Ventes",
+    "newSale": "Nouvelle vente",
+    "cart": "Panier",
+    "checkout": "Paiement",
+    "complete": "Finaliser la vente",
+    "emptyCart": "Panier vide",
+    "noOpenShift": "Aucun shift ouvert",
+    "openShiftHint": "Ouvrez un shift dans Paramètres avant la vente.",
+    "openShift": "Ouvrir shift"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "darkMode": "Mode sombre",
+    "language": "Langue",
+    "english": "Anglais",
+    "french": "Français",
+    "staff": "Personnel",
+    "shift": "Shift / Z-report",
+    "modifiers": "Modificateurs"
+  }
+}

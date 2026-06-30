@@ -6,6 +6,7 @@ import { BarcodeScannerModal } from '../../../src/components/BarcodeScannerModal
 import { FormField } from '../../../src/components/FormField';
 import { KeyboardFormScroll } from '../../../src/components/KeyboardFormScroll';
 import { ProductImagePicker } from '../../../src/components/ProductImagePicker';
+import { UnitPicker } from '../../../src/components/UnitPicker';
 import { listCategories } from '../../../src/repositories/categoryRepository';
 import { createProduct, updateProduct } from '../../../src/repositories/productRepository';
 import type { Category } from '../../../src/types';
@@ -29,6 +30,8 @@ export default function NewProductScreen() {
   const [stockQty, setStockQty] = useState('0');
   const [minStock, setMinStock] = useState('0');
   const [unit, setUnit] = useState('pcs');
+  const [isTaxable, setIsTaxable] = useState(false);
+  const [taxRate, setTaxRate] = useState('0');
   const [trackStock, setTrackStock] = useState(true);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
@@ -63,6 +66,9 @@ export default function NewProductScreen() {
         stockQty: Number(stockQty) || 0,
         minStock: Number(minStock) || 0,
         unit,
+        isTaxable,
+        taxRate: Number(taxRate) || 0,
+        taxInclusive: false,
         imageUri: null,
         trackStock,
         isActive: true,
@@ -123,11 +129,19 @@ export default function NewProductScreen() {
         </View>
         <FormField label="Stock quantity" value={stockQty} onChangeText={setStockQty} keyboardType="decimal-pad" />
         <FormField label="Minimum stock alert" value={minStock} onChangeText={setMinStock} keyboardType="decimal-pad" />
-        <FormField label="Unit" value={unit} onChangeText={setUnit} placeholder="pcs, kg, L…" />
+        <UnitPicker value={unit} onChange={setUnit} />
+        <View className="mb-4 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
+          <Text className="font-semibold text-app-text">Taxable item?</Text>
+          <Switch value={isTaxable} onValueChange={setIsTaxable} />
+        </View>
+        {isTaxable ? (
+          <FormField label="Tax rate (%)" value={taxRate} onChangeText={setTaxRate} keyboardType="decimal-pad" placeholder="18" />
+        ) : null}
         <View className="mb-4 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
           <Text className="font-semibold text-app-text">Track stock</Text>
           <Switch value={trackStock} onValueChange={setTrackStock} />
         </View>
+        <Text className="mb-2 text-sm text-app-muted">Add variants after saving the product.</Text>
         <Pressable
           onPress={() => void save()}
           className="mb-8 rounded-xl py-4"

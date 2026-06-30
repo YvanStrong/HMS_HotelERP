@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { ScreenContainer } from '../../../src/components/ScreenContainer';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
@@ -15,15 +16,20 @@ import { NumericKeypad } from '../../../src/components/NumericKeypad';
 import { ProductCard } from '../../../src/components/ProductCard';
 import { SearchBar } from '../../../src/components/SearchBar';
 import { SwipeableCartItem } from '../../../src/components/SwipeableCartItem';
+import { VariantPickerModal } from '../../../src/components/VariantPickerModal';
+import { ModifierPickerModal } from '../../../src/components/ModifierPickerModal';
 import { findBestDiscountRule, listDiscountRules } from '../../../src/repositories/discountRepository';
 import { listCategories } from '../../../src/repositories/categoryRepository';
 import { listCustomers } from '../../../src/repositories/customerRepository';
 import { deleteHeldCart, listHeldCarts, saveHeldCart } from '../../../src/repositories/heldCartRepository';
-import { getPaymentMethodSettings, getPrinterSettings, type PaymentMethodSettings } from '../../../src/repositories/metaRepository';
+import { getPaymentMethodSettings, getPrinterSettings, getRequireShift, type PaymentMethodSettings } from '../../../src/repositories/metaRepository';
+import { listProductModifierGroups } from '../../../src/repositories/modifierRepository';
+import { getOpenShift } from '../../../src/repositories/shiftRepository';
+import { listVariantsByProduct } from '../../../src/repositories/variantRepository';
 import { findProductByScaleCode, getProductByBarcode, listProducts, searchProducts } from '../../../src/repositories/productRepository';
 import { createSale } from '../../../src/repositories/saleRepository';
 import { printReceipt } from '../../../src/printing/PrinterService';
-import type { Category, CartItem, Customer, DiscountMode, DiscountType, HeldCart, PaymentMethod, Product, SalePaymentInput } from '../../../src/types';
+import type { Category, CartItem, Customer, DiscountMode, DiscountType, HeldCart, ModifierGroup, PaymentMethod, Product, ProductVariant, SalePaymentInput, SelectedModifier } from '../../../src/types';
 import { useAppStore } from '../../../src/store/appStore';
 import { useCartStore } from '../../../src/store/cartStore';
 import { parseScaleBarcode } from '../../../src/utils/barcode';
@@ -48,6 +54,7 @@ function buildPaymentMethods(prefs: PaymentMethodSettings): { method: SalePaymen
 
 export default function NewSaleScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const settings = useAppStore((s) => s.settings);
   const refreshStats = useAppStore((s) => s.refreshStats);
   const cart = useCartStore();
@@ -102,6 +109,16 @@ export default function NewSaleScreen() {
   const [payInput, setPayInput] = useState('');
   const [splitMethod, setSplitMethod] = useState<SalePaymentInput['paymentMethod']>('cash');
   const [splitAmount, setSplitAmount] = useState('');
+  const [showVariantPicker, setShowVariantPicker] = useState(false);
+  const [showModifierPicker, setShowModifierPicker] = useState(false);
+  const [pendingVariants, setPendingVariants] = useState<ProductVariant[]>([]);
+  const [pendingModifierGroups, setPendingModifierGroups] = useState<ModifierGroup[]>([]);
+  const [pendingAdd, setPendingAdd] = useState<{
+    product: Product;
+    qty: number;
+    unitPrice?: number;
+    variant?: ProductVariant;
+  } | null>(null);
   const totals = getTotals();
 
   const paymentMethods = useMemo(
@@ -141,27 +158,84 @@ export default function NewSaleScreen() {
     [splitPayments],
   );
 
-  const addProduct = (product: Product, qty = 1, unitPrice?: number) => {
-    if (product.trackStock && product.stockQty <= 0) {
+  const finalizeAddToCart = (
+    product: Product,
+    qty: number,
+    unitPrice: number | undefined,
+    variant: ProductVariant | undefined,
+    modifiers: SelectedModifier[],
+    modifierPriceDelta: number,
+  ) => {
+    const stockQty = variant?.stockQty ?? product.stockQty;
+    const basePrice = unitPrice ?? variant?.sellPrice ?? product.sellPrice;
+    const price = basePrice + modifierPriceDelta;
+
+    if (product.trackStock && stockQty <= 0) {
       Toast.show({ type: 'error', text1: 'Out of stock' });
       return;
     }
-    const existing = items.find((i) => i.productId === product.id);
+
+    const existing = items.find(
+      (i) =>
+        i.productId === product.id &&
+        (i.variantId ?? null) === (variant?.id ?? null) &&
+        JSON.stringify(i.modifiers ?? []) === JSON.stringify(modifiers),
+    );
     const nextQty = (existing?.quantity ?? 0) + qty;
-    if (product.trackStock && nextQty > product.stockQty) {
+    if (product.trackStock && nextQty > stockQty) {
       Toast.show({ type: 'error', text1: 'Not enough stock' });
       return;
     }
+
+    const displayName = variant ? `${product.name} (${variant.name})` : product.name;
+
     addItem({
       productId: product.id,
-      productName: product.name,
-      unitPrice: unitPrice ?? product.sellPrice,
-      costPrice: product.costPrice,
+      productName: displayName,
+      variantId: variant?.id ?? null,
+      variantName: variant?.name ?? null,
+      modifiers: modifiers.length ? modifiers : undefined,
+      unitPrice: price,
+      costPrice: variant?.costPrice ?? product.costPrice,
+      isTaxable: product.isTaxable,
+      taxRate: product.taxRate,
+      taxInclusive: product.taxInclusive,
       trackStock: product.trackStock,
-      stockQty: product.stockQty,
+      stockQty,
       imageUri: product.imageUri,
       quantity: qty,
     });
+  };
+
+  const continueAddProduct = async (
+    product: Product,
+    qty = 1,
+    unitPrice?: number,
+    variant?: ProductVariant,
+  ) => {
+    const modifierGroups = await listProductModifierGroups(product.id);
+    if (modifierGroups.length > 0) {
+      setPendingAdd({ product, qty, unitPrice, variant });
+      setPendingModifierGroups(modifierGroups);
+      setShowModifierPicker(true);
+      return;
+    }
+    finalizeAddToCart(product, qty, unitPrice, variant, [], 0);
+  };
+
+  const beginAddProduct = async (product: Product, qty = 1, unitPrice?: number) => {
+    const variants = await listVariantsByProduct(product.id);
+    if (variants.length > 0) {
+      setPendingAdd({ product, qty, unitPrice });
+      setPendingVariants(variants);
+      setShowVariantPicker(true);
+      return;
+    }
+    await continueAddProduct(product, qty, unitPrice);
+  };
+
+  const addProduct = (product: Product, qty = 1, unitPrice?: number) => {
+    void beginAddProduct(product, qty, unitPrice);
   };
 
   const setItemQuantity = (item: CartItem, qty: number) => {
@@ -169,7 +243,7 @@ export default function NewSaleScreen() {
       Toast.show({ type: 'error', text1: 'Not enough stock' });
       return;
     }
-    updateQuantity(item.productId, qty);
+    updateQuantity(item.lineKey, qty);
   };
 
   const handleBarcodeScan = async (barcode: string) => {
@@ -259,9 +333,22 @@ export default function NewSaleScreen() {
 
   const completeSale = async () => {
     if (items.length === 0) {
-      Toast.show({ type: 'error', text1: 'Cart is empty' });
+      Toast.show({ type: 'error', text1: t('sales.emptyCart') });
       return;
     }
+
+    const requireShift = await getRequireShift();
+    const openShift = await getOpenShift();
+    if (requireShift && !openShift) {
+      Toast.show({
+        type: 'error',
+        text1: t('sales.noOpenShift'),
+        text2: t('sales.openShiftHint'),
+        onPress: () => router.push('/(main)/settings/shift'),
+      });
+      return;
+    }
+
     if (splitEnabled) {
       if (splitPaidTotal < totals.total) {
         Toast.show({ type: 'error', text1: 'Split payments do not cover total' });
@@ -318,7 +405,17 @@ export default function NewSaleScreen() {
       Toast.show({ type: 'success', text1: 'Sale completed', text2: sale.invoiceNumber });
       router.replace(`/(main)/sales/${sale.id}`);
     } catch (e) {
-      Toast.show({ type: 'error', text1: e instanceof Error ? e.message : 'Sale failed' });
+      const msg = e instanceof Error ? e.message : 'Sale failed';
+      if (msg === 'NO_OPEN_SHIFT') {
+        Toast.show({
+          type: 'error',
+          text1: t('sales.noOpenShift'),
+          text2: t('sales.openShiftHint'),
+          onPress: () => router.push('/(main)/settings/shift'),
+        });
+        return;
+      }
+      Toast.show({ type: 'error', text1: msg });
     }
   };
 
@@ -431,7 +528,7 @@ export default function NewSaleScreen() {
         <FormField label="Sale notes" value={notes} onChangeText={setNotes} placeholder="Optional" multiline />
 
         <Pressable onPress={() => void completeSale()} className="mt-4 rounded-xl py-4" style={{ backgroundColor: colors.primary }}>
-          <Text className="text-center font-semibold text-white">Complete sale</Text>
+          <Text className="text-center font-semibold text-white">{t('sales.complete')}</Text>
         </Pressable>
         <Pressable onPress={() => setShowPay(false)} className="mt-2 rounded-xl border border-app-border py-3">
           <Text className="text-center font-semibold text-app-text">Back to cart</Text>
@@ -476,11 +573,11 @@ export default function NewSaleScreen() {
             <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator>
               {items.map((item) => (
                 <SwipeableCartItem
-                  key={item.productId}
+                  key={item.lineKey}
                   item={item}
-                  onIncrease={() => updateQuantity(item.productId, item.quantity + 1)}
-                  onDecrease={() => updateQuantity(item.productId, item.quantity - 1)}
-                  onRemove={() => removeItem(item.productId)}
+                  onIncrease={() => updateQuantity(item.lineKey, item.quantity + 1)}
+                  onDecrease={() => updateQuantity(item.lineKey, item.quantity - 1)}
+                  onRemove={() => removeItem(item.lineKey)}
                   onSetQuantity={(qty) => setItemQuantity(item, qty)}
                 />
               ))}
@@ -492,8 +589,8 @@ export default function NewSaleScreen() {
           )}
         </View>
         <View className="mb-2 flex-row gap-2">
-          <Pressable onPress={() => (items.length ? setShowPay(true) : Toast.show({ type: 'error', text1: 'Cart is empty' }))} className="flex-1 rounded-xl py-3" style={{ backgroundColor: colors.primary }}>
-            <Text className="text-center font-semibold text-white">Checkout</Text>
+          <Pressable onPress={() => (items.length ? setShowPay(true) : Toast.show({ type: 'error', text1: t('sales.emptyCart') }))} className="flex-1 rounded-xl py-3" style={{ backgroundColor: colors.primary }}>
+            <Text className="text-center font-semibold text-white">{t('sales.checkout')}</Text>
           </Pressable>
           <Pressable onPress={() => void holdCart()} className="rounded-xl border border-app-border bg-app-surface px-3 py-3">
             <Text className="font-semibold text-app-text">Hold</Text>
@@ -549,6 +646,50 @@ export default function NewSaleScreen() {
 
       <BarcodeScannerModal visible={showScanner} onClose={() => setShowScanner(false)} onScan={(b) => void handleBarcodeScan(b)} />
       <CustomerPickerModal visible={showCustomerPicker} selectedId={customerId} onClose={() => setShowCustomerPicker(false)} onSelect={(c) => { setCustomer(c.id); setCustomers((prev) => prev.some((x) => x.id === c.id) ? prev : [...prev, c]); }} />
+
+      <VariantPickerModal
+        visible={showVariantPicker}
+        productName={pendingAdd?.product.name ?? ''}
+        variants={pendingVariants}
+        onSelect={(variant) => {
+          setShowVariantPicker(false);
+          if (pendingAdd) {
+            void continueAddProduct(pendingAdd.product, pendingAdd.qty, pendingAdd.unitPrice, variant);
+          }
+          setPendingVariants([]);
+        }}
+        onCancel={() => {
+          setShowVariantPicker(false);
+          setPendingAdd(null);
+          setPendingVariants([]);
+        }}
+      />
+
+      <ModifierPickerModal
+        visible={showModifierPicker}
+        productName={pendingAdd?.product.name ?? ''}
+        groups={pendingModifierGroups}
+        onConfirm={(modifiers, priceDelta) => {
+          setShowModifierPicker(false);
+          if (pendingAdd) {
+            finalizeAddToCart(
+              pendingAdd.product,
+              pendingAdd.qty,
+              pendingAdd.unitPrice,
+              pendingAdd.variant,
+              modifiers,
+              priceDelta,
+            );
+          }
+          setPendingAdd(null);
+          setPendingModifierGroups([]);
+        }}
+        onCancel={() => {
+          setShowModifierPicker(false);
+          setPendingAdd(null);
+          setPendingModifierGroups([]);
+        }}
+      />
     </ScreenContainer>
   );
 }

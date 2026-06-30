@@ -13,6 +13,9 @@ import type { Category, Product } from '../../../src/types';
 import { formatMoney } from '../../../src/utils/currency';
 import { useAppStore } from '../../../src/store/appStore';
 import { colors } from '../../../src/constants/theme';
+import { ProductVariantsSection } from '../../../src/components/ProductVariantsSection';
+import { ProductModifierGroupsSection } from '../../../src/components/ProductModifierGroupsSection';
+import { UnitPicker } from '../../../src/components/UnitPicker';
 import { persistProductImage } from '../../../src/utils/productImage';
 
 export default function ProductDetailScreen() {
@@ -34,6 +37,8 @@ export default function ProductDetailScreen() {
   const [stockQty, setStockQty] = useState('0');
   const [minStock, setMinStock] = useState('0');
   const [unit, setUnit] = useState('pcs');
+  const [isTaxable, setIsTaxable] = useState(false);
+  const [taxRate, setTaxRate] = useState('0');
   const [trackStock, setTrackStock] = useState(true);
   const [imageUri, setImageUri] = useState<string | null>(null);
 
@@ -60,6 +65,8 @@ export default function ProductDetailScreen() {
           setStockQty(String(p.stockQty));
           setMinStock(String(p.minStock));
           setUnit(p.unit);
+          setIsTaxable(p.isTaxable);
+          setTaxRate(String(p.taxRate));
           setTrackStock(p.trackStock);
           setImageUri(p.imageUri);
         }
@@ -89,6 +96,8 @@ export default function ProductDetailScreen() {
         stockQty: Number(stockQty) || 0,
         minStock: Number(minStock) || 0,
         unit,
+        isTaxable,
+        taxRate: Number(taxRate) || 0,
         trackStock,
         imageUri: savedImage,
       });
@@ -156,11 +165,20 @@ export default function ProductDetailScreen() {
         </View>
         <FormField label="Stock quantity" value={stockQty} onChangeText={setStockQty} keyboardType="decimal-pad" />
         <FormField label="Minimum stock alert" value={minStock} onChangeText={setMinStock} keyboardType="decimal-pad" />
-        <FormField label="Unit" value={unit} onChangeText={setUnit} placeholder="pcs, kg, L…" />
+        <UnitPicker value={unit} onChange={setUnit} />
+        <View className="mb-4 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
+          <Text className="font-semibold text-app-text">Taxable item?</Text>
+          <Switch value={isTaxable} onValueChange={setIsTaxable} />
+        </View>
+        {isTaxable ? (
+          <FormField label="Tax rate (%)" value={taxRate} onChangeText={setTaxRate} keyboardType="decimal-pad" placeholder="18" />
+        ) : null}
         <View className="mb-4 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
           <Text className="font-semibold text-app-text">Track stock</Text>
           <Switch value={trackStock} onValueChange={setTrackStock} />
         </View>
+        <ProductVariantsSection productId={productId} />
+        <ProductModifierGroupsSection productId={productId} />
         <Pressable
           onPress={() => void save()}
           className="rounded-xl py-4"

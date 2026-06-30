@@ -16,7 +16,7 @@ import { listSuppliers } from '../../../src/repositories/supplierRepository';
 import type { Product, Supplier } from '../../../src/types';
 import { useAppStore } from '../../../src/store/appStore';
 import { cardStyle, colors } from '../../../src/constants/theme';
-import { calculateSubtotal, calculateTax, calculateTotal, roundMoney } from '../../../src/utils/calculations';
+import { calculateCartTax, calculateCartTotal, calculateSubtotal, roundMoney } from '../../../src/utils/calculations';
 import { QuantityEditModal } from '../../../src/components/QuantityEditModal';
 import { formatMoney } from '../../../src/utils/currency';
 import { formatQuantity, parseQuantityInput } from '../../../src/utils/quantity';
@@ -26,6 +26,9 @@ type CartLine = {
   productName: string;
   unitCost: number;
   quantity: number;
+  isTaxable: boolean;
+  taxRate: number;
+  taxInclusive: boolean;
 };
 
 const STEPS = ['Supplier', 'Items', 'Payment'] as const;
@@ -65,12 +68,24 @@ export default function NewPurchaseScreen() {
     [lines],
   );
   const taxAmount = useMemo(
-    () => (settings ? calculateTax(subtotal, 0, settings) : 0),
-    [subtotal, settings],
+    () => roundMoney(calculateCartTax(lines.map((l) => ({
+      unitPrice: l.unitCost,
+      quantity: l.quantity,
+      isTaxable: l.isTaxable,
+      taxRate: l.taxRate,
+      taxInclusive: l.taxInclusive,
+    })), 0)),
+    [lines],
   );
   const total = useMemo(
-    () => (settings ? calculateTotal(subtotal, 0, taxAmount, settings.taxInclusive) : subtotal),
-    [subtotal, taxAmount, settings],
+    () => roundMoney(calculateCartTotal(lines.map((l) => ({
+      unitPrice: l.unitCost,
+      quantity: l.quantity,
+      isTaxable: l.isTaxable,
+      taxRate: l.taxRate,
+      taxInclusive: l.taxInclusive,
+    })), 0)),
+    [lines],
   );
 
   const selectedSupplier = suppliers.find((s) => s.id === supplierId) ?? null;
@@ -87,6 +102,9 @@ export default function NewPurchaseScreen() {
         productName: product.name,
         unitCost: product.costPrice,
         quantity: 1,
+        isTaxable: product.isTaxable,
+        taxRate: product.taxRate,
+        taxInclusive: product.taxInclusive,
       }]);
     }
   };

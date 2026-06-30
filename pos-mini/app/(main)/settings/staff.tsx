@@ -3,16 +3,21 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import { ScreenContainer } from '../../../src/components/ScreenContainer';
-import { createStaff, listStaff, updateStaff } from '../../../src/repositories/staffRepository';
+import { StaffPinModal } from '../../../src/components/StaffPinModal';
+import { createStaff, listStaff, verifyStaffPin } from '../../../src/repositories/staffRepository';
 import { setCurrentStaffId } from '../../../src/repositories/metaRepository';
-import type { StaffRole } from '../../../src/types';
+import type { Staff, StaffRole } from '../../../src/types';
+import { useAppStore } from '../../../src/store/appStore';
 import { colors } from '../../../src/constants/theme';
 
 export default function StaffSettingsScreen() {
+  const refreshStaff = useAppStore((s) => s.refreshStaff);
   const [staff, setStaff] = useState<Awaited<ReturnType<typeof listStaff>>>([]);
   const [name, setName] = useState('');
   const [pin, setPin] = useState('');
   const [role, setRole] = useState<StaffRole>('cashier');
+  const [pinModalStaff, setPinModalStaff] = useState<Staff | null>(null);
+  const [signInPin, setSignInPin] = useState('');
 
   const load = useCallback(async () => {
     setStaff(await listStaff());
@@ -36,13 +41,23 @@ export default function StaffSettingsScreen() {
     }
   };
 
-  const signIn = async (id: string) => {
-    await setCurrentStaffId(id);
+  const confirmSignIn = async () => {
+    if (!pinModalStaff) return;
+    const ok = await verifyStaffPin(pinModalStaff.id, signInPin);
+    if (!ok) {
+      Toast.show({ type: 'error', text1: 'Incorrect PIN' });
+      setSignInPin('');
+      return;
+    }
+    await setCurrentStaffId(pinModalStaff.id);
+    await refreshStaff();
+    setPinModalStaff(null);
+    setSignInPin('');
     Toast.show({ type: 'success', text1: 'Active staff set' });
   };
 
   return (
-    <ScreenContainer>
+    <ScreenContainer scroll>
       <Text className="mb-2 text-sm text-app-muted">Cashiers can sell; managers can void sales.</Text>
       {staff.map((s) => (
         <View key={s.id} className="mb-2 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface p-3">
@@ -50,8 +65,15 @@ export default function StaffSettingsScreen() {
             <Text className="font-semibold text-app-text">{s.name}</Text>
             <Text className="text-sm capitalize text-app-muted">{s.role}</Text>
           </View>
-          <Pressable onPress={() => void signIn(s.id)} className="rounded-lg px-3 py-1" style={{ backgroundColor: colors.primarySoft }}>
-            <Text className="text-sm font-semibold text-app-primary">Use</Text>
+          <Pressable
+            onPress={() => {
+              setPinModalStaff(s);
+              setSignInPin('');
+            }}
+            className="rounded-lg px-3 py-1"
+            style={{ backgroundColor: colors.primarySoft }}
+          >
+            <Text className="text-sm font-semibold text-app-primary">Sign in</Text>
           </Pressable>
         </View>
       ))}
@@ -68,6 +90,18 @@ export default function StaffSettingsScreen() {
       <Pressable onPress={() => void add()} className="rounded-xl py-4" style={{ backgroundColor: colors.primary }}>
         <Text className="text-center font-semibold text-white">Add staff member</Text>
       </Pressable>
+
+      <StaffPinModal
+        visible={Boolean(pinModalStaff)}
+        staffName={pinModalStaff?.name ?? ''}
+        pin={signInPin}
+        onPinChange={setSignInPin}
+        onConfirm={() => void confirmSignIn()}
+        onCancel={() => {
+          setPinModalStaff(null);
+          setSignInPin('');
+        }}
+      />
     </ScreenContainer>
   );
 }

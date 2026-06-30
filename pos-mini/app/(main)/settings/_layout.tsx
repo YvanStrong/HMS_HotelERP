@@ -5,7 +5,6 @@ export default function SettingsLayout() {
     <ThemedStack>
       <ThemedStack.Screen name="index" options={{ title: 'Settings' }} />
       <ThemedStack.Screen name="business" options={{ title: 'Business' }} />
-      <ThemedStack.Screen name="tax" options={{ title: 'Tax' }} />
       <ThemedStack.Screen name="alerts" options={{ title: 'Alerts' }} />
       <ThemedStack.Screen name="currency" options={{ title: 'Currency' }} />
       <ThemedStack.Screen name="payment" options={{ title: 'Payment Methods' }} />
@@ -16,6 +15,7 @@ export default function SettingsLayout() {
       <ThemedStack.Screen name="staff" options={{ title: 'Staff' }} />
       <ThemedStack.Screen name="shift" options={{ title: 'Shift' }} />
       <ThemedStack.Screen name="discounts" options={{ title: 'Discount Rules' }} />
+      <ThemedStack.Screen name="modifiers" options={{ title: 'Modifiers' }} />
       <ThemedStack.Screen name="about" options={{ title: 'About' }} />
     </ThemedStack>
   );

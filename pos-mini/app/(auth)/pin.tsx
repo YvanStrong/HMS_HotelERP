@@ -7,6 +7,7 @@ import { NumericKeypad } from '../../src/components/NumericKeypad';
 import { useAppStore } from '../../src/store/appStore';
 import { colors, primaryButtonStyle } from '../../src/constants/theme';
 import { setPinHash, verifyPin } from '../../src/utils/pin';
+import { staffCount } from '../../src/repositories/staffRepository';
 import {
   getRecoveryQuestion,
   hasPinRecovery,
@@ -26,6 +27,11 @@ export default function PinScreen() {
   const [recoveryQuestion, setRecoveryQuestion] = useState('');
   const [forgotAnswer, setForgotAnswer] = useState('');
 
+  const routeAfterUnlock = async () => {
+    const count = await staffCount();
+    router.replace((count > 0 ? '/(auth)/staff' : '/') as never);
+  };
+
   useEffect(() => {
     void hasPinRecovery().then(setRecoveryAvailable);
   }, []);
@@ -38,7 +44,7 @@ export default function PinScreen() {
       return;
     }
     unlock();
-    router.replace('/');
+    await routeAfterUnlock();
   };
 
   const startForgot = async () => {
@@ -83,7 +89,7 @@ export default function PinScreen() {
     await setPinHash(newPin);
     unlock();
     Toast.show({ type: 'success', text1: 'PIN updated' });
-    router.replace('/');
+    await routeAfterUnlock();
   };
 
   if (mode === 'forgot') {

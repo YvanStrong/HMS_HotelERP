@@ -50,6 +50,9 @@ export interface Product {
   stockQty: number;
   minStock: number;
   unit: string;
+  isTaxable: boolean;
+  taxRate: number;
+  taxInclusive: boolean;
   imageUri: string | null;
   trackStock: boolean;
   isActive: boolean;
@@ -86,6 +89,8 @@ export interface Sale {
   invoiceNumber: string;
   customerId: string | null;
   customerName?: string | null;
+  staffId?: string | null;
+  shiftId?: string | null;
   subtotal: number;
   discountAmount: number;
   discountPercent: number;
@@ -106,11 +111,69 @@ export interface SaleItem {
   saleId: string;
   productId: string;
   productName: string;
+  variantId?: string | null;
+  variantName?: string | null;
+  modifiersJson?: string | null;
   unitPrice: number;
   costPrice: number;
   quantity: number;
   lineTotal: number;
   discountAmount: number;
+}
+
+export interface ProductVariant {
+  id: string;
+  productId: string;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  sellPrice: number;
+  costPrice: number;
+  stockQty: number;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface ModifierOption {
+  id: string;
+  groupId: string;
+  name: string;
+  priceDelta: number;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface ModifierGroup {
+  id: string;
+  name: string;
+  minSelect: number;
+  maxSelect: number;
+  required: boolean;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  options?: ModifierOption[];
+}
+
+export type SelectedModifier = {
+  groupId: string;
+  groupName: string;
+  optionId: string;
+  optionName: string;
+  priceDelta: number;
+};
+
+export type KitchenTicketStatus = 'pending' | 'preparing' | 'done';
+
+export interface KitchenTicket {
+  id: string;
+  saleId: string;
+  invoiceNumber: string;
+  status: KitchenTicketStatus;
+  itemsJson: string;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Purchase {
@@ -246,8 +309,12 @@ export interface DiscountRule {
 }
 
 export interface CartItem {
+  lineKey: string;
   productId: string;
   productName: string;
+  variantId?: string | null;
+  variantName?: string | null;
+  modifiers?: SelectedModifier[];
   unitPrice: number;
   costPrice: number;
   quantity: number;
@@ -257,6 +324,9 @@ export interface CartItem {
   imageUri?: string | null;
   barcode?: string | null;
   categoryId?: string | null;
+  isTaxable: boolean;
+  taxRate: number;
+  taxInclusive?: boolean;
 }
 
 export interface CartTotals {
@@ -287,9 +357,13 @@ export type SalePaymentInput = {
   amount: number;
 };
 
+export type CreateSaleItemInput = Omit<SaleItem, 'id' | 'saleId'>;
+
 export type CreateSaleInput = {
   customerId?: string | null;
-  items: Omit<SaleItem, 'id' | 'saleId'>[];
+  staffId?: string | null;
+  shiftId?: string | null;
+  items: CreateSaleItemInput[];
   discountAmount: number;
   discountPercent: number;
   taxAmount: number;
@@ -300,6 +374,14 @@ export type CreateSaleInput = {
   paymentMethod: PaymentMethod;
   notes?: string | null;
   payments?: SalePaymentInput[];
+};
+
+export type CreateProductVariantInput = Omit<ProductVariant, 'id' | 'createdAt'>;
+export type UpdateProductVariantInput = Partial<Omit<CreateProductVariantInput, 'productId'>>;
+
+export type CreateModifierGroupInput = Omit<ModifierGroup, 'id' | 'createdAt' | 'options'>;
+export type CreateModifierOptionInput = Omit<ModifierOption, 'id' | 'groupId' | 'isActive'> & {
+  groupId: string;
 };
 
 export type CreatePurchaseInput = {

@@ -76,6 +76,12 @@ export default function SalesListScreen() {
       <ActionButton
         label="+ New Sale"
         onPress={() => router.push('/(main)/sales/new')}
+        className="mb-2"
+      />
+      <ActionButton
+        label="Kitchen tickets"
+        onPress={() => router.push('/(main)/sales/kitchen')}
+        variant="secondary"
         className="mb-3"
       />
 

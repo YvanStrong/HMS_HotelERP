@@ -48,6 +48,11 @@ export function CartItemRow({ item, onIncrease, onDecrease, onRemove, onSetQuant
           <Text className="font-semibold text-app-text" numberOfLines={2}>
             {item.productName}
           </Text>
+          {item.modifiers?.length ? (
+            <Text className="text-xs text-app-muted" numberOfLines={2}>
+              {item.modifiers.map((m) => m.optionName).join(', ')}
+            </Text>
+          ) : null}
           <Text className="text-sm text-app-muted">
             {formatMoney(item.unitPrice, settings)} × {formatQuantity(item.quantity)}
           </Text>

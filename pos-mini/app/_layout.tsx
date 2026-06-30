@@ -10,6 +10,8 @@ import Toast from 'react-native-toast-message';
 import { useAppStore } from '../src/store/appStore';
 import { useAndroidBackHandler } from '../src/hooks/useAndroidBackHandler';
 import { colors, getThemeColors } from '../src/constants/theme';
+import { registerBackgroundAlerts } from '../src/notifications/alerts';
+import { initI18n } from '../src/i18n';
 
 /*
  * PHASE 8 — HMS Admin Console Integration (NOT implemented)
@@ -58,9 +60,14 @@ export default function RootLayout() {
   }, [themeMode, palette]);
 
   useEffect(() => {
-    init().catch((e: unknown) => {
-      setError(e instanceof Error ? e.message : 'Failed to initialize database');
-    });
+    init()
+      .then(async () => {
+        await initI18n();
+        await registerBackgroundAlerts();
+      })
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : 'Failed to initialize database');
+      });
   }, [init]);
 
   if (error) {
@@ -80,7 +87,10 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: palette.background }}>
+    <GestureHandlerRootView
+      style={{ flex: 1, backgroundColor: palette.background }}
+      className={themeMode === 'dark' ? 'dark flex-1' : 'flex-1'}
+    >
       <SafeAreaProvider>
         <PaperProvider theme={paperTheme}>
           <StatusBar style={themeMode === 'dark' ? 'light' : 'dark'} />

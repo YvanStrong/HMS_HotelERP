@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { differenceInDays } from 'date-fns';
+import { useTranslation } from 'react-i18next';
 import { HomeGrid } from '../src/components/HomeGrid';
 import { HomeMenuModal } from '../src/components/HomeMenuModal';
 import { LogoutButton } from '../src/components/LogoutButton';
@@ -16,6 +17,7 @@ import { showBackupReminderNotification, showLowStockNotification } from '../src
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const {
     isSetupComplete,
     isUnlocked,
@@ -71,7 +73,7 @@ export default function HomeScreen() {
               {settings?.businessName || 'POS Mini'}
             </Text>
             <Text style={{ color: palette.textMuted }} className="mt-1 text-sm">
-              Today: {stats.todayTransactions} sales · {formatMoney(stats.todaySales, settings)}
+              Today: {stats.todayTransactions} {t('home.transactions')} · {formatMoney(stats.todaySales, settings)}
             </Text>
           </View>
           <View className="flex-row gap-2">
@@ -91,15 +93,15 @@ export default function HomeScreen() {
         </View>
 
         <View className="mb-4 flex-row flex-wrap gap-3">
-          <SummaryCard label="Today sales" value={formatMoney(stats.todaySales, settings)} subtitle={`${stats.todayTransactions} transactions`} />
-          <SummaryCard label="Products" value={String(stats.totalProducts)} subtitle={`${stats.lowStockCount} low stock`} />
+          <SummaryCard label={t('home.todaySales')} value={formatMoney(stats.todaySales, settings)} subtitle={`${stats.todayTransactions} ${t('home.transactions')}`} />
+          <SummaryCard label={t('home.products')} value={String(stats.totalProducts)} subtitle={`${stats.lowStockCount} ${t('home.lowStock')}`} />
         </View>
 
-        <Text style={{ color: palette.text }} className="mb-3 text-lg font-bold">Modules</Text>
+        <Text style={{ color: palette.text }} className="mb-3 text-lg font-bold">{t('home.modules')}</Text>
         <HomeGrid />
 
         <Pressable onPress={() => router.push('/(main)/sales/new')} className="mb-8 mt-5 rounded-xl py-4 active:opacity-90" style={{ backgroundColor: palette.primary }}>
-          <Text className="text-center text-lg font-semibold text-white">New sale</Text>
+          <Text className="text-center text-lg font-semibold text-white">{t('home.newSale')}</Text>
         </Pressable>
       </ScrollView>
       <HomeMenuModal visible={menuOpen} onClose={() => setMenuOpen(false)} onLock={lock} pinRequired={pinRequired} />

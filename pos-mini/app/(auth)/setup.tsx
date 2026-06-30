@@ -22,8 +22,6 @@ export default function SetupScreen() {
   const [email, setEmail] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [currencySymbol, setCurrencySymbol] = useState('$');
-  const [taxEnabled, setTaxEnabled] = useState(false);
-  const [taxRate, setTaxRate] = useState('0');
   const [pin, setPin] = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
   const [pinEnabled, setPinEnabled] = useState(false);
@@ -51,8 +49,6 @@ export default function SetupScreen() {
         email,
         currency,
         currencySymbol,
-        taxEnabled,
-        taxRate: Number(taxRate) || 0,
         pinEnabled,
       });
       if (pinEnabled) {
@@ -104,7 +100,7 @@ export default function SetupScreen() {
 
         {step === 2 ? (
           <View>
-            <Text className="mb-3 text-lg font-semibold text-app-text">Currency & tax</Text>
+            <Text className="mb-3 text-lg font-semibold text-app-text">Currency</Text>
             <Text className="mb-2 text-sm font-semibold text-app-text">Currency</Text>
             <SearchBar value={currencyQuery} onChangeText={setCurrencyQuery} placeholder="Search currencies..." />
             <View className="mb-4 flex-row flex-wrap gap-2">
@@ -125,19 +121,6 @@ export default function SetupScreen() {
                 </Pressable>
               ))}
             </View>
-            <View className="mb-3 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
-              <Text className="font-semibold text-app-text">Enable tax</Text>
-              <Switch value={taxEnabled} onValueChange={setTaxEnabled} />
-            </View>
-            {taxEnabled ? (
-              <FormField
-                label="Tax rate (%)"
-                value={taxRate}
-                onChangeText={setTaxRate}
-                placeholder="18"
-                keyboardType="decimal-pad"
-              />
-            ) : null}
           </View>
         ) : null}
 
