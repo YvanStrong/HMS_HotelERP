@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -33,16 +34,11 @@ import type { Category, CartItem, Customer, DiscountMode, DiscountType, HeldCart
 import { useAppStore } from '../../../src/store/appStore';
 import { useCartStore } from '../../../src/store/cartStore';
 import { parseScaleBarcode } from '../../../src/utils/barcode';
-import { cardStyle, colors } from '../../../src/constants/theme';
+import { getChipStyles } from '../../../src/constants/theme';
+import { useThemedStyles } from '../../../src/hooks/useTheme';
+import { useBusinessFeatures } from '../../../src/hooks/useBusinessFeatures';
 import { formatMoney } from '../../../src/utils/currency';
 import { roundMoney } from '../../../src/utils/calculations';
-
-function chipStyle(selected: boolean) {
-  return {
-    borderColor: selected ? colors.primary : colors.border,
-    backgroundColor: selected ? colors.primarySoft : colors.surface,
-  };
-}
 
 function buildPaymentMethods(prefs: PaymentMethodSettings): { method: SalePaymentInput['paymentMethod']; label: string }[] {
   const list: { method: SalePaymentInput['paymentMethod']; label: string }[] = [{ method: 'cash', label: 'Cash' }];
@@ -55,6 +51,10 @@ function buildPaymentMethods(prefs: PaymentMethodSettings): { method: SalePaymen
 export default function NewSaleScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { cardStyle, colors } = useThemedStyles();
+  const { hasModifiers } = useBusinessFeatures();
+  const insets = useSafeAreaInsets();
+  const chipStyle = (selected: boolean) => getChipStyles(colors, selected);
   const settings = useAppStore((s) => s.settings);
   const refreshStats = useAppStore((s) => s.refreshStats);
   const cart = useCartStore();
@@ -213,7 +213,7 @@ export default function NewSaleScreen() {
     unitPrice?: number,
     variant?: ProductVariant,
   ) => {
-    const modifierGroups = await listProductModifierGroups(product.id);
+    const modifierGroups = hasModifiers ? await listProductModifierGroups(product.id) : [];
     if (modifierGroups.length > 0) {
       setPendingAdd({ product, qty, unitPrice, variant });
       setPendingModifierGroups(modifierGroups);
@@ -588,7 +588,11 @@ export default function NewSaleScreen() {
             </View>
           )}
         </View>
-        <View className="mb-2 flex-row gap-2">
+        <View
+          className="border-t border-app-border pt-3"
+          style={{ paddingBottom: Math.max(insets.bottom, 20) }}
+        >
+          <View className="flex-row gap-2">
           <Pressable onPress={() => (items.length ? setShowPay(true) : Toast.show({ type: 'error', text1: t('sales.emptyCart') }))} className="flex-1 rounded-xl py-3" style={{ backgroundColor: colors.primary }}>
             <Text className="text-center font-semibold text-white">{t('sales.checkout')}</Text>
           </Pressable>
@@ -601,6 +605,7 @@ export default function NewSaleScreen() {
           <Pressable onPress={() => clear()} className="rounded-xl border border-app-border bg-app-surface px-3 py-3">
             <Text className="font-semibold text-app-text">Clear</Text>
           </Pressable>
+          </View>
         </View>
       </View>
 

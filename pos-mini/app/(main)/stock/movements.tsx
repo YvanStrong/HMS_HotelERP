@@ -11,7 +11,7 @@ import {
   type StockMovementFilters,
 } from '../../../src/repositories/stockRepository';
 import type { StockMovement } from '../../../src/types';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 
 const TYPE_FILTERS = [
   { key: 'sale', label: 'Sale' },
@@ -37,6 +37,7 @@ function movementTone(type: string): 'info' | 'success' | 'warning' | 'danger' |
 }
 
 export default function StockMovementsScreen() {
+  const colors = useThemeColors();
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
 
   const filters = useMemo<StockMovementFilters>(

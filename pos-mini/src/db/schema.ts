@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 7;
 
 export const CREATE_TABLES_V1 = `
 CREATE TABLE IF NOT EXISTS app_meta (
@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS app_meta (
 CREATE TABLE IF NOT EXISTS business_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   business_name TEXT NOT NULL DEFAULT '',
+  business_type TEXT NOT NULL DEFAULT 'retail_store',
   business_logo TEXT,
   tax_name TEXT NOT NULL DEFAULT 'Tax',
   address TEXT NOT NULL DEFAULT '',
@@ -242,6 +243,7 @@ CREATE TABLE IF NOT EXISTS shifts (
 CREATE TABLE IF NOT EXISTS staff (
   id TEXT PRIMARY KEY NOT NULL,
   name TEXT NOT NULL,
+  username TEXT NOT NULL DEFAULT '',
   role TEXT NOT NULL DEFAULT 'cashier',
   pin_hash TEXT NOT NULL,
   is_active INTEGER NOT NULL DEFAULT 1,

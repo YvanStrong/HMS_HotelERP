@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { ActivityIndicator, Pressable, Text } from 'react-native';
-import { colors, primaryButtonStyle } from '../constants/theme';
+import { usePrimaryButtonStyle, useThemeColors } from '../hooks/useTheme';
 
 type Variant = 'primary' | 'secondary' | 'danger';
 
@@ -14,12 +14,6 @@ type Props = {
   className?: string;
 };
 
-const VARIANTS: Record<Variant, { bg: string; text: string; border?: string }> = {
-  primary: { bg: colors.primary, text: colors.textInverse },
-  secondary: { bg: colors.surface, text: colors.text, border: colors.border },
-  danger: { bg: colors.dangerSoft, text: colors.danger, border: colors.danger },
-};
-
 export function ActionButton({
   label,
   onPress,
@@ -28,7 +22,14 @@ export function ActionButton({
   loading,
   className,
 }: Props) {
-  const v = VARIANTS[variant];
+  const colors = useThemeColors();
+  const primaryButtonStyle = usePrimaryButtonStyle();
+  const variants: Record<Variant, { bg: string; text: string; border?: string }> = {
+    primary: { bg: colors.primary, text: colors.textInverse },
+    secondary: { bg: colors.surface, text: colors.text, border: colors.border },
+    danger: { bg: colors.dangerSoft, text: colors.danger, border: colors.danger },
+  };
+  const v = variants[variant];
   return (
     <Pressable
       onPress={onPress}

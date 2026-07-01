@@ -7,7 +7,7 @@ import {
   listVariantsByProduct,
 } from '../repositories/variantRepository';
 import type { ProductVariant } from '../types';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 import { formatMoney } from '../utils/currency';
 import { useAppStore } from '../store/appStore';
 
@@ -16,6 +16,7 @@ type Props = {
 };
 
 export function ProductVariantsSection({ productId }: Props) {
+  const colors = useThemeColors();
   const settings = useAppStore((s) => s.settings);
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [name, setName] = useState('');

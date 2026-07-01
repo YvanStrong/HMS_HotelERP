@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 import { FormField } from './FormField';
 import { ProductPhoto } from './ProductPhoto';
 
@@ -12,6 +12,7 @@ type Props = {
 };
 
 export function ProductImagePicker({ value, onChange }: Props) {
+  const colors = useThemeColors();
   const [urlInput, setUrlInput] = useState(
     value && (value.startsWith('http://') || value.startsWith('https://')) ? value : '',
   );

@@ -48,9 +48,9 @@ export default function CategoriesScreen() {
             value={name}
             onChangeText={setName}
             placeholder="New category"
-            className="flex-1 border-2 border-black bg-white px-3 py-3 text-black"
+            className="flex-1 border-2 border-app-border bg-app-surface px-3 py-3 text-app-text"
           />
-          <Pressable onPress={() => void add()} className="border-2 border-black bg-app-primary px-4 justify-center">
+          <Pressable onPress={() => void add()} className="border-2 border-app-border bg-app-primary px-4 justify-center">
             <Text className="font-bold text-white">Add</Text>
           </Pressable>
         </View>
@@ -64,7 +64,7 @@ export default function CategoriesScreen() {
               keyExtractor={(item) => item.id}
               style={{ flex: 1 }}
               renderItem={({ item }) => (
-              <View className="mb-2 flex-row items-center justify-between border-2 border-black bg-white p-3">
+              <View className="mb-2 flex-row items-center justify-between border-2 border-app-border bg-app-surface p-3">
                 <CategoryBadge name={item.name} color={item.color} />
                 <Pressable onPress={() => void remove(item.id)}>
                   <Text className="font-bold text-red-600">Delete</Text>

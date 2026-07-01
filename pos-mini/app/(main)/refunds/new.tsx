@@ -14,7 +14,7 @@ import { getProductByBarcode, listProducts, searchProducts } from '../../../src/
 import { getSaleByInvoiceNumber, getSaleWithItems, listSales } from '../../../src/repositories/saleRepository';
 import type { Product, Sale } from '../../../src/types';
 import { useAppStore } from '../../../src/store/appStore';
-import { cardStyle, colors } from '../../../src/constants/theme';
+import { useThemedStyles } from '../../../src/hooks/useTheme';
 import { calculateSubtotal, roundMoney } from '../../../src/utils/calculations';
 import { formatMoney } from '../../../src/utils/currency';
 
@@ -30,6 +30,7 @@ type RefundLine = {
 type RefundMode = 'sale' | 'manual';
 
 export default function NewRefundScreen() {
+  const { cardStyle, colors } = useThemedStyles();
   const router = useRouter();
   const { saleId: presetSaleId } = useLocalSearchParams<{ saleId?: string }>();
   const settings = useAppStore((s) => s.settings);

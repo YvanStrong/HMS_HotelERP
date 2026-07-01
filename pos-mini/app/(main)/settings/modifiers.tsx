@@ -10,9 +10,10 @@ import {
   listModifierGroups,
   listModifierOptions,
 } from '../../../src/repositories/modifierRepository';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 
 export default function ModifiersSettingsScreen() {
+  const colors = useThemeColors();
   const { t } = useTranslation();
   const [groups, setGroups] = useState<Awaited<ReturnType<typeof listModifierGroups>>>([]);
   const [groupName, setGroupName] = useState('');

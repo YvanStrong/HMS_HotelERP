@@ -3,7 +3,6 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { differenceInDays } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { HomeGrid } from '../src/components/HomeGrid';
 import { HomeMenuModal } from '../src/components/HomeMenuModal';
@@ -12,55 +11,66 @@ import { SummaryCard } from '../src/components/SummaryCard';
 import { useAppStore } from '../src/store/appStore';
 import { getThemeColors } from '../src/constants/theme';
 import { formatMoney } from '../src/utils/currency';
-import { getLastBackupAt } from '../src/repositories/metaRepository';
-import { showBackupReminderNotification, showLowStockNotification } from '../src/notifications/alerts';
+import { showLowStockNotification, maybeShowBackupReminder } from '../src/notifications/alerts';
+import { useAndroidBackHandler } from '../src/hooks/useAndroidBackHandler';
 
 export default function HomeScreen() {
   const router = useRouter();
+  useAndroidBackHandler();
   const { t } = useTranslation();
   const {
     isSetupComplete,
     isUnlocked,
     pinRequired,
+    staffSignInRequired,
     settings,
     stats,
     themeMode,
     refreshStats,
     lock,
+    currentStaff,
   } = useAppStore();
   const palette = getThemeColors(themeMode);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const switchStaff = async () => {
+    await lock();
+    const state = useAppStore.getState();
+    if (state.staffSignInRequired) {
+      router.replace('/(auth)/staff');
+    } else if (state.pinRequired && !state.isUnlocked) {
+      router.replace('/(auth)/pin');
+    }
+  };
 
   useEffect(() => {
     if (!isSetupComplete) {
       router.replace('/(auth)/setup');
       return;
     }
+    if (staffSignInRequired) {
+      router.replace('/(auth)/staff');
+      return;
+    }
     if (pinRequired && !isUnlocked) {
       router.replace('/(auth)/pin');
     }
-  }, [isSetupComplete, isUnlocked, pinRequired, router]);
+  }, [isSetupComplete, isUnlocked, pinRequired, staffSignInRequired, router]);
 
   useFocusEffect(
     useCallback(() => {
-      if (!isSetupComplete || (pinRequired && !isUnlocked)) return;
+      if (!isSetupComplete || staffSignInRequired || (pinRequired && !isUnlocked)) return;
       void refreshStats().then(async () => {
         const s = useAppStore.getState().stats;
         if (settings?.lowStockAlert && s.lowStockCount > 0) {
           await showLowStockNotification(s.lowStockCount);
         }
-        const lastBackup = await getLastBackupAt();
-        if (lastBackup) {
-          const days = differenceInDays(new Date(), new Date(lastBackup));
-          await showBackupReminderNotification(days);
-        } else {
-          await showBackupReminderNotification(8);
-        }
+        await maybeShowBackupReminder();
       });
-    }, [isSetupComplete, isUnlocked, pinRequired, refreshStats, settings?.lowStockAlert]),
+    }, [isSetupComplete, isUnlocked, pinRequired, staffSignInRequired, refreshStats, settings?.lowStockAlert]),
   );
 
-  if (!isSetupComplete || (pinRequired && !isUnlocked)) {
+  if (!isSetupComplete || staffSignInRequired || (pinRequired && !isUnlocked)) {
     return null;
   }
 
@@ -83,8 +93,12 @@ export default function HomeScreen() {
             <Pressable onPress={() => setMenuOpen(true)} className="rounded-lg border p-2" style={{ borderColor: palette.border, backgroundColor: palette.surface }}>
               <Ionicons name="ellipsis-vertical" size={22} color={palette.primary} />
             </Pressable>
-            {pinRequired ? (
-              <Pressable onPress={lock} className="rounded-lg border p-2" style={{ borderColor: palette.border, backgroundColor: palette.surface }}>
+            {currentStaff ? (
+              <Pressable onPress={() => void switchStaff()} className="rounded-lg border p-2" style={{ borderColor: palette.border, backgroundColor: palette.surface }}>
+                <Ionicons name="people" size={22} color={palette.primary} />
+              </Pressable>
+            ) : pinRequired ? (
+              <Pressable onPress={() => void switchStaff()} className="rounded-lg border p-2" style={{ borderColor: palette.border, backgroundColor: palette.surface }}>
                 <Ionicons name="lock-closed" size={22} color={palette.primary} />
               </Pressable>
             ) : null}
@@ -104,7 +118,7 @@ export default function HomeScreen() {
           <Text className="text-center text-lg font-semibold text-white">{t('home.newSale')}</Text>
         </Pressable>
       </ScrollView>
-      <HomeMenuModal visible={menuOpen} onClose={() => setMenuOpen(false)} onLock={lock} pinRequired={pinRequired} />
+      <HomeMenuModal visible={menuOpen} onClose={() => setMenuOpen(false)} onLock={() => void switchStaff()} pinRequired={Boolean(pinRequired || currentStaff)} />
     </SafeAreaView>
   );
 }

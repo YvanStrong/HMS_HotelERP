@@ -1,11 +1,12 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { differenceInDays } from 'date-fns';
-import { countLowStock } from '../repositories/productRepository';
+import { countLowStock, countProducts } from '../repositories/productRepository';
 import { getLastBackupAt } from '../repositories/metaRepository';
 
 const BACKUP_REMINDER_ID = 'pos-mini-backup-reminder';
 const LOW_STOCK_CHECK_ID = 'pos-mini-low-stock-weekly';
+const BACKUP_STALE_DAYS = 7;
 
 let sessionLowStockShown = false;
 let sessionBackupShown = false;
@@ -43,15 +44,40 @@ export async function showLowStockNotification(count: number): Promise<void> {
   });
 }
 
-export async function showBackupReminderNotification(daysSince: number): Promise<void> {
-  if (sessionBackupShown || daysSince < 7) return;
+/**
+ * Show a backup reminder only when we have real data:
+ * - Last backup exists and is older than BACKUP_STALE_DAYS, or
+ * - Never backed up but the business has products (honest message, not fake days).
+ */
+export async function maybeShowBackupReminder(): Promise<void> {
+  if (sessionBackupShown) return;
   const ok = await ensureNotificationPermissions();
   if (!ok) return;
+
+  const lastBackup = await getLastBackupAt();
+
+  if (lastBackup) {
+    const days = differenceInDays(new Date(), new Date(lastBackup));
+    if (days < BACKUP_STALE_DAYS) return;
+    sessionBackupShown = true;
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Backup reminder',
+        body: `Your last backup was ${days} day${days === 1 ? '' : 's'} ago. Export a backup in Settings.`,
+      },
+      trigger: null,
+    });
+    return;
+  }
+
+  const productCount = await countProducts();
+  if (productCount === 0) return;
+
   sessionBackupShown = true;
   await Notifications.scheduleNotificationAsync({
     content: {
       title: 'Backup reminder',
-      body: `Last backup was ${daysSince} days ago. Export a backup in Settings.`,
+      body: 'No backup saved yet. Export a backup in Settings to protect your products and sales.',
     },
     trigger: null,
   });
@@ -76,19 +102,8 @@ export async function registerBackgroundAlerts(): Promise<void> {
   if (!ok) return;
   backgroundRegistered = true;
 
+  // No daily backup nag — reminder is evaluated on app open from real backup metadata.
   await cancelScheduled(BACKUP_REMINDER_ID);
-  await Notifications.scheduleNotificationAsync({
-    identifier: BACKUP_REMINDER_ID,
-    content: {
-      title: 'Backup reminder',
-      body: 'Export a backup in Settings to protect your data.',
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DAILY,
-      hour: 9,
-      minute: 0,
-    },
-  });
 
   await cancelScheduled(LOW_STOCK_CHECK_ID);
   await Notifications.scheduleNotificationAsync({
@@ -115,12 +130,10 @@ export async function runScheduledLowStockCheck(): Promise<void> {
 }
 
 export async function runScheduledBackupCheck(): Promise<void> {
-  if (sessionBackupShown) return;
-  const lastBackup = await getLastBackupAt();
-  if (!lastBackup) {
-    await showBackupReminderNotification(8);
-    return;
-  }
-  const days = differenceInDays(new Date(), new Date(lastBackup));
-  await showBackupReminderNotification(days);
+  await maybeShowBackupReminder();
+}
+
+// Keep import compatibility if referenced elsewhere
+export async function showBackupReminderNotification(_daysSince: number): Promise<void> {
+  await maybeShowBackupReminder();
 }

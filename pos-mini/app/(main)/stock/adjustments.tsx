@@ -61,30 +61,30 @@ export default function StockAdjustmentsScreen() {
         <SearchBar value={query} onChangeText={setQuery} placeholder="Search products..." />
 
         {selected ? (
-          <View className="mb-4 border-2 border-black bg-white p-4">
-            <Text className="font-bold text-black">{selected.name}</Text>
+          <View className="mb-4 border-2 border-app-border bg-app-surface p-4">
+            <Text className="font-bold text-app-text">{selected.name}</Text>
             <View className="mt-2">
               <StockBadge qty={selected.stockQty} minStock={selected.minStock} unit={selected.unit} />
             </View>
-            <Text className="mt-3 font-bold text-black">Quantity change (+/-)</Text>
+            <Text className="mt-3 font-bold text-app-text">Quantity change (+/-)</Text>
             <TextInput
               value={qtyChange}
               onChangeText={setQtyChange}
               placeholder="e.g. 5 or -3"
               keyboardType="numbers-and-punctuation"
-              className="mt-1 border-2 border-black bg-white px-3 py-3 text-black"
+              className="mt-1 border-2 border-app-border bg-app-surface px-3 py-3 text-app-text"
             />
             <TextInput
               value={reason}
               onChangeText={setReason}
               placeholder="Reason"
-              className="mt-2 border-2 border-black bg-white px-3 py-3 text-black"
+              className="mt-2 border-2 border-app-border bg-app-surface px-3 py-3 text-app-text"
             />
             <View className="mt-3 flex-row gap-2">
-              <Pressable onPress={() => setSelected(null)} className="flex-1 border-2 border-black py-3">
-                <Text className="text-center font-bold text-black">Cancel</Text>
+              <Pressable onPress={() => setSelected(null)} className="flex-1 border-2 border-app-border py-3">
+                <Text className="text-center font-bold text-app-text">Cancel</Text>
               </Pressable>
-              <Pressable onPress={() => void applyAdjustment()} className="flex-1 border-2 border-black bg-app-primary py-3">
+              <Pressable onPress={() => void applyAdjustment()} className="flex-1 border-2 border-app-border bg-app-primary py-3">
                 <Text className="text-center font-bold text-white">Apply</Text>
               </Pressable>
             </View>
@@ -94,10 +94,10 @@ export default function StockAdjustmentsScreen() {
             <Pressable
               key={p.id}
               onPress={() => setSelected(p)}
-              className="mb-2 border-2 border-black bg-white p-3"
+              className="mb-2 border-2 border-app-border bg-app-surface p-3"
             >
               <View className="flex-row items-center justify-between">
-                <Text className="font-bold text-black">{p.name}</Text>
+                <Text className="font-bold text-app-text">{p.name}</Text>
                 <StockBadge qty={p.stockQty} minStock={p.minStock} unit={p.unit} />
               </View>
             </Pressable>

@@ -10,9 +10,10 @@ import {
   type ReceiptDisplayPrefs,
 } from '../../../src/repositories/metaRepository';
 import { useAppStore } from '../../../src/store/appStore';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 
 export default function ReceiptSettingsScreen() {
+  const colors = useThemeColors();
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const [receiptHeader, setReceiptHeader] = useState('');

@@ -4,9 +4,10 @@ import { useFocusEffect } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import { KeyboardFormScroll } from '../../../src/components/KeyboardFormScroll';
 import { useAppStore } from '../../../src/store/appStore';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 
 export default function AlertsSettingsScreen() {
+  const colors = useThemeColors();
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const [lowStockAlert, setLowStockAlert] = useState(true);
@@ -39,7 +40,7 @@ export default function AlertsSettingsScreen() {
         <Switch value={lowStockAlert} onValueChange={setLowStockAlert} />
       </View>
       <Text className="mb-4 text-sm text-app-muted">
-        Backup reminders appear automatically if your last backup was more than 7 days ago.
+        Backup reminders use your real last backup date (7+ days old), or a one-time nudge if you have products but never backed up.
       </Text>
       <Pressable onPress={() => void save()} className="rounded-xl py-4" style={{ backgroundColor: colors.primary }}>
         <Text className="text-center font-semibold text-white">Save</Text>

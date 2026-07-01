@@ -8,7 +8,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 import { KEYBOARD_HEADER_OFFSET } from '../navigation/headerOptions';
 
 type Props = {
@@ -26,6 +26,7 @@ export function KeyboardFormScroll({
   contentContainerStyle,
   keyboardVerticalOffset,
 }: Props) {
+  const colors = useThemeColors();
   const offset =
     keyboardVerticalOffset ?? (Platform.OS === 'ios' ? KEYBOARD_HEADER_OFFSET : 0);
 
@@ -64,6 +65,7 @@ export function KeyboardAvoidingScreen({
   style,
   keyboardVerticalOffset,
 }: ScreenProps) {
+  const colors = useThemeColors();
   const offset =
     keyboardVerticalOffset ?? (Platform.OS === 'ios' ? KEYBOARD_HEADER_OFFSET : 0);
 

@@ -53,6 +53,7 @@
     "@types/react": "~19.1.10",
     "@types/uuid": "^10.0.0",
     "babel-preset-expo": "~54.0.10",
+    "eas-cli": "^16.0.0",
     "typescript": "~5.9.2"
   },
   "scripts": {
@@ -62,7 +63,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "build:apk": "eas build --platform android --profile preview"
+    "build:apk": "npm run build:apk:cloud",
+    "build:apk:cloud": "eas build --platform android --profile preview --non-interactive",
+    "build:apk:local": "eas build --platform android --profile preview --local --non-interactive"
   },
   "private": true
 }

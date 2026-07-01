@@ -14,9 +14,10 @@ import {
   testPrint,
   type PrinterDevice,
 } from '../../../src/printing/PrinterService';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 
 export default function PrinterSettingsScreen() {
+  const colors = useThemeColors();
   const [connectedAddress, setConnectedAddress] = useState<string | null>(null);
   const [connectedName, setConnectedName] = useState<string | null>(null);
   const [devices, setDevices] = useState<PrinterDevice[]>([]);
@@ -96,7 +97,7 @@ export default function PrinterSettingsScreen() {
 
   return (
     <KeyboardFormScroll contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8 }}>
-      <Text className="mb-4 text-xl font-bold text-black">Bluetooth Printer</Text>
+      <Text className="mb-4 text-xl font-bold text-app-text">Bluetooth Printer</Text>
 
       <View className="mb-4 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
         <View className="flex-1 pr-3">
@@ -107,19 +108,19 @@ export default function PrinterSettingsScreen() {
       </View>
 
       {!nativeAvailable ? (
-        <View className="mb-4 border-2 border-black bg-white p-4">
-          <Text className="font-bold text-black">Expo Go mode</Text>
+        <View className="mb-4 border-2 border-app-border bg-app-surface p-4">
+          <Text className="font-bold text-app-text">Expo Go mode</Text>
           <Text className="mt-1 text-sm text-gray-600">
             Bluetooth printing requires a custom dev build with react-native-thermal-receipt-printer-image-qr.
           </Text>
         </View>
       ) : null}
 
-      <View className="mb-4 border-2 border-black bg-white p-4">
-        <Text className="font-bold text-black">Connected printer</Text>
+      <View className="mb-4 border-2 border-app-border bg-app-surface p-4">
+        <Text className="font-bold text-app-text">Connected printer</Text>
         {connectedAddress ? (
           <>
-            <Text className="mt-1 text-black">{connectedName ?? 'Printer'}</Text>
+            <Text className="mt-1 text-app-text">{connectedName ?? 'Printer'}</Text>
             <Text className="text-sm text-gray-600">{connectedAddress}</Text>
           </>
         ) : (
@@ -127,13 +128,13 @@ export default function PrinterSettingsScreen() {
         )}
       </View>
 
-      <Pressable onPress={() => void handleScan()} disabled={scanning} className="mb-3 border-2 border-black bg-app-primary py-3">
+      <Pressable onPress={() => void handleScan()} disabled={scanning} className="mb-3 border-2 border-app-border bg-app-primary py-3">
         {scanning ? <ActivityIndicator color="#fff" /> : <Text className="text-center font-bold text-white">Scan for Printers</Text>}
       </Pressable>
 
       {devices.map((device) => (
-        <Pressable key={device.address} onPress={() => void handleConnect(device)} disabled={connecting === device.address} className="mb-2 border-2 border-black bg-white p-3">
-          <Text className="font-bold text-black">{device.name}</Text>
+        <Pressable key={device.address} onPress={() => void handleConnect(device)} disabled={connecting === device.address} className="mb-2 border-2 border-app-border bg-app-surface p-3">
+          <Text className="font-bold text-app-text">{device.name}</Text>
           <Text className="text-sm text-gray-600">{device.address}</Text>
         </Pressable>
       ))}
@@ -143,8 +144,8 @@ export default function PrinterSettingsScreen() {
           <Pressable onPress={() => void handleTestPrint()} disabled={printing} className="mb-3 mt-2 rounded-xl py-3" style={{ backgroundColor: colors.primary }}>
             <Text className="text-center font-bold text-white">{printing ? 'Printing...' : 'Test Print'}</Text>
           </Pressable>
-          <Pressable onPress={() => void handleDisconnect()} className="border-2 border-black bg-white py-3">
-            <Text className="text-center font-bold text-black">Disconnect</Text>
+          <Pressable onPress={() => void handleDisconnect()} className="border-2 border-app-border bg-app-surface py-3">
+            <Text className="text-center font-bold text-app-text">Disconnect</Text>
           </Pressable>
         </>
       ) : null}

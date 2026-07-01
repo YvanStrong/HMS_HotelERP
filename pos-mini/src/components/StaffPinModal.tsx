@@ -1,6 +1,6 @@
 import { Modal, Pressable, Text, View } from 'react-native';
 import { NumericKeypad } from './NumericKeypad';
-import { colors, primaryButtonStyle } from '../constants/theme';
+import { usePrimaryButtonStyle } from '../hooks/useTheme';
 
 type Props = {
   visible: boolean;
@@ -12,6 +12,7 @@ type Props = {
 };
 
 export function StaffPinModal({ visible, staffName, pin, onPinChange, onConfirm, onCancel }: Props) {
+  const primaryButtonStyle = usePrimaryButtonStyle();
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View className="flex-1 justify-end bg-black/40">

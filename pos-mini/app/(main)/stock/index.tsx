@@ -12,9 +12,10 @@ import {
   type ProductListFilters,
 } from '../../../src/repositories/productRepository';
 import type { Product } from '../../../src/types';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 
 export default function StockListScreen() {
+  const colors = useThemeColors();
   const router = useRouter();
   const [lowStockOnly, setLowStockOnly] = useState(false);
 

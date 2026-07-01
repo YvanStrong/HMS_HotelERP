@@ -4,12 +4,13 @@ import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { DateRangePicker } from '../../../src/components/DateRangePicker';
 import { ScreenContainer } from '../../../src/components/ScreenContainer';
 import { SummaryCard } from '../../../src/components/SummaryCard';
-import { cardStyle } from '../../../src/constants/theme';
+import { useCardStyle } from '../../../src/hooks/useTheme';
 import { useAppStore } from '../../../src/store/appStore';
 import { formatMoney } from '../../../src/utils/currency';
 import { getPresetRange, getRefundsReport, type ReportDateRange } from '../../../src/utils/reports';
 
-export default function RefundsReportScreen() {
+export default function RefundsReportScreen() {
+  const cardStyle = useCardStyle();
   const settings = useAppStore((s) => s.settings);
   const { preset } = useLocalSearchParams<{ preset?: string }>();
   const initialPreset = (preset === 'week' || preset === 'month' ? preset : 'today') as 'today' | 'week' | 'month';

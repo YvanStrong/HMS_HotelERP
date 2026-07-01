@@ -78,6 +78,21 @@ export async function exportAndShareJsonBackup(): Promise<void> {
   await shareFile(path);
 }
 
+/** Opens the system share sheet so the user can pick Google Drive (or any cloud app). */
+export async function uploadBackupToGoogleDrive(): Promise<void> {
+  const path = await exportJsonBackup();
+  await setLastBackupAt(nowIso());
+  const canShare = await Sharing.isAvailableAsync();
+  if (!canShare) {
+    throw new Error('Sharing is not available on this device');
+  }
+  await Sharing.shareAsync(path, {
+    mimeType: 'application/json',
+    dialogTitle: 'Save backup to Google Drive',
+    UTI: 'public.json',
+  });
+}
+
 export async function exportDatabaseFile(): Promise<string> {
   const sqliteDir = `${FileSystem.documentDirectory}SQLite/`;
   const dbPath = `${sqliteDir}posmini.db`;

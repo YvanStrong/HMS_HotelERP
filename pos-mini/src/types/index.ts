@@ -3,15 +3,19 @@ export type StaffRole = 'cashier' | 'manager';
 export type ThemeMode = 'light' | 'dark';
 export type DiscountMode = 'off' | 'rule' | 'manual';
 export type SaleStatus = 'completed' | 'voided' | 'pending';
+export type SaleRefundStatus = 'none' | 'partial' | 'refunded';
 export type PurchaseStatus = 'completed' | 'pending' | 'cancelled';
 export type RefundStatus = 'completed' | 'pending' | 'cancelled';
 export type StockMovementType = 'sale' | 'purchase' | 'refund' | 'adjustment' | 'return';
 export type DebtType = 'debt' | 'payment';
 export type DiscountType = 'percent' | 'fixed';
 
+import type { BusinessTypeId } from '../constants/businessTypes';
+
 export interface BusinessSettings {
   id: number;
   businessName: string;
+  businessType: BusinessTypeId;
   businessLogo: string | null;
   taxName: string;
   address: string;
@@ -100,6 +104,7 @@ export interface Sale {
   changeAmount: number;
   paymentMethod: PaymentMethod;
   status: SaleStatus;
+  refundStatus?: SaleRefundStatus;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -249,6 +254,7 @@ export interface Shift {
 export interface Staff {
   id: string;
   name: string;
+  username: string;
   role: StaffRole;
   pinHash: string;
   isActive: boolean;

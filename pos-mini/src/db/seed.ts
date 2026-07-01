@@ -22,10 +22,10 @@ export async function seedDefaultData(db: SQLiteDatabase): Promise<void> {
 
   await db.runAsync(
     `INSERT OR IGNORE INTO business_settings (
-      id, business_name, business_logo, tax_name, address, phone, email, currency, currency_symbol,
+      id, business_name, business_type, business_logo, tax_name, address, phone, email, currency, currency_symbol,
       tax_enabled, tax_rate, tax_inclusive, receipt_header, receipt_footer,
       pin_enabled, low_stock_alert, created_at, updated_at
-    ) VALUES (1, '', NULL, 'Tax', '', '', '', 'USD', '$', 0, 0, 0, '', 'Thank you!', 0, 1, ?, ?)`,
+    ) VALUES (1, '', 'retail_store', NULL, 'Tax', '', '', '', 'USD', '$', 0, 0, 0, '', 'Thank you!', 0, 1, ?, ?)`,
     [now, now],
   );
 

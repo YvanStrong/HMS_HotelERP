@@ -5,7 +5,7 @@ import { ProductCard } from './ProductCard';
 import type { Product } from '../types';
 import { useAppStore } from '../store/appStore';
 import { formatMoney } from '../utils/currency';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 
 type Props = {
   product: Product;
@@ -15,6 +15,7 @@ type Props = {
 };
 
 export function SwipeableProductRow({ product, onPress, onEditPrice, onDeactivate }: Props) {
+  const colors = useThemeColors();
   const settings = useAppStore((s) => s.settings);
   const margin =
     product.sellPrice > 0

@@ -10,11 +10,12 @@ import { closeShift, getOpenShift, getZReportForShift, openShift } from '../../.
 import { printReceiptText } from '../../../src/printing/PrinterService';
 import type { Shift } from '../../../src/types';
 import { useAppStore } from '../../../src/store/appStore';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 import { formatMoney } from '../../../src/utils/currency';
 import { buildZReportText } from '../../../src/utils/zReport';
 
 export default function ShiftScreen() {
+  const colors = useThemeColors();
   const settings = useAppStore((s) => s.settings);
   const [shift, setShift] = useState<Shift | null>(null);
   const [openingCash, setOpeningCash] = useState('0');

@@ -1,6 +1,6 @@
 import { Modal, Pressable, ScrollView, Text, View, KeyboardAvoidingView, Platform } from 'react-native';
 import { FormField } from './FormField';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 
 export type EntityFormValues = {
   name: string;
@@ -29,6 +29,7 @@ export function EntityFormModal({
   onCancel,
   saveLabel = 'Save',
 }: Props) {
+  const colors = useThemeColors();
   const set = (key: keyof EntityFormValues, value: string) => {
     onChange({ ...values, [key]: value });
   };

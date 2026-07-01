@@ -11,11 +11,12 @@ import {
   type ProductListFilters,
 } from '../../../src/repositories/productRepository';
 import type { Product } from '../../../src/types';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 
 const filters: ProductListFilters = { activeOnly: true, trackStockOnly: true, lowStockOnly: true };
 
 export default function StockAlertsScreen() {
+  const colors = useThemeColors();
   const router = useRouter();
 
   const fetchPage = useCallback(

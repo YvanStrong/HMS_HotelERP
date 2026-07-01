@@ -12,16 +12,19 @@ import { deleteProduct, getProductById, updateProduct } from '../../../src/repos
 import type { Category, Product } from '../../../src/types';
 import { formatMoney } from '../../../src/utils/currency';
 import { useAppStore } from '../../../src/store/appStore';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 import { ProductVariantsSection } from '../../../src/components/ProductVariantsSection';
 import { ProductModifierGroupsSection } from '../../../src/components/ProductModifierGroupsSection';
 import { UnitPicker } from '../../../src/components/UnitPicker';
 import { persistProductImage } from '../../../src/utils/productImage';
+import { useBusinessFeatures } from '../../../src/hooks/useBusinessFeatures';
 
 export default function ProductDetailScreen() {
+  const colors = useThemeColors();
   const { productId } = useLocalSearchParams<{ productId: string }>();
   const router = useRouter();
   const settings = useAppStore((s) => s.settings);
+  const { hasModifiers } = useBusinessFeatures();
   const [product, setProduct] = useState<Product | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -93,8 +96,8 @@ export default function ProductDetailScreen() {
         categoryId,
         costPrice: Number(costPrice) || 0,
         sellPrice: Number(sellPrice) || 0,
-        stockQty: Number(stockQty) || 0,
-        minStock: Number(minStock) || 0,
+        stockQty: trackStock ? Number(stockQty) || 0 : 0,
+        minStock: trackStock ? Number(minStock) || 0 : 0,
         unit,
         isTaxable,
         taxRate: Number(taxRate) || 0,
@@ -163,8 +166,16 @@ export default function ProductDetailScreen() {
             Profit margin: {margin.pct.toFixed(1)}% ({formatMoney(margin.amount, settings)} per unit)
           </Text>
         </View>
-        <FormField label="Stock quantity" value={stockQty} onChangeText={setStockQty} keyboardType="decimal-pad" />
-        <FormField label="Minimum stock alert" value={minStock} onChangeText={setMinStock} keyboardType="decimal-pad" />
+        <View className="mb-4 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
+          <Text className="font-semibold text-app-text">Track stock</Text>
+          <Switch value={trackStock} onValueChange={setTrackStock} />
+        </View>
+        {trackStock ? (
+          <>
+            <FormField label="Stock quantity" value={stockQty} onChangeText={setStockQty} keyboardType="decimal-pad" />
+            <FormField label="Minimum stock alert" value={minStock} onChangeText={setMinStock} keyboardType="decimal-pad" />
+          </>
+        ) : null}
         <UnitPicker value={unit} onChange={setUnit} />
         <View className="mb-4 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
           <Text className="font-semibold text-app-text">Taxable item?</Text>
@@ -173,12 +184,8 @@ export default function ProductDetailScreen() {
         {isTaxable ? (
           <FormField label="Tax rate (%)" value={taxRate} onChangeText={setTaxRate} keyboardType="decimal-pad" placeholder="18" />
         ) : null}
-        <View className="mb-4 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
-          <Text className="font-semibold text-app-text">Track stock</Text>
-          <Switch value={trackStock} onValueChange={setTrackStock} />
-        </View>
         <ProductVariantsSection productId={productId} />
-        <ProductModifierGroupsSection productId={productId} />
+        {hasModifiers ? <ProductModifierGroupsSection productId={productId} /> : null}
         <Pressable
           onPress={() => void save()}
           className="rounded-xl py-4"

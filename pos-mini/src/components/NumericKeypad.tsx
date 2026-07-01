@@ -1,5 +1,5 @@
 import { Pressable, Text, View } from 'react-native';
-import { cardStyle, colors, primaryButtonStyle } from '../constants/theme';
+import { useCardStyle, usePrimaryButtonStyle, useThemeColors } from '../hooks/useTheme';
 
 type Props = {
   value: string;
@@ -11,6 +11,10 @@ type Props = {
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
 
 export function NumericKeypad({ value, onChange, onSubmit, maxLength = 12 }: Props) {
+  const cardStyle = useCardStyle();
+  const palette = useThemeColors();
+  const primaryButtonStyle = usePrimaryButtonStyle();
+
   const handleKey = (key: string) => {
     if (key === '⌫') {
       onChange(value.slice(0, -1));
@@ -32,15 +36,15 @@ export function NumericKeypad({ value, onChange, onSubmit, maxLength = 12 }: Pro
             key={key}
             onPress={() => handleKey(key)}
             className="w-1/3 items-center justify-center border border-app-border bg-app-surface py-4 active:opacity-80"
-            style={({ pressed }) => (pressed ? { backgroundColor: colors.primarySoft } : undefined)}
+            style={({ pressed }) => (pressed ? { backgroundColor: palette.primarySoft } : undefined)}
           >
             <Text className="text-xl font-bold text-app-text">{key}</Text>
           </Pressable>
         ))}
       </View>
       {onSubmit ? (
-        <Pressable onPress={onSubmit} className="mt-3 rounded-xl py-4" style={primaryButtonStyle}>
-          <Text className="text-center text-lg font-semibold text-white">Done</Text>
+        <Pressable onPress={onSubmit} className="mt-3 rounded-xl py-3" style={primaryButtonStyle}>
+          <Text className="text-center font-semibold text-white">Done</Text>
         </Pressable>
       ) : null}
     </View>

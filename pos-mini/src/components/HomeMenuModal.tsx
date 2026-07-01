@@ -1,7 +1,7 @@
 import { Modal, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 
 type Props = {
   visible: boolean;
@@ -11,6 +11,7 @@ type Props = {
 };
 
 export function HomeMenuModal({ visible, onClose, onLock, pinRequired }: Props) {
+  const colors = useThemeColors();
   const router = useRouter();
 
   const go = (path: string) => {
@@ -22,16 +23,16 @@ export function HomeMenuModal({ visible, onClose, onLock, pinRequired }: Props) 
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable className="flex-1 bg-black/40" onPress={onClose}>
         <View className="absolute right-4 top-16 min-w-[220px] rounded-xl border border-app-border bg-app-surface p-2 shadow-lg">
-          {pinRequired && onLock ? (
+            {pinRequired || onLock ? (
             <Pressable
               onPress={() => {
                 onClose();
-                onLock();
+                onLock?.();
               }}
               className="flex-row items-center gap-3 rounded-lg px-4 py-3 active:bg-app-bg"
             >
               <Ionicons name="lock-closed" size={20} color={colors.primary} />
-              <Text className="font-medium text-app-text">Lock app</Text>
+              <Text className="font-medium text-app-text">Lock / switch staff</Text>
             </Pressable>
           ) : null}
           <Pressable

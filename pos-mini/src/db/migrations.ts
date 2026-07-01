@@ -179,6 +179,60 @@ async function migrateToV5(db: SQLiteDatabase): Promise<void> {
   await safeAlter(db, 'ALTER TABLE products ADD COLUMN tax_inclusive INTEGER NOT NULL DEFAULT 0');
 }
 
+async function migrateToV6(db: SQLiteDatabase): Promise<void> {
+  await safeAlter(
+    db,
+    "ALTER TABLE business_settings ADD COLUMN business_type TEXT NOT NULL DEFAULT 'retail_store'",
+  );
+}
+
+async function ensureStaffUsernameColumn(db: SQLiteDatabase): Promise<void> {
+  const table = await db.getFirstAsync<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'staff'",
+  );
+  if (!table) return;
+
+  const cols = await db.getAllAsync<{ name: string }>('PRAGMA table_info(staff)');
+  const hasUsername = cols.some((c) => c.name === 'username');
+  if (!hasUsername) {
+    await db.execAsync("ALTER TABLE staff ADD COLUMN username TEXT NOT NULL DEFAULT ''");
+  }
+
+  const rows = await db.getAllAsync<{ id: string; name: string; username: string | null }>(
+    'SELECT id, name, username FROM staff',
+  );
+  for (const row of rows) {
+    if (row.username?.trim()) continue;
+    const base =
+      row.name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '.')
+        .replace(/^\.+|\.+$/g, '') || 'user';
+    const username = `${base}.${row.id.slice(0, 4)}`;
+    await db.runAsync('UPDATE staff SET username = ? WHERE id = ?', [username, row.id]);
+  }
+}
+
+async function ensureBusinessTypeColumn(db: SQLiteDatabase): Promise<void> {
+  const cols = await db.getAllAsync<{ name: string }>('PRAGMA table_info(business_settings)');
+  if (!cols.some((c) => c.name === 'business_type')) {
+    await db.execAsync(
+      "ALTER TABLE business_settings ADD COLUMN business_type TEXT NOT NULL DEFAULT 'retail_store'",
+    );
+  }
+}
+
+/** Idempotent fixes when schema_version advanced before a column migration ran. */
+async function repairSchema(db: SQLiteDatabase): Promise<void> {
+  await ensureBusinessTypeColumn(db);
+  await ensureStaffUsernameColumn(db);
+}
+
+async function migrateToV7(db: SQLiteDatabase): Promise<void> {
+  await ensureStaffUsernameColumn(db);
+}
+
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {
   let current = await getSchemaVersion(db);
 
@@ -212,6 +266,20 @@ export async function runMigrations(db: SQLiteDatabase): Promise<void> {
     current = 5;
     await setSchemaVersion(db, 5);
   }
+
+  if (current < 6) {
+    await migrateToV6(db);
+    current = 6;
+    await setSchemaVersion(db, 6);
+  }
+
+  if (current < 7) {
+    await migrateToV7(db);
+    current = 7;
+    await setSchemaVersion(db, 7);
+  }
+
+  await repairSchema(db);
 
   if (current < SCHEMA_VERSION) {
     await setSchemaVersion(db, SCHEMA_VERSION);

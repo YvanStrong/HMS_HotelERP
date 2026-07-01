@@ -5,9 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { NumericKeypad } from '../../src/components/NumericKeypad';
 import { useAppStore } from '../../src/store/appStore';
-import { colors, primaryButtonStyle } from '../../src/constants/theme';
+import { usePrimaryButtonStyle, useThemeColors } from '../../src/hooks/useTheme';
 import { setPinHash, verifyPin } from '../../src/utils/pin';
-import { staffCount } from '../../src/repositories/staffRepository';
 import {
   getRecoveryQuestion,
   hasPinRecovery,
@@ -18,6 +17,8 @@ type Mode = 'enter' | 'forgot' | 'reset' | 'confirm';
 
 export default function PinScreen() {
   const router = useRouter();
+  const colors = useThemeColors();
+  const primaryButtonStyle = usePrimaryButtonStyle();
   const unlock = useAppStore((s) => s.unlock);
   const [mode, setMode] = useState<Mode>('enter');
   const [pin, setPin] = useState('');
@@ -27,9 +28,8 @@ export default function PinScreen() {
   const [recoveryQuestion, setRecoveryQuestion] = useState('');
   const [forgotAnswer, setForgotAnswer] = useState('');
 
-  const routeAfterUnlock = async () => {
-    const count = await staffCount();
-    router.replace((count > 0 ? '/(auth)/staff' : '/') as never);
+  const routeAfterUnlock = () => {
+    router.replace('/');
   };
 
   useEffect(() => {

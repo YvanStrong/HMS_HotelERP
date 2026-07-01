@@ -1,19 +1,21 @@
 import { Text, View } from 'react-native';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 
 type Props = {
   name: string;
   color?: string;
 };
 
-export function CategoryBadge({ name, color = colors.primary }: Props) {
+export function CategoryBadge({ name, color }: Props) {
+  const colors = useThemeColors();
+  const badgeColor = color ?? colors.primary;
   return (
     <View
       className="self-start rounded px-2 py-0.5"
       style={{
         backgroundColor: colors.primarySoft,
         borderWidth: 1,
-        borderColor: color,
+        borderColor: badgeColor,
       }}
     >
       <Text className="text-xs font-semibold" style={{ color: colors.primary }}>

@@ -5,18 +5,22 @@ import Toast from 'react-native-toast-message';
 import { FormField } from '../../src/components/FormField';
 import { KeyboardFormScroll } from '../../src/components/KeyboardFormScroll';
 import { useAppStore } from '../../src/store/appStore';
-import { colors } from '../../src/constants/theme';
+import { useThemeColors } from '../../src/hooks/useTheme';
 import { setPinHash } from '../../src/utils/pin';
 
+import { SelectField } from '../../src/components/SelectField';
+import { BUSINESS_TYPES, DEFAULT_BUSINESS_TYPE, type BusinessTypeId } from '../../src/constants/businessTypes';
 import { COMMON_CURRENCIES, filterCurrencies } from '../../src/constants/currencies';
 import { SearchBar } from '../../src/components/SearchBar';
 
 export default function SetupScreen() {
+  const colors = useThemeColors();
   const router = useRouter();
   const updateSettings = useAppStore((s) => s.updateSettings);
   const [step, setStep] = useState(1);
 
   const [businessName, setBusinessName] = useState('');
+  const [businessType, setBusinessType] = useState<BusinessTypeId>(DEFAULT_BUSINESS_TYPE);
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -44,6 +48,7 @@ export default function SetupScreen() {
     try {
       await updateSettings({
         businessName: businessName.trim(),
+        businessType,
         address,
         phone,
         email,
@@ -79,6 +84,20 @@ export default function SetupScreen() {
               onChangeText={setBusinessName}
               placeholder="e.g. Sunrise Café"
             />
+            <SelectField
+              label="Business type"
+              value={businessType}
+              onChange={setBusinessType}
+              options={BUSINESS_TYPES.map((t) => ({
+                value: t.id,
+                label: t.label,
+                description: t.description,
+              }))}
+            />
+            <Text className="mb-3 text-xs text-app-muted">
+              Features like kitchen tickets are enabled based on your business type. You can change this later in
+              Settings.
+            </Text>
             <FormField label="Address" value={address} onChangeText={setAddress} placeholder="Street, city" />
             <FormField
               label="Phone"

@@ -16,9 +16,10 @@ import {
   type ProductListFilters,
 } from '../../../src/repositories/productRepository';
 import type { Product } from '../../../src/types';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 
 export default function ProductsListScreen() {
+  const colors = useThemeColors();
   const router = useRouter();
   const [priceEditId, setPriceEditId] = useState<string | null>(null);
   const [priceInput, setPriceInput] = useState('');

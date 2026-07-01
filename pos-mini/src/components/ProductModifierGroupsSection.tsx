@@ -5,13 +5,14 @@ import {
   listModifierGroups,
   setProductModifierGroups,
 } from '../repositories/modifierRepository';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 
 type Props = {
   productId: string;
 };
 
 export function ProductModifierGroupsSection({ productId }: Props) {
+  const colors = useThemeColors();
   const [groups, setGroups] = useState<Awaited<ReturnType<typeof listModifierGroups>>>([]);
   const [selected, setSelected] = useState<string[]>([]);
 

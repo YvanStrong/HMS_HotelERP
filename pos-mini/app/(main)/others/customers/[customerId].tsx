@@ -12,12 +12,13 @@ import { getCustomerById, updateCustomer } from '../../../../src/repositories/cu
 import { listSalesPaginated } from '../../../../src/repositories/saleRepository';
 import type { Customer, DebtRecord, Sale } from '../../../../src/types';
 import { useAppStore } from '../../../../src/store/appStore';
-import { cardStyle, colors } from '../../../../src/constants/theme';
+import { useThemedStyles } from '../../../../src/hooks/useTheme';
 import { formatMoney } from '../../../../src/utils/currency';
 
 const emptyForm: EntityFormValues = { name: '', phone: '', email: '', address: '', notes: '' };
 
 export default function CustomerDetailScreen() {
+  const { cardStyle, colors } = useThemedStyles();
   const router = useRouter();
   const { customerId } = useLocalSearchParams<{ customerId: string }>();
   const settings = useAppStore((s) => s.settings);

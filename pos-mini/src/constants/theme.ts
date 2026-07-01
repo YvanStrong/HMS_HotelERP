@@ -1,3 +1,5 @@
+import { vars } from 'nativewind';
+
 /** Flat POS palette — no gradients */
 export const colors = {
   background: '#f1f5f9',
@@ -53,37 +55,61 @@ export function getCardStyle(mode: 'light' | 'dark' = 'light') {
   } as const;
 }
 
-export const cardStyle = {
-  backgroundColor: colors.surface,
-  borderWidth: 1,
-  borderColor: colors.border,
-  borderRadius: 12,
-} as const;
+/** Push palette into NativeWind CSS variables (required for text-app-* on native). */
+export function themeVars(palette: ThemeColors) {
+  return vars({
+    '--color-app-bg': palette.background,
+    '--color-app-surface': palette.surface,
+    '--color-app-border': palette.border,
+    '--color-app-primary': palette.primary,
+    '--color-app-primary-soft': palette.primarySoft,
+    '--color-app-success': palette.success,
+    '--color-app-danger': palette.danger,
+    '--color-app-muted': palette.textMuted,
+    '--color-app-text': palette.text,
+  });
+}
 
-export const inputStyle = {
-  borderWidth: 1,
-  borderColor: colors.border,
-  borderRadius: 10,
-  backgroundColor: colors.surface,
-  paddingHorizontal: 12,
-  paddingVertical: 12,
-  fontSize: 16,
-  color: colors.text,
-} as const;
+export function getInputStyle(mode: 'light' | 'dark' = 'light') {
+  const palette = getThemeColors(mode);
+  return {
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: 10,
+    backgroundColor: palette.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: palette.text,
+  } as const;
+}
 
-/** Solid primary button surface */
-export const primaryButtonStyle = {
-  backgroundColor: colors.primary,
-  borderRadius: 12,
-} as const;
+export function getPrimaryButtonStyle(mode: 'light' | 'dark' = 'light') {
+  const palette = getThemeColors(mode);
+  return {
+    backgroundColor: palette.primary,
+    borderRadius: 12,
+  } as const;
+}
 
-/** Selected chip / toggle (light blue — keep dark text) */
-export const selectedChipStyle = {
-  borderColor: colors.primary,
-  backgroundColor: colors.primarySoft,
-} as const;
+/** @deprecated Use getCardStyle(themeMode) */
+export const cardStyle = getCardStyle('light');
 
-export const unselectedChipStyle = {
-  borderColor: colors.border,
-  backgroundColor: colors.surface,
-} as const;
+/** @deprecated Use getInputStyle(themeMode) */
+export const inputStyle = getInputStyle('light');
+
+/** @deprecated Use getPrimaryButtonStyle(themeMode) */
+export const primaryButtonStyle = getPrimaryButtonStyle('light');
+
+export function getChipStyles(palette: ThemeColors, selected: boolean) {
+  return {
+    borderColor: selected ? palette.primary : palette.border,
+    backgroundColor: selected ? palette.primarySoft : palette.surface,
+  } as const;
+}
+
+/** @deprecated Use getChipStyles(palette, selected) */
+export const selectedChipStyle = getChipStyles(colors, true);
+
+/** @deprecated Use getChipStyles(palette, selected) */
+export const unselectedChipStyle = getChipStyles(colors, false);

@@ -11,6 +11,7 @@ import { usePaginatedList } from '../../../src/hooks/usePaginatedList';
 import { listSalesPaginated, type SaleListFilters } from '../../../src/repositories/saleRepository';
 import type { Sale } from '../../../src/types';
 import { useAppStore } from '../../../src/store/appStore';
+import { useBusinessFeatures } from '../../../src/hooks/useBusinessFeatures';
 import { formatMoney } from '../../../src/utils/currency';
 
 const PAYMENT_FILTERS = [
@@ -23,6 +24,7 @@ const PAYMENT_FILTERS = [
 export default function SalesListScreen() {
   const router = useRouter();
   const settings = useAppStore((s) => s.settings);
+  const { hasKitchen } = useBusinessFeatures();
   const [paymentFilter, setPaymentFilter] = useState<string | null>(null);
 
   const filters = useMemo<SaleListFilters>(
@@ -66,6 +68,12 @@ export default function SalesListScreen() {
           <Text className="font-bold text-app-text">{formatMoney(item.total, settings)}</Text>
           <StatusBadge label={item.paymentMethod} tone="info" />
           {item.status === 'voided' ? <StatusBadge label="Voided" tone="danger" /> : null}
+          {item.status !== 'voided' && item.refundStatus === 'refunded' ? (
+            <StatusBadge label="Refunded" tone="warning" />
+          ) : null}
+          {item.status !== 'voided' && item.refundStatus === 'partial' ? (
+            <StatusBadge label="Partial refund" tone="warning" />
+          ) : null}
         </View>
       </View>
     </ListCard>
@@ -78,12 +86,14 @@ export default function SalesListScreen() {
         onPress={() => router.push('/(main)/sales/new')}
         className="mb-2"
       />
-      <ActionButton
-        label="Kitchen tickets"
-        onPress={() => router.push('/(main)/sales/kitchen')}
-        variant="secondary"
-        className="mb-3"
-      />
+      {hasKitchen ? (
+        <ActionButton
+          label="Kitchen tickets"
+          onPress={() => router.push('/(main)/sales/kitchen')}
+          variant="secondary"
+          className="mb-3"
+        />
+      ) : null}
 
       <ListToolbar
         search={search}

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 import type { ModifierGroup, SelectedModifier } from '../types';
-import { colors, primaryButtonStyle } from '../constants/theme';
+import { usePrimaryButtonStyle, useThemeColors } from '../hooks/useTheme';
 import { formatMoney } from '../utils/currency';
 import { useAppStore } from '../store/appStore';
 
@@ -16,6 +16,8 @@ type Props = {
 
 export function ModifierPickerModal({ visible, productName, groups, onConfirm, onCancel }: Props) {
   const settings = useAppStore((s) => s.settings);
+  const colors = useThemeColors();
+  const primaryButtonStyle = usePrimaryButtonStyle();
   const [selected, setSelected] = useState<Record<string, string[]>>({});
 
   const priceDelta = useMemo(() => {

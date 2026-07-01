@@ -10,12 +10,13 @@ import { getSupplierById, updateSupplier } from '../../../../src/repositories/su
 import { listPurchasesPaginated } from '../../../../src/repositories/purchaseRepository';
 import type { Purchase, Supplier } from '../../../../src/types';
 import { useAppStore } from '../../../../src/store/appStore';
-import { cardStyle } from '../../../../src/constants/theme';
+import { useCardStyle } from '../../../../src/hooks/useTheme';
 import { formatMoney } from '../../../../src/utils/currency';
 
 const emptyForm: EntityFormValues = { name: '', phone: '', email: '', address: '', notes: '' };
 
 export default function SupplierDetailScreen() {
+  const cardStyle = useCardStyle();
   const router = useRouter();
   const { supplierId } = useLocalSearchParams<{ supplierId: string }>();
   const settings = useAppStore((s) => s.settings);

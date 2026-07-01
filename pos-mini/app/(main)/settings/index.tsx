@@ -5,12 +5,15 @@ import { LogoutButton } from '../../../src/components/LogoutButton';
 import { ScreenContainer } from '../../../src/components/ScreenContainer';
 import { useAppStore } from '../../../src/store/appStore';
 import { changeAppLanguage } from '../../../src/i18n';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
+import { useBusinessFeatures } from '../../../src/hooks/useBusinessFeatures';
 
 export default function SettingsIndex() {
+  const colors = useThemeColors();
   const { t, i18n } = useTranslation();
   const themeMode = useAppStore((s) => s.themeMode);
   const setThemeMode = useAppStore((s) => s.setThemeMode);
+  const { hasModifiers } = useBusinessFeatures();
 
   return (
     <ScreenContainer scroll>
@@ -48,7 +51,9 @@ export default function SettingsIndex() {
       <HubLink label="Payment methods" href="/(main)/settings/payment" subtitle="Cash, card, mobile, credit" />
       <HubLink label="Receipt customization" href="/(main)/settings/receipt" subtitle="Logo, tax, change, barcodes" />
       <HubLink label="Discount rules" href="/(main)/settings/discounts" subtitle="Automatic discount rules" />
-      <HubLink label={t('settings.modifiers')} href={'/(main)/settings/modifiers' as never} subtitle="Size, toppings, extras" />
+      {hasModifiers ? (
+        <HubLink label={t('settings.modifiers')} href={'/(main)/settings/modifiers' as never} subtitle="Size, toppings, extras" />
+      ) : null}
       <HubLink label="Printer" href="/(main)/settings/printer" subtitle="Bluetooth printer and auto-print" />
       <HubLink label="Staff" href="/(main)/settings/staff" subtitle="Cashiers and managers" />
       <HubLink label="Shift / Z-report" href="/(main)/settings/shift" subtitle="Open and close shifts" />

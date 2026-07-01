@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SearchBar } from './SearchBar';
-import { colors, selectedChipStyle, unselectedChipStyle } from '../constants/theme';
+import { getChipStyles } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 
 export type FilterChip = {
   key: string;
@@ -29,6 +30,9 @@ export function ListToolbar({
   trailing,
   resultCount,
 }: Props) {
+  const colors = useThemeColors();
+  const chipStyle = (selected: boolean) => getChipStyles(colors, selected);
+
   return (
     <View className="mb-2">
       <View className="flex-row items-start gap-2">
@@ -48,7 +52,7 @@ export function ListToolbar({
           <Pressable
             onPress={() => onFilterChange(null)}
             className="rounded-lg border px-3 py-1.5"
-            style={activeFilter == null ? selectedChipStyle : unselectedChipStyle}
+            style={chipStyle(activeFilter == null)}
           >
             <Text className="text-sm font-semibold text-app-text">All</Text>
           </Pressable>
@@ -57,7 +61,7 @@ export function ListToolbar({
               key={f.key}
               onPress={() => onFilterChange(f.key)}
               className="rounded-lg border px-3 py-1.5"
-              style={activeFilter === f.key ? selectedChipStyle : unselectedChipStyle}
+              style={chipStyle(activeFilter === f.key)}
             >
               <Text className="text-sm font-semibold text-app-text">{f.label}</Text>
             </Pressable>

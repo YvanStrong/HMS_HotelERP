@@ -5,7 +5,7 @@ import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { ScreenContainer } from '../../../src/components/ScreenContainer';
 import { DateRangePicker } from '../../../src/components/DateRangePicker';
 import { SummaryCard } from '../../../src/components/SummaryCard';
-import { cardStyle, colors } from '../../../src/constants/theme';
+import { useThemedStyles } from '../../../src/hooks/useTheme';
 import { useAppStore } from '../../../src/store/appStore';
 import { formatMoney } from '../../../src/utils/currency';
 import {
@@ -22,6 +22,7 @@ const CHART_COLORS = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed'];
 
 export default function SalesReportScreen() {
   const settings = useAppStore((s) => s.settings);
+  const { cardStyle, colors } = useThemedStyles();
   const { preset } = useLocalSearchParams<{ preset?: string }>();
   const initialPreset = (preset === 'week' || preset === 'month' ? preset : 'today') as 'today' | 'week' | 'month';
   const [range, setRange] = useState<ReportDateRange>(getPresetRange(initialPreset));

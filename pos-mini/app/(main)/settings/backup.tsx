@@ -13,11 +13,12 @@ import {
   exportAndShareDatabase,
   exportAndShareJsonBackup,
   importJsonBackup,
+  uploadBackupToGoogleDrive,
 } from '../../../src/utils/export';
 import { useAppStore } from '../../../src/store/appStore';
 import { listProducts } from '../../../src/repositories/productRepository';
 import { listSales } from '../../../src/repositories/saleRepository';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 
 function daysSince(iso: string | null): number | null {
   if (!iso) return null;
@@ -26,6 +27,7 @@ function daysSince(iso: string | null): number | null {
 }
 
 export default function BackupSettingsScreen() {
+  const colors = useThemeColors();
   const init = useAppStore((s) => s.init);
   const [importConfirm, setImportConfirm] = useState(false);
   const [pendingImport, setPendingImport] = useState<string | null>(null);
@@ -85,6 +87,23 @@ export default function BackupSettingsScreen() {
       Toast.show({ type: 'success', text1: 'JSON backup shared' });
     } catch (e) {
       Toast.show({ type: 'error', text1: e instanceof Error ? e.message : 'Backup failed' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const uploadToDrive = async () => {
+    setBusy(true);
+    try {
+      await uploadBackupToGoogleDrive();
+      setLastBackup(await getLastBackupAt());
+      Toast.show({
+        type: 'success',
+        text1: 'Choose Google Drive',
+        text2: 'Pick Google Drive from the share menu to upload',
+      });
+    } catch (e) {
+      Toast.show({ type: 'error', text1: e instanceof Error ? e.message : 'Upload failed' });
     } finally {
       setBusy(false);
     }
@@ -174,7 +193,7 @@ export default function BackupSettingsScreen() {
 
   return (
     <KeyboardFormScroll contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8 }}>
-      <Text className="mb-2 text-xl font-bold text-black">Backup & Export</Text>
+      <Text className="mb-2 text-xl font-bold text-app-text">Backup & Export</Text>
       {lastBackup ? (
         <Text className={`mb-2 text-sm ${backupWarning ? 'text-red-600' : 'text-gray-600'}`}>
           Last backup: {new Date(lastBackup).toLocaleString()}
@@ -187,23 +206,27 @@ export default function BackupSettingsScreen() {
       <Pressable disabled={busy} onPress={() => void shareJson()} className="mb-2 rounded-xl p-4" style={{ backgroundColor: colors.primary }}>
         <Text className="font-bold text-white">Export JSON Backup</Text>
       </Pressable>
+      <Pressable disabled={busy} onPress={() => void uploadToDrive()} className="mb-2 rounded-xl border border-app-border bg-app-surface p-4">
+        <Text className="font-bold text-app-text">Upload to Google Drive</Text>
+        <Text className="mt-1 text-sm text-app-muted">Creates a backup and opens share — choose Google Drive</Text>
+      </Pressable>
       <Pressable disabled={busy} onPress={() => void shareDb()} className="mb-4 rounded-xl border border-app-border bg-app-surface p-4">
-        <Text className="font-bold text-black">Export SQLite Database</Text>
+        <Text className="font-bold text-app-text">Export SQLite Database</Text>
       </Pressable>
 
       <Pressable disabled={busy} onPress={() => void exportProductsCsv()} className="mb-2 rounded-xl border border-app-border bg-app-surface p-4">
-        <Text className="font-bold text-black">Export Products CSV</Text>
+        <Text className="font-bold text-app-text">Export Products CSV</Text>
       </Pressable>
       <Pressable disabled={busy} onPress={() => void exportSalesCsv()} className="mb-2 rounded-xl border border-app-border bg-app-surface p-4">
-        <Text className="font-bold text-black">Export Sales CSV</Text>
+        <Text className="font-bold text-app-text">Export Sales CSV</Text>
       </Pressable>
       <Pressable disabled={busy} onPress={() => void importProductsCsv()} className="mb-4 rounded-xl border border-app-border bg-app-surface p-4">
-        <Text className="font-bold text-black">Import Products CSV</Text>
+        <Text className="font-bold text-app-text">Import Products CSV</Text>
         <Text className="text-sm text-gray-600">Columns: Name, SKU, Barcode, Cost, Sell, Stock, Unit</Text>
       </Pressable>
 
       <Pressable disabled={busy} onPress={() => void pickImport()} className="rounded-xl border border-app-border bg-app-surface p-4">
-        <Text className="font-bold text-black">Import JSON Backup</Text>
+        <Text className="font-bold text-app-text">Import JSON Backup</Text>
         <Text className="text-sm text-red-600">Replaces all current data</Text>
       </Pressable>
 

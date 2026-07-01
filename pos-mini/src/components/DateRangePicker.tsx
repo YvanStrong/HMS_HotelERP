@@ -3,7 +3,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import type { DateRangePreset, ReportDateRange } from '../utils/reports';
 import { getCustomRange, getPresetRange } from '../utils/reports';
-import { colors, primaryButtonStyle, selectedChipStyle, unselectedChipStyle } from '../constants/theme';
+import { getChipStyles } from '../constants/theme';
+import { usePrimaryButtonStyle, useThemeColors } from '../hooks/useTheme';
 
 type Props = {
   range: ReportDateRange;
@@ -16,11 +17,10 @@ const PRESETS: { key: Exclude<DateRangePreset, 'custom'>; label: string }[] = [
   { key: 'month', label: 'Month' },
 ];
 
-function chipStyle(selected: boolean) {
-  return selected ? selectedChipStyle : unselectedChipStyle;
-}
-
 export function DateRangePicker({ range, onChange }: Props) {
+  const colors = useThemeColors();
+  const primaryButtonStyle = usePrimaryButtonStyle();
+  const chipStyle = (selected: boolean) => getChipStyles(colors, selected);
   const [showStart, setShowStart] = useState(false);
   const [showEnd, setShowEnd] = useState(false);
   const [customStart, setCustomStart] = useState(new Date(range.startIso));

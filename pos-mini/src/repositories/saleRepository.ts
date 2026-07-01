@@ -1,4 +1,4 @@
-import type { CreateSaleInput, Sale, SaleItem, SalePayment } from '../types';
+import type { CreateSaleInput, Sale, SaleItem, SalePayment, SaleRefundStatus } from '../types';
 import type { ListQuery, PaginatedResult } from '../types/pagination';
 import { getDb } from '../db/database';
 import { generateId, nowIso, todayStartIso } from '../utils/ids';
@@ -6,6 +6,8 @@ import { getNextNumber, recordStockMovement } from './helpers';
 import { buildWhere, clampLimit, clampOffset, likePattern } from './queryHelpers';
 import { getCurrentStaffId, getRequireShift } from './metaRepository';
 import { getOpenShift } from './shiftRepository';
+import { getBusinessSettings } from './settingsRepository';
+import { businessTypeHasFeature } from '../constants/businessTypes';
 import type { SelectedModifier } from '../types';
 
 type SaleRow = {
@@ -27,6 +29,8 @@ type SaleRow = {
   created_at: string;
   updated_at: string;
   customer_name?: string | null;
+  sold_qty?: number;
+  refunded_qty?: number;
 };
 
 type SaleItemRow = {
@@ -52,7 +56,15 @@ type SalePaymentRow = {
   created_at: string;
 };
 
+function resolveRefundStatus(soldQty: number, refundedQty: number): SaleRefundStatus {
+  if (refundedQty <= 0) return 'none';
+  if (soldQty > 0 && refundedQty >= soldQty) return 'refunded';
+  return 'partial';
+}
+
 function mapSale(row: SaleRow): Sale {
+  const soldQty = row.sold_qty ?? 0;
+  const refundedQty = row.refunded_qty ?? 0;
   return {
     id: row.id,
     invoiceNumber: row.invoice_number,
@@ -69,6 +81,7 @@ function mapSale(row: SaleRow): Sale {
     changeAmount: row.change_amount,
     paymentMethod: row.payment_method as Sale['paymentMethod'],
     status: row.status as Sale['status'],
+    refundStatus: resolveRefundStatus(soldQty, refundedQty),
     notes: row.notes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -103,7 +116,16 @@ function mapSalePayment(row: SalePaymentRow): SalePayment {
 }
 
 const SELECT_SALE = `
-  SELECT s.*, c.name AS customer_name
+  SELECT s.*, c.name AS customer_name,
+    COALESCE((
+      SELECT SUM(si.quantity) FROM sale_items si WHERE si.sale_id = s.id
+    ), 0) AS sold_qty,
+    COALESCE((
+      SELECT SUM(ri.quantity)
+      FROM refunds r
+      JOIN refund_items ri ON ri.refund_id = r.id
+      WHERE r.sale_id = s.id AND r.status = 'completed'
+    ), 0) AS refunded_qty
   FROM sales s
   LEFT JOIN customers c ON c.id = s.customer_id
 `;
@@ -323,7 +345,10 @@ export async function createSale(input: CreateSaleInput): Promise<Sale> {
       }
     }
 
-    if (kitchenItems.length > 0) {
+    const settings = await getBusinessSettings();
+    const kitchenEnabled = businessTypeHasFeature(settings?.businessType, 'kitchen');
+
+    if (kitchenEnabled && kitchenItems.length > 0) {
       const ticketId = generateId();
       await db.runAsync(
         `INSERT INTO kitchen_tickets (id, sale_id, invoice_number, status, items_json, notes, created_at, updated_at)

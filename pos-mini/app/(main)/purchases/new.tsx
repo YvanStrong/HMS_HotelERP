@@ -15,7 +15,7 @@ import { listProducts, searchProducts, getProductByBarcode } from '../../../src/
 import { listSuppliers } from '../../../src/repositories/supplierRepository';
 import type { Product, Supplier } from '../../../src/types';
 import { useAppStore } from '../../../src/store/appStore';
-import { cardStyle, colors } from '../../../src/constants/theme';
+import { useThemedStyles } from '../../../src/hooks/useTheme';
 import { calculateCartTax, calculateCartTotal, calculateSubtotal, roundMoney } from '../../../src/utils/calculations';
 import { QuantityEditModal } from '../../../src/components/QuantityEditModal';
 import { formatMoney } from '../../../src/utils/currency';
@@ -34,6 +34,7 @@ type CartLine = {
 const STEPS = ['Supplier', 'Items', 'Payment'] as const;
 
 export default function NewPurchaseScreen() {
+  const { cardStyle, colors } = useThemedStyles();
   const router = useRouter();
   const settings = useAppStore((s) => s.settings);
   const refreshStats = useAppStore((s) => s.refreshStats);

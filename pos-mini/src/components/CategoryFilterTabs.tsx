@@ -1,6 +1,6 @@
 import { Pressable, ScrollView, Text } from 'react-native';
 import type { Category } from '../types';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 
 type Props = {
   categories: Category[];
@@ -9,6 +9,7 @@ type Props = {
 };
 
 export function CategoryFilterTabs({ categories, selectedId, onSelect }: Props) {
+  const colors = useThemeColors();
   return (
     <ScrollView
       horizontal

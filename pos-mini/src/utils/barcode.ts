@@ -11,6 +11,28 @@ export function generateSku(prefix = 'SKU'): string {
   return `${prefix}-${Date.now().toString(36).toUpperCase()}`;
 }
 
+const SKU_RANDOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function randomSkuSuffix(length = 4): string {
+  let out = '';
+  for (let i = 0; i < length; i++) {
+    out += SKU_RANDOM_CHARS[Math.floor(Math.random() * SKU_RANDOM_CHARS.length)];
+  }
+  return out;
+}
+
+/** Build a readable SKU from the product name plus a short random suffix. */
+export function generateSkuFromName(name: string): string {
+  const slug = name
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 16);
+  const suffix = randomSkuSuffix();
+  return slug ? `${slug}-${suffix}` : `SKU-${suffix}`;
+}
+
 export function generateEan13CheckDigit(digits12: string): string {
   if (!/^\d{12}$/.test(digits12)) return digits12;
   let sum = 0;
