@@ -71,6 +71,10 @@ public class InvExtService {
     private final InventoryDepotRepository inventoryDepotRepository;
     private final DepotProductRepository depotProductRepository;
 
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired
+    private EbmSaleEventService ebmSaleEventService;
+
     public InvExtService(
             InventoryItemRepository itemRepository,
             StockTransactionRepository txRepository,
@@ -622,6 +626,13 @@ public class InvExtService {
             inv.setStatus("PAID");
         }
         inv = invoiceRepository.save(inv);
+        try {
+            if (ebmSaleEventService != null) {
+                ebmSaleEventService.enqueueInvSalesInvoice(hotelId, inv);
+            }
+        } catch (Exception ignored) {
+            // EBM must never block invoice issue
+        }
         return toInvoiceItem(inv);
     }
 

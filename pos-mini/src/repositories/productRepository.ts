@@ -3,6 +3,8 @@ import type { ListQuery, PaginatedResult } from '../types/pagination';
 import { getDb } from '../db/database';
 import { generateId, nowIso } from '../utils/ids';
 import { buildWhere, clampLimit, clampOffset, likePattern } from './queryHelpers';
+import { normalizeProductTaxClass } from '../constants/productTax';
+import { normalizeProductUnit } from '../constants/productUnits';
 
 type ProductRow = {
   id: string;
@@ -16,6 +18,7 @@ type ProductRow = {
   stock_qty: number;
   min_stock: number;
   unit: string;
+  tax_class: string;
   image_uri: string | null;
   track_stock: number;
   is_active: number;
@@ -37,6 +40,7 @@ function mapProduct(row: ProductRow): Product {
     stockQty: row.stock_qty,
     minStock: row.min_stock,
     unit: row.unit,
+    taxClass: normalizeProductTaxClass(row.tax_class),
     imageUri: row.image_uri,
     trackStock: row.track_stock === 1,
     isActive: row.is_active === 1,
@@ -144,8 +148,8 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
   await db.runAsync(
     `INSERT INTO products (
       id, name, description, sku, barcode, category_id, cost_price, sell_price, stock_qty,
-      min_stock, unit, image_uri, track_stock, is_active, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      min_stock, unit, tax_class, image_uri, track_stock, is_active, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.name,
@@ -157,7 +161,8 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
       input.sellPrice,
       input.stockQty,
       input.minStock,
-      input.unit,
+      normalizeProductUnit(input.unit),
+      normalizeProductTaxClass(input.taxClass),
       input.imageUri ?? null,
       input.trackStock ? 1 : 0,
       input.isActive ? 1 : 0,
@@ -179,7 +184,7 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
   await db.runAsync(
     `UPDATE products SET
       name = ?, description = ?, sku = ?, barcode = ?, category_id = ?, cost_price = ?, sell_price = ?,
-      stock_qty = ?, min_stock = ?, unit = ?, image_uri = ?, track_stock = ?,
+      stock_qty = ?, min_stock = ?, unit = ?, tax_class = ?, image_uri = ?, track_stock = ?,
       is_active = ?, updated_at = ?
     WHERE id = ?`,
     [
@@ -192,7 +197,8 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
       input.sellPrice ?? existing.sellPrice,
       input.stockQty ?? existing.stockQty,
       input.minStock ?? existing.minStock,
-      input.unit ?? existing.unit,
+      input.unit !== undefined ? normalizeProductUnit(input.unit) : existing.unit,
+      input.taxClass !== undefined ? normalizeProductTaxClass(input.taxClass) : existing.taxClass,
       input.imageUri !== undefined ? input.imageUri : existing.imageUri,
       (input.trackStock ?? existing.trackStock) ? 1 : 0,
       (input.isActive ?? existing.isActive) ? 1 : 0,

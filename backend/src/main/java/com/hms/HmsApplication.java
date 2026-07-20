@@ -2,6 +2,7 @@ package com.hms;
 
 import com.hms.config.HmsMultitenancyProperties;
 import com.hms.config.HmsPublicUrlProperties;
+import com.hms.config.HmsEbmProperties;
 import com.hms.config.HmsStripeProperties;
 import com.hms.config.FrontendUrlProperties;
 import com.hms.config.JwtProperties;
@@ -22,6 +23,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
     FrontendUrlProperties.class,
     HmsMultitenancyProperties.class,
     HmsStripeProperties.class,
+    HmsEbmProperties.class,
     HmsPublicUrlProperties.class,
     SelfOrderNotifyProperties.class
 })

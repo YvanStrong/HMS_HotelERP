@@ -6,9 +6,13 @@ import { BarcodeScannerModal } from '../../../src/components/BarcodeScannerModal
 import { FormField } from '../../../src/components/FormField';
 import { KeyboardFormScroll } from '../../../src/components/KeyboardFormScroll';
 import { ProductImagePicker } from '../../../src/components/ProductImagePicker';
+import { OptionPicker } from '../../../src/components/OptionPicker';
 import { listCategories } from '../../../src/repositories/categoryRepository';
 import { createProduct, updateProduct } from '../../../src/repositories/productRepository';
 import type { Category } from '../../../src/types';
+import type { ProductTaxClass } from '../../../src/constants/productTax';
+import { PRODUCT_TAX_OPTIONS } from '../../../src/constants/productTax';
+import { PRODUCT_UNITS } from '../../../src/constants/productUnits';
 import { useAppStore } from '../../../src/store/appStore';
 import { colors } from '../../../src/constants/theme';
 import { generateSku } from '../../../src/utils/barcode';
@@ -29,6 +33,7 @@ export default function NewProductScreen() {
   const [stockQty, setStockQty] = useState('0');
   const [minStock, setMinStock] = useState('0');
   const [unit, setUnit] = useState('pcs');
+  const [taxClass, setTaxClass] = useState<ProductTaxClass>('A');
   const [trackStock, setTrackStock] = useState(true);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
@@ -63,6 +68,7 @@ export default function NewProductScreen() {
         stockQty: Number(stockQty) || 0,
         minStock: Number(minStock) || 0,
         unit,
+        taxClass,
         imageUri: null,
         trackStock,
         isActive: true,
@@ -123,7 +129,8 @@ export default function NewProductScreen() {
         </View>
         <FormField label="Stock quantity" value={stockQty} onChangeText={setStockQty} keyboardType="decimal-pad" />
         <FormField label="Minimum stock alert" value={minStock} onChangeText={setMinStock} keyboardType="decimal-pad" />
-        <FormField label="Unit" value={unit} onChangeText={setUnit} placeholder="pcs, kg, L…" />
+        <OptionPicker label="Unit of measure" options={PRODUCT_UNITS} value={unit} onChange={setUnit} />
+        <OptionPicker label="Tax category" options={PRODUCT_TAX_OPTIONS} value={taxClass} onChange={(v) => setTaxClass(v as ProductTaxClass)} />
         <View className="mb-4 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
           <Text className="font-semibold text-app-text">Track stock</Text>
           <Switch value={trackStock} onValueChange={setTrackStock} />

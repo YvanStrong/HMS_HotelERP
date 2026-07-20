@@ -51,6 +51,10 @@ public class FbService {
     private final FacilityWebSocketPublisher facilityWebSocketPublisher;
     private final TenantAccessService tenantAccessService;
 
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired
+    private EbmSaleEventService ebmSaleEventService;
+
     public FbService(
             FbOutletRepository fbOutletRepository,
             MenuItemRepository menuItemRepository,
@@ -384,6 +388,15 @@ public class FbService {
             deductInventory(order, sideEffects);
         }
         fbOrderRepository.save(order);
+        if (order.getStatus() == FbOrderStatus.CLOSED) {
+            try {
+                if (ebmSaleEventService != null) {
+                    ebmSaleEventService.enqueueFbOrder(hotelId, order);
+                }
+            } catch (Exception ignored) {
+                // EBM must never block F&B close
+            }
+        }
 
         List<String> nextActions = List.of("Mark CLOSED when service complete", "Request guest feedback");
         return new FbDtos.PatchFbOrderResponse(

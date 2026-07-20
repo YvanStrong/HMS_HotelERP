@@ -157,6 +157,8 @@ export default function NewSaleScreen() {
       productName: product.name,
       unitPrice: unitPrice ?? product.sellPrice,
       costPrice: product.costPrice,
+      unit: product.unit,
+      taxClass: product.taxClass,
       trackStock: product.trackStock,
       stockQty: product.stockQty,
       imageUri: product.imageUri,

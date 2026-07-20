@@ -77,6 +77,21 @@ public class DepotProduct {
     @Column(name = "taxable", nullable = false)
     private boolean taxable = true;
 
+    @Column(name = "item_cd", length = 20)
+    private String itemCd;
+
+    @Column(name = "item_cls_cd", length = 16)
+    private String itemClsCd;
+
+    @Column(name = "item_ty_cd", length = 4)
+    private String itemTyCd;
+
+    @Column(name = "pkg_unit_cd", length = 4)
+    private String pkgUnitCd;
+
+    @Column(name = "qty_unit_cd", length = 4)
+    private String qtyUnitCd;
+
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 

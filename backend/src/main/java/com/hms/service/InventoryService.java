@@ -64,6 +64,10 @@ public class InventoryService {
     private final ChargeService chargeService;
     private final ObjectMapper objectMapper;
 
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired
+    private EbmItemCdService ebmItemCdService;
+
     public InventoryService(
             InventoryItemRepository inventoryItemRepository,
             InventoryCategoryRepository inventoryCategoryRepository,
@@ -755,6 +759,14 @@ public class InventoryService {
             i.setManufactureDate(req.manufactureDate());
         }
         i = inventoryItemRepository.save(i);
+        try {
+            if (ebmItemCdService != null) {
+                ebmItemCdService.ensureItemCd(i);
+                inventoryItemRepository.save(i);
+            }
+        } catch (Exception ignored) {
+            // itemCd assignment is best-effort until EBM is enabled
+        }
         publishToPrincipalOutlet(hotelId, hotel, i);
         recordOpeningStockAtPrincipalWarehouse(hotelId, i);
         return new InventoryDtos.CreatedIdResponse(i.getId());

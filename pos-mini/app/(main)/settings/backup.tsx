@@ -47,9 +47,9 @@ export default function BackupSettingsScreen() {
       const products = await listProducts(false);
       await exportAndShareCsv(
         'products.csv',
-        ['Name', 'SKU', 'Barcode', 'Cost', 'Sell', 'Stock', 'Unit'],
+        ['Name', 'SKU', 'Barcode', 'Cost', 'Sell', 'Stock', 'Unit', 'Tax Class'],
         products.map((p) => [
-          p.name, p.sku ?? '', p.barcode ?? '', String(p.costPrice), String(p.sellPrice), String(p.stockQty), p.unit,
+          p.name, p.sku ?? '', p.barcode ?? '', String(p.costPrice), String(p.sellPrice), String(p.stockQty), p.unit, p.taxClass,
         ]),
       );
       Toast.show({ type: 'success', text1: 'Products exported' });
@@ -116,7 +116,7 @@ export default function BackupSettingsScreen() {
       let imported = 0;
       for (const line of lines.slice(1)) {
         const cols = line.match(/("([^"]|"")*"|[^,]*)/g)?.map((c) => c.replace(/^"|"$/g, '').replace(/""/g, '"').trim()) ?? [];
-        const [name, sku, barcode, cost, sell, stock, unit] = cols;
+        const [name, sku, barcode, cost, sell, stock, unit, taxClass] = cols;
         if (!name?.trim()) continue;
         await createProduct({
           name: name.trim(),
@@ -129,6 +129,7 @@ export default function BackupSettingsScreen() {
           stockQty: Number(stock) || 0,
           minStock: 0,
           unit: unit || 'pcs',
+          taxClass: taxClass === 'B' ? 'B' : 'A',
           imageUri: null,
           trackStock: true,
           isActive: true,
@@ -196,7 +197,7 @@ export default function BackupSettingsScreen() {
       </Pressable>
       <Pressable disabled={busy} onPress={() => void importProductsCsv()} className="mb-4 rounded-xl border border-app-border bg-app-surface p-4">
         <Text className="font-bold text-black">Import Products CSV</Text>
-        <Text className="text-sm text-gray-600">Columns: Name, SKU, Barcode, Cost, Sell, Stock, Unit</Text>
+        <Text className="text-sm text-gray-600">Columns: Name, SKU, Barcode, Cost, Sell, Stock, Unit, Tax Class (A or B)</Text>
       </Pressable>
 
       <Pressable disabled={busy} onPress={() => void pickImport()} className="rounded-xl border border-app-border bg-app-surface p-4">

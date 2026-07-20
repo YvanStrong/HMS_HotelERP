@@ -871,19 +871,31 @@ export default function AccountingPage() {
           <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-soft">
             <h2 className="text-lg font-semibold">Recorded expenses</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Employee salaries appear here automatically when payroll is marked paid in HR (account 5100 Salaries &amp; Wages).
+              Employee salaries appear here when payroll is marked paid in HR. Petty cash disbursements are posted here automatically (payment method Petty Cash) and flow into the ledger / P&amp;L.
             </p>
             <div className="mt-3 overflow-x-auto">
               <table>
                 <thead><tr><th>Date</th><th>Expense</th><th>Payment</th><th>Amount</th></tr></thead>
                 <tbody>
                   {(data?.expenses ?? []).map((e) => (
-                    <tr key={e.id} className={e.category === "Salaries & Wages" ? "bg-sky-50/60" : undefined}>
+                    <tr
+                      key={e.id}
+                      className={
+                        e.category === "Salaries & Wages"
+                          ? "bg-sky-50/60"
+                          : e.paymentMethod === "Petty Cash"
+                            ? "bg-amber-50/50"
+                            : undefined
+                      }
+                    >
                       <td>{e.expenseDate}</td>
                       <td>
                         <strong>{e.category}</strong>
                         {e.category === "Salaries & Wages" ? (
                           <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-sky-800">Payroll</span>
+                        ) : null}
+                        {e.paymentMethod === "Petty Cash" ? (
+                          <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-900">Petty cash</span>
                         ) : null}
                         <br />
                         <span className="text-xs text-muted-foreground">{e.description}{e.vendor ? ` · ${e.vendor}` : ""}</span>

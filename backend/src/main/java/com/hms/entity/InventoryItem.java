@@ -78,6 +78,22 @@ public class InventoryItem {
     @Column(name = "tax_category", nullable = false, length = 1)
     private String taxCategory = "B";
 
+    /** RRA EBM itemCd — immutable once assigned. */
+    @Column(name = "item_cd", length = 20)
+    private String itemCd;
+
+    @Column(name = "item_cls_cd", length = 16)
+    private String itemClsCd;
+
+    @Column(name = "item_ty_cd", length = 4)
+    private String itemTyCd;
+
+    @Column(name = "pkg_unit_cd", length = 4)
+    private String pkgUnitCd;
+
+    @Column(name = "qty_unit_cd", length = 4)
+    private String qtyUnitCd;
+
     @Column(name = "image_url", columnDefinition = "TEXT")
     private String imageUrl;
 

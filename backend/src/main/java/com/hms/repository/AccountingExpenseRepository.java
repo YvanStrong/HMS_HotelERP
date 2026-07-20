@@ -53,4 +53,6 @@ public interface AccountingExpenseRepository extends JpaRepository<AccountingExp
             @Param("from") LocalDate from,
             @Param("to") LocalDate to,
             @Param("category") String category);
+
+    boolean existsByHotel_IdAndReferenceNo(UUID hotelId, String referenceNo);
 }

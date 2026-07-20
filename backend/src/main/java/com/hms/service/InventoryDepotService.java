@@ -76,6 +76,10 @@ public class InventoryDepotService {
     private final AppUserRepository appUserRepository;
     private final PosOrderNotificationService posOrderNotificationService;
 
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired
+    private EbmSaleEventService ebmSaleEventService;
+
     public InventoryDepotService(
             TenantAccessService tenantAccessService,
             InventoryDepotRepository inventoryDepotRepository,
@@ -462,6 +466,13 @@ public class InventoryDepotService {
         }
         if (isMobilePosActivity(sale.getTableLabel(), sale.getStaffUser())) {
             posOrderNotificationService.publishSale(sale);
+        }
+        try {
+            if (ebmSaleEventService != null) {
+                ebmSaleEventService.enqueueDepotSale(hotelId, sale);
+            }
+        } catch (Exception ignored) {
+            // EBM must never block POS checkout
         }
         return new InventoryDepotDtos.CreateSaleResponse(
                 sale.getId(),

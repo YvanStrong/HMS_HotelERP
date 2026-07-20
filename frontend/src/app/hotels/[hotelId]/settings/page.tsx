@@ -230,6 +230,10 @@ export default function HotelSettingsPage() {
                   <Link href={`/hotels/${hotelId}/settings/catering-packages`} className="font-semibold text-indigo-700 hover:underline">
                     Catering packages (events)
                   </Link>
+                  {" · "}
+                  <Link href={`/hotels/${hotelId}/settings/ebm`} className="font-semibold text-indigo-700 hover:underline">
+                    EBM / RRA fiscalization
+                  </Link>
                 </p>
                 <h1 className="mt-1 text-3xl font-black tracking-tight text-foreground">{form.name || "Hotel"}</h1>
                 <p className="mt-3 text-sm text-muted-foreground">{headerCopy}</p>

@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
 import { printDepotSaleInvoice } from "@/lib/printDepotSaleInvoice";
+import { printPosOrderSlip } from "@/lib/printPosOrderSlip";
+import { fetchPosTables, type PosTableRow } from "@/lib/posTickets";
+import { loadAuthUser } from "@/lib/auth";
 import { PosAnnouncementsButton } from "@/components/PosAnnouncementsModal";
 
 type DepotRow = {
@@ -164,7 +167,15 @@ export default function PosPage() {
   const [depotProducts, setDepotProducts] = useState<DepotProductRow[]>([]);
   const [depotId, setDepotId] = useState("");
   const [orderType, setOrderType] = useState<OrderType>("Dine In");
-  const [locationLabel, setLocationLabel] = useState("Outlet / table");
+  const [locationLabel, setLocationLabel] = useState("");
+  const [locationMode, setLocationMode] = useState<"table" | "custom">("table");
+  const [selectedTableId, setSelectedTableId] = useState("");
+  const [posTables, setPosTables] = useState<PosTableRow[]>([]);
+  const [hotelPrintHeader, setHotelPrintHeader] = useState<{
+    companyName: string;
+    phone: string;
+    tin: string;
+  }>({ companyName: "", phone: "", tin: "" });
   const [customerLabel, setCustomerLabel] = useState("Walk-in Customer");
   const [customerTin, setCustomerTin] = useState("");
   const [chargeToFolio, setChargeToFolio] = useState(false);
@@ -195,15 +206,28 @@ export default function PosPage() {
     setLoading(true);
     setError(null);
     try {
-      const [d, inv, dp] = await Promise.all([
+      const [d, inv, dp, hotel] = await Promise.all([
         apiFetch<DepotRow[]>(`/api/v1/hotels/${hotelId}/inventory/depots`),
         apiFetch<InventoryItemsPayload>(`/api/v1/hotels/${hotelId}/inventory/items`),
         apiFetch<DepotProductRow[]>(`/api/v1/hotels/${hotelId}/inventory/depot-products`),
+        apiFetch<{
+          name?: string;
+          companyName?: string | null;
+          phone?: string | null;
+          tinNumber?: string | null;
+        }>(`/api/v1/hotels/${hotelId}/settings`, { quiet: true }).catch(() => null),
       ]);
       const activeDepots = (d ?? []).filter((x) => x.active);
       setDepots(activeDepots);
       setInventoryItems((inv?.data ?? []).filter((x) => x.active !== false));
       setDepotProducts((dp ?? []).filter((x) => x.active));
+      if (hotel) {
+        setHotelPrintHeader({
+          companyName: (hotel.companyName || hotel.name || "").trim(),
+          phone: (hotel.phone || "").trim(),
+          tin: (hotel.tinNumber || "").trim(),
+        });
+      }
       setDepotId((prev) => {
         if (prev && activeDepots.some((x) => x.id === prev)) return prev;
         const principal = activeDepots.find(
@@ -226,6 +250,39 @@ export default function PosPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTables() {
+      try {
+        const saleDepot = depotId && depotId !== ALL_DEPOTS ? depotId : undefined;
+        const rows = await fetchPosTables(hotelId, saleDepot, false);
+        if (cancelled) return;
+        const active = (rows ?? []).filter((t) => t.active);
+        setPosTables(active);
+        setSelectedTableId((prev) => {
+          if (prev && active.some((t) => t.id === prev)) return prev;
+          return "";
+        });
+      } catch {
+        if (!cancelled) setPosTables([]);
+      }
+    }
+    void loadTables();
+    return () => {
+      cancelled = true;
+    };
+  }, [hotelId, depotId]);
+
+  useEffect(() => {
+    if (locationMode !== "table") return;
+    const selected = posTables.find((t) => t.id === selectedTableId);
+    if (selected) {
+      setLocationLabel(selected.tableLabel);
+    } else if (!selectedTableId) {
+      setLocationLabel("");
+    }
+  }, [locationMode, selectedTableId, posTables]);
 
   useEffect(() => {
     if (!loading) scanInputRef.current?.focus();
@@ -656,7 +713,9 @@ export default function PosPage() {
     setCart({});
     setCartPriceOverrides({});
     setOrderType("Dine In");
-    setLocationLabel("Outlet / table");
+    setLocationLabel("");
+    setLocationMode("table");
+    setSelectedTableId("");
     setCustomerLabel("Walk-in Customer");
     setCustomerTin("");
     setChargeToFolio(false);
@@ -664,6 +723,35 @@ export default function PosPage() {
     setFolioSearch("");
     setFolioReservationOptions([]);
     setGuestSuggestions([]);
+  }
+
+  function buildOrderSlipPayload() {
+    const outlet = selectedOutlet ?? depots.find((d) => d.id === resolveSaleDepotId());
+    return {
+      companyName: hotelPrintHeader.companyName || outlet?.name || "Hotel",
+      phone: hotelPrintHeader.phone || null,
+      tin: hotelPrintHeader.tin || null,
+      tableLabel: locationLabel.trim() || null,
+      customerName: customerLabel.trim() || null,
+      servedBy: loadAuthUser()?.username ?? null,
+      outletName: outlet ? `${outlet.name} (${outlet.code})` : null,
+      lines: cartRows.map((r) => ({
+        itemName: r.name,
+        quantity: r.qty,
+        lineTotal: r.lineTotal,
+      })),
+      totalAmount: totalPayable,
+      printedAt: new Date(),
+    };
+  }
+
+  function printOrderSlip() {
+    if (cartRows.length === 0) {
+      setError("Add at least one item before printing the order.");
+      return;
+    }
+    setError(null);
+    printPosOrderSlip(buildOrderSlipPayload());
   }
 
   function saveDraft() {
@@ -713,7 +801,17 @@ export default function PosPage() {
         setCartPriceOverrides(o.cartPriceOverrides);
       }
       if (o.orderType && ORDER_TYPES.includes(o.orderType)) setOrderType(o.orderType);
-      if (typeof o.locationLabel === "string") setLocationLabel(o.locationLabel);
+      if (typeof o.locationLabel === "string") {
+        setLocationLabel(o.locationLabel);
+        const match = posTables.find((t) => t.tableLabel === o.locationLabel);
+        if (match) {
+          setLocationMode("table");
+          setSelectedTableId(match.id);
+        } else if (o.locationLabel.trim()) {
+          setLocationMode("custom");
+          setSelectedTableId("");
+        }
+      }
       if (typeof o.customerLabel === "string") setCustomerLabel(o.customerLabel);
       if (typeof o.customerTin === "string") setCustomerTin(o.customerTin);
       if (typeof o.chargeToFolio === "boolean") setChargeToFolio(o.chargeToFolio);
@@ -912,9 +1010,10 @@ export default function PosPage() {
           lines: buildCartLinePayload(),
         }),
       });
+      printPosOrderSlip(buildOrderSlipPayload());
       resetRunningOrderFields();
       sessionStorage.removeItem(DRAFT_KEY(hotelId));
-      setMsg(`Delivery ${res.deliveryNumber} saved. Convert it to invoice from the Invoices page after delivery is finished.`);
+      setMsg(`Delivery ${res.deliveryNumber} saved and order slip sent to printer. Convert to invoice from Invoices → Deliveries when finished.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delivery order failed");
     } finally {
@@ -1016,13 +1115,78 @@ export default function PosPage() {
             </div>
             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div>
-                <label className="text-[11px] text-muted-foreground">Location / table</label>
-                <input
-                  className="hms-input mt-0.5 w-full text-sm"
-                  value={locationLabel}
-                  onChange={(e) => setLocationLabel(e.target.value)}
-                  placeholder="e.g. Nanzige, Table 4"
-                />
+                <label className="text-[11px] text-muted-foreground">
+                  {orderType === "Take Away" ? "Location / note" : "Table"}
+                </label>
+                {orderType === "Take Away" || locationMode === "custom" || posTables.length === 0 ? (
+                  <div className="mt-0.5 space-y-1">
+                    <input
+                      className="hms-input w-full text-sm"
+                      value={locationLabel}
+                      onChange={(e) => {
+                        setLocationMode("custom");
+                        setSelectedTableId("");
+                        setLocationLabel(e.target.value);
+                      }}
+                      placeholder={
+                        orderType === "Take Away"
+                          ? "Pickup note / counter"
+                          : orderType === "Delivery"
+                            ? "Delivery address or table"
+                            : "e.g. TC17"
+                      }
+                    />
+                    {posTables.length > 0 && orderType !== "Take Away" ? (
+                      <button
+                        type="button"
+                        className="text-[11px] font-semibold text-primary hover:underline"
+                        onClick={() => {
+                          setLocationMode("table");
+                          setLocationLabel("");
+                        }}
+                      >
+                        Choose from system tables
+                      </button>
+                    ) : null}
+                    {posTables.length === 0 && orderType !== "Take Away" ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        No tables yet — add them under{" "}
+                        <a href="/app/pos/tables" className="font-semibold text-primary hover:underline">
+                          POS → Tables
+                        </a>
+                        .
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="mt-0.5 space-y-1">
+                    <select
+                      className="hms-input w-full text-sm"
+                      value={selectedTableId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        if (id === "__CUSTOM__") {
+                          setLocationMode("custom");
+                          setSelectedTableId("");
+                          setLocationLabel("");
+                          return;
+                        }
+                        setLocationMode("table");
+                        setSelectedTableId(id);
+                      }}
+                    >
+                      <option value="">Select table…</option>
+                      {posTables.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.tableLabel}
+                          {t.occupied ? " (occupied)" : ""}
+                          {t.capacity ? ` · ${t.capacity} seats` : ""}
+                        </option>
+                      ))}
+                      <option value="__CUSTOM__">Other / custom…</option>
+                    </select>
+                  </div>
+                )}
               </div>
               <div className="relative">
                 <label className="text-[11px] text-muted-foreground">Customer</label>
@@ -1263,14 +1427,25 @@ export default function PosPage() {
               >
                 Draft
               </button>
-              <button
-                type="button"
-                className="rounded-lg bg-amber-500 px-1 py-2 text-[11px] font-semibold leading-tight text-white hover:bg-amber-600 disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-xs"
-                disabled={placing || cartRows.length === 0 || orderType === "Delivery"}
-                onClick={() => void printProforma()}
-              >
-                Proforma
-              </button>
+              {orderType === "Delivery" ? (
+                <button
+                  type="button"
+                  className="rounded-lg bg-slate-700 px-1 py-2 text-[11px] font-semibold leading-tight text-white hover:bg-slate-800 disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-xs"
+                  disabled={placing || cartRows.length === 0}
+                  onClick={printOrderSlip}
+                >
+                  Print order
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="rounded-lg bg-amber-500 px-1 py-2 text-[11px] font-semibold leading-tight text-white hover:bg-amber-600 disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-xs"
+                  disabled={placing || cartRows.length === 0}
+                  onClick={() => void printProforma()}
+                >
+                  Proforma
+                </button>
+              )}
               <button
                 type="button"
                 className="rounded-lg bg-emerald-600 px-1 py-2 text-[11px] font-semibold leading-tight text-white hover:bg-emerald-700 disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-xs"
@@ -1301,7 +1476,7 @@ export default function PosPage() {
             </div>
             {orderType === "Delivery" && (
               <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-900">
-                Delivery mode saves a delivery order only. Create the invoice later from Invoices → Deliveries after delivery is finished.
+                Delivery mode prints a COMMANDE / ORDER slip (not an official receipt). Saving also prints the slip. Create the fiscal invoice later from Invoices → Deliveries.
               </p>
             )}
           </div>

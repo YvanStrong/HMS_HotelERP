@@ -160,6 +160,7 @@ public class AccountingService {
     public AccountingDtos.AccountingDashboard dashboard(
             UUID hotelId, String hotelHeader, LocalDate from, LocalDate to) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        syncMissingPettyCashExpenses(hotelId);
         LocalDate toDate = to != null ? to : LocalDate.now();
         LocalDate fromDate = from != null ? from : toDate.minusDays(29);
         AccountingDtos.AccountingReports reportData = reports(hotelId, fromDate, toDate);
@@ -440,20 +441,41 @@ public class AccountingService {
             p.setNotes(cleanNullable(req.notes()));
         }
         p = pettyCashRepository.save(p);
+        postPettyCashExpense(p);
+        return toPettyCashRow(p);
+    }
 
+    /** Backfill expense rows for already-disbursed requests that never posted to accounting_expenses. */
+    private void syncMissingPettyCashExpenses(UUID hotelId) {
+        for (PettyCashRequest p : pettyCashRepository.findByHotel_IdOrderByCreatedAtDesc(hotelId)) {
+            if (!DISBURSED.equals(p.getStatus())) {
+                continue;
+            }
+            postPettyCashExpense(p);
+        }
+    }
+
+    private void postPettyCashExpense(PettyCashRequest p) {
+        if (p.getRequestNumber() != null
+                && expenseRepository.existsByHotel_IdAndReferenceNo(p.getHotel().getId(), p.getRequestNumber())) {
+            return;
+        }
         AccountingExpense e = new AccountingExpense();
         e.setHotel(p.getHotel());
-        e.setExpenseDate(LocalDate.now());
+        LocalDate expenseDate = p.getDisbursedAt() != null
+                ? p.getDisbursedAt().atZone(ZoneOffset.UTC).toLocalDate()
+                : LocalDate.now();
+        e.setExpenseDate(expenseDate);
         e.setCategory(p.getCategory());
         e.setVendor(p.getRequestedBy());
         e.setDescription("Petty cash disbursement: " + p.getTitle() + " - " + p.getReason());
         e.setAmount(money(p.getAmountApproved() != null ? p.getAmountApproved() : p.getAmountRequested()));
         e.setPaymentMethod("Petty Cash");
         e.setReferenceNo(p.getRequestNumber());
-        e.setRecordedBy(tenantAccessService.currentUser().getUsername());
+        e.setRecordedBy(p.getDisbursedBy() != null
+                ? p.getDisbursedBy()
+                : tenantAccessService.currentUser().getUsername());
         expenseRepository.save(e);
-
-        return toPettyCashRow(p);
     }
 
     @Transactional
@@ -701,7 +723,7 @@ public class AccountingService {
             BigDecimal total = money(expense.getAmount());
             String expenseCode = expenseAccountCode(expense.getCategory());
             String expenseName = expenseAccountName(expense.getCategory());
-            String source = SALARY_EXPENSE_CATEGORY.equalsIgnoreCase(expense.getCategory()) ? "PAYROLL" : "EXPENSE";
+            String source = expenseLedgerSource(expense);
             rows.add(ledger(expense.getExpenseDate(), expense.getReferenceNo(), source, expenseCode, expenseName, "EXPENSE",
                     expense.getDescription(), total, BigDecimal.ZERO));
             rows.add(ledger(expense.getExpenseDate(), expense.getReferenceNo(), source, "1000", "Cash / Bank", "ASSET",
@@ -1461,6 +1483,20 @@ public class AccountingService {
 
     private static String expenseAccountName(String category) {
         return SALARY_EXPENSE_CATEGORY.equalsIgnoreCase(category) ? SALARY_EXPENSE_CATEGORY : category;
+    }
+
+    private static String expenseLedgerSource(AccountingExpense expense) {
+        if (SALARY_EXPENSE_CATEGORY.equalsIgnoreCase(expense.getCategory())) {
+            return "PAYROLL";
+        }
+        if (expense.getPaymentMethod() != null && "Petty Cash".equalsIgnoreCase(expense.getPaymentMethod().trim())) {
+            return "PETTY_CASH";
+        }
+        if (expense.getDescription() != null
+                && expense.getDescription().toLowerCase().startsWith("petty cash disbursement")) {
+            return "PETTY_CASH";
+        }
+        return "EXPENSE";
     }
 
     private static BigDecimal safe(BigDecimal v) {
