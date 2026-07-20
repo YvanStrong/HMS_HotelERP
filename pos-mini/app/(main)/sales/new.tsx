@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { LayoutAnimation, Modal, Platform, Pressable, ScrollView, Text, TextInput, UIManager, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -54,6 +54,10 @@ import { useBusinessFeatures } from '../../../src/hooks/useBusinessFeatures';
 import { formatMoney } from '../../../src/utils/currency';
 import { roundMoney } from '../../../src/utils/calculations';
 import { discountNeedsApproval } from '../../../src/utils/permissions';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 function buildPaymentMethods(prefs: PaymentMethodSettings): { method: SalePaymentInput['paymentMethod']; label: string }[] {
   const list: { method: SalePaymentInput['paymentMethod']; label: string }[] = [{ method: 'cash', label: 'Cash' }];
@@ -151,6 +155,7 @@ export default function NewSaleScreen() {
   const [pendingApproval, setPendingApproval] = useState<'manual-discount' | 'complete-sale' | null>(null);
   const [tipInput, setTipInput] = useState('');
   const [serviceInput, setServiceInput] = useState('');
+  const [showTipService, setShowTipService] = useState(false);
   const [activeTable, setActiveTable] = useState<PosTable | null>(null);
   const totals = getTotals();
 
@@ -218,6 +223,9 @@ export default function NewSaleScreen() {
       });
       setTipInput(String(pending.tipAmount ?? 0));
       setServiceInput(String(pending.serviceCharge ?? 0));
+      if ((pending.tipAmount ?? 0) > 0 || (pending.serviceCharge ?? 0) > 0) {
+        setShowTipService(true);
+      }
     },
     [loadSnapshot, setTableContext],
   );
@@ -789,36 +797,70 @@ export default function NewSaleScreen() {
 
         <FormField label="Sale notes" value={notes} onChangeText={setNotes} placeholder="Optional" multiline />
 
-        <View className="mb-3 flex-row gap-2">
-          <View className="flex-1">
-            <FormField
-              label="Tip"
-              value={tipInput}
-              onChangeText={(v) => {
-                setTipInput(v);
-                setTipAmount(Number(v) || 0);
-              }}
-              keyboardType="decimal-pad"
-              placeholder="0"
-            />
+        <Pressable
+          onPress={() => {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            if (showTipService) {
+              setTipInput('');
+              setServiceInput('');
+              setTipAmount(0);
+              setServiceCharge(0);
+              setShowTipService(false);
+            } else {
+              setShowTipService(true);
+            }
+          }}
+          className="mb-3 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3"
+        >
+          <View className="min-w-0 flex-1 pr-3">
+            <Text className="font-semibold text-app-text">Tip & service charge</Text>
+            <Text className="text-sm text-app-muted">
+              {showTipService || tipAmount > 0 || serviceCharge > 0
+                ? 'Optional amounts added to the total'
+                : 'Tap to add tip or service charge'}
+            </Text>
           </View>
-          <View className="flex-1">
-            <FormField
-              label="Service charge"
-              value={serviceInput}
-              onChangeText={(v) => {
-                setServiceInput(v);
-                setServiceCharge(Number(v) || 0);
-              }}
-              keyboardType="decimal-pad"
-              placeholder="0"
-            />
+          <Ionicons
+            name={showTipService ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color={colors.textMuted}
+          />
+        </Pressable>
+
+        {showTipService ? (
+          <View className="mb-3">
+            <View className="mb-1 flex-row gap-2">
+              <View className="flex-1">
+                <FormField
+                  label="Tip"
+                  value={tipInput}
+                  onChangeText={(v) => {
+                    setTipInput(v);
+                    setTipAmount(Number(v) || 0);
+                  }}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                />
+              </View>
+              <View className="flex-1">
+                <FormField
+                  label="Service charge"
+                  value={serviceInput}
+                  onChangeText={(v) => {
+                    setServiceInput(v);
+                    setServiceCharge(Number(v) || 0);
+                  }}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                />
+              </View>
+            </View>
+            {(tipAmount > 0 || serviceCharge > 0) ? (
+              <Text className="text-sm text-app-muted">
+                Adjusted total: {formatMoney(totals.total, settings)}
+              </Text>
+            ) : null}
           </View>
-        </View>
-        {(tipAmount > 0 || serviceCharge > 0) ? (
-          <Text className="mb-3 text-sm text-app-muted">
-            Adjusted total: {formatMoney(totals.total, settings)}
-          </Text>
         ) : null}
 
         <Pressable onPress={() => void completeSale()} className="mt-4 rounded-xl py-4" style={{ backgroundColor: colors.primary }}>

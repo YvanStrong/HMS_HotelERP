@@ -314,4 +314,27 @@ export async function getOnboardingComplete(): Promise<boolean> {
 
 export async function setOnboardingComplete(complete: boolean): Promise<void> {
   await setMeta('onboarding_complete', complete ? '1' : '0');
+  if (complete) {
+    await setMeta('onboarding_pending', '0');
+  }
+}
+
+/** First-install tour flag — only set after business setup, cleared when tour finishes. */
+export async function getOnboardingPending(): Promise<boolean> {
+  const raw = await getMeta('onboarding_pending');
+  return raw === '1' || raw === 'true';
+}
+
+export async function setOnboardingPending(pending: boolean): Promise<void> {
+  await setMeta('onboarding_pending', pending ? '1' : '0');
+}
+
+/** Show tour only for a brand-new install that just finished setup. */
+export async function shouldShowOnboardingTour(): Promise<boolean> {
+  if (await getOnboardingPending()) return true;
+  // Existing installs (upgrade / already set up) never see the tour.
+  if (!(await getOnboardingComplete())) {
+    await setOnboardingComplete(true);
+  }
+  return false;
 }

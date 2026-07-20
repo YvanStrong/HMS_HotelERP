@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,7 +14,7 @@ import { getThemeColors } from '../src/constants/theme';
 import { formatMoney } from '../src/utils/currency';
 import { showLowStockNotification } from '../src/notifications/alerts';
 import { useAndroidBackHandler } from '../src/hooks/useAndroidBackHandler';
-import { getOnboardingComplete } from '../src/repositories/metaRepository';
+import { shouldShowOnboardingTour } from '../src/repositories/metaRepository';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -35,6 +35,7 @@ export default function HomeScreen() {
   const palette = getThemeColors(themeMode);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const onboardingChecked = useRef(false);
 
   const switchStaff = async () => {
     await lock();
@@ -68,8 +69,12 @@ export default function HomeScreen() {
         if (settings?.lowStockAlert && s.lowStockCount > 0) {
           await showLowStockNotification(s.lowStockCount);
         }
-        const done = await getOnboardingComplete();
-        if (!done) setShowOnboarding(true);
+        if (onboardingChecked.current) return;
+        onboardingChecked.current = true;
+        // Only first install after setup — never on every home visit or app upgrade.
+        if (await shouldShowOnboardingTour()) {
+          setShowOnboarding(true);
+        }
       });
     }, [isSetupComplete, isUnlocked, pinRequired, staffSignInRequired, refreshStats, settings?.lowStockAlert]),
   );

@@ -60,6 +60,7 @@ export default function SettingsIndex() {
       <HubLink label="Shift / Z-report" href="/(main)/settings/shift" subtitle="Open and close shifts" />
       <HubLink label="PIN & security" href="/(main)/settings/security" subtitle="PIN lock and recovery" />
       <HubLink label="Backup & restore" href="/(main)/settings/backup" subtitle="Google Drive, schedule, size & import" />
+      <HubLink label="Import products CSV" href="/(main)/settings/import-csv" subtitle="Preview and import products from a CSV file" />
       <HubLink label="About POS Mini" href="/(main)/settings/about" subtitle="Version and dev build notes" />
       <LogoutButton variant="full" />
     </ScreenContainer>

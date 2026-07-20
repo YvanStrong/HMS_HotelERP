@@ -7,6 +7,7 @@ import { KeyboardFormScroll } from '../../src/components/KeyboardFormScroll';
 import { useAppStore } from '../../src/store/appStore';
 import { useThemeColors } from '../../src/hooks/useTheme';
 import { setPinHash } from '../../src/utils/pin';
+import { setOnboardingPending } from '../../src/repositories/metaRepository';
 
 import { SelectField } from '../../src/components/SelectField';
 import { BUSINESS_TYPES, DEFAULT_BUSINESS_TYPE, type BusinessTypeId } from '../../src/constants/businessTypes';
@@ -59,6 +60,7 @@ export default function SetupScreen() {
       if (pinEnabled) {
         await setPinHash(pin);
       }
+      await setOnboardingPending(true);
       Toast.show({ type: 'success', text1: 'Setup complete' });
       router.replace('/');
     } catch (e) {
