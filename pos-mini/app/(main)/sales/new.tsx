@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
@@ -120,6 +120,23 @@ export default function NewSaleScreen() {
     variant?: ProductVariant;
   } | null>(null);
   const totals = getTotals();
+
+  const openCheckout = useCallback(() => {
+    if (!items.length) {
+      Toast.show({ type: 'error', text1: t('sales.emptyCart') });
+      return;
+    }
+    const nextTotal = getTotals().total;
+    setPayInput(String(nextTotal));
+    setAmountPaid(nextTotal);
+    setShowPay(true);
+  }, [getTotals, items.length, setAmountPaid, t]);
+
+  useEffect(() => {
+    if (!showPay || splitEnabled || paymentMethod === 'credit') return;
+    setPayInput(String(totals.total));
+    setAmountPaid(totals.total);
+  }, [showPay, totals.total, splitEnabled, paymentMethod, setAmountPaid]);
 
   const paymentMethods = useMemo(
     () => buildPaymentMethods(paymentPrefs ?? { cardEnabled: true, mobileEnabled: true, creditEnabled: true, mobileMoneyLabel: 'Mobile' }),
@@ -595,7 +612,7 @@ export default function NewSaleScreen() {
           style={{ paddingBottom: Math.max(insets.bottom, 20) }}
         >
           <View className="flex-row gap-2">
-          <Pressable onPress={() => (items.length ? setShowPay(true) : Toast.show({ type: 'error', text1: t('sales.emptyCart') }))} className="flex-1 rounded-xl py-3" style={{ backgroundColor: colors.primary }}>
+          <Pressable onPress={openCheckout} className="flex-1 rounded-xl py-3" style={{ backgroundColor: colors.primary }}>
             <Text className="text-center font-semibold text-white">{t('sales.checkout')}</Text>
           </Pressable>
           <Pressable onPress={() => void holdCart()} className="rounded-xl border border-app-border bg-app-surface px-3 py-3">
