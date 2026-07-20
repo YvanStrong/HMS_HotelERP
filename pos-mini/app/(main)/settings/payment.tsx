@@ -8,9 +8,10 @@ import {
   getPaymentMethodSettings,
   savePaymentMethodSettings,
 } from '../../../src/repositories/metaRepository';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 
 export default function PaymentSettingsScreen() {
+  const colors = useThemeColors();
   const [cardEnabled, setCardEnabled] = useState(true);
   const [mobileEnabled, setMobileEnabled] = useState(true);
   const [creditEnabled, setCreditEnabled] = useState(true);

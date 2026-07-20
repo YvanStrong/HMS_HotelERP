@@ -1,0 +1,32 @@
+{
+  "home": {
+    "title": "POS Mini",
+    "todaySales": "Today sales",
+    "products": "Products",
+    "modules": "Modules",
+    "newSale": "New sale",
+    "transactions": "transactions",
+    "lowStock": "low stock"
+  },
+  "sales": {
+    "title": "Sales",
+    "newSale": "New Sale",
+    "cart": "Cart",
+    "checkout": "Checkout",
+    "complete": "Complete sale",
+    "emptyCart": "Cart is empty",
+    "noOpenShift": "No open shift",
+    "openShiftHint": "Open a shift in Settings before checkout.",
+    "openShift": "Open shift"
+  },
+  "settings": {
+    "title": "Settings",
+    "darkMode": "Dark mode",
+    "language": "Language",
+    "english": "English",
+    "french": "French",
+    "staff": "Staff",
+    "shift": "Shift / Z-report",
+    "modifiers": "Modifiers"
+  }
+}

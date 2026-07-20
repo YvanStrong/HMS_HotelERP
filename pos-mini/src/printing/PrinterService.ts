@@ -183,3 +183,54 @@ export async function testPrint(): Promise<{ success: boolean; simulated?: boole
   await withTimeout(printRawToAddress(address, body), PRINT_TIMEOUT_MS);
   return { success: true };
 }
+
+export type KitchenPrintItem = {
+  productId: string;
+  productName: string;
+  categoryId: string | null;
+  variantName?: string | null;
+  quantity: number;
+  modifiers: { optionName: string }[];
+};
+
+function buildKitchenTicketText(invoiceNumber: string, items: KitchenPrintItem[], notes: string | null): string {
+  const lines = ['*** KITCHEN ***', `Order: ${invoiceNumber}`, new Date().toLocaleString(), '----------------'];
+  for (const item of items) {
+    lines.push(`${item.quantity}x ${item.productName}${item.variantName ? ` (${item.variantName})` : ''}`);
+    if (item.modifiers.length) {
+      lines.push(`  + ${item.modifiers.map((m) => m.optionName).join(', ')}`);
+    }
+  }
+  if (notes?.trim()) lines.push(`Note: ${notes.trim()}`);
+  return lines.join('\n');
+}
+
+export async function printKitchenTicketsForSale(
+  invoiceNumber: string,
+  items: KitchenPrintItem[],
+  notes: string | null,
+): Promise<void> {
+  const { getKitchenPrinterRoutes } = await import('../repositories/metaRepository');
+  const routes = await getKitchenPrinterRoutes();
+  const defaultAddress = await savedPrinterAddress();
+
+  const buckets = new Map<string, KitchenPrintItem[]>();
+  for (const item of items) {
+    const route = routes.find((r) => r.categoryId === item.categoryId);
+    const key = route?.printerAddress ?? defaultAddress ?? '__none__';
+    const list = buckets.get(key) ?? [];
+    list.push(item);
+    buckets.set(key, list);
+  }
+
+  for (const [address, bucket] of buckets) {
+    if (address === '__none__' || bucket.length === 0) continue;
+    const text = buildKitchenTicketText(invoiceNumber, bucket, notes);
+    const native = loadNative();
+    if (!native) {
+      console.log('[PrinterService] SIMULATED KITCHEN PRINT:\n', text);
+      continue;
+    }
+    await withTimeout(printRawToAddress(address, text), PRINT_TIMEOUT_MS);
+  }
+}

@@ -7,11 +7,12 @@ import {
   exportAndShareCsv,
   exportAndShareJsonBackup,
 } from '../../../src/utils/export';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 
 type ExportKind = 'sales' | 'products' | 'stock' | 'backup';
 
 export default function ExportReportScreen() {
+  const colors = useThemeColors();
   const [busy, setBusy] = useState<ExportKind | null>(null);
 
   const exportSales = async () => {

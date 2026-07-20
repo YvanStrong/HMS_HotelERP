@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
-import { cardStyle } from '../constants/theme';
+import { useCardStyle, useThemeColors } from '../hooks/useTheme';
 
 type Props = {
   children: ReactNode;
@@ -11,11 +11,13 @@ type Props = {
 };
 
 export function ListCard({ children, onPress, onLongPress, highlight, style }: Props) {
+  const cardStyle = useCardStyle();
+  const palette = useThemeColors();
   const surface = (
     <View
       style={[
         cardStyle,
-        highlight ? { backgroundColor: '#fef9c3', borderColor: '#eab308' } : undefined,
+        highlight ? { backgroundColor: palette.warning + '33', borderColor: palette.warning } : undefined,
         { marginBottom: 8, padding: 12 },
         style,
       ]}

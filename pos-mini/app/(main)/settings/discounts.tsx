@@ -82,21 +82,21 @@ export default function DiscountsSettingsScreen() {
   if (showForm) {
     return (
       <KeyboardFormScroll contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16 }}>
-        <Text className="mb-4 text-xl font-bold text-black">New Discount Rule</Text>
+        <Text className="mb-4 text-xl font-bold text-app-text">New Discount Rule</Text>
         <TextInput
           value={name}
           onChangeText={setName}
           placeholder="Rule name"
-          className="mb-3 border-2 border-black bg-white px-3 py-3 text-black"
+          className="mb-3 border-2 border-app-border bg-app-surface px-3 py-3 text-app-text"
         />
         <View className="mb-3 flex-row gap-2">
           {(['percent', 'fixed'] as DiscountType[]).map((t) => (
             <Pressable
               key={t}
               onPress={() => setType(t)}
-              className={`border-2 border-black px-4 py-2 ${type === t ? 'bg-app-primary-soft border-app-primary' : 'bg-app-surface border-app-border'}`}
+              className={`border-2 border-app-border px-4 py-2 ${type === t ? 'bg-app-primary-soft border-app-primary' : 'bg-app-surface border-app-border'}`}
             >
-              <Text className="font-bold capitalize text-black">{t}</Text>
+              <Text className="font-bold capitalize text-app-text">{t}</Text>
             </Pressable>
           ))}
         </View>
@@ -105,20 +105,20 @@ export default function DiscountsSettingsScreen() {
           onChangeText={setValue}
           placeholder={type === 'percent' ? 'Percent (e.g. 10)' : 'Fixed amount'}
           keyboardType="decimal-pad"
-          className="mb-3 border-2 border-black bg-white px-3 py-3 text-black"
+          className="mb-3 border-2 border-app-border bg-app-surface px-3 py-3 text-app-text"
         />
         <TextInput
           value={minPurchase}
           onChangeText={setMinPurchase}
           placeholder="Minimum purchase"
           keyboardType="decimal-pad"
-          className="mb-3 border-2 border-black bg-white px-3 py-3 text-black"
+          className="mb-3 border-2 border-app-border bg-app-surface px-3 py-3 text-app-text"
         />
-        <Pressable onPress={() => void saveRule()} className="border-2 border-black bg-app-primary py-4">
+        <Pressable onPress={() => void saveRule()} className="border-2 border-app-border bg-app-primary py-4">
           <Text className="text-center font-bold text-white">Save Rule</Text>
         </Pressable>
-        <Pressable onPress={resetForm} className="mt-2 border-2 border-black py-3">
-          <Text className="text-center font-bold text-black">Cancel</Text>
+        <Pressable onPress={resetForm} className="mt-2 border-2 border-app-border py-3">
+          <Text className="text-center font-bold text-app-text">Cancel</Text>
         </Pressable>
       </KeyboardFormScroll>
     );
@@ -128,8 +128,8 @@ export default function DiscountsSettingsScreen() {
     <>
       <KeyboardFormScroll contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8 }}>
         <View className="mb-4 flex-row items-center justify-between">
-          <Text className="text-xl font-bold text-black">Discount Rules</Text>
-          <Pressable onPress={() => setShowForm(true)} className="border-2 border-black bg-app-primary px-4 py-2">
+          <Text className="text-xl font-bold text-app-text">Discount Rules</Text>
+          <Pressable onPress={() => setShowForm(true)} className="border-2 border-app-border bg-app-primary px-4 py-2">
             <Text className="font-bold text-white">Add</Text>
           </Pressable>
         </View>
@@ -138,10 +138,10 @@ export default function DiscountsSettingsScreen() {
           <Text className="text-gray-600">No discount rules yet.</Text>
         ) : (
           rules.map((rule) => (
-            <View key={rule.id} className="mb-2 border-2 border-black bg-white p-3">
+            <View key={rule.id} className="mb-2 border-2 border-app-border bg-app-surface p-3">
               <View className="flex-row items-start justify-between">
                 <View className="flex-1">
-                  <Text className="font-bold text-black">{rule.name}</Text>
+                  <Text className="font-bold text-app-text">{rule.name}</Text>
                   <Text className="text-sm text-gray-600">
                     {rule.type === 'percent' ? `${rule.value}% off` : `${formatMoney(rule.value, settings)} off`}
                     {rule.minPurchase > 0
@@ -152,7 +152,7 @@ export default function DiscountsSettingsScreen() {
                     <Text className="text-xs text-red-600">Inactive</Text>
                   ) : null}
                 </View>
-                <Pressable onPress={() => setDeleteId(rule.id)} className="border border-black px-2 py-1">
+                <Pressable onPress={() => setDeleteId(rule.id)} className="border border-app-border px-2 py-1">
                   <Text className="text-sm font-bold text-red-600">Delete</Text>
                 </Pressable>
               </View>

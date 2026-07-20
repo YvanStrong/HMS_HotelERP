@@ -4,12 +4,13 @@ import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { ScreenContainer } from '../../../src/components/ScreenContainer';
 import { DateRangePicker } from '../../../src/components/DateRangePicker';
 import { SummaryCard } from '../../../src/components/SummaryCard';
-import { cardStyle, colors } from '../../../src/constants/theme';
+import { useThemedStyles } from '../../../src/hooks/useTheme';
 import { useAppStore } from '../../../src/store/appStore';
 import { formatMoney } from '../../../src/utils/currency';
 import { getPresetRange, getProfitReport, type ReportDateRange } from '../../../src/utils/reports';
 
 export default function ProfitReportScreen() {
+  const { cardStyle, colors } = useThemedStyles();
   const settings = useAppStore((s) => s.settings);
   const { preset } = useLocalSearchParams<{ preset?: string }>();
   const initialPreset = (preset === 'week' || preset === 'month' ? preset : 'today') as 'today' | 'week' | 'month';

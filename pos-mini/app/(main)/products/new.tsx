@@ -7,25 +7,27 @@ import { FormField } from '../../../src/components/FormField';
 import { KeyboardFormScroll } from '../../../src/components/KeyboardFormScroll';
 import { ProductImagePicker } from '../../../src/components/ProductImagePicker';
 import { OptionPicker } from '../../../src/components/OptionPicker';
+import { UnitPicker } from '../../../src/components/UnitPicker';
 import { listCategories } from '../../../src/repositories/categoryRepository';
 import { createProduct, updateProduct } from '../../../src/repositories/productRepository';
 import type { Category } from '../../../src/types';
 import type { ProductTaxClass } from '../../../src/constants/productTax';
 import { PRODUCT_TAX_OPTIONS } from '../../../src/constants/productTax';
-import { PRODUCT_UNITS } from '../../../src/constants/productUnits';
 import { useAppStore } from '../../../src/store/appStore';
-import { colors } from '../../../src/constants/theme';
-import { generateSku } from '../../../src/utils/barcode';
+import { useThemeColors } from '../../../src/hooks/useTheme';
+import { generateSkuFromName } from '../../../src/utils/barcode';
 import { formatMoney } from '../../../src/utils/currency';
 import { persistProductImage } from '../../../src/utils/productImage';
 
 export default function NewProductScreen() {
+  const colors = useThemeColors();
   const router = useRouter();
   const settings = useAppStore((s) => s.settings);
   const [categories, setCategories] = useState<Category[]>([]);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [sku, setSku] = useState(generateSku());
+  const [sku, setSku] = useState('');
+  const [skuTouched, setSkuTouched] = useState(false);
   const [barcode, setBarcode] = useState('');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [costPrice, setCostPrice] = useState('0');
@@ -36,6 +38,8 @@ export default function NewProductScreen() {
   const [taxClass, setTaxClass] = useState<ProductTaxClass>('A');
   const [trackStock, setTrackStock] = useState(true);
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [expiryDate, setExpiryDate] = useState('');
+  const [batchLot, setBatchLot] = useState('');
   const [showScanner, setShowScanner] = useState(false);
 
   const margin = useMemo(() => {
@@ -44,6 +48,13 @@ export default function NewProductScreen() {
     if (sell <= 0) return { pct: 0, amount: 0 };
     return { pct: ((sell - cost) / sell) * 100, amount: sell - cost };
   }, [costPrice, sellPrice]);
+
+  const onNameChange = (value: string) => {
+    setName(value);
+    if (!skuTouched) {
+      setSku(value.trim() ? generateSkuFromName(value) : '');
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -60,16 +71,21 @@ export default function NewProductScreen() {
       const product = await createProduct({
         name: name.trim(),
         description: description.trim() || null,
-        sku,
+        sku: sku || generateSkuFromName(name),
         barcode: barcode || null,
         categoryId,
         costPrice: Number(costPrice) || 0,
         sellPrice: Number(sellPrice) || 0,
-        stockQty: Number(stockQty) || 0,
-        minStock: Number(minStock) || 0,
+        stockQty: trackStock ? Number(stockQty) || 0 : 0,
+        minStock: trackStock ? Number(minStock) || 0 : 0,
         unit,
         taxClass,
+        isTaxable: taxClass === 'B',
+        taxRate: taxClass === 'B' ? 18 : 0,
+        taxInclusive: false,
         imageUri: null,
+        expiryDate: expiryDate.trim() || null,
+        batchLot: batchLot.trim() || null,
         trackStock,
         isActive: true,
       });
@@ -90,9 +106,18 @@ export default function NewProductScreen() {
     <>
       <KeyboardFormScroll contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8 }}>
         <ProductImagePicker value={imageUri} onChange={setImageUri} />
-        <FormField label="Product name" required value={name} onChangeText={setName} placeholder="e.g. Espresso" />
+        <FormField label="Product name" required value={name} onChangeText={onNameChange} placeholder="e.g. Espresso" />
         <FormField label="Description" value={description} onChangeText={setDescription} multiline />
-        <FormField label="SKU" value={sku} onChangeText={setSku} placeholder="Auto-generated" />
+        <FormField
+          label="SKU"
+          value={sku}
+          onChangeText={(v) => {
+            setSkuTouched(true);
+            setSku(v);
+          }}
+          placeholder="Generated from product name"
+          hint="Auto-updates as you type the name — edit anytime"
+        />
         <View className="mb-4 flex-row items-end gap-2">
           <View className="flex-1">
             <FormField label="Barcode" value={barcode} onChangeText={setBarcode} placeholder="Scan or type" />
@@ -127,14 +152,26 @@ export default function NewProductScreen() {
             Profit margin: {margin.pct.toFixed(1)}% ({formatMoney(margin.amount, settings)} per unit)
           </Text>
         </View>
-        <FormField label="Stock quantity" value={stockQty} onChangeText={setStockQty} keyboardType="decimal-pad" />
-        <FormField label="Minimum stock alert" value={minStock} onChangeText={setMinStock} keyboardType="decimal-pad" />
-        <OptionPicker label="Unit of measure" options={PRODUCT_UNITS} value={unit} onChange={setUnit} />
-        <OptionPicker label="Tax category" options={PRODUCT_TAX_OPTIONS} value={taxClass} onChange={(v) => setTaxClass(v as ProductTaxClass)} />
         <View className="mb-4 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
           <Text className="font-semibold text-app-text">Track stock</Text>
           <Switch value={trackStock} onValueChange={setTrackStock} />
         </View>
+        {trackStock ? (
+          <>
+            <FormField label="Stock quantity" value={stockQty} onChangeText={setStockQty} keyboardType="decimal-pad" />
+            <FormField label="Minimum stock alert" value={minStock} onChangeText={setMinStock} keyboardType="decimal-pad" />
+          </>
+        ) : null}
+        <UnitPicker value={unit} onChange={setUnit} />
+        <OptionPicker
+          label="Tax category"
+          options={PRODUCT_TAX_OPTIONS}
+          value={taxClass}
+          onChange={(v) => setTaxClass(v as ProductTaxClass)}
+        />
+        <FormField label="Expiry date" value={expiryDate} onChangeText={setExpiryDate} placeholder="YYYY-MM-DD (optional)" />
+        <FormField label="Batch / lot" value={batchLot} onChangeText={setBatchLot} placeholder="Optional" />
+        <Text className="mb-2 text-sm text-app-muted">Add variants after saving the product.</Text>
         <Pressable
           onPress={() => void save()}
           className="mb-8 rounded-xl py-4"

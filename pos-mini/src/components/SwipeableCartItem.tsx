@@ -3,7 +3,7 @@ import { Swipeable } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import { CartItemRow } from './CartItem';
 import type { CartItem } from '../types';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 
 type Props = {
   item: CartItem;
@@ -14,6 +14,7 @@ type Props = {
 };
 
 export function SwipeableCartItem({ item, onIncrease, onDecrease, onRemove, onSetQuantity }: Props) {
+  const colors = useThemeColors();
   const renderRightActions = () => (
     <Pressable
       onPress={onRemove}

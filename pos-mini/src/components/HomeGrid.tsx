@@ -1,7 +1,7 @@
 import { Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { cardStyle, colors } from '../constants/theme';
+import { useCardStyle, useThemeColors } from '../hooks/useTheme';
 
 type Module = {
   key: string;
@@ -24,6 +24,8 @@ const MODULES: Module[] = [
 export function HomeGrid() {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const cardStyle = useCardStyle();
+  const palette = useThemeColors();
   const gap = 12;
   const horizontalPad = 16;
   const tileWidth = (width - horizontalPad * 2 - gap) / 2;
@@ -40,9 +42,9 @@ export function HomeGrid() {
           <View className="items-center justify-center p-4">
             <View
               className="mb-2 h-11 w-11 items-center justify-center rounded-full"
-              style={{ backgroundColor: colors.primarySoft }}
+              style={{ backgroundColor: palette.primarySoft }}
             >
-              <Ionicons name={mod.icon} size={22} color={colors.primary} />
+              <Ionicons name={mod.icon} size={22} color={palette.primary} />
             </View>
             <Text className="text-center text-sm font-semibold text-app-text">{mod.title}</Text>
           </View>

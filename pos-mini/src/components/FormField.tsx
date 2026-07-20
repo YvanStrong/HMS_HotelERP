@@ -1,5 +1,5 @@
 import { Text, TextInput, View, type TextInputProps } from 'react-native';
-import { colors, inputStyle } from '../constants/theme';
+import { useInputStyle, useThemeColors } from '../hooks/useTheme';
 
 type Props = TextInputProps & {
   label: string;
@@ -8,6 +8,9 @@ type Props = TextInputProps & {
 };
 
 export function FormField({ label, hint, required, style, ...props }: Props) {
+  const inputStyle = useInputStyle();
+  const palette = useThemeColors();
+
   return (
     <View className="mb-3 w-full">
       <Text className="mb-1.5 text-sm font-semibold text-app-text">
@@ -15,7 +18,7 @@ export function FormField({ label, hint, required, style, ...props }: Props) {
         {required ? <Text className="text-app-danger"> *</Text> : null}
       </Text>
       <TextInput
-        placeholderTextColor={colors.placeholder}
+        placeholderTextColor={palette.placeholder}
         style={[inputStyle, style]}
         {...props}
       />

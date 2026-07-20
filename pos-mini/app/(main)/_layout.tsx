@@ -1,6 +1,9 @@
 import { ThemedStack } from '../../src/navigation/ThemedStack';
+import { useAndroidBackHandler } from '../../src/hooks/useAndroidBackHandler';
 
 export default function MainLayout() {
+  useAndroidBackHandler();
+
   return (
     <ThemedStack>
       <ThemedStack.Screen name="sales" options={{ headerShown: false }} />

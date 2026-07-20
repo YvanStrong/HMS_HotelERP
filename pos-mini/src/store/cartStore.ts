@@ -1,16 +1,25 @@
 import { create } from 'zustand';
-import type { CartItem, CartTotals, DiscountMode, DiscountType, PaymentMethod, SalePaymentInput } from '../types';
+
+import type {
+  CartItem,
+  CartTotals,
+  DiscountMode,
+  DiscountType,
+  PaymentMethod,
+  SalePaymentInput,
+} from '../types';
 import {
   calculateChange,
   calculateDiscountAmount,
+  calculateCartTax,
   calculateLineTotal,
   calculateSubtotal,
-  calculateCartTax,
   calculateTotal,
   roundMoney,
 } from '../utils/calculations';
+import { buildCartLineKey } from '../utils/cartLineKey';
 import { useAppStore } from './appStore';
-import { normalizeProductTaxClass } from '../constants/productTax';
+import { normalizeProductTaxClass, TAXABLE_VAT_RATE } from '../constants/productTax';
 
 type CartState = {
   items: CartItem[];
@@ -25,9 +34,15 @@ type CartState = {
   notes: string;
   splitEnabled: boolean;
   splitPayments: SalePaymentInput[];
-  addItem: (item: Omit<CartItem, 'quantity' | 'discountAmount'> & { quantity?: number }) => void;
-  removeItem: (productId: string) => void;
-  updateQuantity: (productId: string, quantity: number) => void;
+  tipAmount: number;
+  serviceCharge: number;
+  tableId: string | null;
+  pendingSaleId: string | null;
+  addItem: (
+    item: Omit<CartItem, 'quantity' | 'discountAmount' | 'lineKey'> & { quantity?: number },
+  ) => void;
+  removeItem: (lineKey: string) => void;
+  updateQuantity: (lineKey: string, quantity: number) => void;
   setCustomer: (customerId: string | null) => void;
   setDiscountMode: (mode: DiscountMode) => void;
   setDiscountPercent: (percent: number) => void;
@@ -40,6 +55,9 @@ type CartState = {
   setSplitPayments: (payments: SalePaymentInput[]) => void;
   addSplitPayment: (payment: SalePaymentInput) => void;
   removeSplitPayment: (index: number) => void;
+  setTipAmount: (amount: number) => void;
+  setServiceCharge: (amount: number) => void;
+  setTableContext: (tableId: string | null, pendingSaleId?: string | null) => void;
   loadSnapshot: (snapshot: Partial<CartState>) => void;
   getSnapshot: () => string;
   clear: () => void;
@@ -47,6 +65,9 @@ type CartState = {
   toSaleItems: () => {
     productId: string;
     productName: string;
+    variantId?: string | null;
+    variantName?: string | null;
+    modifiersJson?: string | null;
     unitPrice: number;
     costPrice: number;
     quantity: number;
@@ -68,40 +89,65 @@ const initialState = {
   notes: '',
   splitEnabled: false,
   splitPayments: [] as SalePaymentInput[],
+  tipAmount: 0,
+  serviceCharge: 0,
+  tableId: null as string | null,
+  pendingSaleId: null as string | null,
 };
+
+function normalizeCartItem(
+  item: Omit<CartItem, 'quantity' | 'discountAmount' | 'lineKey'> & {
+    quantity?: number;
+    discountAmount?: number;
+    lineKey?: string;
+  },
+): CartItem {
+  const taxClass = normalizeProductTaxClass(
+    item.taxClass ?? (item.isTaxable ? 'B' : 'A'),
+  );
+  const isTaxable = item.isTaxable ?? taxClass === 'B';
+  return {
+    ...item,
+    lineKey: item.lineKey ?? buildCartLineKey(item.productId, item.variantId, item.modifiers),
+    quantity: item.quantity ?? 1,
+    discountAmount: item.discountAmount ?? 0,
+    unit: item.unit ?? 'pcs',
+    taxClass,
+    isTaxable,
+    taxRate: item.taxRate ?? (isTaxable ? TAXABLE_VAT_RATE : 0),
+    taxInclusive: item.taxInclusive ?? false,
+  };
+}
 
 export const useCartStore = create<CartState>((set, get) => ({
   ...initialState,
 
   addItem: (item) => {
+    const normalized = normalizeCartItem(item);
     const items = [...get().items];
-    const idx = items.findIndex((i) => i.productId === item.productId);
+    const idx = items.findIndex((i) => i.lineKey === normalized.lineKey);
     if (idx >= 0) {
       items[idx] = {
         ...items[idx],
         quantity: items[idx].quantity + (item.quantity ?? 1),
       };
     } else {
-      items.push({
-        ...item,
-        quantity: item.quantity ?? 1,
-        discountAmount: 0,
-      });
+      items.push(normalized);
     }
     set({ items });
   },
 
-  removeItem: (productId) => {
-    set({ items: get().items.filter((i) => i.productId !== productId) });
+  removeItem: (lineKey) => {
+    set({ items: get().items.filter((i) => i.lineKey !== lineKey) });
   },
 
-  updateQuantity: (productId, quantity) => {
+  updateQuantity: (lineKey, quantity) => {
     if (quantity <= 0) {
-      get().removeItem(productId);
+      get().removeItem(lineKey);
       return;
     }
     set({
-      items: get().items.map((i) => (i.productId === productId ? { ...i, quantity } : i)),
+      items: get().items.map((i) => (i.lineKey === lineKey ? { ...i, quantity } : i)),
     });
   },
 
@@ -132,21 +178,42 @@ export const useCartStore = create<CartState>((set, get) => ({
   removeSplitPayment: (index) =>
     set({ splitPayments: get().splitPayments.filter((_, i) => i !== index) }),
 
+  setTipAmount: (amount) => set({ tipAmount: Math.max(0, amount) }),
+  setServiceCharge: (amount) => set({ serviceCharge: Math.max(0, amount) }),
+  setTableContext: (tableId, pendingSaleId = null) => set({ tableId, pendingSaleId }),
+
   loadSnapshot: (snapshot) => {
     set({
       ...initialState,
       ...snapshot,
-      items: (snapshot.items ?? []).map((item) => ({
-        ...item,
-        unit: item.unit ?? 'pcs',
-        taxClass: normalizeProductTaxClass(item.taxClass),
-      })),
+      items: (snapshot.items ?? []).map((item) => normalizeCartItem(item)),
       splitPayments: snapshot.splitPayments ?? [],
+      tipAmount: snapshot.tipAmount ?? 0,
+      serviceCharge: snapshot.serviceCharge ?? 0,
+      tableId: snapshot.tableId ?? null,
+      pendingSaleId: snapshot.pendingSaleId ?? null,
     });
   },
 
   getSnapshot: () => {
-    const { items, customerId, discountMode, discountPercent, fixedDiscount, manualDiscountType, manualDiscountValue, paymentMethod, amountPaid, notes, splitEnabled, splitPayments } = get();
+    const {
+      items,
+      customerId,
+      discountMode,
+      discountPercent,
+      fixedDiscount,
+      manualDiscountType,
+      manualDiscountValue,
+      paymentMethod,
+      amountPaid,
+      notes,
+      splitEnabled,
+      splitPayments,
+      tipAmount,
+      serviceCharge,
+      tableId,
+      pendingSaleId,
+    } = get();
     return JSON.stringify({
       items,
       customerId,
@@ -160,35 +227,52 @@ export const useCartStore = create<CartState>((set, get) => ({
       notes,
       splitEnabled,
       splitPayments,
+      tipAmount,
+      serviceCharge,
+      tableId,
+      pendingSaleId,
     });
   },
 
   clear: () => set({ ...initialState }),
 
   getTotals: () => {
-    const { items, discountMode, discountPercent, fixedDiscount, amountPaid } = get();
+    const { items, discountMode, discountPercent, fixedDiscount, amountPaid, tipAmount, serviceCharge } =
+      get();
     const settings = useAppStore.getState().settings;
     const subtotal = roundMoney(calculateSubtotal(items));
     const discountAmount =
       discountMode === 'off'
         ? 0
         : roundMoney(calculateDiscountAmount(subtotal, discountPercent, fixedDiscount));
-    const taxAmount = roundMoney(
-      calculateCartTax(items, discountAmount, settings?.taxInclusive ?? false),
-    );
-    const total = roundMoney(
-      calculateTotal(subtotal, discountAmount, taxAmount, settings?.taxInclusive ?? false),
-    );
+    const taxInclusive = settings?.taxInclusive ?? false;
+    const taxAmount = roundMoney(calculateCartTax(items, discountAmount, taxInclusive));
+    const baseTotal = roundMoney(calculateTotal(subtotal, discountAmount, taxAmount, taxInclusive));
+    const tip = roundMoney(tipAmount);
+    const service = roundMoney(serviceCharge);
+    const total = roundMoney(baseTotal + tip + service);
     const change = roundMoney(calculateChange(amountPaid, total));
     const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
 
-    return { subtotal, discountAmount, taxAmount, total, itemCount, change };
+    return {
+      subtotal,
+      discountAmount,
+      taxAmount,
+      tipAmount: tip,
+      serviceCharge: service,
+      total,
+      itemCount,
+      change,
+    };
   },
 
   toSaleItems: () => {
     return get().items.map((item) => ({
       productId: item.productId,
       productName: item.productName,
+      variantId: item.variantId ?? null,
+      variantName: item.variantName ?? null,
+      modifiersJson: item.modifiers?.length ? JSON.stringify(item.modifiers) : null,
       unitPrice: item.unitPrice,
       costPrice: item.costPrice,
       quantity: item.quantity,
@@ -197,4 +281,3 @@ export const useCartStore = create<CartState>((set, get) => ({
     }));
   },
 }));
-

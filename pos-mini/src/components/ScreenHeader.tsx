@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 
 type Props = {
   title: string;
@@ -14,6 +14,7 @@ type Props = {
 /** In-screen header with back — use when stack header is hidden. */
 export function ScreenHeader({ title, subtitle, showBack, rightAction }: Props) {
   const router = useRouter();
+  const colors = useThemeColors();
   const canBack = showBack ?? router.canGoBack();
 
   return (

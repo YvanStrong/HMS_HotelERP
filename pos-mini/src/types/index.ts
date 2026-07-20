@@ -5,15 +5,19 @@ export type StaffRole = 'cashier' | 'manager';
 export type ThemeMode = 'light' | 'dark';
 export type DiscountMode = 'off' | 'rule' | 'manual';
 export type SaleStatus = 'completed' | 'voided' | 'pending';
+export type SaleRefundStatus = 'none' | 'partial' | 'refunded';
 export type PurchaseStatus = 'completed' | 'pending' | 'cancelled';
 export type RefundStatus = 'completed' | 'pending' | 'cancelled';
 export type StockMovementType = 'sale' | 'purchase' | 'refund' | 'adjustment' | 'return';
 export type DebtType = 'debt' | 'payment';
 export type DiscountType = 'percent' | 'fixed';
 
+import type { BusinessTypeId } from '../constants/businessTypes';
+
 export interface BusinessSettings {
   id: number;
   businessName: string;
+  businessType: BusinessTypeId;
   businessLogo: string | null;
   taxName: string;
   address: string;
@@ -53,7 +57,12 @@ export interface Product {
   minStock: number;
   unit: string;
   taxClass: ProductTaxClass;
+  isTaxable: boolean;
+  taxRate: number;
+  taxInclusive: boolean;
   imageUri: string | null;
+  expiryDate: string | null;
+  batchLot: string | null;
   trackStock: boolean;
   isActive: boolean;
   createdAt: string;
@@ -69,6 +78,7 @@ export interface Customer {
   address: string | null;
   notes: string | null;
   totalDebt: number;
+  creditLimit: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -89,16 +99,23 @@ export interface Sale {
   invoiceNumber: string;
   customerId: string | null;
   customerName?: string | null;
+  staffId?: string | null;
+  shiftId?: string | null;
   subtotal: number;
   discountAmount: number;
   discountPercent: number;
   taxAmount: number;
+  tipAmount: number;
+  serviceCharge: number;
   total: number;
   amountPaid: number;
   changeAmount: number;
   paymentMethod: PaymentMethod;
   status: SaleStatus;
+  refundStatus?: SaleRefundStatus;
   notes: string | null;
+  tableId: string | null;
+  tableName?: string | null;
   createdAt: string;
   updatedAt: string;
   items?: SaleItem[];
@@ -109,11 +126,69 @@ export interface SaleItem {
   saleId: string;
   productId: string;
   productName: string;
+  variantId?: string | null;
+  variantName?: string | null;
+  modifiersJson?: string | null;
   unitPrice: number;
   costPrice: number;
   quantity: number;
   lineTotal: number;
   discountAmount: number;
+}
+
+export interface ProductVariant {
+  id: string;
+  productId: string;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  sellPrice: number;
+  costPrice: number;
+  stockQty: number;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface ModifierOption {
+  id: string;
+  groupId: string;
+  name: string;
+  priceDelta: number;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface ModifierGroup {
+  id: string;
+  name: string;
+  minSelect: number;
+  maxSelect: number;
+  required: boolean;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  options?: ModifierOption[];
+}
+
+export type SelectedModifier = {
+  groupId: string;
+  groupName: string;
+  optionId: string;
+  optionName: string;
+  priceDelta: number;
+};
+
+export type KitchenTicketStatus = 'pending' | 'preparing' | 'done';
+
+export interface KitchenTicket {
+  id: string;
+  saleId: string;
+  invoiceNumber: string;
+  status: KitchenTicketStatus;
+  itemsJson: string;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Purchase {
@@ -165,6 +240,7 @@ export interface RefundItem {
   quantity: number;
   lineTotal: number;
   restock?: boolean;
+  reasonCode?: string | null;
 }
 
 export interface SalePayment {
@@ -189,6 +265,7 @@ export interface Shift {
 export interface Staff {
   id: string;
   name: string;
+  username: string;
   role: StaffRole;
   pinHash: string;
   isActive: boolean;
@@ -249,8 +326,12 @@ export interface DiscountRule {
 }
 
 export interface CartItem {
+  lineKey: string;
   productId: string;
   productName: string;
+  variantId?: string | null;
+  variantName?: string | null;
+  modifiers?: SelectedModifier[];
   unitPrice: number;
   costPrice: number;
   quantity: number;
@@ -262,12 +343,17 @@ export interface CartItem {
   imageUri?: string | null;
   barcode?: string | null;
   categoryId?: string | null;
+  isTaxable: boolean;
+  taxRate: number;
+  taxInclusive?: boolean;
 }
 
 export interface CartTotals {
   subtotal: number;
   discountAmount: number;
   taxAmount: number;
+  tipAmount: number;
+  serviceCharge: number;
   total: number;
   itemCount: number;
 }
@@ -277,6 +363,29 @@ export interface HomeStats {
   todayTransactions: number;
   lowStockCount: number;
   totalProducts: number;
+}
+
+export interface ProductBundleItem {
+  id: string;
+  parentProductId: string;
+  childProductId: string;
+  childProductName?: string;
+  quantity: number;
+  createdAt: string;
+}
+
+export type TableStatus = 'available' | 'occupied' | 'merged';
+
+export interface PosTable {
+  id: string;
+  name: string;
+  seats: number;
+  status: TableStatus;
+  mergedIntoId: string | null;
+  openBillTotal?: number;
+  openBillId?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface NumberSequence {
@@ -292,12 +401,18 @@ export type SalePaymentInput = {
   amount: number;
 };
 
+export type CreateSaleItemInput = Omit<SaleItem, 'id' | 'saleId'>;
+
 export type CreateSaleInput = {
   customerId?: string | null;
-  items: Omit<SaleItem, 'id' | 'saleId'>[];
+  staffId?: string | null;
+  shiftId?: string | null;
+  items: CreateSaleItemInput[];
   discountAmount: number;
   discountPercent: number;
   taxAmount: number;
+  tipAmount?: number;
+  serviceCharge?: number;
   subtotal: number;
   total: number;
   amountPaid: number;
@@ -305,6 +420,17 @@ export type CreateSaleInput = {
   paymentMethod: PaymentMethod;
   notes?: string | null;
   payments?: SalePaymentInput[];
+  tableId?: string | null;
+  existingSaleId?: string | null;
+  status?: Sale['status'];
+};
+
+export type CreateProductVariantInput = Omit<ProductVariant, 'id' | 'createdAt'>;
+export type UpdateProductVariantInput = Partial<Omit<CreateProductVariantInput, 'productId'>>;
+
+export type CreateModifierGroupInput = Omit<ModifierGroup, 'id' | 'createdAt' | 'options'>;
+export type CreateModifierOptionInput = Omit<ModifierOption, 'id' | 'groupId' | 'isActive'> & {
+  groupId: string;
 };
 
 export type CreatePurchaseInput = {

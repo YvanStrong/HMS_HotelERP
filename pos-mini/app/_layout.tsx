@@ -8,8 +8,8 @@ import { PaperProvider, MD3DarkTheme, MD3LightTheme } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAppStore } from '../src/store/appStore';
-import { useAndroidBackHandler } from '../src/hooks/useAndroidBackHandler';
-import { colors, getThemeColors } from '../src/constants/theme';
+import { getThemeColors, themeVars } from '../src/constants/theme';
+import { registerBackgroundAlerts } from '../src/notifications/alerts';
 
 /*
  * PHASE 8 — HMS Admin Console Integration (NOT implemented)
@@ -24,7 +24,6 @@ import { colors, getThemeColors } from '../src/constants/theme';
  */
 
 function AppShell() {
-  useAndroidBackHandler();
   const themeMode = useAppStore((s) => s.themeMode);
   const palette = getThemeColors(themeMode);
 
@@ -58,29 +57,34 @@ export default function RootLayout() {
   }, [themeMode, palette]);
 
   useEffect(() => {
-    init().catch((e: unknown) => {
-      setError(e instanceof Error ? e.message : 'Failed to initialize database');
-    });
+    init()
+      .then(() => registerBackgroundAlerts())
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : 'Failed to initialize database');
+      });
   }, [init]);
 
   if (error) {
     return (
-      <View className="flex-1 items-center justify-center bg-app-surface p-6">
-        <ActivityIndicator size="large" color={colors.primary} />
+      <View style={[{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: palette.background }, themeVars(palette)]}>
+        <ActivityIndicator size="large" color={palette.primary} />
       </View>
     );
   }
 
   if (!isReady) {
     return (
-      <View className="flex-1 items-center justify-center bg-app-surface">
-        <ActivityIndicator size="large" color={colors.primary} />
+      <View style={[{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.background }, themeVars(palette)]}>
+        <ActivityIndicator size="large" color={palette.primary} />
       </View>
     );
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: palette.background }}>
+    <GestureHandlerRootView
+      style={[{ flex: 1, backgroundColor: palette.background }, themeVars(palette)]}
+      className={themeMode === 'dark' ? 'dark flex-1' : 'flex-1'}
+    >
       <SafeAreaProvider>
         <PaperProvider theme={paperTheme}>
           <StatusBar style={themeMode === 'dark' ? 'light' : 'dark'} />

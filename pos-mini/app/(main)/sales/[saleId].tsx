@@ -1,11 +1,13 @@
 import { useCallback, useState } from 'react';
 import { Linking, Pressable, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenContainer } from '../../../src/components/ScreenContainer';
 import * as Print from 'expo-print';
 import Toast from 'react-native-toast-message';
 import { ConfirmModal } from '../../../src/components/ConfirmModal';
 import { ReceiptView } from '../../../src/components/ReceiptView';
+import { StatusBadge } from '../../../src/components/StatusBadge';
 import { getReceiptDisplayPrefs } from '../../../src/repositories/metaRepository';
 import { getCurrentStaffId } from '../../../src/repositories/metaRepository';
 import { getProductById } from '../../../src/repositories/productRepository';
@@ -14,10 +16,12 @@ import { getSaleWithItems, voidSale } from '../../../src/repositories/saleReposi
 import { printReceipt, savedPrinterAddress } from '../../../src/printing/PrinterService';
 import type { Sale, SaleItem } from '../../../src/types';
 import { useAppStore } from '../../../src/store/appStore';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 import { buildReceiptHtml, buildReceiptText } from '../../../src/utils/receipt';
 
 export default function SaleDetailScreen() {
+  const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const { saleId } = useLocalSearchParams<{ saleId: string }>();
   const router = useRouter();
   const settings = useAppStore((s) => s.settings);
@@ -123,7 +127,7 @@ export default function SaleDetailScreen() {
     );
   }
 
-  const canRefund = sale.status === 'completed';
+  const canRefund = sale.status === 'completed' && sale.refundStatus !== 'refunded';
 
   return (
     <ScreenContainer padded={false} style={{ flex: 1 }}>
@@ -131,25 +135,38 @@ export default function SaleDetailScreen() {
         {sale.status === 'voided' ? (
           <Text className="mb-2 text-center font-bold text-app-danger">VOIDED</Text>
         ) : null}
+        {sale.refundStatus === 'refunded' ? (
+          <View className="mb-2 items-center">
+            <StatusBadge label="Refunded" tone="warning" />
+          </View>
+        ) : sale.refundStatus === 'partial' ? (
+          <View className="mb-2 items-center">
+            <StatusBadge label="Partially refunded" tone="warning" />
+          </View>
+        ) : null}
         <View className="min-h-0 flex-1">
           <ReceiptView sale={sale} items={items} barcodes={barcodes} />
         </View>
-        <View className="mt-4 flex-row flex-wrap gap-2">
-          {hasPrinter ? (
-            <Pressable onPress={() => void printBluetooth()} className="flex-1 rounded-xl py-3" style={{ backgroundColor: colors.primary }}>
-              <Text className="text-center font-semibold text-white">Print</Text>
+        <View
+          className="mt-3 border-t border-app-border pt-3"
+          style={{ paddingBottom: Math.max(insets.bottom, 20) }}
+        >
+          <View className="flex-row flex-wrap gap-2">
+            {hasPrinter ? (
+              <Pressable onPress={() => void printBluetooth()} className="flex-1 rounded-xl py-3" style={{ backgroundColor: colors.primary }}>
+                <Text className="text-center font-semibold text-white">Print</Text>
+              </Pressable>
+            ) : null}
+            <Pressable onPress={() => void shareHtml()} className="flex-1 rounded-xl border border-app-border bg-app-surface py-3">
+              <Text className="text-center font-semibold text-app-text">Share</Text>
             </Pressable>
-          ) : null}
-          <Pressable onPress={() => void shareHtml()} className="flex-1 rounded-xl border border-app-border bg-app-surface py-3">
-            <Text className="text-center font-semibold text-app-text">Share</Text>
-          </Pressable>
-          <Pressable onPress={() => void shareSms()} className="flex-1 rounded-xl border border-app-border bg-app-surface py-3">
-            <Text className="text-center font-semibold text-app-text">SMS</Text>
-          </Pressable>
-          <Pressable onPress={() => void shareEmail()} className="flex-1 rounded-xl border border-app-border bg-app-surface py-3">
-            <Text className="text-center font-semibold text-app-text">Email</Text>
-          </Pressable>
-        </View>
+            <Pressable onPress={() => void shareSms()} className="flex-1 rounded-xl border border-app-border bg-app-surface py-3">
+              <Text className="text-center font-semibold text-app-text">SMS</Text>
+            </Pressable>
+            <Pressable onPress={() => void shareEmail()} className="flex-1 rounded-xl border border-app-border bg-app-surface py-3">
+              <Text className="text-center font-semibold text-app-text">Email</Text>
+            </Pressable>
+          </View>
         {canRefund ? (
           <Pressable
             onPress={() => router.push({ pathname: '/(main)/refunds/new', params: { saleId: sale.id } })}
@@ -163,6 +180,7 @@ export default function SaleDetailScreen() {
             <Text className="text-center font-semibold text-app-danger">Void sale</Text>
           </Pressable>
         ) : null}
+        </View>
       </View>
       <ConfirmModal
         visible={confirmVoid}

@@ -1,0 +1,12 @@
+# Monorepo — only pos-mini is needed for POS Mini EAS builds
+backend/
+frontend/
+mobile-pos/
+**/node_modules/
+**/.expo/
+**/android/
+**/ios/
+.git/
+**/target/
+**/*.apk
+**/*.aab

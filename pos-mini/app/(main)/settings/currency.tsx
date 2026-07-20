@@ -7,9 +7,10 @@ import { KeyboardFormScroll } from '../../../src/components/KeyboardFormScroll';
 import { SearchBar } from '../../../src/components/SearchBar';
 import { ALL_CURRENCIES, COMMON_CURRENCIES, filterCurrencies } from '../../../src/constants/currencies';
 import { useAppStore } from '../../../src/store/appStore';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 
 export default function CurrencySettingsScreen() {
+  const colors = useThemeColors();
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const [currency, setCurrency] = useState('USD');

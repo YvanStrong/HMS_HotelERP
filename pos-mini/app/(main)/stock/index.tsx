@@ -12,9 +12,10 @@ import {
   type ProductListFilters,
 } from '../../../src/repositories/productRepository';
 import type { Product } from '../../../src/types';
-import { colors } from '../../../src/constants/theme';
+import { useThemeColors } from '../../../src/hooks/useTheme';
 
 export default function StockListScreen() {
+  const colors = useThemeColors();
   const router = useRouter();
   const [lowStockOnly, setLowStockOnly] = useState(false);
 
@@ -61,6 +62,12 @@ export default function StockListScreen() {
           style={{ backgroundColor: colors.primary }}
         >
           <Text className="text-center text-sm font-semibold text-white">Adjust</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => router.push('/(main)/stock/count')}
+          className="flex-1 rounded-xl border border-app-border bg-app-surface py-2.5"
+        >
+          <Text className="text-center text-sm font-semibold text-app-text">Count</Text>
         </Pressable>
         <Pressable
           onPress={() => router.push('/(main)/stock/movements')}

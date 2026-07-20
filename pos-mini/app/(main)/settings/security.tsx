@@ -141,20 +141,20 @@ export default function SecuritySettingsScreen() {
   if (mode === 'forgot') {
     return (
       <KeyboardAvoidingScreen>
-        <View className="flex-1 px-4 pt-4">
-          <Text className="mb-2 text-xl font-bold text-black">Forgot PIN</Text>
+        <View className="flex-1 pt-4">
+          <Text className="mb-2 text-xl font-bold text-app-text">Forgot PIN</Text>
           <Text className="mb-4 text-sm text-gray-600">{recoveryQuestion}</Text>
           <TextInput
             value={forgotAnswer}
             onChangeText={setForgotAnswer}
             placeholder="Your answer"
-            className="mb-4 rounded-xl border border-app-border bg-white px-3 py-3"
+            className="mb-4 rounded-xl border border-app-border bg-app-surface px-3 py-3"
           />
           <Pressable onPress={() => void verifyForgotAnswer()} className="mb-2 rounded-xl bg-app-primary py-4">
             <Text className="text-center font-bold text-white">Verify</Text>
           </Pressable>
           <Pressable onPress={() => setMode('idle')} className="rounded-xl border py-3">
-            <Text className="text-center font-bold text-black">Cancel</Text>
+            <Text className="text-center font-bold text-app-text">Cancel</Text>
           </Pressable>
         </View>
       </KeyboardAvoidingScreen>
@@ -164,25 +164,25 @@ export default function SecuritySettingsScreen() {
   if (mode === 'recovery') {
     return (
       <KeyboardAvoidingScreen>
-        <View className="flex-1 px-4 pt-4">
-          <Text className="mb-4 text-xl font-bold text-black">Recovery question</Text>
+        <View className="flex-1 pt-4">
+          <Text className="mb-4 text-xl font-bold text-app-text">Recovery question</Text>
           <TextInput
             value={recoveryQuestion}
             onChangeText={setRecoveryQuestion}
             placeholder="e.g. Mother's maiden name?"
-            className="mb-3 rounded-xl border border-app-border bg-white px-3 py-3"
+            className="mb-3 rounded-xl border border-app-border bg-app-surface px-3 py-3"
           />
           <TextInput
             value={recoveryAnswer}
             onChangeText={setRecoveryAnswer}
             placeholder="Answer (case insensitive)"
-            className="mb-4 rounded-xl border border-app-border bg-white px-3 py-3"
+            className="mb-4 rounded-xl border border-app-border bg-app-surface px-3 py-3"
           />
           <Pressable onPress={() => void saveRecovery()} className="mb-2 rounded-xl bg-app-primary py-4">
             <Text className="text-center font-bold text-white">Save</Text>
           </Pressable>
           <Pressable onPress={() => setMode('idle')} className="rounded-xl border py-3">
-            <Text className="text-center font-bold text-black">Skip for now</Text>
+            <Text className="text-center font-bold text-app-text">Skip for now</Text>
           </Pressable>
         </View>
       </KeyboardAvoidingScreen>
@@ -192,14 +192,14 @@ export default function SecuritySettingsScreen() {
   if (mode === 'verify') {
     return (
       <KeyboardAvoidingScreen>
-        <View className="flex-1 px-4 pt-4">
-          <Text className="mb-4 text-xl font-bold text-black">Enter current PIN</Text>
-          <NumericKeypad value={pin} onChange={setPin} maxLength={8} />
+        <View className="flex-1 pt-4">
+          <Text className="mb-4 text-xl font-bold text-app-text">Enter current PIN</Text>
+          <NumericKeypad value={pin} onChange={setPin} maxLength={8} secure allowReveal />
           <Pressable onPress={() => void verifyCurrentPin()} className="mt-4 rounded-xl bg-app-primary py-4">
             <Text className="text-center font-bold text-white">Continue</Text>
           </Pressable>
           <Pressable onPress={() => setMode('idle')} className="mt-2 rounded-xl border py-3">
-            <Text className="text-center font-bold text-black">Cancel</Text>
+            <Text className="text-center font-bold text-app-text">Cancel</Text>
           </Pressable>
         </View>
       </KeyboardAvoidingScreen>
@@ -209,16 +209,16 @@ export default function SecuritySettingsScreen() {
   if (mode === 'new' || mode === 'confirm') {
     return (
       <KeyboardAvoidingScreen>
-        <View className="flex-1 px-4 pt-4">
-          <Text className="mb-4 text-xl font-bold text-black">
+        <View className="flex-1 pt-4">
+          <Text className="mb-4 text-xl font-bold text-app-text">
             {mode === 'confirm' ? 'Confirm PIN' : 'Set new PIN'}
           </Text>
-          <NumericKeypad value={newPin} onChange={setNewPin} maxLength={8} />
+          <NumericKeypad value={newPin} onChange={setNewPin} maxLength={8} secure allowReveal />
           <Pressable onPress={() => void saveNewPin()} className="mt-4 rounded-xl bg-app-primary py-4">
             <Text className="text-center font-bold text-white">Save PIN</Text>
           </Pressable>
           <Pressable onPress={() => { setMode('idle'); setPin(''); setNewPin(''); }} className="mt-2 rounded-xl border py-3">
-            <Text className="text-center font-bold text-black">Cancel</Text>
+            <Text className="text-center font-bold text-app-text">Cancel</Text>
           </Pressable>
         </View>
       </KeyboardAvoidingScreen>
@@ -228,7 +228,7 @@ export default function SecuritySettingsScreen() {
   return (
     <KeyboardFormScroll contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8 }}>
       <View className="mb-4 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
-        <Text className="font-bold text-black">PIN lock</Text>
+        <Text className="font-bold text-app-text">PIN lock</Text>
         <Switch value={pinEnabled} onValueChange={(v) => void togglePin(v)} />
       </View>
 
@@ -243,19 +243,19 @@ export default function SecuritySettingsScreen() {
 
       {pinSet && recoverySet ? (
         <Pressable onPress={() => setMode('forgot')} className="mb-3 rounded-xl border border-app-border py-3">
-          <Text className="text-center font-bold text-black">Forgot PIN?</Text>
+          <Text className="text-center font-bold text-app-text">Forgot PIN?</Text>
         </Pressable>
       ) : null}
 
       {pinSet ? (
         <Pressable onPress={() => void removePin()} className="mb-3 rounded-xl border py-3">
-          <Text className="text-center font-bold text-black">Remove PIN</Text>
+          <Text className="text-center font-bold text-app-text">Remove PIN</Text>
         </Pressable>
       ) : null}
 
       {pinEnabled ? (
         <Pressable onPress={lock} className="rounded-xl border py-3">
-          <Text className="text-center font-bold text-black">Lock Now</Text>
+          <Text className="text-center font-bold text-app-text">Lock Now</Text>
         </Pressable>
       ) : null}
     </KeyboardFormScroll>

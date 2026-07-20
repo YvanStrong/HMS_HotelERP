@@ -2,7 +2,7 @@ import { Pressable, Text, View } from 'react-native';
 import type { Product } from '../types';
 import { formatMoney } from '../utils/currency';
 import { useAppStore } from '../store/appStore';
-import { cardStyle, colors } from '../constants/theme';
+import { useCardStyle, useThemeColors } from '../hooks/useTheme';
 import { CategoryBadge } from './CategoryBadge';
 import { ProductPhoto } from './ProductPhoto';
 import { StockBadge } from './StockBadge';
@@ -16,6 +16,8 @@ type Props = {
 
 export function ProductCard({ product, onPress, onAdd, compact }: Props) {
   const settings = useAppStore((s) => s.settings);
+  const cardStyle = useCardStyle();
+  const palette = useThemeColors();
   const photoSize = compact ? 52 : 72;
 
   return (
@@ -34,7 +36,7 @@ export function ProductCard({ product, onPress, onAdd, compact }: Props) {
                   onAdd();
                 }}
                 className="h-8 w-8 items-center justify-center rounded-full"
-                style={{ backgroundColor: colors.primary }}
+                style={{ backgroundColor: palette.primary }}
               >
                 <Text className="text-lg font-bold text-white">+</Text>
               </Pressable>
@@ -42,7 +44,7 @@ export function ProductCard({ product, onPress, onAdd, compact }: Props) {
           </View>
           {product.categoryName ? (
             <View className="mt-1">
-              <CategoryBadge name={product.categoryName} color={colors.primary} />
+              <CategoryBadge name={product.categoryName} color={palette.primary} />
             </View>
           ) : null}
           <Text className="mt-2 text-lg font-bold text-app-primary">

@@ -1,5 +1,5 @@
 import { Text, View } from 'react-native';
-import { cardStyle } from '../constants/theme';
+import { useCardStyle } from '../hooks/useTheme';
 
 type Props = {
   label: string;
@@ -8,6 +8,8 @@ type Props = {
 };
 
 export function SummaryCard({ label, value, subtitle }: Props) {
+  const cardStyle = useCardStyle();
+
   return (
     <View className="min-w-[46%] flex-1" style={cardStyle}>
       <View className="p-4">

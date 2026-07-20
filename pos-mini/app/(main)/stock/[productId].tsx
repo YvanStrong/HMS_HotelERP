@@ -48,8 +48,8 @@ export default function ProductStockScreen() {
 
   return (
     <ScreenContainer scroll>
-        <View className="mb-4 border-2 border-black bg-white p-4">
-          <Text className="text-xl font-bold text-black">{product.name}</Text>
+        <View className="mb-4 border-2 border-app-border bg-app-surface p-4">
+          <Text className="text-xl font-bold text-app-text">{product.name}</Text>
           {product.sku ? <Text className="text-sm text-gray-600">{product.sku}</Text> : null}
           <View className="mt-3">
             <StockBadge qty={stockQty} minStock={product.minStock} unit={product.unit} />
@@ -59,19 +59,19 @@ export default function ProductStockScreen() {
 
         <Pressable
           onPress={() => router.push('/(main)/stock/adjustments')}
-          className="mb-4 border-2 border-black bg-app-primary py-3"
+          className="mb-4 border-2 border-app-border bg-app-primary py-3"
         >
           <Text className="text-center font-bold text-white">Adjust Stock</Text>
         </Pressable>
 
-        <Text className="mb-2 font-bold text-black">Recent Movements</Text>
+        <Text className="mb-2 font-bold text-app-text">Recent Movements</Text>
         {movements.length === 0 ? (
           <Text className="text-gray-600">No movements yet.</Text>
         ) : (
           movements.map((m) => (
-            <View key={m.id} className="mb-2 border-2 border-black bg-white p-3">
+            <View key={m.id} className="mb-2 border-2 border-app-border bg-app-surface p-3">
               <View className="flex-row justify-between">
-                <Text className="font-bold text-black">
+                <Text className="font-bold text-app-text">
                   {TYPE_LABELS[m.movementType] ?? m.movementType}
                 </Text>
                 <Text

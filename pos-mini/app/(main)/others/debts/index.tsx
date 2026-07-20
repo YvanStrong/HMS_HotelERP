@@ -11,7 +11,7 @@ import { recordPurchasePayment } from '../../../../src/repositories/purchaseRepo
 import { listCustomers } from '../../../../src/repositories/customerRepository';
 import type { Customer, DebtRecord } from '../../../../src/types';
 import { useAppStore } from '../../../../src/store/appStore';
-import { cardStyle, colors } from '../../../../src/constants/theme';
+import { useThemedStyles } from '../../../../src/hooks/useTheme';
 import { formatMoney } from '../../../../src/utils/currency';
 import { getCustomersWithDebtPaginated, getUnpaidPurchasesPaginated } from '../../../../src/utils/reports';
 
@@ -25,6 +25,7 @@ type UnpaidPurchase = {
 const PAGE_SIZE = 15;
 
 export default function DebtsScreen() {
+  const { cardStyle, colors } = useThemedStyles();
   const settings = useAppStore((s) => s.settings);
   const [customersWithDebt, setCustomersWithDebt] = useState<{ id: string; name: string; totalDebt: number }[]>([]);
   const [customerDebtTotal, setCustomerDebtTotal] = useState(0);
@@ -207,13 +208,20 @@ export default function DebtsScreen() {
 
   return (
     <ScreenContainer padded={false} style={{ flex: 1 }}>
-      <Text className="px-4 pt-4 font-bold text-app-text">Customer debts ({customerDebtTotal})</Text>
-      <ScreenList>
+      <View className="px-4 pt-4">
+        <Text className="mb-1 font-bold text-app-text">Debt management</Text>
+        <Text className="mb-3 text-sm text-app-muted">
+          Customer debts are created when you complete a sale with Credit payment and an attached customer.
+          Enable Credit under Settings → Payment methods, then use New Sale → attach customer → Credit.
+        </Text>
+      </View>
+      <Text className="px-4 font-bold text-app-text">Customer debts ({customerDebtTotal})</Text>
+      <ScreenList inset>
         <PaginatedFlashList
           data={customersWithDebt}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <Pressable onPress={() => void selectCustomer(item.id)} style={cardStyle} className="mx-4 mb-2 mt-2 p-3">
+            <Pressable onPress={() => void selectCustomer(item.id)} style={cardStyle} className="mb-2 mt-2 p-3">
               <View className="flex-row justify-between">
                 <Text className="font-bold text-app-text">{item.name}</Text>
                 <Text className="font-bold text-app-danger">{formatMoney(item.totalDebt, settings)}</Text>
@@ -229,8 +237,8 @@ export default function DebtsScreen() {
           }}
           onLoadMore={() => void loadMoreAll()}
           hasMore={customerDebtHasMore || unpaidHasMore}
-          emptyTitle="No debts"
-          emptyMessage="No outstanding customer debts."
+          emptyTitle="No outstanding debts"
+          emptyMessage="Record a credit sale with a customer attached, or record a payment when a customer pays their balance."
           ListFooterComponent={
             <View className="px-4 pb-4">
               <Text className="mb-3 mt-4 font-bold text-app-text">Unpaid purchases ({unpaidTotal})</Text>
