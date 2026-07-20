@@ -1,9 +1,26 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 export default function SubscriptionBlockedPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 px-4 py-10 text-white">
+          <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-3xl items-center justify-center text-sm text-white/70">
+            Loading…
+          </div>
+        </main>
+      }
+    >
+      <SubscriptionBlockedContent />
+    </Suspense>
+  );
+}
+
+function SubscriptionBlockedContent() {
   const params = useSearchParams();
   const code = params.get("code") || "SUBSCRIPTION_BLOCKED";
   const reason = params.get("reason") || "ACCESS_BLOCKED";
