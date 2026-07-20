@@ -6,4 +6,5 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
+startCommand = "sh -c 'java -jar /app/app.jar --spring.profiles.active=prod --server.port=${PORT:-8080}'"
 restartPolicyType = "ON_FAILURE"
