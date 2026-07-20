@@ -1,0 +1,9 @@
+# Railway — backend (Spring Boot)
+# Service Root Directory must be: backend
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+restartPolicyType = "ON_FAILURE"
