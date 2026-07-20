@@ -197,6 +197,8 @@ export default function NewSaleScreen() {
       modifiers: modifiers.length ? modifiers : undefined,
       unitPrice: price,
       costPrice: variant?.costPrice ?? product.costPrice,
+      unit: product.unit,
+      taxClass: product.taxClass,
       isTaxable: product.isTaxable,
       taxRate: product.taxRate,
       taxInclusive: product.taxInclusive,

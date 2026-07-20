@@ -6,10 +6,13 @@ import { BarcodeScannerModal } from '../../../src/components/BarcodeScannerModal
 import { FormField } from '../../../src/components/FormField';
 import { KeyboardFormScroll } from '../../../src/components/KeyboardFormScroll';
 import { ProductImagePicker } from '../../../src/components/ProductImagePicker';
+import { OptionPicker } from '../../../src/components/OptionPicker';
 import { UnitPicker } from '../../../src/components/UnitPicker';
 import { listCategories } from '../../../src/repositories/categoryRepository';
 import { createProduct, updateProduct } from '../../../src/repositories/productRepository';
 import type { Category } from '../../../src/types';
+import type { ProductTaxClass } from '../../../src/constants/productTax';
+import { PRODUCT_TAX_OPTIONS } from '../../../src/constants/productTax';
 import { useAppStore } from '../../../src/store/appStore';
 import { useThemeColors } from '../../../src/hooks/useTheme';
 import { generateSkuFromName } from '../../../src/utils/barcode';
@@ -32,8 +35,7 @@ export default function NewProductScreen() {
   const [stockQty, setStockQty] = useState('0');
   const [minStock, setMinStock] = useState('0');
   const [unit, setUnit] = useState('pcs');
-  const [isTaxable, setIsTaxable] = useState(false);
-  const [taxRate, setTaxRate] = useState('0');
+  const [taxClass, setTaxClass] = useState<ProductTaxClass>('A');
   const [trackStock, setTrackStock] = useState(true);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
@@ -75,8 +77,9 @@ export default function NewProductScreen() {
         stockQty: trackStock ? Number(stockQty) || 0 : 0,
         minStock: trackStock ? Number(minStock) || 0 : 0,
         unit,
-        isTaxable,
-        taxRate: Number(taxRate) || 0,
+        taxClass,
+        isTaxable: taxClass === 'B',
+        taxRate: taxClass === 'B' ? 18 : 0,
         taxInclusive: false,
         imageUri: null,
         trackStock,
@@ -156,13 +159,12 @@ export default function NewProductScreen() {
           </>
         ) : null}
         <UnitPicker value={unit} onChange={setUnit} />
-        <View className="mb-4 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
-          <Text className="font-semibold text-app-text">Taxable item?</Text>
-          <Switch value={isTaxable} onValueChange={setIsTaxable} />
-        </View>
-        {isTaxable ? (
-          <FormField label="Tax rate (%)" value={taxRate} onChangeText={setTaxRate} keyboardType="decimal-pad" placeholder="18" />
-        ) : null}
+        <OptionPicker
+          label="Tax category"
+          options={PRODUCT_TAX_OPTIONS}
+          value={taxClass}
+          onChange={(v) => setTaxClass(v as ProductTaxClass)}
+        />
         <Text className="mb-2 text-sm text-app-muted">Add variants after saving the product.</Text>
         <Pressable
           onPress={() => void save()}

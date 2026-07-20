@@ -105,6 +105,10 @@ public class ReservationService {
     @Autowired
     private EventBillingDocumentService eventBillingDocumentService;
 
+    @Lazy
+    @Autowired
+    private EbmSaleEventService ebmSaleEventService;
+
     public ReservationService(
             HotelRepository hotelRepository,
             RoomRepository roomRepository,
@@ -1345,6 +1349,13 @@ public class ReservationService {
         invoiceRepository.save(inv);
         inv.setPdfUrl(publicUrlProperties.invoicePdfUrl(hotelId, inv.getId()));
         invoiceRepository.save(inv);
+        try {
+            if (ebmSaleEventService != null) {
+                ebmSaleEventService.enqueueHotelInvoice(hotelId, inv);
+            }
+        } catch (Exception ignored) {
+            // EBM must never block checkout
+        }
 
         notificationService.schedulePostStayEmail(r);
 

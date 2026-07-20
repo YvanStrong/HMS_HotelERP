@@ -65,7 +65,7 @@
     "web": "expo start --web",
     "build:apk": "npm run build:apk:cloud",
     "build:apk:cloud": "eas build --platform android --profile preview --non-interactive",
-    "build:apk:local": "eas build --platform android --profile preview --local --non-interactive"
+    "build:apk:local": "powershell -ExecutionPolicy Bypass -File ./build-apk.ps1"
   },
   "private": true
 }

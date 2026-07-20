@@ -65,6 +65,14 @@ public class AccountingController {
         return accountingService.listAccounts(hotelId, hotelHeader);
     }
 
+    @GetMapping("/advanced")
+    @PreAuthorize(ACCOUNTING_READ)
+    public AccountingDtos.AdvancedAccountingWorkspace advanced(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return accountingService.advanced(hotelId, hotelHeader);
+    }
+
     @PostMapping("/accounts")
     @PreAuthorize(CASH_DISBURSE)
     public ResponseEntity<AccountingDtos.AccountRow> createAccount(
@@ -83,6 +91,84 @@ public class AccountingController {
             @Valid @RequestBody AccountingDtos.CreateExpenseRequest body) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(accountingService.createExpense(hotelId, hotelHeader, body));
+    }
+
+    @PostMapping("/receivables")
+    @PreAuthorize(CASH_DISBURSE)
+    public ResponseEntity<AccountingDtos.ReceivableRow> createReceivable(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody AccountingDtos.CreateReceivableRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(accountingService.createReceivable(hotelId, hotelHeader, body));
+    }
+
+    @PostMapping("/payables")
+    @PreAuthorize(CASH_DISBURSE)
+    public ResponseEntity<AccountingDtos.PayableRow> createPayable(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody AccountingDtos.CreatePayableRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(accountingService.createPayable(hotelId, hotelHeader, body));
+    }
+
+    @PostMapping("/budgets")
+    @PreAuthorize(CASH_DISBURSE)
+    public ResponseEntity<AccountingDtos.BudgetRow> createBudget(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody AccountingDtos.CreateBudgetRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(accountingService.createBudget(hotelId, hotelHeader, body));
+    }
+
+    @PostMapping("/tax-filings")
+    @PreAuthorize(CASH_DISBURSE)
+    public ResponseEntity<AccountingDtos.TaxFilingRow> createTaxFiling(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody AccountingDtos.CreateTaxFilingRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(accountingService.createTaxFiling(hotelId, hotelHeader, body));
+    }
+
+    @PostMapping("/periods")
+    @PreAuthorize(CASH_DISBURSE)
+    public ResponseEntity<AccountingDtos.AccountingPeriodRow> createPeriod(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody AccountingDtos.CreateAccountingPeriodRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(accountingService.createPeriod(hotelId, hotelHeader, body));
+    }
+
+    @PostMapping("/periods/{periodId}/close")
+    @PreAuthorize(MANAGER_APPROVE)
+    public AccountingDtos.AccountingPeriodRow closePeriod(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID periodId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return accountingService.closePeriod(hotelId, hotelHeader, periodId);
+    }
+
+    @PostMapping("/reconciliations")
+    @PreAuthorize(CASH_DISBURSE)
+    public ResponseEntity<AccountingDtos.ReconciliationRow> createReconciliation(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody AccountingDtos.CreateReconciliationRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(accountingService.createReconciliation(hotelId, hotelHeader, body));
+    }
+
+    @PostMapping("/reconciliations/{reconciliationId}/complete")
+    @PreAuthorize(MANAGER_APPROVE)
+    public AccountingDtos.ReconciliationRow completeReconciliation(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID reconciliationId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return accountingService.completeReconciliation(hotelId, hotelHeader, reconciliationId);
     }
 
     @PostMapping("/bank-statements")
@@ -152,5 +238,13 @@ public class AccountingController {
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
             @RequestBody AccountingDtos.DisbursePettyCashRequest body) {
         return accountingService.disbursePettyCash(hotelId, hotelHeader, requestId, body);
+    }
+
+    @PostMapping("/payroll/sync")
+    @PreAuthorize(CASH_DISBURSE)
+    public AccountingDtos.PayrollAccountingSyncResponse syncPayrollToAccounting(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return accountingService.syncUnpostedPayroll(hotelId, hotelHeader);
     }
 }

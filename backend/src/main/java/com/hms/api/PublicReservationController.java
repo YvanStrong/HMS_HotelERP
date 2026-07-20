@@ -3,6 +3,7 @@ package com.hms.api;
 import com.hms.api.dto.ApiDtos;
 import com.hms.service.ReservationService;
 import jakarta.validation.Valid;
+import java.time.LocalDate;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +24,17 @@ public class PublicReservationController {
 
     public PublicReservationController(ReservationService reservationService) {
         this.reservationService = reservationService;
+    }
+
+    @GetMapping("/availability")
+    public ApiDtos.AvailabilityResponse availability(
+            @PathVariable UUID hotelId,
+            @RequestParam LocalDate checkIn,
+            @RequestParam LocalDate checkOut,
+            @RequestParam(defaultValue = "2") int adults,
+            @RequestParam(defaultValue = "0") int children,
+            @RequestParam(required = false) UUID roomTypeId) {
+        return reservationService.availability(hotelId, checkIn, checkOut, adults, children, roomTypeId);
     }
 
     @PostMapping("/book")

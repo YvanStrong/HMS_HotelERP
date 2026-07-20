@@ -1,9 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
 import { printDepotSaleInvoice } from "@/lib/printDepotSaleInvoice";
+import { printPosOrderSlip } from "@/lib/printPosOrderSlip";
+import { fetchPosTables, type PosTableRow } from "@/lib/posTickets";
+import { loadAuthUser } from "@/lib/auth";
 import { PosAnnouncementsButton } from "@/components/PosAnnouncementsModal";
 
 type DepotRow = {
@@ -18,6 +21,7 @@ type InventoryItemRow = {
   id: string;
   name: string;
   sku?: string;
+  barcode?: string | null;
   category?: string;
   currentStock?: number | string;
   sellingPrice?: number | string | null;
@@ -52,6 +56,7 @@ type PosCatalogItem = {
   depotProductId: string | null;
   name: string;
   sku: string;
+  barcode: string;
   category: string;
   currentStock: number | string | null | undefined;
   stockType: "STOCK" | "NON_STOCK";
@@ -80,6 +85,7 @@ type CreateSaleResponse = {
     taxable?: boolean;
   }[];
   roomChargeId?: string | null;
+  paymentMethod?: string | null;
   message: string;
 };
 
@@ -124,6 +130,9 @@ type ReservationOption = {
 const ORDER_TYPES = ["Dine In", "Take Away", "Delivery", "Table"] as const;
 type OrderType = (typeof ORDER_TYPES)[number];
 
+const POS_PAYMENT_METHODS = ["MOMO", "CASH", "CREDIT CARD", "BANK"] as const;
+type PosPaymentMethod = (typeof POS_PAYMENT_METHODS)[number];
+
 const DRAFT_KEY = (hotelId: string) => `hms_pos_draft_${hotelId}`;
 const ALL_DEPOTS = "__ALL_DEPOTS__";
 const UNCATEGORIZED = "Uncategorized";
@@ -158,7 +167,15 @@ export default function PosPage() {
   const [depotProducts, setDepotProducts] = useState<DepotProductRow[]>([]);
   const [depotId, setDepotId] = useState("");
   const [orderType, setOrderType] = useState<OrderType>("Dine In");
-  const [locationLabel, setLocationLabel] = useState("Outlet / table");
+  const [locationLabel, setLocationLabel] = useState("");
+  const [locationMode, setLocationMode] = useState<"table" | "custom">("table");
+  const [selectedTableId, setSelectedTableId] = useState("");
+  const [posTables, setPosTables] = useState<PosTableRow[]>([]);
+  const [hotelPrintHeader, setHotelPrintHeader] = useState<{
+    companyName: string;
+    phone: string;
+    tin: string;
+  }>({ companyName: "", phone: "", tin: "" });
   const [customerLabel, setCustomerLabel] = useState("Walk-in Customer");
   const [customerTin, setCustomerTin] = useState("");
   const [chargeToFolio, setChargeToFolio] = useState(false);
@@ -169,8 +186,11 @@ export default function PosPage() {
   const [guestSuggestions, setGuestSuggestions] = useState<GuestSearchHit[]>([]);
   const [guestSearchLoading, setGuestSearchLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [scanCode, setScanCode] = useState("");
+  const scanInputRef = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState<string>("All");
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [cartPriceOverrides, setCartPriceOverrides] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [placing, setPlacing] = useState(false);
   const [addingItemId, setAddingItemId] = useState<string | null>(null);
@@ -186,15 +206,28 @@ export default function PosPage() {
     setLoading(true);
     setError(null);
     try {
-      const [d, inv, dp] = await Promise.all([
+      const [d, inv, dp, hotel] = await Promise.all([
         apiFetch<DepotRow[]>(`/api/v1/hotels/${hotelId}/inventory/depots`),
         apiFetch<InventoryItemsPayload>(`/api/v1/hotels/${hotelId}/inventory/items`),
         apiFetch<DepotProductRow[]>(`/api/v1/hotels/${hotelId}/inventory/depot-products`),
+        apiFetch<{
+          name?: string;
+          companyName?: string | null;
+          phone?: string | null;
+          tinNumber?: string | null;
+        }>(`/api/v1/hotels/${hotelId}/settings`, { quiet: true }).catch(() => null),
       ]);
       const activeDepots = (d ?? []).filter((x) => x.active);
       setDepots(activeDepots);
       setInventoryItems((inv?.data ?? []).filter((x) => x.active !== false));
       setDepotProducts((dp ?? []).filter((x) => x.active));
+      if (hotel) {
+        setHotelPrintHeader({
+          companyName: (hotel.companyName || hotel.name || "").trim(),
+          phone: (hotel.phone || "").trim(),
+          tin: (hotel.tinNumber || "").trim(),
+        });
+      }
       setDepotId((prev) => {
         if (prev && activeDepots.some((x) => x.id === prev)) return prev;
         const principal = activeDepots.find(
@@ -217,6 +250,43 @@ export default function PosPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTables() {
+      try {
+        const saleDepot = depotId && depotId !== ALL_DEPOTS ? depotId : undefined;
+        const rows = await fetchPosTables(hotelId, saleDepot, false);
+        if (cancelled) return;
+        const active = (rows ?? []).filter((t) => t.active);
+        setPosTables(active);
+        setSelectedTableId((prev) => {
+          if (prev && active.some((t) => t.id === prev)) return prev;
+          return "";
+        });
+      } catch {
+        if (!cancelled) setPosTables([]);
+      }
+    }
+    void loadTables();
+    return () => {
+      cancelled = true;
+    };
+  }, [hotelId, depotId]);
+
+  useEffect(() => {
+    if (locationMode !== "table") return;
+    const selected = posTables.find((t) => t.id === selectedTableId);
+    if (selected) {
+      setLocationLabel(selected.tableLabel);
+    } else if (!selectedTableId) {
+      setLocationLabel("");
+    }
+  }, [locationMode, selectedTableId, posTables]);
+
+  useEffect(() => {
+    if (!loading) scanInputRef.current?.focus();
+  }, [loading]);
 
   useEffect(() => {
     const q = customerLabel.trim();
@@ -308,6 +378,7 @@ export default function PosPage() {
           depotProductId: linked?.id ?? null,
           name: inv.name,
           sku: inv.sku ?? "",
+          barcode: (inv.barcode ?? "").trim(),
           category: categoryLabel(inv.category),
           currentStock: inv.currentStock,
           stockType: inv.stockType === "NON_STOCK" ? "NON_STOCK" : "STOCK",
@@ -330,6 +401,7 @@ export default function PosPage() {
           depotProductId: dp.id,
           name: inv?.name ?? dp.productName,
           sku: inv?.sku ?? dp.productCode,
+          barcode: (inv?.barcode ?? "").trim(),
           category: categoryLabel(inv?.category),
           currentStock: dp.stockQty,
           stockType: dp.stockType === "NON_STOCK" || inv?.stockType === "NON_STOCK" ? "NON_STOCK" : "STOCK",
@@ -356,6 +428,7 @@ export default function PosPage() {
       return (
         item.name.toLowerCase().includes(q) ||
         item.sku.toLowerCase().includes(q) ||
+        item.barcode.toLowerCase().includes(q) ||
         item.category.toLowerCase().includes(q)
       );
     });
@@ -384,7 +457,8 @@ export default function PosPage() {
         const inv = dp.inventoryItemId
           ? inventoryItems.find((x) => x.id === dp.inventoryItemId)
           : undefined;
-        const unit = Number(dp.sellingPrice);
+        const catalogUnit = Number(dp.sellingPrice);
+        const unit = cartPriceOverrides[depotProductId] ?? catalogUnit;
         const dep = depots.find((d) => d.id === dp.depotId);
         return {
           productId: depotProductId,
@@ -393,7 +467,9 @@ export default function PosPage() {
           code: dp.productCode,
           category: categoryLabel(inv?.category),
           stock: dp.stockQty,
+          catalogUnit,
           unit,
+          priceOverridden: depotProductId in cartPriceOverrides,
           qty,
           lineTotal: unit * qty,
           taxable: dp.taxable,
@@ -401,7 +477,15 @@ export default function PosPage() {
         };
       })
       .filter((x): x is NonNullable<typeof x> => Boolean(x));
-  }, [cart, depotProducts, inventoryItems, depots]);
+  }, [cart, cartPriceOverrides, depotProducts, inventoryItems, depots]);
+
+  function buildCartLinePayload() {
+    return cartRows.map((r) => ({
+      productId: r.productId,
+      quantity: r.qty,
+      unitPrice: r.unit,
+    }));
+  }
 
   const totalPayable = useMemo(() => cartRows.reduce((s, r) => s + r.lineTotal, 0), [cartRows]);
 
@@ -489,6 +573,72 @@ export default function PosPage() {
     }
   }
 
+  const findCatalogKeyByScan = useCallback(
+    (raw: string): string | null => {
+      const code = raw.trim();
+      if (!code) return null;
+      const norm = code.toLowerCase();
+
+      const exact = catalogItems.find(
+        (item) =>
+          item.sku.toLowerCase() === norm ||
+          (item.barcode && item.barcode.toLowerCase() === norm),
+      );
+      if (exact) return exact.key;
+
+      const dp = depotProducts.find(
+        (p) =>
+          p.active &&
+          p.productCode.toLowerCase() === norm &&
+          (depotId === ALL_DEPOTS || p.depotId === depotId),
+      );
+      if (!dp) return null;
+
+      const row = catalogItems.find((item) => item.depotProductId === dp.id || item.key === dp.id);
+      return row?.key ?? null;
+    },
+    [catalogItems, depotProducts, depotId],
+  );
+
+  async function scanAndAddToCart(raw: string) {
+    const code = raw.trim();
+    if (!code) return false;
+
+    setError(null);
+    const localKey = findCatalogKeyByScan(code);
+    if (localKey) {
+      const row = catalogItems.find((x) => x.key === localKey);
+      await addLine(localKey);
+      if (row) setMsg(`Added ${row.name} to cart`);
+      setScanCode("");
+      setSearch("");
+      scanInputRef.current?.focus();
+      return true;
+    }
+
+    try {
+      let item: InventoryItemRow;
+      try {
+        item = await apiFetch<InventoryItemRow>(
+          `/api/v1/hotels/${hotelId}/inventory/items/lookup?barcode=${encodeURIComponent(code)}`,
+        );
+      } catch {
+        item = await apiFetch<InventoryItemRow>(
+          `/api/v1/hotels/${hotelId}/inventory/items/lookup?sku=${encodeURIComponent(code)}`,
+        );
+      }
+      await addLine(item.id);
+      setMsg(`Added ${item.name} to cart`);
+      setScanCode("");
+      setSearch("");
+      scanInputRef.current?.focus();
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : `No product found for “${code}”`);
+      return false;
+    }
+  }
+
   function bumpQty(productId: string, delta: number) {
     setCart((prev) => {
       const cur = prev[productId] ?? 0;
@@ -515,8 +665,38 @@ export default function PosPage() {
     });
   }
 
+  function setLinePrice(productId: string, rawValue: string) {
+    const dp = depotProducts.find((x) => x.id === productId);
+    const catalog = dp ? Number(dp.sellingPrice) : 0;
+    const trimmed = rawValue.trim();
+    if (trimmed === "") {
+      setCartPriceOverrides((prev) => {
+        const copy = { ...prev };
+        delete copy[productId];
+        return copy;
+      });
+      return;
+    }
+    const next = Number(trimmed);
+    if (!Number.isFinite(next) || next < 0) return;
+    if (Math.abs(next - catalog) < 0.0001) {
+      setCartPriceOverrides((prev) => {
+        const copy = { ...prev };
+        delete copy[productId];
+        return copy;
+      });
+      return;
+    }
+    setCartPriceOverrides((prev) => ({ ...prev, [productId]: next }));
+  }
+
   function removeLine(productId: string) {
     setCart((prev) => {
+      const copy = { ...prev };
+      delete copy[productId];
+      return copy;
+    });
+    setCartPriceOverrides((prev) => {
       const copy = { ...prev };
       delete copy[productId];
       return copy;
@@ -525,13 +705,17 @@ export default function PosPage() {
 
   function clearCart() {
     setCart({});
+    setCartPriceOverrides({});
     setMsg(null);
   }
 
   function resetRunningOrderFields() {
     setCart({});
+    setCartPriceOverrides({});
     setOrderType("Dine In");
-    setLocationLabel("Outlet / table");
+    setLocationLabel("");
+    setLocationMode("table");
+    setSelectedTableId("");
     setCustomerLabel("Walk-in Customer");
     setCustomerTin("");
     setChargeToFolio(false);
@@ -541,10 +725,40 @@ export default function PosPage() {
     setGuestSuggestions([]);
   }
 
+  function buildOrderSlipPayload() {
+    const outlet = selectedOutlet ?? depots.find((d) => d.id === resolveSaleDepotId());
+    return {
+      companyName: hotelPrintHeader.companyName || outlet?.name || "Hotel",
+      phone: hotelPrintHeader.phone || null,
+      tin: hotelPrintHeader.tin || null,
+      tableLabel: locationLabel.trim() || null,
+      customerName: customerLabel.trim() || null,
+      servedBy: loadAuthUser()?.username ?? null,
+      outletName: outlet ? `${outlet.name} (${outlet.code})` : null,
+      lines: cartRows.map((r) => ({
+        itemName: r.name,
+        quantity: r.qty,
+        lineTotal: r.lineTotal,
+      })),
+      totalAmount: totalPayable,
+      printedAt: new Date(),
+    };
+  }
+
+  function printOrderSlip() {
+    if (cartRows.length === 0) {
+      setError("Add at least one item before printing the order.");
+      return;
+    }
+    setError(null);
+    printPosOrderSlip(buildOrderSlipPayload());
+  }
+
   function saveDraft() {
     try {
       const payload = {
         cart,
+        cartPriceOverrides,
         orderType,
         locationLabel,
         customerLabel,
@@ -572,6 +786,7 @@ export default function PosPage() {
       }
       const o = JSON.parse(raw) as {
         cart?: Record<string, number>;
+        cartPriceOverrides?: Record<string, number>;
         orderType?: OrderType;
         locationLabel?: string;
         customerLabel?: string;
@@ -582,8 +797,21 @@ export default function PosPage() {
         depotId?: string;
       };
       if (o.cart && typeof o.cart === "object") setCart(o.cart);
+      if (o.cartPriceOverrides && typeof o.cartPriceOverrides === "object") {
+        setCartPriceOverrides(o.cartPriceOverrides);
+      }
       if (o.orderType && ORDER_TYPES.includes(o.orderType)) setOrderType(o.orderType);
-      if (typeof o.locationLabel === "string") setLocationLabel(o.locationLabel);
+      if (typeof o.locationLabel === "string") {
+        setLocationLabel(o.locationLabel);
+        const match = posTables.find((t) => t.tableLabel === o.locationLabel);
+        if (match) {
+          setLocationMode("table");
+          setSelectedTableId(match.id);
+        } else if (o.locationLabel.trim()) {
+          setLocationMode("custom");
+          setSelectedTableId("");
+        }
+      }
       if (typeof o.customerLabel === "string") setCustomerLabel(o.customerLabel);
       if (typeof o.customerTin === "string") setCustomerTin(o.customerTin);
       if (typeof o.chargeToFolio === "boolean") setChargeToFolio(o.chargeToFolio);
@@ -636,7 +864,7 @@ export default function PosPage() {
         body: JSON.stringify({
           customerName: buildCustomerName(),
           depotId: saleDepotId,
-          lines: cartRows.map((r) => ({ productId: r.productId, quantity: r.qty })),
+          lines: buildCartLinePayload(),
         }),
       });
       const depotName = depots.find((d) => d.id === saleDepotId)?.name ?? "Outlet";
@@ -672,7 +900,7 @@ export default function PosPage() {
     }
   }
 
-  async function submitSale(quickInvoice: boolean) {
+  async function submitSale(paymentMethod?: PosPaymentMethod) {
     if (cartRows.length === 0) {
       setError("Add at least one item to the order.");
       return;
@@ -700,9 +928,10 @@ export default function PosPage() {
         body: JSON.stringify({
           customerName: buildCustomerName(),
           depotId: saleDepotId,
-          lines: cartRows.map((r) => ({ productId: r.productId, quantity: r.qty })),
+          lines: buildCartLinePayload(),
           chargeToRoom: chargeToFolio,
           reservationId: chargeToFolio ? folioReservationId.trim() : null,
+          paymentMethod: paymentMethod ?? "CASH",
         }),
       });
       const depotName = depots.find((d) => d.id === saleDepotId)?.name ?? "Outlet";
@@ -717,6 +946,7 @@ export default function PosPage() {
             customerTin: customerTin.trim() || null,
             totalAmount: Number(res.totalAmount),
             soldAt: res.soldAt,
+            paymentMethod: res.paymentMethod ?? paymentMethod ?? "CASH",
             lines: (res.lines ?? []).map((ln) => ({
               productName: ln.productName,
               productCode: ln.productCode,
@@ -730,13 +960,17 @@ export default function PosPage() {
           "FRW",
         );
       } catch {
-        if (!quickInvoice) {
+        if (paymentMethod) {
           setError("Sale recorded; allow pop-ups to print the receipt.");
         }
       }
       resetRunningOrderFields();
       sessionStorage.removeItem(DRAFT_KEY(hotelId));
-      setMsg(quickInvoice ? "Invoice printed." : "Order placed.");
+      setMsg(
+        paymentMethod
+          ? `Invoice printed — ${paymentMethod}`
+          : "Order placed.",
+      );
       if (res.roomChargeId) {
         setMsg(`POS sale charged to room folio. Charge ID: ${res.roomChargeId}`);
       }
@@ -773,12 +1007,13 @@ export default function PosPage() {
           customerName: buildCustomerName(),
           locationLabel: locationLabel.trim() || null,
           depotId: saleDepotId,
-          lines: cartRows.map((r) => ({ productId: r.productId, quantity: r.qty })),
+          lines: buildCartLinePayload(),
         }),
       });
+      printPosOrderSlip(buildOrderSlipPayload());
       resetRunningOrderFields();
       sessionStorage.removeItem(DRAFT_KEY(hotelId));
-      setMsg(`Delivery ${res.deliveryNumber} saved. Convert it to invoice from the Invoices page after delivery is finished.`);
+      setMsg(`Delivery ${res.deliveryNumber} saved and order slip sent to printer. Convert to invoice from Invoices → Deliveries when finished.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delivery order failed");
     } finally {
@@ -795,14 +1030,14 @@ export default function PosPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100dvh-10rem)] max-w-full min-w-0 flex-col gap-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">POS</h1>
-          <p className="text-sm text-muted-foreground">
-            Catalog from Inventory products — categories and stock match the products table.
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+      <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">POS</h1>
+          <p className="hidden text-sm text-muted-foreground sm:block">
+            Catalog from Inventory — stock matches the products table.
           </p>
-          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+          <div className="mt-1 hidden flex-wrap gap-2 text-xs sm:flex">
             <a href="/app/pos/tables" className="font-semibold text-primary hover:underline">
               Tables
             </a>
@@ -841,26 +1076,26 @@ export default function PosPage() {
         </div>
       </div>
       {selectedOutlet ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="shrink-0 text-xs text-muted-foreground">
           Showing products on <strong className="text-foreground">{selectedOutlet.name}</strong> ({selectedOutlet.code})
           only. Stock shown is this outlet&apos;s transferred stock.
         </p>
       ) : null}
 
       {error && (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className="shrink-0 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </div>
       )}
       {msg && (
-        <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground">
+        <div className="shrink-0 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground">
           {msg}
         </div>
       )}
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 lg:flex-row">
-        <section className="order-2 flex min-h-[min(380px,55dvh)] w-full min-w-0 shrink-0 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft lg:order-2 lg:max-w-xl lg:basis-[40%] xl:max-w-none xl:basis-[40%]">
-          <div className="border-b border-border/60 bg-muted/20 p-3">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden lg:flex-row">
+        <section className="order-2 flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft lg:order-2 lg:basis-0 lg:rounded-l-2xl lg:rounded-r-none lg:border-r-0">
+          <div className="shrink-0 border-b border-border/60 bg-muted/20 p-3">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Running order</p>
             <div className="flex flex-wrap gap-1.5">
               {ORDER_TYPES.map((t) => (
@@ -880,13 +1115,78 @@ export default function PosPage() {
             </div>
             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div>
-                <label className="text-[11px] text-muted-foreground">Location / table</label>
-                <input
-                  className="hms-input mt-0.5 w-full text-sm"
-                  value={locationLabel}
-                  onChange={(e) => setLocationLabel(e.target.value)}
-                  placeholder="e.g. Nanzige, Table 4"
-                />
+                <label className="text-[11px] text-muted-foreground">
+                  {orderType === "Take Away" ? "Location / note" : "Table"}
+                </label>
+                {orderType === "Take Away" || locationMode === "custom" || posTables.length === 0 ? (
+                  <div className="mt-0.5 space-y-1">
+                    <input
+                      className="hms-input w-full text-sm"
+                      value={locationLabel}
+                      onChange={(e) => {
+                        setLocationMode("custom");
+                        setSelectedTableId("");
+                        setLocationLabel(e.target.value);
+                      }}
+                      placeholder={
+                        orderType === "Take Away"
+                          ? "Pickup note / counter"
+                          : orderType === "Delivery"
+                            ? "Delivery address or table"
+                            : "e.g. TC17"
+                      }
+                    />
+                    {posTables.length > 0 && orderType !== "Take Away" ? (
+                      <button
+                        type="button"
+                        className="text-[11px] font-semibold text-primary hover:underline"
+                        onClick={() => {
+                          setLocationMode("table");
+                          setLocationLabel("");
+                        }}
+                      >
+                        Choose from system tables
+                      </button>
+                    ) : null}
+                    {posTables.length === 0 && orderType !== "Take Away" ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        No tables yet — add them under{" "}
+                        <a href="/app/pos/tables" className="font-semibold text-primary hover:underline">
+                          POS → Tables
+                        </a>
+                        .
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="mt-0.5 space-y-1">
+                    <select
+                      className="hms-input w-full text-sm"
+                      value={selectedTableId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        if (id === "__CUSTOM__") {
+                          setLocationMode("custom");
+                          setSelectedTableId("");
+                          setLocationLabel("");
+                          return;
+                        }
+                        setLocationMode("table");
+                        setSelectedTableId(id);
+                      }}
+                    >
+                      <option value="">Select table…</option>
+                      {posTables.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.tableLabel}
+                          {t.occupied ? " (occupied)" : ""}
+                          {t.capacity ? ` · ${t.capacity} seats` : ""}
+                        </option>
+                      ))}
+                      <option value="__CUSTOM__">Other / custom…</option>
+                    </select>
+                  </div>
+                )}
               </div>
               <div className="relative">
                 <label className="text-[11px] text-muted-foreground">Customer</label>
@@ -1017,32 +1317,48 @@ export default function PosPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto p-2 sm:p-3">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain overflow-x-hidden p-2 sm:p-3">
             {cartRows.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">No items yet — add from the catalog.</p>
             ) : (
               <div className="-mx-1 overflow-x-auto px-1 sm:mx-0 sm:px-0">
-                <table className="w-full min-w-[36rem] text-sm">
+                <table className="w-full min-w-[38rem] text-sm table-fixed">
                   <thead>
                     <tr className="border-b border-border/60 text-left text-xs text-muted-foreground">
-                      <th className="pb-2 pr-2">Item</th>
-                      <th className="pb-2 w-14">Stock</th>
-                      <th className="pb-2 w-16">Price</th>
-                      <th className="pb-2 w-40">Qty</th>
-                      <th className="pb-2 w-16 text-right">Total</th>
-                      <th className="pb-2 w-8" />
+                      <th className="pb-2 pr-2 w-auto">Item</th>
+                      <th className="pb-2 w-14 shrink-0">Stock</th>
+                      <th className="pb-2 w-[7.5rem] shrink-0">Price</th>
+                      <th className="pb-2 w-36 shrink-0">Qty</th>
+                      <th className="pb-2 w-[5.5rem] shrink-0 text-right">Total</th>
+                      <th className="pb-2 w-8 shrink-0" />
                     </tr>
                   </thead>
                   <tbody>
                     {cartRows.map((r) => (
                       <tr key={r.productId} className="border-b border-border/40 align-middle">
-                        <td className="py-2 pr-2">
-                          <div className="font-medium">{r.name}</div>
+                        <td className="py-2 pr-2 min-w-0">
+                          <div className="font-medium truncate">{r.name}</div>
                           <div className="text-[10px] text-muted-foreground">{r.category}</div>
-                          <div className="mt-0.5 text-[10px] text-muted-foreground">{r.outletLabel}</div>
+                          <div className="mt-0.5 text-[10px] text-muted-foreground truncate">{r.outletLabel}</div>
                         </td>
-                        <td className="py-2 tabular-nums text-muted-foreground">{formatStock(r.stock)}</td>
-                        <td className="py-2 text-muted-foreground">{formatMoney(r.unit)}</td>
+                        <td className="py-2 tabular-nums text-muted-foreground whitespace-nowrap">{formatStock(r.stock)}</td>
+                        <td className="py-2 whitespace-nowrap">
+                          <input
+                            className={`h-9 w-full min-w-[7rem] max-w-[7.5rem] rounded-lg border bg-background px-2 text-right text-sm font-medium tabular-nums outline-none focus:bg-muted/30 ${
+                              r.priceOverridden ? "border-amber-400/80 bg-amber-50/50" : "border-border/80"
+                            }`}
+                            type="text"
+                            inputMode="decimal"
+                            value={r.priceOverridden ? String(r.unit) : formatMoney(r.unit)}
+                            onChange={(e) => setLinePrice(r.productId, e.target.value)}
+                            aria-label={`Price for ${r.name}`}
+                            title={
+                              r.priceOverridden
+                                ? `Custom price (catalog: ${formatMoney(r.catalogUnit)})`
+                                : "Edit to override catalog price"
+                            }
+                          />
+                        </td>
                         <td className="py-2">
                           <div className="inline-flex items-center rounded-lg border border-border/80 bg-background">
                             <button
@@ -1071,7 +1387,7 @@ export default function PosPage() {
                             </button>
                           </div>
                         </td>
-                        <td className="py-2 text-right font-medium tabular-nums">{formatMoney(r.lineTotal)}</td>
+                        <td className="py-2 text-right font-medium tabular-nums whitespace-nowrap">{formatMoney(r.lineTotal)}</td>
                         <td className="py-2">
                           <button
                             type="button"
@@ -1089,15 +1405,15 @@ export default function PosPage() {
             )}
           </div>
 
-          <div className="space-y-3 border-t border-border/60 bg-muted/10 p-3">
+          <div className="shrink-0 space-y-3 border-t border-border/60 bg-muted/10 p-3">
             <div className="flex items-baseline justify-between">
               <span className="text-sm font-medium text-muted-foreground">Total payable</span>
               <span className="text-xl font-bold tabular-nums text-primary">{formatMoney(totalPayable)}</span>
             </div>
-            <div className="grid grid-cols-2 gap-2 max-[380px]:grid-cols-1 sm:grid-cols-5">
+            <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
               <button
                 type="button"
-                className="rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                className="rounded-lg bg-red-600 px-1 py-2 text-[11px] font-semibold leading-tight text-white hover:bg-red-700 disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-xs"
                 disabled={placing}
                 onClick={clearCart}
               >
@@ -1105,57 +1421,105 @@ export default function PosPage() {
               </button>
               <button
                 type="button"
-                className="rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+                className="rounded-lg bg-violet-600 px-1 py-2 text-[11px] font-semibold leading-tight text-white hover:bg-violet-700 disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-xs"
                 disabled={placing}
                 onClick={saveDraft}
               >
                 Draft
               </button>
+              {orderType === "Delivery" ? (
+                <button
+                  type="button"
+                  className="rounded-lg bg-slate-700 px-1 py-2 text-[11px] font-semibold leading-tight text-white hover:bg-slate-800 disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-xs"
+                  disabled={placing || cartRows.length === 0}
+                  onClick={printOrderSlip}
+                >
+                  Print order
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="rounded-lg bg-amber-500 px-1 py-2 text-[11px] font-semibold leading-tight text-white hover:bg-amber-600 disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-xs"
+                  disabled={placing || cartRows.length === 0}
+                  onClick={() => void printProforma()}
+                >
+                  Proforma
+                </button>
+              )}
               <button
                 type="button"
-                className="rounded-xl bg-sky-600 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
-                disabled={placing || cartRows.length === 0 || orderType === "Delivery"}
-                onClick={() => void submitSale(true)}
-              >
-                {placing ? "…" : "Quick invoice"}
-              </button>
-              <button
-                type="button"
-                className="rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
-                disabled={placing || cartRows.length === 0 || orderType === "Delivery"}
-                onClick={() => void printProforma()}
-              >
-                Proforma
-              </button>
-              <button
-                type="button"
-                className="rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="rounded-lg bg-emerald-600 px-1 py-2 text-[11px] font-semibold leading-tight text-white hover:bg-emerald-700 disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-xs"
                 disabled={placing || cartRows.length === 0}
-                onClick={() => (orderType === "Delivery" ? void submitDeliveryOrder() : void submitSale(false))}
+                onClick={() => (orderType === "Delivery" ? void submitDeliveryOrder() : void submitSale())}
               >
                 {placing ? "…" : orderType === "Delivery" ? "Save delivery" : "Place order"}
               </button>
+              {POS_PAYMENT_METHODS.map((method) => (
+                <button
+                  key={method}
+                  type="button"
+                  className={`rounded-lg px-1 py-2 text-[10px] font-semibold leading-tight text-white disabled:opacity-50 sm:rounded-xl sm:py-2.5 sm:text-[11px] ${
+                    method === "MOMO"
+                      ? "bg-yellow-600 hover:bg-yellow-700"
+                      : method === "CASH"
+                        ? "bg-lime-700 hover:bg-lime-800"
+                        : method === "CREDIT CARD"
+                          ? "bg-sky-700 hover:bg-sky-800"
+                          : "bg-indigo-700 hover:bg-indigo-800"
+                  }`}
+                  disabled={placing || cartRows.length === 0 || orderType === "Delivery"}
+                  onClick={() => void submitSale(method)}
+                >
+                  {placing ? "…" : method}
+                </button>
+              ))}
             </div>
             {orderType === "Delivery" && (
               <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-900">
-                Delivery mode saves a delivery order only. Create the invoice later from Invoices → Deliveries after delivery is finished.
+                Delivery mode prints a COMMANDE / ORDER slip (not an official receipt). Saving also prints the slip. Create the fiscal invoice later from Invoices → Deliveries.
               </p>
             )}
           </div>
         </section>
 
-        <section className="order-1 flex min-h-[min(420px,60dvh)] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft lg:order-1">
-          <div className="shrink-0 border-b border-border/60 p-2 sm:p-3">
+        <section className="order-1 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-soft lg:order-1 lg:basis-0">
+          <div className="shrink-0 space-y-2 border-b border-border/60 p-2 sm:p-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="pos-barcode-scan">
+                Scan barcode
+              </label>
+              <input
+                id="pos-barcode-scan"
+                ref={scanInputRef}
+                className="hms-input w-full min-w-0 text-sm ring-2 ring-primary/20"
+                placeholder="Scan barcode — adds to cart automatically"
+                value={scanCode}
+                autoComplete="off"
+                onChange={(e) => setScanCode(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void scanAndAddToCart(scanCode);
+                  }
+                }}
+              />
+            </div>
             <input
               className="hms-input w-full min-w-0 text-sm"
-              placeholder="Search name, SKU, category…"
+              placeholder="Search name, SKU, barcode, category…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && search.trim()) {
+                  e.preventDefault();
+                  void scanAndAddToCart(search);
+                }
+              }}
             />
           </div>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
             <nav
-              className="scrollbar-thin flex shrink-0 gap-1.5 overflow-x-auto overflow-y-hidden border-b border-border/60 bg-muted/15 p-2 lg:w-44 lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden lg:border-b-0 lg:border-r"
+              className="scrollbar-thin flex max-h-24 shrink-0 gap-1.5 overflow-x-auto overflow-y-hidden border-b border-border/60 bg-muted/15 p-2 lg:max-h-none lg:w-44 lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden lg:border-b-0 lg:border-r"
               aria-label="Inventory categories"
             >
               {categories.map((c) => (
@@ -1173,7 +1537,7 @@ export default function PosPage() {
                 </button>
               ))}
             </nav>
-            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-2 sm:p-3">
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-2 sm:p-3">
               {catalogItems.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   {selectedOutlet
@@ -1183,7 +1547,7 @@ export default function PosPage() {
               ) : filteredItems.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No products match this filter.</p>
               ) : (
-                <div className="grid w-full min-w-0 grid-cols-1 gap-2 min-[380px]:grid-cols-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:gap-3 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                   {filteredItems.map((item) => {
                     const stockN = Number(item.currentStock ?? 0);
                     const lowStock = item.stockType !== "NON_STOCK" && Number.isFinite(stockN) && stockN <= 0;

@@ -623,7 +623,8 @@ public class FacilityService {
                         b.getFacility().getName(),
                         b.getGuest().getFullName(),
                         b.getAmountPaid(),
-                        b.getInvoicedAt()))
+                        b.getInvoicedAt(),
+                        b.getPaymentStatus() != null ? b.getPaymentStatus().name() : "PAID"))
                 .toList();
     }
 

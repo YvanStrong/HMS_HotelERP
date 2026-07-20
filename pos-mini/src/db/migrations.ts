@@ -223,14 +223,32 @@ async function ensureBusinessTypeColumn(db: SQLiteDatabase): Promise<void> {
   }
 }
 
+async function ensureTaxClassColumn(db: SQLiteDatabase): Promise<void> {
+  const cols = await db.getAllAsync<{ name: string }>('PRAGMA table_info(products)');
+  if (!cols.some((c) => c.name === 'tax_class')) {
+    await db.execAsync("ALTER TABLE products ADD COLUMN tax_class TEXT NOT NULL DEFAULT 'A'");
+  }
+}
+
 /** Idempotent fixes when schema_version advanced before a column migration ran. */
 async function repairSchema(db: SQLiteDatabase): Promise<void> {
   await ensureBusinessTypeColumn(db);
   await ensureStaffUsernameColumn(db);
+  await ensureTaxClassColumn(db);
 }
 
 async function migrateToV7(db: SQLiteDatabase): Promise<void> {
   await ensureStaffUsernameColumn(db);
+}
+
+/** Main's product tax_class (was v4 on origin/main; renumbered to avoid clashing with HEAD v4–v7). */
+async function migrateToV8(db: SQLiteDatabase): Promise<void> {
+  await ensureTaxClassColumn(db);
+  // Sync legacy is_taxable rows into tax_class where still at default A.
+  await safeAlter(
+    db,
+    `UPDATE products SET tax_class = 'B' WHERE is_taxable = 1 AND (tax_class IS NULL OR tax_class = 'A')`,
+  );
 }
 
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {
@@ -279,10 +297,15 @@ export async function runMigrations(db: SQLiteDatabase): Promise<void> {
     await setSchemaVersion(db, 7);
   }
 
+  if (current < 8) {
+    await migrateToV8(db);
+    current = 8;
+    await setSchemaVersion(db, 8);
+  }
+
   await repairSchema(db);
 
   if (current < SCHEMA_VERSION) {
     await setSchemaVersion(db, SCHEMA_VERSION);
   }
 }
-

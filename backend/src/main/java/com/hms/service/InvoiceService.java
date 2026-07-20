@@ -87,7 +87,8 @@ public class InvoiceService {
                 i.getTotalAmount(),
                 i.getHotel().getCurrency(),
                 i.getCreatedAt(),
-                publicUrlProperties.invoicePdfUrl(hotelId, i.getId()));
+                publicUrlProperties.invoicePdfUrl(hotelId, i.getId()),
+                i.getStatus() != null ? i.getStatus() : "ISSUED");
     }
 
     private static ApiDtos.Pagination paginate(int page, int size, long total) {

@@ -262,6 +262,37 @@ public class InventoryController {
         return inventoryDepotService.getSaleDetail(hotelId, hotelHeader, saleId);
     }
 
+    @PostMapping("/sales/{saleId}/refund-full")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER')")
+    public ResponseEntity<InventoryDepotDtos.RefundResponse> refundSaleFull(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID saleId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestBody(required = false) InventoryDepotDtos.CreateRefundRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(inventoryDepotService.refundSaleFull(hotelId, hotelHeader, saleId, body));
+    }
+
+    /** Same as path-variable refund — avoids proxy/path issues with UUID in the URL. */
+    @PostMapping(value = "/sales/refund-full", params = "saleId")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER')")
+    public ResponseEntity<InventoryDepotDtos.RefundResponse> refundSaleFullQuery(
+            @PathVariable UUID hotelId,
+            @RequestParam("saleId") UUID saleId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestBody(required = false) InventoryDepotDtos.CreateRefundRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(inventoryDepotService.refundSaleFull(hotelId, hotelHeader, saleId, body));
+    }
+
+    @GetMapping("/refunds")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER')")
+    public java.util.List<InventoryDepotDtos.RefundRow> listRefunds(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return inventoryDepotService.listRefunds(hotelId, hotelHeader);
+    }
+
     @PostMapping("/deliveries")
     @PreAuthorize(
             "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_WAITER','ROLE_CASHIER','ROLE_RECEPTIONIST')")

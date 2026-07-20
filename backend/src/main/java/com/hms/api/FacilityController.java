@@ -1,7 +1,9 @@
 package com.hms.api;
 
+import com.hms.api.dto.ApiDtos;
 import com.hms.api.dto.FacilityDtos;
 import com.hms.service.FacilityService;
+import com.hms.service.UnifiedInvoiceRefundService;
 import com.hms.security.CheckModuleEntitlement;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
@@ -27,9 +29,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class FacilityController {
 
     private final FacilityService facilityService;
+    private final UnifiedInvoiceRefundService unifiedInvoiceRefundService;
 
-    public FacilityController(FacilityService facilityService) {
+    public FacilityController(FacilityService facilityService, UnifiedInvoiceRefundService unifiedInvoiceRefundService) {
         this.facilityService = facilityService;
+        this.unifiedInvoiceRefundService = unifiedInvoiceRefundService;
     }
 
     @GetMapping
@@ -99,6 +103,17 @@ public class FacilityController {
             @PathVariable UUID hotelId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         return facilityService.listFacilityInvoices(hotelId, hotelHeader);
+    }
+
+    @PostMapping("/bookings/{bookingId}/refund-invoice")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER')")
+    public ResponseEntity<ApiDtos.UnifiedRefundRow> refundFacilityInvoice(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID bookingId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestBody(required = false) ApiDtos.CreateInvoiceRefundRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(unifiedInvoiceRefundService.refundFacilityInvoice(hotelId, hotelHeader, bookingId, body));
     }
 
     @PostMapping("/{facilityId}/abonnements/check-in")

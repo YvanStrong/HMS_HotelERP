@@ -16,7 +16,7 @@ import { listSuppliers } from '../../../src/repositories/supplierRepository';
 import type { Product, Supplier } from '../../../src/types';
 import { useAppStore } from '../../../src/store/appStore';
 import { useThemedStyles } from '../../../src/hooks/useTheme';
-import { calculateCartTax, calculateCartTotal, calculateSubtotal, roundMoney } from '../../../src/utils/calculations';
+import { calculateProductCartTax, calculateCartTotal, calculateSubtotal, roundMoney } from '../../../src/utils/calculations';
 import { QuantityEditModal } from '../../../src/components/QuantityEditModal';
 import { formatMoney } from '../../../src/utils/currency';
 import { formatQuantity, parseQuantityInput } from '../../../src/utils/quantity';
@@ -69,7 +69,7 @@ export default function NewPurchaseScreen() {
     [lines],
   );
   const taxAmount = useMemo(
-    () => roundMoney(calculateCartTax(lines.map((l) => ({
+    () => roundMoney(calculateProductCartTax(lines.map((l) => ({
       unitPrice: l.unitCost,
       quantity: l.quantity,
       isTaxable: l.isTaxable,

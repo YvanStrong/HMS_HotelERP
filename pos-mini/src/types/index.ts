@@ -1,3 +1,5 @@
+import type { ProductTaxClass } from '../constants/productTax';
+
 export type PaymentMethod = 'cash' | 'card' | 'mobile' | 'credit' | 'split';
 export type StaffRole = 'cashier' | 'manager';
 export type ThemeMode = 'light' | 'dark';
@@ -54,6 +56,7 @@ export interface Product {
   stockQty: number;
   minStock: number;
   unit: string;
+  taxClass: ProductTaxClass;
   isTaxable: boolean;
   taxRate: number;
   taxInclusive: boolean;
@@ -325,6 +328,8 @@ export interface CartItem {
   costPrice: number;
   quantity: number;
   discountAmount: number;
+  unit: string;
+  taxClass: ProductTaxClass;
   trackStock: boolean;
   stockQty: number;
   imageUri?: string | null;

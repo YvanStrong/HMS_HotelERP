@@ -25,9 +25,7 @@ type NavSection = { title: string; items: NavItem[] };
 
 const NAV_MODULES: Partial<Record<HotelNavKey, string>> = {
   dashboard: "DASHBOARD",
-  reports: "REPORTS",
   accounting: "ACCOUNTING",
-  guestAnalytics: "GUEST_ANALYTICS",
   roomTypes: "ROOM_TYPES",
   rooms: "ROOMS",
   roomBlocks: "ROOM_BLOCKS",
@@ -50,6 +48,7 @@ const NAV_MODULES: Partial<Record<HotelNavKey, string>> = {
   auditLogs: "AUDIT_LOGS",
   serviceRequests: "SERVICE_REQUESTS",
   settings: "SETTINGS",
+  hr: "HR",
 };
 
 const NAV_SECTIONS: NavSection[] = [
@@ -57,9 +56,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: "Overview",
     items: [
       { key: "dashboard", segment: "dashboard", label: "Dashboard", icon: "M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" },
-      { key: "reports", segment: "reports", label: "Reports", icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" },
       { key: "accounting", segment: "accounting", label: "Accounting", icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 12v-2m8-4a8 8 0 11-16 0 8 8 0 0116 0z" },
-      { key: "guestAnalytics", segment: "guest-analytics", label: "Guest analytics", icon: "M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z M20.488 9H15V3.512A9.025 9.025 0 0120.488 9zM9 7H5V3h4v4zm0 10H5v-4h4v4zm10 0h-4v-4h4v4z" },
     ]
   },
   {
@@ -115,6 +112,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: "Administration",
     items: [
       { key: "staff", segment: "staff", label: "Staff", icon: "M17 20h5V9H2v11h5m10 0v-7.5A2.5 2.5 0 0014.5 10h-5A2.5 2.5 0 007 12.5V20m10 0H7m6-13a3 3 0 110-6 3 3 0 010 6z" },
+      { key: "hr", segment: "hr", label: "HR", icon: "M17 20h5V9H2v11h5m10 0v-7.5A2.5 2.5 0 0014.5 10h-5A2.5 2.5 0 007 12.5V20m10 0H7M12 3a3 3 0 110 6 3 3 0 010-6zm-7 9a7 7 0 0114 0H5z" },
       { key: "iot", segment: "iot", label: "IoT & Smart Room", icon: "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0114 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" },
       { key: "auditLogs", segment: "audit-logs", label: "Audit Logs", icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
       { key: "subscription", segment: "subscription", label: "Subscription", icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 12v-2m8-4a8 8 0 11-16 0 8 8 0 0116 0z" },
@@ -131,6 +129,7 @@ export function HotelStaffShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const isPosWorkspace = pathname === staffAppPath("pos") || /\/pos$/.test(pathname ?? "");
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
   const { hotel, hasModule, isModuleVisibleWhenDisabled, entitlementsLoaded, loading: hotelLoading } =
@@ -427,8 +426,14 @@ export function HotelStaffShell({
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-          <div className="mx-auto max-w-7xl min-w-0">
+        <main
+          className={
+            isPosWorkspace
+              ? "flex-1 overflow-hidden p-4 pr-0 pb-4 pt-4 sm:p-6 sm:pr-0 sm:pb-6 sm:pt-6 lg:overflow-hidden lg:py-8 lg:pl-8 lg:pr-0"
+              : "flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8"
+          }
+        >
+          <div className={isPosWorkspace ? "h-full min-w-0 w-full max-w-none" : "mx-auto min-w-0 max-w-7xl"}>
             {currentModuleDisabled ? (
               <ModuleDisabledPage module={currentNavItem?.label ?? "This module"} />
             ) : (

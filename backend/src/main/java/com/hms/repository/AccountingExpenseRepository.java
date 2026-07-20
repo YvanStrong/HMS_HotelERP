@@ -38,4 +38,21 @@ public interface AccountingExpenseRepository extends JpaRepository<AccountingExp
             @Param("hotelId") UUID hotelId,
             @Param("from") LocalDate from,
             @Param("to") LocalDate to);
+
+    @Query(
+            """
+            select coalesce(sum(e.amount), 0)
+            from AccountingExpense e
+            where e.hotel.id = :hotelId
+              and e.expenseDate >= :from
+              and e.expenseDate <= :to
+              and lower(e.category) = lower(:category)
+            """)
+    BigDecimal sumExpensesByCategory(
+            @Param("hotelId") UUID hotelId,
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to,
+            @Param("category") String category);
+
+    boolean existsByHotel_IdAndReferenceNo(UUID hotelId, String referenceNo);
 }

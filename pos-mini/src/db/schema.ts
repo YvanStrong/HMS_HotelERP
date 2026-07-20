@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 export const CREATE_TABLES_V1 = `
 CREATE TABLE IF NOT EXISTS app_meta (
@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS products (
   stock_qty REAL NOT NULL DEFAULT 0,
   min_stock REAL NOT NULL DEFAULT 0,
   unit TEXT NOT NULL DEFAULT 'pcs',
+  tax_class TEXT NOT NULL DEFAULT 'A',
   is_taxable INTEGER NOT NULL DEFAULT 0,
   tax_rate REAL NOT NULL DEFAULT 0,
   tax_inclusive INTEGER NOT NULL DEFAULT 0,
@@ -266,4 +267,3 @@ CREATE INDEX IF NOT EXISTS idx_sale_payments_sale ON sale_payments(sale_id);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_created ON stock_movements(created_at);
 `;
-

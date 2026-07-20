@@ -7,9 +7,12 @@ import { ConfirmModal } from '../../../src/components/ConfirmModal';
 import { FormField } from '../../../src/components/FormField';
 import { KeyboardFormScroll } from '../../../src/components/KeyboardFormScroll';
 import { ProductImagePicker } from '../../../src/components/ProductImagePicker';
+import { OptionPicker } from '../../../src/components/OptionPicker';
 import { listCategories } from '../../../src/repositories/categoryRepository';
 import { deleteProduct, getProductById, updateProduct } from '../../../src/repositories/productRepository';
 import type { Category, Product } from '../../../src/types';
+import type { ProductTaxClass } from '../../../src/constants/productTax';
+import { PRODUCT_TAX_OPTIONS } from '../../../src/constants/productTax';
 import { formatMoney } from '../../../src/utils/currency';
 import { useAppStore } from '../../../src/store/appStore';
 import { useThemeColors } from '../../../src/hooks/useTheme';
@@ -40,8 +43,7 @@ export default function ProductDetailScreen() {
   const [stockQty, setStockQty] = useState('0');
   const [minStock, setMinStock] = useState('0');
   const [unit, setUnit] = useState('pcs');
-  const [isTaxable, setIsTaxable] = useState(false);
-  const [taxRate, setTaxRate] = useState('0');
+  const [taxClass, setTaxClass] = useState<ProductTaxClass>('A');
   const [trackStock, setTrackStock] = useState(true);
   const [imageUri, setImageUri] = useState<string | null>(null);
 
@@ -68,8 +70,7 @@ export default function ProductDetailScreen() {
           setStockQty(String(p.stockQty));
           setMinStock(String(p.minStock));
           setUnit(p.unit);
-          setIsTaxable(p.isTaxable);
-          setTaxRate(String(p.taxRate));
+          setTaxClass(p.taxClass);
           setTrackStock(p.trackStock);
           setImageUri(p.imageUri);
         }
@@ -99,8 +100,9 @@ export default function ProductDetailScreen() {
         stockQty: trackStock ? Number(stockQty) || 0 : 0,
         minStock: trackStock ? Number(minStock) || 0 : 0,
         unit,
-        isTaxable,
-        taxRate: Number(taxRate) || 0,
+        taxClass,
+        isTaxable: taxClass === 'B',
+        taxRate: taxClass === 'B' ? 18 : 0,
         trackStock,
         imageUri: savedImage,
       });
@@ -177,13 +179,12 @@ export default function ProductDetailScreen() {
           </>
         ) : null}
         <UnitPicker value={unit} onChange={setUnit} />
-        <View className="mb-4 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
-          <Text className="font-semibold text-app-text">Taxable item?</Text>
-          <Switch value={isTaxable} onValueChange={setIsTaxable} />
-        </View>
-        {isTaxable ? (
-          <FormField label="Tax rate (%)" value={taxRate} onChangeText={setTaxRate} keyboardType="decimal-pad" placeholder="18" />
-        ) : null}
+        <OptionPicker
+          label="Tax category"
+          options={PRODUCT_TAX_OPTIONS}
+          value={taxClass}
+          onChange={(v) => setTaxClass(v as ProductTaxClass)}
+        />
         <ProductVariantsSection productId={productId} />
         {hasModifiers ? <ProductModifierGroupsSection productId={productId} /> : null}
         <Pressable

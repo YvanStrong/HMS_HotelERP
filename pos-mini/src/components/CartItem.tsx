@@ -56,7 +56,8 @@ export function CartItemRow({ item, onIncrease, onDecrease, onRemove, onSetQuant
             </Text>
           ) : null}
           <Text className="text-sm text-app-muted">
-            {formatMoney(item.unitPrice, settings)} × {formatQuantity(item.quantity)}
+            {formatMoney(item.unitPrice, settings)} × {formatQuantity(item.quantity)} {item.unit}
+            {item.taxClass === 'B' ? ' · VAT 18%' : ''}
           </Text>
           <Text className="font-bold text-app-text">{formatMoney(lineTotal, settings)}</Text>
         </View>

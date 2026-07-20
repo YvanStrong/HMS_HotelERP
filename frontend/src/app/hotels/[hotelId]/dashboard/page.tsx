@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import {
   ChartCard,
@@ -26,6 +26,7 @@ type KpiCard = {
   subtext: string;
   actionPath?: string | null;
 };
+
 type ArrivalRow = {
   reservationId: string;
   bookingReference: string;
@@ -34,6 +35,7 @@ type ArrivalRow = {
   checkInTime?: string | null;
   status: string;
 };
+
 type DepartureRow = {
   reservationId: string;
   bookingReference: string;
@@ -42,12 +44,14 @@ type DepartureRow = {
   balanceDue: number;
   status: string;
 };
+
 type ActivityRow = {
   timestamp: string;
   staffName: string;
   action: string;
   reference: string;
 };
+
 type ExecutiveDashboard = {
   timestamp: string;
   hotelId: string;
@@ -75,7 +79,6 @@ type RoomDashboard = {
   bucketCounts: Record<string, number>;
   totalRooms: number;
   generatedAt: string;
-  staleDndRooms?: { roomId: string; roomNumber: string; dndSetAt: string }[];
 };
 
 type OccupancyGrid = {
@@ -85,10 +88,24 @@ type OccupancyGrid = {
 
 type RealtimeDashboard = {
   timestamp?: string;
-  hotelId?: string;
   liveMetrics?: Record<string, unknown>;
   alerts?: unknown[];
-  quickActions?: unknown[];
+};
+
+type GuestSnapshot = {
+  repeatGuestCount: number;
+  vipGuestCount: number;
+  noShowRatePercent: number;
+  averageStayNights: number;
+  revenuePerGuest: number;
+  averageGuestLifetimeValue: number;
+};
+
+type AccountingSnapshot = {
+  netProfit: number;
+  totalIncome: number;
+  totalExpenses: number;
+  pendingPettyCash: number;
 };
 
 function defaultDateRange(): { from: string; to: string } {
@@ -98,6 +115,27 @@ function defaultDateRange(): { from: string; to: string } {
   return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
 }
 
+function monthToDate(): { from: string; to: string } {
+  const now = new Date();
+  return {
+    from: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10),
+    to: now.toISOString().slice(0, 10),
+  };
+}
+
+function guestRange(): { from: string; to: string } {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - 90);
+  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+}
+
+function formatMoney(amount: number) {
+  return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
+    Number(amount || 0),
+  );
+}
+
 const STATUS_COLORS: Record<string, string> = {
   OCCUPIED: "#0ea5e9",
   VACANT_CLEAN: "#10b981",
@@ -105,10 +143,8 @@ const STATUS_COLORS: Record<string, string> = {
   CLEAN: "#10b981",
   DIRTY: "#f59e0b",
   OUT_OF_ORDER: "#ef4444",
-  OUT_OF_SERVICE: "#ef4444",
   DND: "#8b5cf6",
   BLOCKED: "#6b7280",
-  INSPECTED: "#3b82f6",
   RESERVED: "#0ea5e9",
 };
 
@@ -152,24 +188,68 @@ function timeBucketArrivals(arrivals: ArrivalRow[]): { label: string; value: num
   return buckets.map((label, i) => ({ label, value: counts[i] }));
 }
 
+function SectionShell({
+  id,
+  title,
+  subtitle,
+  accentClass,
+  children,
+  links,
+}: {
+  id: string;
+  title: string;
+  subtitle: string;
+  accentClass: string;
+  children: ReactNode;
+  links?: { href: string; label: string }[];
+}) {
+  return (
+    <section id={id} className="scroll-mt-24 space-y-4">
+      <div className={`rounded-2xl border p-5 shadow-sm ${accentClass}`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-xl font-bold tracking-tight">{title}</h2>
+            <p className="mt-1 text-sm opacity-90">{subtitle}</p>
+          </div>
+          {links && links.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {links.map((l) => (
+                <Link key={l.href} href={l.href} className="hms-btn-outline hms-btn-sm bg-background/80">
+                  {l.label}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
 export default function HotelDashboardPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
-  const [dash, setDash] = useState<ExecutiveDashboard | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [clockNow, setClockNow] = useState<Date | null>(null);
+  const mtd = useMemo(() => monthToDate(), []);
+  const guestDates = useMemo(() => guestRange(), []);
+  const range = useMemo(() => defaultDateRange(), []);
 
+  const [dash, setDash] = useState<ExecutiveDashboard | null>(null);
   const [board, setBoard] = useState<RoomDashboard | null>(null);
   const [grid, setGrid] = useState<OccupancyGrid | null>(null);
   const [kpi, setKpi] = useState<RealtimeDashboard | null>(null);
   const [salesAnalytics, setSalesAnalytics] = useState<SalesAnalytics | null>(null);
+  const [guestSnapshot, setGuestSnapshot] = useState<GuestSnapshot | null>(null);
+  const [accountingSnapshot, setAccountingSnapshot] = useState<AccountingSnapshot | null>(null);
+
+  const [loading, setLoading] = useState(true);
   const [roomError, setRoomError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [boardLoading, setBoardLoading] = useState(true);
   const [gridLoading, setGridLoading] = useState(true);
   const [kpiLoading, setKpiLoading] = useState(true);
-  const range = useMemo(() => defaultDateRange(), []);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [clockNow, setClockNow] = useState<Date | null>(null);
   const clock = formatClock(clockNow);
 
   useEffect(() => {
@@ -178,13 +258,18 @@ export default function HotelDashboardPage() {
     return () => clearInterval(t);
   }, []);
 
-  const loadExecutive = useCallback(async () => {
+  const loadAll = useCallback(async () => {
     if (!getToken()) {
       setError("Not signed in.");
       setLoading(false);
+      setBoardLoading(false);
+      setGridLoading(false);
+      setKpiLoading(false);
       return;
     }
     setError(null);
+    setRoomError(null);
+
     try {
       const res = await apiFetch<ExecutiveDashboard>(`/api/v1/hotels/${hotelId}/reports/executive-dashboard`);
       setDash(res);
@@ -194,110 +279,88 @@ export default function HotelDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [hotelId]);
 
-  useEffect(() => {
-    void loadExecutive();
-    const t = setInterval(() => {
-      void loadExecutive();
-    }, 60_000);
-    return () => clearInterval(t);
-  }, [loadExecutive]);
+    try {
+      setBoard(await apiFetch<RoomDashboard>(`/api/v1/hotels/${hotelId}/rooms/dashboard`));
+    } catch (e) {
+      setRoomError(e instanceof Error ? e.message : "Room data unavailable");
+    } finally {
+      setBoardLoading(false);
+    }
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setRoomError(null);
-      if (!getToken()) {
-        setBoardLoading(false);
-        setGridLoading(false);
-        setKpiLoading(false);
-        return;
-      }
-      try {
-        const d = await apiFetch<RoomDashboard>(`/api/v1/hotels/${hotelId}/rooms/dashboard`);
-        if (!cancelled) setBoard(d);
-      } catch (e) {
-        if (!cancelled) setRoomError(e instanceof Error ? e.message : "Room dashboard failed");
-      } finally {
-        if (!cancelled) setBoardLoading(false);
-      }
-      try {
-        const g = await apiFetch<OccupancyGrid>(
+    try {
+      setGrid(
+        await apiFetch<OccupancyGrid>(
           `/api/v1/hotels/${hotelId}/rooms/occupancy-grid?from=${range.from}&to=${range.to}`,
-        );
-        if (!cancelled) setGrid(g);
-      } catch {
-        /* optional */
-      } finally {
-        if (!cancelled) setGridLoading(false);
-      }
-      try {
-        const k = await apiFetch<RealtimeDashboard>(`/api/v1/hotels/${hotelId}/reports/realtime-dashboard`);
-        if (!cancelled) setKpi(k);
-      } catch {
-        /* optional */
-      } finally {
-        if (!cancelled) setKpiLoading(false);
-      }
-      try {
-        const now = new Date();
-        const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-        const to = now.toISOString().slice(0, 10);
-        const a = await apiFetch<SalesAnalytics>(
-          `/api/v1/hotels/${hotelId}/accounting/sales-analytics?from=${from}&to=${to}`,
+        ),
+      );
+    } catch {
+      /* optional */
+    } finally {
+      setGridLoading(false);
+    }
+
+    try {
+      setKpi(await apiFetch<RealtimeDashboard>(`/api/v1/hotels/${hotelId}/reports/realtime-dashboard`));
+    } catch {
+      /* optional */
+    } finally {
+      setKpiLoading(false);
+    }
+
+    try {
+      setSalesAnalytics(
+        await apiFetch<SalesAnalytics>(
+          `/api/v1/hotels/${hotelId}/accounting/sales-analytics?from=${mtd.from}&to=${mtd.to}`,
           { quiet: true },
-        );
-        if (!cancelled) setSalesAnalytics(a);
-      } catch {
-        /* manager/finance only */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [hotelId, range.from, range.to]);
+        ),
+      );
+    } catch {
+      /* finance only */
+    }
 
-  const hasData = useMemo(
-    () => Boolean(dash && (dash.todaysOperations.length + dash.revenueCards.length + dash.operationsAlerts.length > 0)),
-    [dash],
-  );
+    try {
+      const g = await apiFetch<GuestSnapshot>(
+        `/api/v1/hotels/${hotelId}/reports/guests?fromDate=${guestDates.from}&toDate=${guestDates.to}`,
+        { quiet: true },
+      );
+      setGuestSnapshot(g);
+    } catch {
+      /* optional */
+    }
 
-  const todaysOperationsBars = useMemo(() => {
-    if (!dash) return [];
-    return dash.todaysOperations.map((c) => ({
-      label: c.title,
-      value: Number(c.value) || 0,
-      color: tonedColor(c.tone),
-    }));
-  }, [dash]);
+    try {
+      const acc = await apiFetch<{
+        analytics?: SalesAnalytics;
+        pettyCashRequests?: { status: string }[];
+        reports?: { profitAndLoss?: { netProfit?: number; totalIncome?: number; totalExpenses?: number } };
+      }>(`/api/v1/hotels/${hotelId}/accounting?from=${mtd.from}&to=${mtd.to}`, { quiet: true });
+      const pl = acc.reports?.profitAndLoss;
+      const pending = (acc.pettyCashRequests ?? []).filter((p) => p.status === "PENDING").length;
+      setAccountingSnapshot({
+        netProfit: Number(pl?.netProfit ?? acc.analytics?.netAfterExpenses ?? 0),
+        totalIncome: Number(pl?.totalIncome ?? acc.analytics?.totalSales ?? 0),
+        totalExpenses: Number(pl?.totalExpenses ?? acc.analytics?.totalExpenses ?? 0),
+        pendingPettyCash: pending,
+      });
+    } catch {
+      /* finance only */
+    }
+  }, [guestDates.from, guestDates.to, hotelId, mtd.from, mtd.to, range.from, range.to]);
 
-  const revenueBars = useMemo(() => {
-    if (!dash) return [];
-    return dash.revenueCards.map((c) => ({
-      label: c.title,
-      value: Number(c.value) || 0,
-      color: tonedColor(c.tone),
-    }));
-  }, [dash]);
+  useEffect(() => {
+    void loadAll();
+    const t = setInterval(() => void loadAll(), 60_000);
+    return () => clearInterval(t);
+  }, [loadAll]);
 
-  const accountingSalesBars = useMemo(() => {
-    if (!salesAnalytics) return [];
-    return [
-      { label: "POS", value: Number(salesAnalytics.posSales) || 0, color: "#0ea5e9" },
-      { label: "Invoices", value: Number(salesAnalytics.inventoryInvoiceSales) || 0, color: "#0ea5e9" },
-      { label: "Expenses", value: Number(salesAnalytics.totalExpenses) || 0, color: "#f59e0b" },
-    ];
-  }, [salesAnalytics]);
-
-  const alertsBars = useMemo(() => {
-    if (!dash) return [];
-    return dash.operationsAlerts.map((c) => ({
-      label: c.title,
-      value: Number(c.value) || 0,
-      color: tonedColor(c.tone),
-    }));
-  }, [dash]);
+  const buckets = useMemo(() => {
+    if (!board?.bucketCounts) return [];
+    return Object.entries(board.bucketCounts)
+      .filter(([, v]) => Number.isFinite(v))
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, value], i) => ({ name, value, color: statusColor(name, i) }));
+  }, [board]);
 
   const occupancyChartData = useMemo(() => {
     if (!grid) return [];
@@ -309,16 +372,6 @@ export default function HotelDashboardPage() {
     }));
   }, [grid]);
 
-  const occupancySparkSeries = useMemo(() => {
-    if (!grid) return undefined;
-    return grid.days.map((d) => (d.totalRooms > 0 ? Math.round((d.occupiedRooms / d.totalRooms) * 100) : 0));
-  }, [grid]);
-
-  const occupiedSparkSeries = useMemo(() => {
-    if (!grid) return undefined;
-    return grid.days.map((d) => d.occupiedRooms);
-  }, [grid]);
-
   const averageOccupancyPct = useMemo(() => {
     if (!grid || grid.days.length === 0) return 0;
     const totals = grid.days.reduce(
@@ -328,401 +381,387 @@ export default function HotelDashboardPage() {
     return totals.tot > 0 ? (totals.occ / totals.tot) * 100 : 0;
   }, [grid]);
 
-  const buckets = useMemo(() => {
-    if (!board?.bucketCounts) return [];
-    return Object.entries(board.bucketCounts)
-      .filter(([, v]) => Number.isFinite(v))
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, value], i) => ({ name, value, color: statusColor(name, i) }));
-  }, [board]);
+  const occupancySparkSeries = useMemo(() => {
+    if (!grid) return undefined;
+    return grid.days.map((d) => (d.totalRooms > 0 ? Math.round((d.occupiedRooms / d.totalRooms) * 100) : 0));
+  }, [grid]);
 
-  const arrivalsTimeline = useMemo(() => {
+  const revenueBars = useMemo(() => {
     if (!dash) return [];
-    return timeBucketArrivals(dash.todaysArrivals);
-  }, [dash]);
-
-  const departuresBalanceData = useMemo(() => {
-    if (!dash) return [];
-    const sorted = [...dash.todaysDepartures]
-      .filter((d) => Number.isFinite(d.balanceDue))
-      .sort((a, b) => b.balanceDue - a.balanceDue)
-      .slice(0, 8);
-    return sorted.map((r, i) => ({
-      label: `Rm ${r.roomNumber || "?"} · ${r.guestName.split(" ")[0] || ""}`,
-      value: Number(r.balanceDue) || 0,
-      color: paletteAt(i),
+    return dash.revenueCards.map((c) => ({
+      label: c.title,
+      value: Number(c.value) || 0,
+      color: tonedColor(c.tone),
     }));
   }, [dash]);
 
+  const salesBars = useMemo(() => {
+    if (!salesAnalytics) return [];
+    return [
+      { label: "POS", value: Number(salesAnalytics.posSales) || 0, color: "#0ea5e9" },
+      { label: "Invoices", value: Number(salesAnalytics.inventoryInvoiceSales) || 0, color: "#3b82f6" },
+      { label: "Expenses", value: Number(salesAnalytics.totalExpenses) || 0, color: "#f59e0b" },
+    ];
+  }, [salesAnalytics]);
+
+  const arrivalsTimeline = useMemo(() => (dash ? timeBucketArrivals(dash.todaysArrivals) : []), [dash]);
+
+  const alertsBars = useMemo(() => {
+    if (!dash) return [];
+    return dash.operationsAlerts.map((c) => ({
+      label: c.title,
+      value: Number(c.value) || 0,
+      color: tonedColor(c.tone),
+    }));
+  }, [dash]);
+
+  const hasExecutive = Boolean(
+    dash && dash.todaysOperations.length + dash.revenueCards.length + dash.operationsAlerts.length > 0,
+  );
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* Header */}
       <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Hotel Executive Dashboard</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Hotel Dashboard</h1>
             <p className="mt-1 text-muted-foreground">
-              Live operations, revenue, and alerts at a glance — visualised with charts so trends are easy to spot.
+              All-in-one view — rooms & guests, sales, and accounting in one place.
             </p>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <div className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-2 text-right shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current time</p>
-              <p className="text-2xl font-bold tabular-nums text-foreground">{clock.time}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-2 text-right">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
+              <p className="text-2xl font-bold tabular-nums">{clock.time}</p>
               <p className="text-xs text-muted-foreground">{clock.date}</p>
             </div>
-            <Link href={staffAppPath("rooms")} className="hms-btn-outline hms-btn-sm hms-btn-icon">
-              Rooms List
-            </Link>
-            <Link href={staffAppPath("room-blocks")} className="hms-btn-outline hms-btn-sm hms-btn-icon">
-              Blocks
-            </Link>
-            <Link href={staffAppPath("reservations", "new")} className="hms-btn-solid text-sm">
-              New reservation
-            </Link>
+            <Link href="#rooms" className="hms-btn-outline hms-btn-sm">Rooms</Link>
+            <Link href="#sales" className="hms-btn-outline hms-btn-sm">Sales</Link>
+            <Link href="#accounting" className="hms-btn-outline hms-btn-sm">Accounting</Link>
+            <Link href={staffAppPath("reservations/new")} className="hms-btn-solid hms-btn-sm">New reservation</Link>
           </div>
         </div>
-        <div className="mt-3 text-sm text-muted-foreground">Last updated: {lastUpdated ?? "—"}</div>
+        <p className="mt-3 text-sm text-muted-foreground">Last updated: {lastUpdated ?? "—"}</p>
       </div>
 
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4">
           <p className="text-sm text-red-800">{error}</p>
-          <button type="button" className="hms-btn-outline text-sm mt-2" onClick={() => void loadExecutive()}>
+          <button type="button" className="hms-btn-outline text-sm mt-2" onClick={() => void loadAll()}>
             Retry
           </button>
         </div>
       )}
 
       {loading && (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="rounded-xl border border-border/60 bg-card p-4">
-              <div className="h-4 w-32 animate-pulse rounded bg-muted" />
-              <div className="mt-2 h-8 w-20 animate-pulse rounded bg-muted" />
-              <div className="mt-2 h-12 w-full animate-pulse rounded bg-muted" />
-            </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-28 animate-pulse rounded-xl bg-muted/40" />
           ))}
         </div>
       )}
 
-      {!loading && !error && !hasData && (
-        <div className="rounded-xl border border-dashed border-border p-8 text-center">
-          <p className="font-medium">No dashboard data yet</p>
-          <p className="text-sm text-muted-foreground">
-            Create reservations and operations activity to populate executive KPIs.
-          </p>
-          <Link href={staffAppPath("reservations/new")} className="hms-btn-solid mt-3 inline-block text-sm">
-            Create first reservation
-          </Link>
+      {/* ── ROOMS, RESERVATIONS & GUESTS ── */}
+      <SectionShell
+        id="rooms"
+        title="Rooms, Reservations & Guests"
+        subtitle="Live room status, today's arrivals and departures, guest insights, and operational alerts."
+        accentClass="border-sky-200/80 bg-sky-50/60 dark:bg-sky-950/20"
+        links={[
+          { href: staffAppPath("rooms"), label: "Rooms" },
+          { href: staffAppPath("reservations"), label: "Reservations" },
+          { href: staffAppPath("guests"), label: "Guests" },
+          { href: staffAppPath("housekeeping"), label: "Housekeeping" },
+        ]}
+      >
+        {roomError && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{roomError}</div>
+        )}
+
+        {!loading && dash && (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {dash.todaysOperations.map((c) => (
+              <SparkKpiCard
+                key={c.key}
+                title={c.title}
+                valueDisplay={c.valueDisplay}
+                subtext={c.subtext}
+                tone={c.tone}
+                href={c.actionPath ?? null}
+                series={/occupan/i.test(c.title) ? occupancySparkSeries : undefined}
+              />
+            ))}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <ChartCard
+            title="Room status board"
+            subtitle={board ? `${board.totalRooms} room(s) total` : "Operational status"}
+            bodyHeight={280}
+            loading={boardLoading}
+            empty={!boardLoading && buckets.length === 0}
+          >
+            <HmsDonutChart data={buckets} centerLabel={String(board?.totalRooms ?? 0)} centerSub="rooms" />
+          </ChartCard>
+
+          <ChartCard
+            title={`Occupancy outlook (${range.from} → ${range.to})`}
+            subtitle="Daily occupied vs available"
+            bodyHeight={280}
+            loading={gridLoading}
+            empty={!gridLoading && occupancyChartData.length === 0}
+          >
+            <HmsLineChart
+              data={occupancyChartData}
+              xKey="date"
+              rightAxis
+              series={[
+                { key: "Occupied", label: "Occupied", type: "bar", color: "#0ea5e9" },
+                { key: "Available", label: "Available", type: "bar", color: "#d2bab0" },
+                { key: "Occupancy", label: "Occupancy %", type: "line", color: "#3b82f6", yAxisId: "right", format: (n) => `${n}%` },
+              ]}
+            />
+          </ChartCard>
         </div>
-      )}
 
-      {!loading && dash && (
-        <>
-          <section>
-            <h2 className="mb-2 text-lg font-semibold">Today&apos;s Operations</h2>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {dash.todaysOperations.map((c, idx) => (
-                <SparkKpiCard
-                  key={c.key}
-                  title={c.title}
-                  valueDisplay={c.valueDisplay}
-                  subtext={c.subtext}
-                  tone={c.tone}
-                  href={c.actionPath ?? null}
-                  series={
-                    /occupan/i.test(c.key) || /occupan/i.test(c.title)
-                      ? occupancySparkSeries
-                      : /arriv/i.test(c.title) || /depart/i.test(c.title) || /in.?house/i.test(c.title)
-                        ? occupiedSparkSeries
-                        : occupiedSparkSeries?.map((v) => Math.max(0, v + ((idx % 3) - 1)))
-                  }
-                />
-              ))}
-            </div>
+        {guestSnapshot && (
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <SparkKpiCard title="Repeat guests" valueDisplay={String(guestSnapshot.repeatGuestCount)} subtext="Last 90 days" tone="blue" href={staffAppPath("guests")} />
+            <SparkKpiCard title="VIP guests" valueDisplay={String(guestSnapshot.vipGuestCount)} subtext="Active VIP tier" tone="violet" href={staffAppPath("guests")} />
+            <SparkKpiCard title="No-show rate" valueDisplay={`${guestSnapshot.noShowRatePercent.toFixed(1)}%`} subtext="Of scheduled arrivals" tone="amber" />
+            <SparkKpiCard title="Avg stay" valueDisplay={`${guestSnapshot.averageStayNights.toFixed(1)} nights`} subtext="Per guest" tone="green" />
+            <SparkKpiCard title="Revenue / guest" valueDisplay={formatMoney(guestSnapshot.revenuePerGuest)} subtext="Average" tone="green" />
+            <SparkKpiCard title="Guest LTV" valueDisplay={formatMoney(guestSnapshot.averageGuestLifetimeValue)} subtext="Lifetime value" tone="blue" />
+          </div>
+        )}
 
-            <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
-              <ChartCard
-                title="Operations totals"
-                subtitle="Side-by-side comparison of today's operational KPIs"
-                bodyHeight={260}
-                empty={todaysOperationsBars.length === 0}
-                className="xl:col-span-2"
-              >
-                <HmsBarChart data={todaysOperationsBars} layout="horizontal" showValues />
-              </ChartCard>
-              <ChartCard
-                title="Average occupancy"
-                subtitle={`Next ${grid?.days.length ?? 0} days · rolling`}
-                bodyHeight={260}
-                loading={gridLoading}
-                empty={!gridLoading && (!grid || grid.days.length === 0)}
-                emptyTitle="No upcoming occupancy"
-                emptyHint="Add reservations to see the rolling occupancy gauge."
-              >
-                <HmsRadialGauge
-                  value={averageOccupancyPct}
-                  label="Occupancy"
-                  caption={`Mean across ${grid?.days.length ?? 0} day(s)`}
-                />
-              </ChartCard>
-            </div>
-          </section>
+        {dash && (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <ChartCard
+              title="Today's arrivals"
+              subtitle={`${dash.todaysArrivals.length} scheduled`}
+              bodyHeight={220}
+              empty={dash.todaysArrivals.length === 0}
+              action={<Link href={staffAppPath("reservations?filter=arrivals_today")} className="text-sm text-primary">See all</Link>}
+            >
+              {dash.todaysArrivals.length > 0 ? (
+                <HmsBarChart data={arrivalsTimeline} showValues />
+              ) : (
+                <p className="text-sm text-muted-foreground">No arrivals today.</p>
+              )}
+            </ChartCard>
 
-          <section>
-            <h2 className="mb-2 text-lg font-semibold">Revenue</h2>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              {dash.revenueCards.map((c) => (
-                <SparkKpiCard
-                  key={c.key}
-                  title={c.title}
-                  valueDisplay={c.valueDisplay}
-                  subtext={c.subtext}
-                  tone={c.tone}
-                  href={c.actionPath ?? null}
-                />
-              ))}
-            </div>
-            <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <ChartCard
-                title="Revenue mix"
-                subtitle="Side-by-side comparison of revenue cards"
-                bodyHeight={260}
-                empty={revenueBars.length === 0}
-              >
-                <HmsBarChart
-                  data={revenueBars}
-                  layout="horizontal"
-                  showValues
-                  formatValue={(n) => `$${Number(n).toLocaleString()}`}
-                />
-              </ChartCard>
-              <ChartCard
-                title="Revenue share"
-                subtitle="Share of each revenue stream"
-                bodyHeight={260}
-                empty={revenueBars.length === 0}
-              >
-                <HmsDonutChart
-                  data={revenueBars.map((b) => ({ name: b.label, value: b.value, color: b.color }))}
-                  centerLabel={`$${revenueBars.reduce((s, b) => s + b.value, 0).toLocaleString()}`}
-                  centerSub="total"
-                />
-              </ChartCard>
-            </div>
-          </section>
-
-          {salesAnalytics ? (
-            <section>
-              <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold">Sales analytics</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Month-to-date POS and invoice sales against recorded expenses.
-                  </p>
-                </div>
-                <Link href={staffAppPath("accounting")} className="hms-btn-outline hms-btn-sm">
-                  Open Accounting
-                </Link>
+            <div className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="font-semibold">Arrivals list</h3>
+                <Link href={staffAppPath("reservations?filter=arrivals_today")} className="text-xs text-primary">All</Link>
               </div>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                <SparkKpiCard
-                  title="Total sales"
-                  valueDisplay={`$${Number(salesAnalytics.totalSales).toLocaleString()}`}
-                  subtext={`${salesAnalytics.fromDate} → ${salesAnalytics.toDate}`}
-                  tone="green"
-                  href={staffAppPath("accounting")}
-                />
-                <SparkKpiCard
-                  title="POS sales"
-                  valueDisplay={`$${Number(salesAnalytics.posSales).toLocaleString()}`}
-                  subtext="Menu / outlet sales"
-                  tone="blue"
-                  href={staffAppPath("pos")}
-                />
-                <SparkKpiCard
-                  title="Expenses"
-                  valueDisplay={`$${Number(salesAnalytics.totalExpenses).toLocaleString()}`}
-                  subtext="Recorded expenses"
-                  tone="amber"
-                  href={staffAppPath("accounting")}
-                />
-                <SparkKpiCard
-                  title="Net after expenses"
-                  valueDisplay={`$${Number(salesAnalytics.netAfterExpenses).toLocaleString()}`}
-                  subtext={`${salesAnalytics.pendingPettyCashCount} petty cash pending`}
-                  tone={salesAnalytics.netAfterExpenses >= 0 ? "green" : "red"}
-                  href={staffAppPath("accounting")}
-                />
+              <div className="max-h-48 overflow-auto">
+                <table className="hms-table text-sm">
+                  <thead><tr><th>Guest</th><th>Room</th><th>Ref</th></tr></thead>
+                  <tbody>
+                    {dash.todaysArrivals.slice(0, 8).map((r) => (
+                      <tr key={r.reservationId}>
+                        <td>{r.guestName}</td>
+                        <td>{r.roomNumber || "—"}</td>
+                        <td className="text-muted-foreground">{r.bookingReference}</td>
+                      </tr>
+                    ))}
+                    {dash.todaysArrivals.length === 0 && (
+                      <tr><td colSpan={3} className="text-muted-foreground">No arrivals.</td></tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
-              <ChartCard
-                title="Sales vs expenses"
-                subtitle="POS, inventory invoices, and expenses"
-                bodyHeight={240}
-                empty={accountingSalesBars.length === 0}
-                className="mt-4"
-              >
-                <HmsBarChart
-                  data={accountingSalesBars}
-                  layout="horizontal"
-                  showValues
-                  formatValue={(n) => `$${Number(n).toLocaleString()}`}
-                />
-              </ChartCard>
-            </section>
-          ) : null}
+            </div>
+          </div>
+        )}
 
-          <section>
-            <h2 className="mb-2 text-lg font-semibold">Operations Alerts</h2>
+        {dash && dash.todaysDepartures.length > 0 && (
+          <div className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-semibold">Today's departures</h3>
+              <Link href={staffAppPath("reservations?filter=departures_today")} className="text-xs text-primary">All</Link>
+            </div>
+            <div className="overflow-auto">
+              <table className="hms-table text-sm">
+                <thead><tr><th>Guest</th><th>Room</th><th>Balance due</th><th>Status</th></tr></thead>
+                <tbody>
+                  {dash.todaysDepartures.map((r) => (
+                    <tr key={r.reservationId}>
+                      <td>{r.guestName}</td>
+                      <td>{r.roomNumber || "—"}</td>
+                      <td className="tabular-nums font-medium">{formatMoney(r.balanceDue)}</td>
+                      <td>{r.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {dash && dash.operationsAlerts.length > 0 && (
+          <>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               {dash.operationsAlerts.map((c) => (
-                <SparkKpiCard
-                  key={c.key}
-                  title={c.title}
-                  valueDisplay={c.valueDisplay}
-                  subtext={c.subtext}
-                  tone={c.tone}
-                  href={c.actionPath ?? null}
-                />
+                <SparkKpiCard key={c.key} title={c.title} valueDisplay={c.valueDisplay} subtext={c.subtext} tone={c.tone} href={c.actionPath ?? null} />
               ))}
             </div>
             {alertsBars.length > 0 && (
-              <ChartCard
-                title="Alerts by category"
-                subtitle="Higher bars need attention sooner"
-                bodyHeight={220}
-                className="mt-4"
-              >
+              <ChartCard title="Operational alerts" subtitle="Items needing attention" bodyHeight={200}>
                 <HmsBarChart data={alertsBars} layout="horizontal" showValues />
               </ChartCard>
             )}
-          </section>
+          </>
+        )}
 
-          <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <ChartCard
-              title="Today's arrivals by check-in window"
-              subtitle={`${dash.todaysArrivals.length} arrival(s) scheduled`}
-              bodyHeight={240}
-              empty={dash.todaysArrivals.length === 0}
-              emptyTitle="No arrivals today"
-              emptyHint="Newly created reservations will appear here once their date matches today."
-              action={
-                <Link href={staffAppPath("reservations?filter=arrivals_today")} className="text-sm text-primary">
-                  See all
-                </Link>
-              }
-            >
-              <HmsBarChart data={arrivalsTimeline} showValues />
-            </ChartCard>
+        <div className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
+          <h3 className="mb-3 font-semibold">Realtime KPI</h3>
+          {kpiLoading ? (
+            <div className="h-40 animate-pulse rounded-xl bg-muted/40" />
+          ) : (
+            <RealtimeKpiCharts liveMetrics={kpi?.liveMetrics as Record<string, unknown> | undefined} />
+          )}
+        </div>
 
-            <ChartCard
-              title="Departures by balance due"
-              subtitle="Top outstanding balances on departures today"
-              bodyHeight={240}
-              empty={departuresBalanceData.length === 0}
-              emptyTitle="No outstanding balances"
-              emptyHint="Departing folios with no balance due will not appear here."
-              action={
-                <Link href={staffAppPath("reservations?filter=departures_today")} className="text-sm text-primary">
-                  See all
-                </Link>
-              }
-            >
-              <HmsBarChart
-                data={departuresBalanceData}
-                layout="horizontal"
-                showValues
-                formatValue={(n) => `$${Number(n).toLocaleString()}`}
-              />
-            </ChartCard>
-          </section>
-
-        </>
-      )}
-
-      <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-        <h2 className="text-lg font-semibold">Rooms and occupancy</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Room counts by status, day-by-day occupancy, and live KPIs for the selected hotel.
-        </p>
-      </div>
-
-      {roomError && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{roomError}</div>
-      )}
-
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <ChartCard
-          title="Room status board"
-          subtitle={board ? `Total ${board.totalRooms} room(s)` : "Live operational status"}
-          bodyHeight={300}
-          loading={boardLoading}
-          empty={!boardLoading && buckets.length === 0}
-          emptyTitle="No room status yet"
-          emptyHint="Once rooms are created, their housekeeping/operational state will appear here."
-        >
-          <HmsDonutChart
-            data={buckets}
-            centerLabel={String(board?.totalRooms ?? 0)}
-            centerSub="rooms"
-          />
-        </ChartCard>
-
-        <ChartCard
-          title={`Occupancy outlook (${range.from} → ${range.to})`}
-          subtitle="Stacked daily room mix with occupancy % overlay"
-          bodyHeight={300}
-          loading={gridLoading}
-          empty={!gridLoading && occupancyChartData.length === 0}
-          emptyTitle="No occupancy data yet"
-          emptyHint="Try a wider date range or check once reservations are added."
-        >
-          <HmsLineChart
-            data={occupancyChartData}
-            xKey="date"
-            rightAxis
-            leftAxisLabel="Rooms"
-            rightAxisLabel="%"
-            series={[
-              { key: "Occupied", label: "Occupied", type: "bar", color: "#0ea5e9" },
-              { key: "Available", label: "Available", type: "bar", color: "#d2bab0" },
-              {
-                key: "Occupancy",
-                label: "Occupancy %",
-                type: "line",
-                color: "#3b82f6",
-                yAxisId: "right",
-                format: (n) => `${n}%`,
-              },
-            ]}
-          />
-        </ChartCard>
-      </section>
-
-      <section className="rounded-xl border border-border/60 bg-card p-4 shadow-soft md:p-5">
-        <header className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">Realtime KPI</h2>
-            {kpi?.timestamp && (
-              <p className="text-xs text-muted-foreground">
-                Snapshot: {new Date(kpi.timestamp).toLocaleString()}
-                {kpi.alerts && kpi.alerts.length > 0 && (
-                  <span className="ml-2 font-medium text-amber-600">· {kpi.alerts.length} alert(s)</span>
-                )}
-              </p>
-            )}
+        {dash && dash.recentActivity.length > 0 && (
+          <div className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
+            <h3 className="mb-3 font-semibold">Recent activity</h3>
+            <div className="overflow-auto max-h-56">
+              <table className="hms-table text-sm">
+                <thead><tr><th>Time</th><th>Staff</th><th>Action</th><th>Reference</th></tr></thead>
+                <tbody>
+                  {dash.recentActivity.slice(0, 12).map((a, i) => (
+                    <tr key={`${a.timestamp}-${i}`}>
+                      <td className="whitespace-nowrap">{new Date(a.timestamp).toLocaleString()}</td>
+                      <td>{a.staffName}</td>
+                      <td>{a.action}</td>
+                      <td className="text-muted-foreground">{a.reference}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </header>
-        {kpiLoading ? (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {Array.from({ length: 2 }).map((_, i) => (
-              <div key={i} className="h-56 animate-pulse rounded-xl bg-muted/40" />
+        )}
+      </SectionShell>
+
+      {/* ── SALES ── */}
+      <SectionShell
+        id="sales"
+        title="Sales"
+        subtitle="Revenue streams, POS and invoice sales, month-to-date performance."
+        accentClass="border-emerald-200/80 bg-emerald-50/60 dark:bg-emerald-950/20"
+        links={[
+          { href: staffAppPath("pos"), label: "POS" },
+          { href: staffAppPath("invoices"), label: "Invoices" },
+          { href: staffAppPath("menu"), label: "Menu" },
+          { href: staffAppPath("inventory"), label: "Inventory" },
+        ]}
+      >
+        {!loading && dash && dash.revenueCards.length > 0 && (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {dash.revenueCards.map((c) => (
+              <SparkKpiCard key={c.key} title={c.title} valueDisplay={c.valueDisplay} subtext={c.subtext} tone={c.tone} href={c.actionPath ?? null} />
             ))}
           </div>
-        ) : (
-          <RealtimeKpiCharts liveMetrics={kpi?.liveMetrics as Record<string, unknown> | undefined} />
         )}
-      </section>
+
+        {salesAnalytics ? (
+          <>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <SparkKpiCard title="Total sales (MTD)" valueDisplay={formatMoney(salesAnalytics.totalSales)} subtext={`${salesAnalytics.fromDate} → ${salesAnalytics.toDate}`} tone="green" href={staffAppPath("invoices")} />
+              <SparkKpiCard title="POS sales" valueDisplay={formatMoney(salesAnalytics.posSales)} subtext="Outlets & menu" tone="blue" href={staffAppPath("pos")} />
+              <SparkKpiCard title="Invoice sales" valueDisplay={formatMoney(salesAnalytics.inventoryInvoiceSales)} subtext="Inventory invoices" tone="blue" href={staffAppPath("invoices")} />
+              <SparkKpiCard title="Net after expenses" valueDisplay={formatMoney(salesAnalytics.netAfterExpenses)} subtext="Sales minus expenses" tone={salesAnalytics.netAfterExpenses >= 0 ? "green" : "red"} href={staffAppPath("accounting")} />
+            </div>
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <ChartCard title="Sales mix (MTD)" subtitle="POS vs inventory invoices vs expenses" bodyHeight={260} empty={salesBars.length === 0}>
+                <HmsBarChart data={salesBars} layout="horizontal" showValues formatValue={(n) => formatMoney(n)} />
+              </ChartCard>
+              <ChartCard title="Revenue streams" subtitle="Today's revenue KPIs" bodyHeight={260} empty={revenueBars.length === 0}>
+                {revenueBars.length > 0 ? (
+                  <HmsDonutChart
+                    data={revenueBars.map((b) => ({ name: b.label, value: b.value, color: b.color }))}
+                    centerLabel={formatMoney(revenueBars.reduce((s, b) => s + b.value, 0))}
+                    centerSub="total"
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">No revenue data yet.</p>
+                )}
+              </ChartCard>
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground rounded-xl border border-dashed p-6 text-center">
+            Sales analytics require finance or manager access. Revenue cards above still show when available.
+          </p>
+        )}
+
+        {!loading && !hasExecutive && !salesAnalytics && (
+          <p className="text-sm text-muted-foreground rounded-xl border border-dashed p-6 text-center">
+            Record POS sales and invoices to populate this section.
+          </p>
+        )}
+      </SectionShell>
+
+      {/* ── ACCOUNTING ── */}
+      <SectionShell
+        id="accounting"
+        title="Accounting"
+        subtitle="Month-to-date profit, expenses, petty cash, and financial health."
+        accentClass="border-violet-200/80 bg-violet-50/60 dark:bg-violet-950/20"
+        links={[{ href: staffAppPath("accounting"), label: "Open Accounting" }]}
+      >
+        {accountingSnapshot ? (
+          <>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <SparkKpiCard title="Total income" valueDisplay={formatMoney(accountingSnapshot.totalIncome)} subtext="MTD recorded income" tone="green" href={staffAppPath("accounting")} />
+              <SparkKpiCard title="Total expenses" valueDisplay={formatMoney(accountingSnapshot.totalExpenses)} subtext="MTD recorded expenses" tone="amber" href={staffAppPath("accounting")} />
+              <SparkKpiCard title="Net profit" valueDisplay={formatMoney(accountingSnapshot.netProfit)} subtext="Income minus expenses" tone={accountingSnapshot.netProfit >= 0 ? "green" : "red"} href={staffAppPath("accounting")} />
+              <SparkKpiCard title="Petty cash pending" valueDisplay={String(accountingSnapshot.pendingPettyCash)} subtext="Awaiting approval" tone="violet" href={staffAppPath("accounting")} />
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <ChartCard title="Income vs expenses" subtitle="Month to date" bodyHeight={240}>
+                <HmsBarChart
+                  data={[
+                    { label: "Income", value: accountingSnapshot.totalIncome, color: "#10b981" },
+                    { label: "Expenses", value: accountingSnapshot.totalExpenses, color: "#f59e0b" },
+                    { label: "Net", value: accountingSnapshot.netProfit, color: accountingSnapshot.netProfit >= 0 ? "#3b82f6" : "#ef4444" },
+                  ]}
+                  layout="horizontal"
+                  showValues
+                  formatValue={(n) => formatMoney(n)}
+                />
+              </ChartCard>
+              <ChartCard title="Financial health" subtitle="Expense ratio vs income" bodyHeight={240}>
+                <HmsRadialGauge
+                  value={
+                    accountingSnapshot.totalIncome > 0
+                      ? Math.min(100, (accountingSnapshot.totalExpenses / accountingSnapshot.totalIncome) * 100)
+                      : 0
+                  }
+                  label="Expense ratio"
+                  caption={`${formatMoney(accountingSnapshot.totalExpenses)} of ${formatMoney(accountingSnapshot.totalIncome)}`}
+                />
+              </ChartCard>
+            </div>
+          </>
+        ) : salesAnalytics ? (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <SparkKpiCard title="Total sales" valueDisplay={formatMoney(salesAnalytics.totalSales)} subtext="MTD" tone="green" href={staffAppPath("accounting")} />
+            <SparkKpiCard title="Expenses" valueDisplay={formatMoney(salesAnalytics.totalExpenses)} subtext="MTD" tone="amber" href={staffAppPath("accounting")} />
+            <SparkKpiCard title="Petty cash pending" valueDisplay={String(salesAnalytics.pendingPettyCashCount)} subtext="Requests" tone="violet" href={staffAppPath("accounting")} />
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground rounded-xl border border-dashed p-6 text-center">
+            Accounting summary requires finance or manager access. Use the Accounting page for full ledger and reports.
+          </p>
+        )}
+      </SectionShell>
     </div>
   );
 }

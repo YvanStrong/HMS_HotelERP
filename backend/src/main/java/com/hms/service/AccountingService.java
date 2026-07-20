@@ -3,37 +3,60 @@ package com.hms.service;
 import com.hms.api.dto.AccountingDtos;
 import com.hms.entity.AccountingAccount;
 import com.hms.entity.AccountingBankStatementLine;
+import com.hms.entity.AccountingBudget;
 import com.hms.entity.AccountingExpense;
+import com.hms.entity.AccountingPayable;
+import com.hms.entity.AccountingPeriod;
+import com.hms.entity.AccountingReceivable;
+import com.hms.entity.AccountingReconciliation;
+import com.hms.entity.AccountingTaxFiling;
 import com.hms.entity.DepotSale;
 import com.hms.entity.FacilityBooking;
 import com.hms.entity.Hotel;
 import com.hms.entity.InvSalesInvoice;
+import com.hms.entity.HrPayrollRecord;
 import com.hms.entity.PettyCashRequest;
 import com.hms.entity.PurchaseOrder;
 import com.hms.repository.AccountingAccountRepository;
 import com.hms.repository.AccountingBankStatementLineRepository;
+import com.hms.repository.AccountingBudgetRepository;
 import com.hms.repository.AccountingExpenseRepository;
+import com.hms.repository.AccountingPayableRepository;
+import com.hms.repository.AccountingPeriodRepository;
+import com.hms.repository.AccountingReceivableRepository;
+import com.hms.repository.AccountingReconciliationRepository;
+import com.hms.repository.AccountingTaxFilingRepository;
 import com.hms.repository.DepotSaleRepository;
 import com.hms.repository.FacilityBookingRepository;
 import com.hms.repository.HotelRepository;
+import com.hms.repository.HrPayrollRecordRepository;
 import com.hms.repository.InvSalesInvoiceRepository;
 import com.hms.repository.PettyCashRequestRepository;
 import com.hms.repository.PurchaseOrderRepository;
 import com.hms.security.TenantAccessService;
 import com.hms.web.ApiException;
+import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import javax.xml.parsers.DocumentBuilderFactory;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -41,6 +64,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
 
 @Service
 public class AccountingService {
@@ -49,12 +74,21 @@ public class AccountingService {
     private static final String APPROVED = "APPROVED";
     private static final String REJECTED = "REJECTED";
     private static final String DISBURSED = "DISBURSED";
+    public static final String SALARY_EXPENSE_CATEGORY = "Salaries & Wages";
+    private static final String SALARY_ACCOUNT_CODE = "5100";
     private static final Pattern BANK_TRANSACTION_START =
             Pattern.compile("^(\\d{4}-\\d{2}-\\d{2})\\s+(\\d{4}-\\d{2}-\\d{2})\\s+(\\S+)(?:\\s+(.*))?$");
     private static final Pattern BANK_TRANSACTION_COMPACT = Pattern.compile(
             "(\\d{4}-\\d{2}-\\d{2})\\s+(\\d{4}-\\d{2}-\\d{2})\\s+([A-Z0-9]{8,})\\s+(.*?)(?=\\s+\\d{4}-\\d{2}-\\d{2}\\s+\\d{4}-\\d{2}-\\d{2}\\s+[A-Z0-9]{8,}\\s+|\\s+--\\s+\\d+\\s+of\\s+\\d+\\s+--|$)",
             Pattern.DOTALL);
     private static final Pattern MONEY_TOKEN = Pattern.compile("\\b\\d{1,3}(?:,\\d{3})*(?:\\.\\d{2})?\\b|\\b\\d+(?:\\.\\d{2})?\\b");
+    private static final Pattern EQUITY_TRANSACTION_START =
+            Pattern.compile("^(\\d{2}/\\d{2}/\\d{4})\\s+(\\d{2}/\\d{2}/\\d{4})(?:\\s+(.*))?$");
+    private static final Pattern ACCESS_TRANSACTION_START =
+            Pattern.compile("^(\\d{2}-[A-Za-z]{3}-\\d{4})\\s+(.*)$");
+    private static final Pattern ACCESS_DATE_TOKEN = Pattern.compile("\\b\\d{2}-[A-Za-z]{3}-\\d{4}\\b");
+    private static final Pattern MONEY_AT_END = Pattern.compile("-?\\d{1,3}(?:,\\d{3})*(?:\\.\\d{2})?|-?\\d+(?:\\.\\d{2})?");
+    private static final DateTimeFormatter ACCESS_DATE = DateTimeFormatter.ofPattern("dd-MMM-yyyy", java.util.Locale.ENGLISH);
     private static final List<DefaultAccount> DEFAULT_ACCOUNTS = List.of(
             new DefaultAccount("1000", "Cash / Bank", "ASSET", "Cash, bank, mobile money and card settlements"),
             new DefaultAccount("1100", "Accounts Receivable", "ASSET", "Customer balances owed to the hotel"),
@@ -64,7 +98,8 @@ public class AccountingService {
             new DefaultAccount("3000", "Owner Equity", "EQUITY", "Owner capital and retained equity"),
             new DefaultAccount("4000", "Sales Revenue", "INCOME", "Room, inventory and POS sales revenue"),
             new DefaultAccount("4010", "Facility Revenue", "INCOME", "Pool, gym, spa and other facility revenue"),
-            new DefaultAccount("5000", "General Expenses", "EXPENSE", "Operating expense categories"));
+            new DefaultAccount("5000", "General Expenses", "EXPENSE", "Operating expense categories"),
+            new DefaultAccount("5100", "Salaries & Wages", "EXPENSE", "Employee payroll and salary payments"));
 
     private final HotelRepository hotelRepository;
     private final AccountingAccountRepository accountRepository;
@@ -75,6 +110,13 @@ public class AccountingService {
     private final AccountingExpenseRepository expenseRepository;
     private final AccountingBankStatementLineRepository bankStatementLineRepository;
     private final PettyCashRequestRepository pettyCashRepository;
+    private final AccountingReceivableRepository receivableRepository;
+    private final AccountingPayableRepository payableRepository;
+    private final AccountingBudgetRepository budgetRepository;
+    private final AccountingTaxFilingRepository taxFilingRepository;
+    private final AccountingPeriodRepository periodRepository;
+    private final AccountingReconciliationRepository reconciliationRepository;
+    private final HrPayrollRecordRepository payrollRecordRepository;
     private final TenantAccessService tenantAccessService;
 
     public AccountingService(
@@ -87,6 +129,13 @@ public class AccountingService {
             AccountingExpenseRepository expenseRepository,
             AccountingBankStatementLineRepository bankStatementLineRepository,
             PettyCashRequestRepository pettyCashRepository,
+            AccountingReceivableRepository receivableRepository,
+            AccountingPayableRepository payableRepository,
+            AccountingBudgetRepository budgetRepository,
+            AccountingTaxFilingRepository taxFilingRepository,
+            AccountingPeriodRepository periodRepository,
+            AccountingReconciliationRepository reconciliationRepository,
+            HrPayrollRecordRepository payrollRecordRepository,
             TenantAccessService tenantAccessService) {
         this.hotelRepository = hotelRepository;
         this.accountRepository = accountRepository;
@@ -97,6 +146,13 @@ public class AccountingService {
         this.expenseRepository = expenseRepository;
         this.bankStatementLineRepository = bankStatementLineRepository;
         this.pettyCashRepository = pettyCashRepository;
+        this.receivableRepository = receivableRepository;
+        this.payableRepository = payableRepository;
+        this.budgetRepository = budgetRepository;
+        this.taxFilingRepository = taxFilingRepository;
+        this.periodRepository = periodRepository;
+        this.reconciliationRepository = reconciliationRepository;
+        this.payrollRecordRepository = payrollRecordRepository;
         this.tenantAccessService = tenantAccessService;
     }
 
@@ -104,6 +160,7 @@ public class AccountingService {
     public AccountingDtos.AccountingDashboard dashboard(
             UUID hotelId, String hotelHeader, LocalDate from, LocalDate to) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        syncMissingPettyCashExpenses(hotelId);
         LocalDate toDate = to != null ? to : LocalDate.now();
         LocalDate fromDate = from != null ? from : toDate.minusDays(29);
         AccountingDtos.AccountingReports reportData = reports(hotelId, fromDate, toDate);
@@ -117,7 +174,8 @@ public class AccountingService {
                 pettyCashRepository.findByHotel_IdOrderByCreatedAtDesc(hotelId).stream()
                         .map(this::toPettyCashRow)
                         .toList(),
-                reportData);
+                reportData,
+                advancedWorkspace(hotelId));
     }
 
     @Transactional
@@ -142,6 +200,153 @@ public class AccountingService {
         account.setAccountType(parseAccountType(req.accountType()));
         account.setDescription(cleanNullable(req.description()));
         return toAccountRow(accountRepository.save(account));
+    }
+
+    @Transactional(readOnly = true)
+    public AccountingDtos.AdvancedAccountingWorkspace advanced(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        return advancedWorkspace(hotelId);
+    }
+
+    @Transactional
+    public AccountingDtos.ReceivableRow createReceivable(
+            UUID hotelId, String hotelHeader, AccountingDtos.CreateReceivableRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        AccountingReceivable r = new AccountingReceivable();
+        r.setHotel(hotel(hotelId));
+        r.setCustomerName(clean(req.customerName()));
+        r.setInvoiceRef(cleanNullable(req.invoiceRef()));
+        r.setIssueDate(req.issueDate() != null ? req.issueDate() : LocalDate.now());
+        r.setDueDate(req.dueDate());
+        r.setAmount(money(req.amount()));
+        r.setAmountPaid(money(req.amountPaid()));
+        r.setStatus(normalizeOpenStatus(req.status(), r.getAmount(), r.getAmountPaid()));
+        r.setNotes(cleanNullable(req.notes()));
+        return toReceivableRow(receivableRepository.save(r));
+    }
+
+    @Transactional
+    public AccountingDtos.PayableRow createPayable(
+            UUID hotelId, String hotelHeader, AccountingDtos.CreatePayableRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        AccountingPayable p = new AccountingPayable();
+        p.setHotel(hotel(hotelId));
+        p.setSupplierName(clean(req.supplierName()));
+        p.setBillRef(cleanNullable(req.billRef()));
+        p.setBillDate(req.billDate() != null ? req.billDate() : LocalDate.now());
+        p.setDueDate(req.dueDate());
+        p.setAmount(money(req.amount()));
+        p.setAmountPaid(money(req.amountPaid()));
+        p.setStatus(normalizeOpenStatus(req.status(), p.getAmount(), p.getAmountPaid()));
+        p.setNotes(cleanNullable(req.notes()));
+        return toPayableRow(payableRepository.save(p));
+    }
+
+    @Transactional
+    public AccountingDtos.BudgetRow createBudget(
+            UUID hotelId, String hotelHeader, AccountingDtos.CreateBudgetRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (req.month() != null && (req.month() < 1 || req.month() > 12)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_BUDGET_MONTH", "Budget month must be between 1 and 12");
+        }
+        AccountingBudget b = new AccountingBudget();
+        b.setHotel(hotel(hotelId));
+        b.setFiscalYear(req.fiscalYear());
+        b.setMonth(req.month());
+        b.setAccountCode(clean(req.accountCode()).toUpperCase());
+        b.setAccountName(clean(req.accountName()));
+        b.setBudgetAmount(money(req.budgetAmount()));
+        b.setNotes(cleanNullable(req.notes()));
+        return toBudgetRow(budgetRepository.save(b), hotelId);
+    }
+
+    @Transactional
+    public AccountingDtos.TaxFilingRow createTaxFiling(
+            UUID hotelId, String hotelHeader, AccountingDtos.CreateTaxFilingRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (req.periodEnd().isBefore(req.periodStart())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_TAX_PERIOD", "Tax period end must be after start");
+        }
+        AccountingTaxFiling t = new AccountingTaxFiling();
+        t.setHotel(hotel(hotelId));
+        t.setTaxType(clean(req.taxType()));
+        t.setPeriodStart(req.periodStart());
+        t.setPeriodEnd(req.periodEnd());
+        t.setTaxableSales(money(req.taxableSales()));
+        t.setTaxCollected(money(req.taxCollected()));
+        t.setTaxPaid(money(req.taxPaid()));
+        t.setTaxDue(t.getTaxCollected().subtract(t.getTaxPaid()));
+        t.setStatus(normalizeStatus(req.status(), List.of("DRAFT", "FILED", "PAID"), "DRAFT"));
+        t.setFilingReference(cleanNullable(req.filingReference()));
+        t.setNotes(cleanNullable(req.notes()));
+        if ("FILED".equals(t.getStatus()) || "PAID".equals(t.getStatus())) {
+            t.setFiledAt(Instant.now());
+        }
+        return toTaxFilingRow(taxFilingRepository.save(t));
+    }
+
+    @Transactional
+    public AccountingDtos.AccountingPeriodRow createPeriod(
+            UUID hotelId, String hotelHeader, AccountingDtos.CreateAccountingPeriodRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (req.endDate().isBefore(req.startDate())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_ACCOUNTING_PERIOD", "Period end must be after start");
+        }
+        AccountingPeriod p = new AccountingPeriod();
+        p.setHotel(hotel(hotelId));
+        p.setPeriodName(clean(req.periodName()));
+        p.setStartDate(req.startDate());
+        p.setEndDate(req.endDate());
+        p.setStatus("OPEN");
+        p.setNotes(cleanNullable(req.notes()));
+        return toPeriodRow(periodRepository.save(p));
+    }
+
+    @Transactional
+    public AccountingDtos.AccountingPeriodRow closePeriod(UUID hotelId, String hotelHeader, UUID periodId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        AccountingPeriod p = period(hotelId, periodId);
+        p.setStatus("CLOSED");
+        p.setClosedAt(Instant.now());
+        p.setClosedBy(tenantAccessService.currentUser().getUsername());
+        return toPeriodRow(periodRepository.save(p));
+    }
+
+    @Transactional
+    public AccountingDtos.ReconciliationRow createReconciliation(
+            UUID hotelId, String hotelHeader, AccountingDtos.CreateReconciliationRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (req.statementEnd().isBefore(req.statementStart())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_RECONCILIATION_PERIOD", "Statement end must be after start");
+        }
+        AccountingReconciliation r = new AccountingReconciliation();
+        r.setHotel(hotel(hotelId));
+        r.setBankName(clean(req.bankName()));
+        r.setStatementStart(req.statementStart());
+        r.setStatementEnd(req.statementEnd());
+        r.setStatementBalance(money(req.statementBalance()));
+        BigDecimal systemBalance = req.systemBalance() == null
+                ? bankSystemBalance(hotelId, r.getBankName(), r.getStatementStart(), r.getStatementEnd())
+                : money(req.systemBalance());
+        r.setSystemBalance(systemBalance);
+        r.setDifference(r.getStatementBalance().subtract(systemBalance));
+        r.setStatus(normalizeStatus(req.status(), List.of("DRAFT", "IN_REVIEW", "RECONCILED"), "DRAFT"));
+        r.setNotes(cleanNullable(req.notes()));
+        if ("RECONCILED".equals(r.getStatus())) {
+            r.setReconciledAt(Instant.now());
+            r.setReconciledBy(tenantAccessService.currentUser().getUsername());
+        }
+        return toReconciliationRow(reconciliationRepository.save(r));
+    }
+
+    @Transactional
+    public AccountingDtos.ReconciliationRow completeReconciliation(UUID hotelId, String hotelHeader, UUID reconciliationId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        AccountingReconciliation r = reconciliation(hotelId, reconciliationId);
+        r.setStatus("RECONCILED");
+        r.setReconciledAt(Instant.now());
+        r.setReconciledBy(tenantAccessService.currentUser().getUsername());
+        return toReconciliationRow(reconciliationRepository.save(r));
     }
 
     @Transactional(readOnly = true)
@@ -236,20 +441,95 @@ public class AccountingService {
             p.setNotes(cleanNullable(req.notes()));
         }
         p = pettyCashRepository.save(p);
+        postPettyCashExpense(p);
+        return toPettyCashRow(p);
+    }
 
+    /** Backfill expense rows for already-disbursed requests that never posted to accounting_expenses. */
+    private void syncMissingPettyCashExpenses(UUID hotelId) {
+        for (PettyCashRequest p : pettyCashRepository.findByHotel_IdOrderByCreatedAtDesc(hotelId)) {
+            if (!DISBURSED.equals(p.getStatus())) {
+                continue;
+            }
+            postPettyCashExpense(p);
+        }
+    }
+
+    private void postPettyCashExpense(PettyCashRequest p) {
+        if (p.getRequestNumber() != null
+                && expenseRepository.existsByHotel_IdAndReferenceNo(p.getHotel().getId(), p.getRequestNumber())) {
+            return;
+        }
         AccountingExpense e = new AccountingExpense();
         e.setHotel(p.getHotel());
-        e.setExpenseDate(LocalDate.now());
+        LocalDate expenseDate = p.getDisbursedAt() != null
+                ? p.getDisbursedAt().atZone(ZoneOffset.UTC).toLocalDate()
+                : LocalDate.now();
+        e.setExpenseDate(expenseDate);
         e.setCategory(p.getCategory());
         e.setVendor(p.getRequestedBy());
         e.setDescription("Petty cash disbursement: " + p.getTitle() + " - " + p.getReason());
         e.setAmount(money(p.getAmountApproved() != null ? p.getAmountApproved() : p.getAmountRequested()));
         e.setPaymentMethod("Petty Cash");
         e.setReferenceNo(p.getRequestNumber());
-        e.setRecordedBy(tenantAccessService.currentUser().getUsername());
+        e.setRecordedBy(p.getDisbursedBy() != null
+                ? p.getDisbursedBy()
+                : tenantAccessService.currentUser().getUsername());
         expenseRepository.save(e);
+    }
 
-        return toPettyCashRow(p);
+    @Transactional
+    public UUID postPayrollExpense(HrPayrollRecord record, String recordedBy) {
+        if (record.getAccountingExpenseId() != null) {
+            return record.getAccountingExpenseId();
+        }
+        UUID hotelId = record.getHotel().getId();
+        ensureDefaultAccounts(hotelId);
+
+        LocalDate expenseDate = record.getPaidAt() != null
+                ? record.getPaidAt().atZone(ZoneOffset.UTC).toLocalDate()
+                : LocalDate.now();
+        String employee = record.getUser().getUsername();
+        String period = String.format("%04d-%02d", record.getPeriodYear(), record.getPeriodMonth());
+
+        AccountingExpense expense = new AccountingExpense();
+        expense.setHotel(record.getHotel());
+        expense.setExpenseDate(expenseDate);
+        expense.setCategory(SALARY_EXPENSE_CATEGORY);
+        expense.setVendor(employee);
+        expense.setDescription(String.format(
+                "Employee payroll %s — %s (base %s, bonus %s, overtime %s, benefits %s, deductions %s)",
+                period,
+                employee,
+                money(record.getBasePay()),
+                money(record.getBonus()),
+                money(record.getOvertimePay()),
+                money(record.getBenefits()),
+                money(record.getDeductions())));
+        expense.setAmount(money(record.getNetPay()));
+        expense.setPaymentMethod("Bank Transfer");
+        expense.setReferenceNo("PAYROLL-" + record.getId());
+        expense.setRecordedBy(recordedBy);
+        AccountingExpense saved = expenseRepository.save(expense);
+        return saved.getId();
+    }
+
+    @Transactional
+    public AccountingDtos.PayrollAccountingSyncResponse syncUnpostedPayroll(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        String actor = tenantAccessService.currentUser().getUsername();
+        List<HrPayrollRecord> unposted = payrollRecordRepository.findPaidWithoutAccountingExpense(hotelId);
+        int posted = 0;
+        for (HrPayrollRecord record : unposted) {
+            UUID expenseId = postPayrollExpense(record, actor);
+            record.setAccountingExpenseId(expenseId);
+            payrollRecordRepository.save(record);
+            posted++;
+        }
+        String message = posted == 0
+                ? "All paid payroll records are already posted to accounting."
+                : "Posted " + posted + " paid payroll record(s) to accounting.";
+        return new AccountingDtos.PayrollAccountingSyncResponse(posted, message);
     }
 
     @Transactional
@@ -280,27 +560,33 @@ public class AccountingService {
             UUID hotelId, String hotelHeader, MultipartFile file) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         if (file == null || file.isEmpty()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "PDF_REQUIRED", "Upload a bank statement PDF file");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "STATEMENT_FILE_REQUIRED", "Upload a bank statement file");
         }
         String originalFilename = file.getOriginalFilename();
         String filename = originalFilename == null ? "" : originalFilename.toLowerCase();
-        if (!filename.endsWith(".pdf")) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "PDF_REQUIRED", "Only PDF files are supported");
+        List<AccountingBankStatementLine> parsed;
+        int potentialRows;
+        if (filename.endsWith(".pdf")) {
+            String text;
+            try (PDDocument document = Loader.loadPDF(file.getBytes())) {
+                text = new PDFTextStripper().getText(document);
+            } catch (Exception e) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "PDF_READ_FAILED", "Could not read text from the PDF file");
+            }
+            parsed = parseBankStatementText(hotel(hotelId), text);
+            potentialRows = countPotentialStatementRows(text);
+        } else if (filename.endsWith(".xlsx")) {
+            parsed = parseMomoWorkbook(hotel(hotelId), file);
+            potentialRows = parsed.size();
+        } else {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "STATEMENT_FILE_UNSUPPORTED", "Only PDF and XLSX statement files are supported");
         }
-        String text;
-        try (PDDocument document = Loader.loadPDF(file.getBytes())) {
-            text = new PDFTextStripper().getText(document);
-        } catch (Exception e) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "PDF_READ_FAILED", "Could not read text from the PDF file");
-        }
-
-        List<AccountingBankStatementLine> parsed = parseBankStatementText(hotel(hotelId), text);
         List<AccountingDtos.BankStatementLineRow> saved = new ArrayList<>();
         for (AccountingBankStatementLine line : parsed) {
             line.setRecordedBy(tenantAccessService.currentUser().getUsername());
             saved.add(toBankStatementLineRow(bankStatementLineRepository.save(line)));
         }
-        int skipped = Math.max(0, countPotentialStatementRows(text) - saved.size());
+        int skipped = Math.max(0, potentialRows - saved.size());
         return new AccountingDtos.BankStatementImportResponse(
                 saved.size(),
                 skipped,
@@ -325,6 +611,8 @@ public class AccountingService {
         Instant toExclusive = toDate.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
         BigDecimal posSales = depotSaleRepository.sumSalesBetween(hotelId, fromInstant, toExclusive);
         BigDecimal expenses = expenseRepository.sumExpenses(hotelId, fromDate, toDate);
+        BigDecimal payrollExpenses = expenseRepository.sumExpensesByCategory(
+                hotelId, fromDate, toDate, SALARY_EXPENSE_CATEGORY);
         BigDecimal totalSales = safe(invoiceSales).add(safe(posSales));
         return new AccountingDtos.SalesAnalytics(
                 fromDate,
@@ -334,6 +622,7 @@ public class AccountingService {
                 safe(posSales),
                 totalSales,
                 safe(expenses),
+                safe(payrollExpenses),
                 totalSales.subtract(safe(expenses)),
                 invoiceRepository.countInvoices(hotelId, fromDate, toDate),
                 depotSaleRepository.countSalesBetween(hotelId, fromInstant, toExclusive),
@@ -396,11 +685,48 @@ public class AccountingService {
                     "Purchase from " + po.getSupplier().getName(), BigDecimal.ZERO, total));
         }
 
+        for (AccountingReceivable receivable : receivableRepository.findByHotel_IdOrderByDueDateAscIssueDateDesc(hotelId)) {
+            if (receivable.getIssueDate().isBefore(fromDate) || receivable.getIssueDate().isAfter(toDate)) continue;
+            BigDecimal total = money(receivable.getAmount());
+            String ref = receivable.getInvoiceRef() == null ? receivable.getId().toString() : receivable.getInvoiceRef();
+            rows.add(ledger(receivable.getIssueDate(), ref, "AR", "1100", "Accounts Receivable", "ASSET",
+                    "Receivable - " + receivable.getCustomerName(), total, BigDecimal.ZERO));
+            rows.add(ledger(receivable.getIssueDate(), ref, "AR", "4000", "Sales Revenue", "INCOME",
+                    "Receivable - " + receivable.getCustomerName(), BigDecimal.ZERO, total));
+            BigDecimal paid = money(receivable.getAmountPaid());
+            if (paid.signum() > 0) {
+                rows.add(ledger(receivable.getIssueDate(), ref, "AR_PAYMENT", "1000", "Cash / Bank", "ASSET",
+                        "Receivable payment - " + receivable.getCustomerName(), paid, BigDecimal.ZERO));
+                rows.add(ledger(receivable.getIssueDate(), ref, "AR_PAYMENT", "1100", "Accounts Receivable", "ASSET",
+                        "Receivable payment - " + receivable.getCustomerName(), BigDecimal.ZERO, paid));
+            }
+        }
+
+        for (AccountingPayable payable : payableRepository.findByHotel_IdOrderByDueDateAscBillDateDesc(hotelId)) {
+            if (payable.getBillDate().isBefore(fromDate) || payable.getBillDate().isAfter(toDate)) continue;
+            BigDecimal total = money(payable.getAmount());
+            String ref = payable.getBillRef() == null ? payable.getId().toString() : payable.getBillRef();
+            rows.add(ledger(payable.getBillDate(), ref, "AP", "5000", "General Expenses", "EXPENSE",
+                    "Payable - " + payable.getSupplierName(), total, BigDecimal.ZERO));
+            rows.add(ledger(payable.getBillDate(), ref, "AP", "2000", "Accounts Payable", "LIABILITY",
+                    "Payable - " + payable.getSupplierName(), BigDecimal.ZERO, total));
+            BigDecimal paid = money(payable.getAmountPaid());
+            if (paid.signum() > 0) {
+                rows.add(ledger(payable.getBillDate(), ref, "AP_PAYMENT", "2000", "Accounts Payable", "LIABILITY",
+                        "Payable payment - " + payable.getSupplierName(), paid, BigDecimal.ZERO));
+                rows.add(ledger(payable.getBillDate(), ref, "AP_PAYMENT", "1000", "Cash / Bank", "ASSET",
+                        "Payable payment - " + payable.getSupplierName(), BigDecimal.ZERO, paid));
+            }
+        }
+
         for (AccountingExpense expense : expenseRepository.findByHotelAndDateRange(hotelId, fromDate, toDate)) {
             BigDecimal total = money(expense.getAmount());
-            rows.add(ledger(expense.getExpenseDate(), expense.getReferenceNo(), "EXPENSE", "5000", expense.getCategory(), "EXPENSE",
+            String expenseCode = expenseAccountCode(expense.getCategory());
+            String expenseName = expenseAccountName(expense.getCategory());
+            String source = expenseLedgerSource(expense);
+            rows.add(ledger(expense.getExpenseDate(), expense.getReferenceNo(), source, expenseCode, expenseName, "EXPENSE",
                     expense.getDescription(), total, BigDecimal.ZERO));
-            rows.add(ledger(expense.getExpenseDate(), expense.getReferenceNo(), "EXPENSE", "1000", "Cash / Bank", "ASSET",
+            rows.add(ledger(expense.getExpenseDate(), expense.getReferenceNo(), source, "1000", "Cash / Bank", "ASSET",
                     expense.getDescription(), BigDecimal.ZERO, total));
         }
 
@@ -551,6 +877,15 @@ public class AccountingService {
     }
 
     private List<AccountingBankStatementLine> parseBankStatementText(Hotel hotel, String text) {
+        text = text == null ? "" : text;
+        String upperText = text.toUpperCase();
+        if (upperText.contains("EQUITY BANK")) {
+            return parseEquityBankStatementText(hotel, text);
+        }
+        if (upperText.contains("ACCESS BANK") || upperText.contains("ACCOUNT STATEMENT SUMMARY DETAILS")) {
+            return parseAccessBankStatementText(hotel, text);
+        }
+
         List<String> records = new ArrayList<>();
         StringBuilder current = null;
         for (String rawLine : text.split("\\R")) {
@@ -574,6 +909,128 @@ public class AccountingService {
         }
         if (result.isEmpty()) {
             result.addAll(parseCompactBankStatementText(hotel, text));
+        }
+        return result;
+    }
+
+    private List<AccountingBankStatementLine> parseEquityBankStatementText(Hotel hotel, String text) {
+        List<String> records = collectStatementRecords(text, EQUITY_TRANSACTION_START);
+        List<AccountingBankStatementLine> result = new ArrayList<>();
+        for (String record : records) {
+            Matcher matcher = EQUITY_TRANSACTION_START.matcher(record);
+            if (!matcher.matches()) continue;
+            String rest = matcher.group(3).trim();
+            List<MoneyMatch> amounts = moneyMatches(rest);
+            if (amounts.size() < 3) continue;
+            MoneyMatch debitToken = amounts.get(amounts.size() - 3);
+            MoneyMatch creditToken = amounts.get(amounts.size() - 2);
+            MoneyMatch balanceToken = amounts.get(amounts.size() - 1);
+            String beforeAmounts = rest.substring(0, debitToken.start()).trim();
+            ReferenceAndNarration ref = referenceFromEnd(beforeAmounts);
+            AccountingBankStatementLine line = new AccountingBankStatementLine();
+            line.setHotel(hotel);
+            line.setBookDate(parseFlexibleDate(matcher.group(1)));
+            line.setValueDate(parseFlexibleDate(matcher.group(2)));
+            line.setReference(ref.reference());
+            line.setNarration(ref.narration().isBlank() ? beforeAmounts : ref.narration());
+            line.setDebitAmount(money(parseMoney(debitToken.value())));
+            line.setCreditAmount(money(parseMoney(creditToken.value())));
+            line.setBalanceAmount(money(parseMoney(balanceToken.value())));
+            line.setSourceBank("Equity Bank");
+            if (!line.getNarration().isBlank()) result.add(line);
+        }
+        return result;
+    }
+
+    private List<AccountingBankStatementLine> parseAccessBankStatementText(Hotel hotel, String text) {
+        List<String> records = collectStatementRecords(text, ACCESS_TRANSACTION_START).stream()
+                .filter(record -> !record.toLowerCase().startsWith("opening balance")
+                        && !record.toLowerCase().startsWith("closing balance"))
+                .toList();
+        BigDecimal runningBalance = firstMoneyAfter(text, "OPENING BALANCE");
+        List<AccountingBankStatementLine> result = new ArrayList<>();
+        for (String record : records) {
+            Matcher start = ACCESS_TRANSACTION_START.matcher(record);
+            if (!start.matches()) continue;
+            LocalDate bookDate = parseFlexibleDate(start.group(1));
+            String rest = start.group(2).trim();
+            Matcher dateMatcher = ACCESS_DATE_TOKEN.matcher(rest);
+            int valueDateStart = -1;
+            int valueDateEnd = -1;
+            String valueDateText = null;
+            while (dateMatcher.find()) {
+                valueDateStart = dateMatcher.start();
+                valueDateEnd = dateMatcher.end();
+                valueDateText = dateMatcher.group();
+            }
+            if (valueDateText == null) continue;
+            String details = rest.substring(0, valueDateStart).trim();
+            String amountPart = rest.substring(valueDateEnd).trim();
+            List<MoneyMatch> amounts = moneyMatches(amountPart);
+            if (amounts.isEmpty()) continue;
+            BigDecimal balance = money(parseMoney(amounts.get(amounts.size() - 1).value()));
+            BigDecimal movement = BigDecimal.ZERO;
+            if (runningBalance != null) {
+                movement = balance.subtract(runningBalance);
+            } else if (amounts.size() >= 2) {
+                movement = parseMoney(amounts.get(amounts.size() - 2).value());
+            }
+            runningBalance = balance;
+            if (movement.signum() == 0) continue;
+            ReferenceAndNarration ref = referenceFromEnd(details);
+            AccountingBankStatementLine line = new AccountingBankStatementLine();
+            line.setHotel(hotel);
+            line.setBookDate(bookDate);
+            line.setValueDate(parseFlexibleDate(valueDateText));
+            line.setReference(ref.reference());
+            line.setNarration(ref.narration().isBlank() ? details : ref.narration());
+            line.setDebitAmount(movement.signum() < 0 ? movement.abs().setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+            line.setCreditAmount(movement.signum() > 0 ? movement.setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+            line.setBalanceAmount(balance);
+            line.setSourceBank("Access Bank");
+            result.add(line);
+        }
+        return result;
+    }
+
+    private List<AccountingBankStatementLine> parseMomoWorkbook(Hotel hotel, MultipartFile file) {
+        List<List<String>> rows;
+        try {
+            rows = readFirstXlsxSheet(file.getBytes());
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "XLSX_READ_FAILED", "Could not read the Momo Excel file");
+        }
+        if (rows.isEmpty()) return List.of();
+        Map<String, Integer> headers = new HashMap<>();
+        List<String> headerRow = rows.get(0);
+        for (int i = 0; i < headerRow.size(); i++) {
+            headers.put(headerRow.get(i).trim().toLowerCase(), i);
+        }
+        List<AccountingBankStatementLine> result = new ArrayList<>();
+        for (int i = 1; i < rows.size(); i++) {
+            List<String> row = rows.get(i);
+            String status = cell(row, headers.get("status"));
+            if (!status.isBlank() && !status.equalsIgnoreCase("successful")) continue;
+            BigDecimal amount = parseMoney(cell(row, headers.get("amount")));
+            if (amount.signum() == 0) continue;
+            String type = cell(row, headers.get("type"));
+            String fromName = cell(row, headers.get("from name"));
+            String toName = cell(row, headers.get("to name"));
+            String message = cell(row, headers.get("to message"));
+            AccountingBankStatementLine line = new AccountingBankStatementLine();
+            line.setHotel(hotel);
+            line.setBookDate(parseMomoDate(cell(row, headers.get("date"))));
+            line.setValueDate(line.getBookDate());
+            line.setReference(cell(row, headers.get("id")));
+            line.setNarration(List.of(type, fromName, toName, message).stream()
+                    .filter(s -> s != null && !s.isBlank())
+                    .reduce((a, b) -> a + " - " + b)
+                    .orElse("Momo transaction"));
+            line.setDebitAmount(amount.signum() < 0 ? amount.abs().setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+            line.setCreditAmount(amount.signum() > 0 ? amount.setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+            line.setBalanceAmount(null);
+            line.setSourceBank("Momo");
+            result.add(line);
         }
         return result;
     }
@@ -638,10 +1095,177 @@ public class AccountingService {
         return line;
     }
 
+    private List<String> collectStatementRecords(String text, Pattern startPattern) {
+        List<String> records = new ArrayList<>();
+        StringBuilder current = null;
+        for (String rawLine : text.split("\\R")) {
+            String line = rawLine == null ? "" : rawLine.trim().replaceAll("\\s+", " ");
+            if (line.isBlank()) continue;
+            String lower = line.toLowerCase();
+            if (lower.startsWith("opening balance total")
+                    || lower.startsWith("closing balance")
+                    || lower.startsWith("summary")
+                    || lower.contains("page ")
+                    || lower.startsWith("-- ")) {
+                if (current != null) {
+                    records.add(current.toString());
+                    current = null;
+                }
+                continue;
+            }
+            if (startPattern.matcher(line).matches()) {
+                if (current != null) records.add(current.toString());
+                current = new StringBuilder(line);
+            } else if (current != null) {
+                current.append(' ').append(line);
+            }
+        }
+        if (current != null) records.add(current.toString());
+        return records;
+    }
+
+    private List<MoneyMatch> moneyMatches(String text) {
+        List<MoneyMatch> amounts = new ArrayList<>();
+        Matcher matcher = MONEY_AT_END.matcher(text == null ? "" : text);
+        while (matcher.find()) {
+            amounts.add(new MoneyMatch(matcher.group(), matcher.start(), matcher.end()));
+        }
+        return amounts;
+    }
+
+    private ReferenceAndNarration referenceFromEnd(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        if (value.isBlank()) return new ReferenceAndNarration(null, "");
+        String[] parts = value.split("\\s+");
+        String last = parts[parts.length - 1];
+        if (last.matches("[A-Za-z0-9][A-Za-z0-9./_-]{4,}")) {
+            return new ReferenceAndNarration(last, value.substring(0, Math.max(0, value.length() - last.length())).trim());
+        }
+        return new ReferenceAndNarration(null, value);
+    }
+
+    private BigDecimal firstMoneyAfter(String text, String label) {
+        Pattern pattern = Pattern.compile(Pattern.quote(label) + "\\s+(" + MONEY_AT_END.pattern() + ")", Pattern.CASE_INSENSITIVE);
+        Matcher matcher = pattern.matcher(text == null ? "" : text);
+        return matcher.find() ? parseMoney(matcher.group(1)) : null;
+    }
+
+    private LocalDate parseFlexibleDate(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        if (value.isBlank()) return LocalDate.now();
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException ignored) {
+            // try statement-specific formats below
+        }
+        try {
+            return LocalDate.parse(value, DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        } catch (DateTimeParseException ignored) {
+            // try Access Bank date format below
+        }
+        return LocalDate.parse(value, ACCESS_DATE);
+    }
+
+    private LocalDate parseMomoDate(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        if (value.matches("\\d+(?:\\.\\d+)?")) {
+            long serialDays = (long) Math.floor(Double.parseDouble(value));
+            return LocalDate.of(1899, 12, 30).plusDays(serialDays);
+        }
+        try {
+            return parseFlexibleDate(value);
+        } catch (DateTimeParseException ignored) {
+            return LocalDateTime.parse(value.replace(' ', 'T')).toLocalDate();
+        }
+    }
+
+    private String cell(List<String> row, Integer index) {
+        if (index == null || index < 0 || index >= row.size()) return "";
+        return row.get(index) == null ? "" : row.get(index).trim();
+    }
+
+    private List<List<String>> readFirstXlsxSheet(byte[] content) throws Exception {
+        Map<String, byte[]> entries = new HashMap<>();
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(content))) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                entries.put(entry.getName(), zip.readAllBytes());
+            }
+        }
+        List<String> sharedStrings = new ArrayList<>();
+        byte[] sharedXml = entries.get("xl/sharedStrings.xml");
+        if (sharedXml != null) {
+            Element root = parseXml(sharedXml).getDocumentElement();
+            NodeList strings = root.getElementsByTagNameNS("*", "si");
+            for (int i = 0; i < strings.getLength(); i++) {
+                Element si = (Element) strings.item(i);
+                NodeList texts = si.getElementsByTagNameNS("*", "t");
+                StringBuilder value = new StringBuilder();
+                for (int t = 0; t < texts.getLength(); t++) {
+                    value.append(texts.item(t).getTextContent());
+                }
+                sharedStrings.add(value.toString());
+            }
+        }
+        byte[] sheetXml = entries.get("xl/worksheets/sheet1.xml");
+        if (sheetXml == null) return List.of();
+        Element sheet = parseXml(sheetXml).getDocumentElement();
+        NodeList rowNodes = sheet.getElementsByTagNameNS("*", "row");
+        List<List<String>> rows = new ArrayList<>();
+        for (int i = 0; i < rowNodes.getLength(); i++) {
+            Element rowEl = (Element) rowNodes.item(i);
+            NodeList cellNodes = rowEl.getElementsByTagNameNS("*", "c");
+            List<String> row = new ArrayList<>();
+            for (int c = 0; c < cellNodes.getLength(); c++) {
+                Element cell = (Element) cellNodes.item(c);
+                int index = columnIndex(cell.getAttribute("r"));
+                while (row.size() <= index) row.add("");
+                row.set(index, xlsxCellValue(cell, sharedStrings));
+            }
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private org.w3c.dom.Document parseXml(byte[] xml) throws Exception {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(true);
+        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        return factory.newDocumentBuilder().parse(new ByteArrayInputStream(xml));
+    }
+
+    private String xlsxCellValue(Element cell, List<String> sharedStrings) {
+        String type = cell.getAttribute("t");
+        if ("inlineStr".equals(type)) {
+            NodeList texts = cell.getElementsByTagNameNS("*", "t");
+            return texts.getLength() == 0 ? "" : texts.item(0).getTextContent();
+        }
+        NodeList values = cell.getElementsByTagNameNS("*", "v");
+        String raw = values.getLength() == 0 ? "" : values.item(0).getTextContent();
+        if ("s".equals(type) && !raw.isBlank()) {
+            int index = Integer.parseInt(raw);
+            return index >= 0 && index < sharedStrings.size() ? sharedStrings.get(index) : "";
+        }
+        return raw;
+    }
+
+    private int columnIndex(String ref) {
+        int index = 0;
+        for (int i = 0; i < ref.length(); i++) {
+            char ch = Character.toUpperCase(ref.charAt(i));
+            if (ch < 'A' || ch > 'Z') break;
+            index = index * 26 + (ch - 'A' + 1);
+        }
+        return Math.max(0, index - 1);
+    }
+
     private int countPotentialStatementRows(String text) {
         int count = 0;
         for (String rawLine : text.split("\\R")) {
-            if (BANK_TRANSACTION_START.matcher(rawLine.trim().replaceAll("\\s+", " ")).matches()) count++;
+            String line = rawLine.trim().replaceAll("\\s+", " ");
+            if (BANK_TRANSACTION_START.matcher(line).matches()
+                    || EQUITY_TRANSACTION_START.matcher(line).matches()
+                    || ACCESS_TRANSACTION_START.matcher(line).matches()) count++;
         }
         return count;
     }
@@ -659,7 +1283,7 @@ public class AccountingService {
     }
 
     private Hotel hotel(UUID hotelId) {
-        return hotelRepository.findById(hotelId)
+        return hotelRepository.findById(Objects.requireNonNull(hotelId))
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "HOTEL_NOT_FOUND", "Hotel not found"));
     }
 
@@ -668,9 +1292,130 @@ public class AccountingService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PETTY_CASH_NOT_FOUND", "Petty cash request not found"));
     }
 
+    private AccountingPeriod period(UUID hotelId, UUID periodId) {
+        return periodRepository.findById(Objects.requireNonNull(periodId))
+                .filter(p -> p.getHotel().getId().equals(hotelId))
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ACCOUNTING_PERIOD_NOT_FOUND", "Accounting period not found"));
+    }
+
+    private AccountingReconciliation reconciliation(UUID hotelId, UUID reconciliationId) {
+        return reconciliationRepository.findById(Objects.requireNonNull(reconciliationId))
+                .filter(r -> r.getHotel().getId().equals(hotelId))
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "RECONCILIATION_NOT_FOUND", "Reconciliation not found"));
+    }
+
+    private AccountingDtos.AdvancedAccountingWorkspace advancedWorkspace(UUID hotelId) {
+        return new AccountingDtos.AdvancedAccountingWorkspace(
+                receivableRepository.findByHotel_IdOrderByDueDateAscIssueDateDesc(hotelId).stream()
+                        .map(this::toReceivableRow)
+                        .toList(),
+                payableRepository.findByHotel_IdOrderByDueDateAscBillDateDesc(hotelId).stream()
+                        .map(this::toPayableRow)
+                        .toList(),
+                budgetRepository.findByHotel_IdOrderByFiscalYearDescMonthAscAccountCodeAsc(hotelId).stream()
+                        .map(b -> toBudgetRow(b, hotelId))
+                        .toList(),
+                taxFilingRepository.findByHotel_IdOrderByPeriodEndDescTaxTypeAsc(hotelId).stream()
+                        .map(this::toTaxFilingRow)
+                        .toList(),
+                periodRepository.findByHotel_IdOrderByStartDateDesc(hotelId).stream()
+                        .map(this::toPeriodRow)
+                        .toList(),
+                reconciliationRepository.findByHotel_IdOrderByStatementEndDescCreatedAtDesc(hotelId).stream()
+                        .map(this::toReconciliationRow)
+                        .toList());
+    }
+
     private String nextRequestNumber(UUID hotelId) {
         long n = pettyCashRepository.countByHotel_Id(hotelId) + 1;
         return "PC-" + LocalDate.now().getYear() + "-" + String.format("%05d", n);
+    }
+
+    private AccountingDtos.ReceivableRow toReceivableRow(AccountingReceivable r) {
+        BigDecimal balance = money(safe(r.getAmount()).subtract(safe(r.getAmountPaid())));
+        return new AccountingDtos.ReceivableRow(
+                r.getId(),
+                r.getCustomerName(),
+                r.getInvoiceRef(),
+                r.getIssueDate(),
+                r.getDueDate(),
+                money(r.getAmount()),
+                money(r.getAmountPaid()),
+                balance,
+                normalizeOpenStatus(r.getStatus(), r.getAmount(), r.getAmountPaid()),
+                r.getNotes());
+    }
+
+    private AccountingDtos.PayableRow toPayableRow(AccountingPayable p) {
+        BigDecimal balance = money(safe(p.getAmount()).subtract(safe(p.getAmountPaid())));
+        return new AccountingDtos.PayableRow(
+                p.getId(),
+                p.getSupplierName(),
+                p.getBillRef(),
+                p.getBillDate(),
+                p.getDueDate(),
+                money(p.getAmount()),
+                money(p.getAmountPaid()),
+                balance,
+                normalizeOpenStatus(p.getStatus(), p.getAmount(), p.getAmountPaid()),
+                p.getNotes());
+    }
+
+    private AccountingDtos.BudgetRow toBudgetRow(AccountingBudget b, UUID hotelId) {
+        BigDecimal actual = actualForBudget(hotelId, b);
+        return new AccountingDtos.BudgetRow(
+                b.getId(),
+                b.getFiscalYear(),
+                b.getMonth(),
+                b.getAccountCode(),
+                b.getAccountName(),
+                money(b.getBudgetAmount()),
+                actual,
+                money(safe(b.getBudgetAmount()).subtract(actual)),
+                b.getNotes());
+    }
+
+    private AccountingDtos.TaxFilingRow toTaxFilingRow(AccountingTaxFiling t) {
+        return new AccountingDtos.TaxFilingRow(
+                t.getId(),
+                t.getTaxType(),
+                t.getPeriodStart(),
+                t.getPeriodEnd(),
+                money(t.getTaxableSales()),
+                money(t.getTaxCollected()),
+                money(t.getTaxPaid()),
+                money(t.getTaxDue()),
+                t.getStatus(),
+                t.getFilingReference(),
+                t.getFiledAt(),
+                t.getNotes());
+    }
+
+    private AccountingDtos.AccountingPeriodRow toPeriodRow(AccountingPeriod p) {
+        return new AccountingDtos.AccountingPeriodRow(
+                p.getId(),
+                p.getPeriodName(),
+                p.getStartDate(),
+                p.getEndDate(),
+                p.getStatus(),
+                p.getClosedAt(),
+                p.getClosedBy(),
+                p.getNotes());
+    }
+
+    private AccountingDtos.ReconciliationRow toReconciliationRow(AccountingReconciliation r) {
+        return new AccountingDtos.ReconciliationRow(
+                r.getId(),
+                r.getBankName(),
+                r.getStatementStart(),
+                r.getStatementEnd(),
+                money(r.getStatementBalance()),
+                money(r.getSystemBalance()),
+                money(r.getDifference()),
+                r.getStatus(),
+                r.getReconciledAt(),
+                r.getReconciledBy(),
+                r.getNotes());
     }
 
     private AccountingDtos.ExpenseRow toExpenseRow(AccountingExpense e) {
@@ -732,12 +1477,76 @@ public class AccountingService {
                 b.getCreatedAt());
     }
 
+    private static String expenseAccountCode(String category) {
+        return SALARY_EXPENSE_CATEGORY.equalsIgnoreCase(category) ? SALARY_ACCOUNT_CODE : "5000";
+    }
+
+    private static String expenseAccountName(String category) {
+        return SALARY_EXPENSE_CATEGORY.equalsIgnoreCase(category) ? SALARY_EXPENSE_CATEGORY : category;
+    }
+
+    private static String expenseLedgerSource(AccountingExpense expense) {
+        if (SALARY_EXPENSE_CATEGORY.equalsIgnoreCase(expense.getCategory())) {
+            return "PAYROLL";
+        }
+        if (expense.getPaymentMethod() != null && "Petty Cash".equalsIgnoreCase(expense.getPaymentMethod().trim())) {
+            return "PETTY_CASH";
+        }
+        if (expense.getDescription() != null
+                && expense.getDescription().toLowerCase().startsWith("petty cash disbursement")) {
+            return "PETTY_CASH";
+        }
+        return "EXPENSE";
+    }
+
     private static BigDecimal safe(BigDecimal v) {
         return v == null ? BigDecimal.ZERO : v;
     }
 
     private static BigDecimal money(BigDecimal v) {
         return safe(v).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal actualForBudget(UUID hotelId, AccountingBudget budget) {
+        LocalDate start = budget.getMonth() == null
+                ? LocalDate.of(budget.getFiscalYear(), 1, 1)
+                : LocalDate.of(budget.getFiscalYear(), budget.getMonth(), 1);
+        LocalDate end = budget.getMonth() == null
+                ? LocalDate.of(budget.getFiscalYear(), 12, 31)
+                : start.withDayOfMonth(start.lengthOfMonth());
+        BigDecimal total = BigDecimal.ZERO;
+        for (AccountingDtos.LedgerEntryRow row : buildLedger(hotelId, start, end)) {
+            if (!row.accountCode().equalsIgnoreCase(budget.getAccountCode())) continue;
+            if ("INCOME".equals(row.accountType()) || "LIABILITY".equals(row.accountType()) || "EQUITY".equals(row.accountType())) {
+                total = total.add(safe(row.credit()).subtract(safe(row.debit())));
+            } else {
+                total = total.add(safe(row.debit()).subtract(safe(row.credit())));
+            }
+        }
+        return money(total);
+    }
+
+    private BigDecimal bankSystemBalance(UUID hotelId, String bankName, LocalDate from, LocalDate to) {
+        BigDecimal balance = BigDecimal.ZERO;
+        String bank = clean(bankName).toLowerCase();
+        for (AccountingBankStatementLine line : bankStatementLineRepository.findByHotelAndDateRange(hotelId, from, to)) {
+            if (!clean(line.getSourceBank()).toLowerCase().contains(bank)) continue;
+            balance = balance.add(safe(line.getCreditAmount())).subtract(safe(line.getDebitAmount()));
+        }
+        return money(balance);
+    }
+
+    private static String normalizeOpenStatus(String raw, BigDecimal amount, BigDecimal paid) {
+        String explicit = clean(raw).toUpperCase().replace(' ', '_');
+        if (List.of("OPEN", "PARTIAL", "PAID", "VOID").contains(explicit)) return explicit;
+        BigDecimal balance = safe(amount).subtract(safe(paid));
+        if (safe(paid).signum() <= 0) return "OPEN";
+        return balance.signum() <= 0 ? "PAID" : "PARTIAL";
+    }
+
+    private static String normalizeStatus(String raw, List<String> allowed, String fallback) {
+        String v = clean(raw).toUpperCase().replace(' ', '_');
+        return allowed.contains(v) ? v : fallback;
     }
 
     private static BigDecimal parseMoney(String raw) {
@@ -777,4 +1586,6 @@ public class AccountingService {
     private record DefaultAccount(String code, String name, String type, String description) {}
 
     private record MoneyMatch(String value, int start, int end) {}
+
+    private record ReferenceAndNarration(String reference, String narration) {}
 }
