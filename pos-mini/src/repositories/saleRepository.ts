@@ -4,10 +4,11 @@ import { getDb } from '../db/database';
 import { generateId, nowIso, todayStartIso } from '../utils/ids';
 import { getNextNumber, recordStockMovement } from './helpers';
 import { buildWhere, clampLimit, clampOffset, likePattern } from './queryHelpers';
-import { getCurrentStaffId, getRequireShift } from './metaRepository';
+import { getCurrentStaffId, getRequireShift, setLastSaleId } from './metaRepository';
 import { getOpenShift } from './shiftRepository';
 import { getBusinessSettings } from './settingsRepository';
 import { businessTypeHasFeature } from '../constants/businessTypes';
+import { expandBundleForStock } from './bundleRepository';
 import type { SelectedModifier } from '../types';
 
 type SaleRow = {
@@ -20,12 +21,15 @@ type SaleRow = {
   discount_amount: number;
   discount_percent: number;
   tax_amount: number;
+  tip_amount: number;
+  service_charge: number;
   total: number;
   amount_paid: number;
   change_amount: number;
   payment_method: string;
   status: string;
   notes: string | null;
+  table_id: string | null;
   created_at: string;
   updated_at: string;
   customer_name?: string | null;
@@ -76,6 +80,8 @@ function mapSale(row: SaleRow): Sale {
     discountAmount: row.discount_amount,
     discountPercent: row.discount_percent,
     taxAmount: row.tax_amount,
+    tipAmount: row.tip_amount ?? 0,
+    serviceCharge: row.service_charge ?? 0,
     total: row.total,
     amountPaid: row.amount_paid,
     changeAmount: row.change_amount,
@@ -83,6 +89,7 @@ function mapSale(row: SaleRow): Sale {
     status: row.status as Sale['status'],
     refundStatus: resolveRefundStatus(soldQty, refundedQty),
     notes: row.notes,
+    tableId: row.table_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -161,6 +168,8 @@ export async function listSalesPaginated(
   if (query.customerId) {
     conditions.push('s.customer_id = ?');
     params.push(query.customerId);
+  } else if (query.status !== 'pending') {
+    conditions.push("s.status <> 'pending'");
   }
 
   const where = buildWhere(conditions);
@@ -226,52 +235,143 @@ export async function getSaleWithItems(id: string): Promise<Sale | null> {
   return sale;
 }
 
-export async function createSale(input: CreateSaleInput): Promise<Sale> {
+export async function getPendingSaleByTableId(tableId: string): Promise<Sale | null> {
   const db = getDb();
-  const requireShift = await getRequireShift();
-  const openShift = await getOpenShift();
-  if (requireShift && !openShift) {
-    throw new Error('NO_OPEN_SHIFT');
+  const row = await db.getFirstAsync<SaleRow>(
+    `${SELECT_SALE} WHERE s.table_id = ? AND s.status = 'pending' LIMIT 1`,
+    [tableId],
+  );
+  if (!row) return null;
+  const sale = mapSale(row);
+  sale.items = await getSaleItems(sale.id);
+  return sale;
+}
+
+export async function savePendingTableSale(
+  tableId: string,
+  input: Omit<CreateSaleInput, 'amountPaid' | 'changeAmount' | 'paymentMethod'>,
+): Promise<Sale> {
+  const existing = await getPendingSaleByTableId(tableId);
+  return createSale({
+    ...input,
+    tableId,
+    existingSaleId: existing?.id ?? null,
+    status: 'pending',
+    paymentMethod: 'cash',
+    amountPaid: 0,
+    changeAmount: 0,
+  });
+}
+
+export async function createSale(input: CreateSaleInput & { status?: Sale['status'] }): Promise<Sale> {
+  const db = getDb();
+  const saleStatus = input.status ?? 'completed';
+  const isCompleting = saleStatus === 'completed';
+
+  if (isCompleting) {
+    const requireShift = await getRequireShift();
+    const openShift = await getOpenShift();
+    if (requireShift && !openShift) {
+      throw new Error('NO_OPEN_SHIFT');
+    }
   }
 
   const staffId = input.staffId ?? (await getCurrentStaffId());
-  const shiftId = input.shiftId ?? openShift?.id ?? null;
+  const shiftId = input.shiftId ?? (isCompleting ? (await getOpenShift())?.id ?? null : null);
 
-  const id = generateId();
+  const id = input.existingSaleId ?? generateId();
   const now = nowIso();
-  const invoiceNumber = await getNextNumber('INV-');
+  let invoiceNumber: string;
+  if (input.existingSaleId) {
+    const existing = await getSaleById(input.existingSaleId);
+    if (isCompleting && existing?.invoiceNumber.startsWith('OPEN-')) {
+      invoiceNumber = await getNextNumber('INV-');
+    } else {
+      invoiceNumber = existing?.invoiceNumber ?? (await getNextNumber('INV-'));
+    }
+  } else if (input.tableId && !isCompleting) {
+    invoiceNumber = `OPEN-${input.tableId.slice(0, 8)}`;
+  } else {
+    invoiceNumber = await getNextNumber('INV-');
+  }
+
   const isSplit = Boolean(input.payments && input.payments.length > 1);
   const paymentMethod = isSplit ? 'split' : input.paymentMethod;
-  const kitchenItems: { productId: string; productName: string; variantName?: string | null; quantity: number; modifiers: SelectedModifier[] }[] = [];
+  const kitchenItems: {
+    productId: string;
+    productName: string;
+    categoryId: string | null;
+    variantName?: string | null;
+    quantity: number;
+    modifiers: SelectedModifier[];
+  }[] = [];
+  let shouldPrintKitchen = false;
 
   await db.withTransactionAsync(async () => {
-    await db.runAsync(
-      `INSERT INTO sales (
-        id, invoice_number, customer_id, staff_id, shift_id, subtotal, discount_amount, discount_percent,
-        tax_amount, total, amount_paid, change_amount, payment_method, status, notes,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?)`,
-      [
-        id,
-        invoiceNumber,
-        input.customerId ?? null,
-        staffId,
-        shiftId,
-        input.subtotal,
-        input.discountAmount,
-        input.discountPercent,
-        input.taxAmount,
-        input.total,
-        input.amountPaid,
-        input.changeAmount,
-        paymentMethod,
-        input.notes ?? null,
-        now,
-        now,
-      ],
-    );
+    if (input.existingSaleId) {
+      await db.runAsync('DELETE FROM sale_items WHERE sale_id = ?', [id]);
+      await db.runAsync('DELETE FROM sale_payments WHERE sale_id = ?', [id]);
+      await db.runAsync(
+        `UPDATE sales SET
+          invoice_number = ?, customer_id = ?, staff_id = ?, shift_id = ?, subtotal = ?, discount_amount = ?,
+          discount_percent = ?, tax_amount = ?, tip_amount = ?, service_charge = ?, total = ?,
+          amount_paid = ?, change_amount = ?, payment_method = ?, status = ?, notes = ?, table_id = ?, updated_at = ?
+         WHERE id = ?`,
+        [
+          invoiceNumber,
+          input.customerId ?? null,
+          staffId,
+          shiftId,
+          input.subtotal,
+          input.discountAmount,
+          input.discountPercent,
+          input.taxAmount,
+          input.tipAmount ?? 0,
+          input.serviceCharge ?? 0,
+          input.total,
+          input.amountPaid,
+          input.changeAmount,
+          paymentMethod,
+          saleStatus,
+          input.notes ?? null,
+          input.tableId ?? null,
+          now,
+          id,
+        ],
+      );
+    } else {
+      await db.runAsync(
+        `INSERT INTO sales (
+          id, invoice_number, customer_id, staff_id, shift_id, subtotal, discount_amount, discount_percent,
+          tax_amount, tip_amount, service_charge, total, amount_paid, change_amount, payment_method, status, notes,
+          table_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          invoiceNumber,
+          input.customerId ?? null,
+          staffId,
+          shiftId,
+          input.subtotal,
+          input.discountAmount,
+          input.discountPercent,
+          input.taxAmount,
+          input.tipAmount ?? 0,
+          input.serviceCharge ?? 0,
+          input.total,
+          input.amountPaid,
+          input.changeAmount,
+          paymentMethod,
+          saleStatus,
+          input.notes ?? null,
+          input.tableId ?? null,
+          now,
+          now,
+        ],
+      );
+    }
 
-    if (input.payments?.length) {
+    if (isCompleting && input.payments?.length) {
       for (const p of input.payments) {
         await db.runAsync(
           `INSERT INTO sale_payments (id, sale_id, payment_method, amount, created_at)
@@ -314,20 +414,33 @@ export async function createSale(input: CreateSaleInput): Promise<Sale> {
         ],
       );
 
+      const product = await db.getFirstAsync<{ track_stock: number; category_id: string | null }>(
+        'SELECT track_stock, category_id FROM products WHERE id = ?',
+        [item.productId],
+      );
+
       kitchenItems.push({
         productId: item.productId,
         productName: item.productName,
+        categoryId: product?.category_id ?? null,
         variantName: item.variantName,
         quantity: item.quantity,
         modifiers,
       });
 
-      const product = await db.getFirstAsync<{ track_stock: number }>(
-        'SELECT track_stock FROM products WHERE id = ?',
-        [item.productId],
-      );
-
-      if (product?.track_stock === 1) {
+      const bundleLines = await expandBundleForStock(item.productId, item.quantity);
+      if (bundleLines.length > 0 && isCompleting) {
+        for (const child of bundleLines) {
+          await recordStockMovement(db, {
+            productId: child.productId,
+            movementType: 'sale',
+            referenceType: 'sale',
+            referenceId: id,
+            quantityChange: -child.quantity,
+            notes: `Bundle component for ${item.productName}`,
+          });
+        }
+      } else if (product?.track_stock === 1 && isCompleting) {
         if (item.variantId) {
           await db.runAsync(
             'UPDATE product_variants SET stock_qty = MAX(0, stock_qty - ?) WHERE id = ?',
@@ -345,48 +458,69 @@ export async function createSale(input: CreateSaleInput): Promise<Sale> {
       }
     }
 
-    const settings = await getBusinessSettings();
-    const kitchenEnabled = businessTypeHasFeature(settings?.businessType, 'kitchen');
+    if (isCompleting) {
+      const settings = await getBusinessSettings();
+      const kitchenEnabled = businessTypeHasFeature(settings?.businessType, 'kitchen');
 
-    if (kitchenEnabled && kitchenItems.length > 0) {
-      const ticketId = generateId();
-      await db.runAsync(
-        `INSERT INTO kitchen_tickets (id, sale_id, invoice_number, status, items_json, notes, created_at, updated_at)
-         VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)`,
-        [
-          ticketId,
-          id,
-          invoiceNumber,
-          JSON.stringify(kitchenItems),
-          input.notes ?? null,
-          now,
-          now,
-        ],
-      );
+      if (kitchenEnabled && kitchenItems.length > 0) {
+        shouldPrintKitchen = true;
+        const ticketId = generateId();
+        await db.runAsync(
+          `INSERT INTO kitchen_tickets (id, sale_id, invoice_number, status, items_json, notes, created_at, updated_at)
+           VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)`,
+          [
+            ticketId,
+            id,
+            invoiceNumber,
+            JSON.stringify(kitchenItems),
+            input.notes ?? null,
+            now,
+            now,
+          ],
+        );
+      }
     }
 
-    const creditAmount =
-      isSplit && input.payments
-        ? input.payments.filter((p) => p.paymentMethod === 'credit').reduce((s, p) => s + p.amount, 0)
-        : paymentMethod === 'credit'
-          ? input.total
-          : 0;
+    if (isCompleting) {
+      const creditAmount =
+        isSplit && input.payments
+          ? input.payments.filter((p) => p.paymentMethod === 'credit').reduce((s, p) => s + p.amount, 0)
+          : paymentMethod === 'credit'
+            ? input.total
+            : 0;
 
-    if (creditAmount > 0 && input.customerId) {
-      await db.runAsync(
-        `INSERT INTO debts (id, customer_id, sale_id, amount, type, notes, created_at)
-         VALUES (?, ?, ?, ?, 'debt', ?, ?)`,
-        [generateId(), input.customerId, id, creditAmount, `Sale ${invoiceNumber}`, now],
-      );
-      await db.runAsync(
-        'UPDATE customers SET total_debt = total_debt + ?, updated_at = ? WHERE id = ?',
-        [creditAmount, now, input.customerId],
-      );
+      if (creditAmount > 0 && input.customerId) {
+        await db.runAsync(
+          `INSERT INTO debts (id, customer_id, sale_id, amount, type, notes, created_at)
+           VALUES (?, ?, ?, ?, 'debt', ?, ?)`,
+          [generateId(), input.customerId, id, creditAmount, `Sale ${invoiceNumber}`, now],
+        );
+        await db.runAsync(
+          'UPDATE customers SET total_debt = total_debt + ?, updated_at = ? WHERE id = ?',
+          [creditAmount, now, input.customerId],
+        );
+      }
+    }
+
+    if (input.tableId) {
+      const tableStatus = isCompleting ? 'available' : 'occupied';
+      await db.runAsync('UPDATE pos_tables SET status = ?, updated_at = ? WHERE id = ?', [
+        tableStatus,
+        now,
+        input.tableId,
+      ]);
     }
   });
 
   const created = await getSaleWithItems(id);
   if (!created) throw new Error('Failed to create sale');
+  if (isCompleting) await setLastSaleId(id);
+
+  if (shouldPrintKitchen && kitchenItems.length > 0) {
+    const { printKitchenTicketsForSale } = await import('../printing/PrinterService');
+    void printKitchenTicketsForSale(invoiceNumber, kitchenItems, input.notes ?? null).catch(() => undefined);
+  }
+
   return created;
 }
 

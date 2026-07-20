@@ -40,7 +40,7 @@ export default function AlertsSettingsScreen() {
         <Switch value={lowStockAlert} onValueChange={setLowStockAlert} />
       </View>
       <Text className="mb-4 text-sm text-app-muted">
-        Backup reminders use your real last backup date (7+ days old), or a one-time nudge if you have products but never backed up.
+        Low stock notifications appear when you open the app. Backup reminders are configured under Settings → Backup.
       </Text>
       <Pressable onPress={() => void save()} className="rounded-xl py-4" style={{ backgroundColor: colors.primary }}>
         <Text className="text-center font-semibold text-white">Save</Text>

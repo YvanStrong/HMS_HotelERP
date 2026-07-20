@@ -34,6 +34,10 @@ type CartState = {
   notes: string;
   splitEnabled: boolean;
   splitPayments: SalePaymentInput[];
+  tipAmount: number;
+  serviceCharge: number;
+  tableId: string | null;
+  pendingSaleId: string | null;
   addItem: (
     item: Omit<CartItem, 'quantity' | 'discountAmount' | 'lineKey'> & { quantity?: number },
   ) => void;
@@ -51,6 +55,9 @@ type CartState = {
   setSplitPayments: (payments: SalePaymentInput[]) => void;
   addSplitPayment: (payment: SalePaymentInput) => void;
   removeSplitPayment: (index: number) => void;
+  setTipAmount: (amount: number) => void;
+  setServiceCharge: (amount: number) => void;
+  setTableContext: (tableId: string | null, pendingSaleId?: string | null) => void;
   loadSnapshot: (snapshot: Partial<CartState>) => void;
   getSnapshot: () => string;
   clear: () => void;
@@ -82,6 +89,10 @@ const initialState = {
   notes: '',
   splitEnabled: false,
   splitPayments: [] as SalePaymentInput[],
+  tipAmount: 0,
+  serviceCharge: 0,
+  tableId: null as string | null,
+  pendingSaleId: null as string | null,
 };
 
 function normalizeCartItem(
@@ -167,12 +178,20 @@ export const useCartStore = create<CartState>((set, get) => ({
   removeSplitPayment: (index) =>
     set({ splitPayments: get().splitPayments.filter((_, i) => i !== index) }),
 
+  setTipAmount: (amount) => set({ tipAmount: Math.max(0, amount) }),
+  setServiceCharge: (amount) => set({ serviceCharge: Math.max(0, amount) }),
+  setTableContext: (tableId, pendingSaleId = null) => set({ tableId, pendingSaleId }),
+
   loadSnapshot: (snapshot) => {
     set({
       ...initialState,
       ...snapshot,
       items: (snapshot.items ?? []).map((item) => normalizeCartItem(item)),
       splitPayments: snapshot.splitPayments ?? [],
+      tipAmount: snapshot.tipAmount ?? 0,
+      serviceCharge: snapshot.serviceCharge ?? 0,
+      tableId: snapshot.tableId ?? null,
+      pendingSaleId: snapshot.pendingSaleId ?? null,
     });
   },
 
@@ -190,6 +209,10 @@ export const useCartStore = create<CartState>((set, get) => ({
       notes,
       splitEnabled,
       splitPayments,
+      tipAmount,
+      serviceCharge,
+      tableId,
+      pendingSaleId,
     } = get();
     return JSON.stringify({
       items,
@@ -204,13 +227,18 @@ export const useCartStore = create<CartState>((set, get) => ({
       notes,
       splitEnabled,
       splitPayments,
+      tipAmount,
+      serviceCharge,
+      tableId,
+      pendingSaleId,
     });
   },
 
   clear: () => set({ ...initialState }),
 
   getTotals: () => {
-    const { items, discountMode, discountPercent, fixedDiscount, amountPaid } = get();
+    const { items, discountMode, discountPercent, fixedDiscount, amountPaid, tipAmount, serviceCharge } =
+      get();
     const settings = useAppStore.getState().settings;
     const subtotal = roundMoney(calculateSubtotal(items));
     const discountAmount =
@@ -219,11 +247,23 @@ export const useCartStore = create<CartState>((set, get) => ({
         : roundMoney(calculateDiscountAmount(subtotal, discountPercent, fixedDiscount));
     const taxInclusive = settings?.taxInclusive ?? false;
     const taxAmount = roundMoney(calculateCartTax(items, discountAmount, taxInclusive));
-    const total = roundMoney(calculateTotal(subtotal, discountAmount, taxAmount, taxInclusive));
+    const baseTotal = roundMoney(calculateTotal(subtotal, discountAmount, taxAmount, taxInclusive));
+    const tip = roundMoney(tipAmount);
+    const service = roundMoney(serviceCharge);
+    const total = roundMoney(baseTotal + tip + service);
     const change = roundMoney(calculateChange(amountPaid, total));
     const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
 
-    return { subtotal, discountAmount, taxAmount, total, itemCount, change };
+    return {
+      subtotal,
+      discountAmount,
+      taxAmount,
+      tipAmount: tip,
+      serviceCharge: service,
+      total,
+      itemCount,
+      change,
+    };
   },
 
   toSaleItems: () => {

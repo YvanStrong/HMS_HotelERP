@@ -19,7 +19,7 @@ export function StaffPinModal({ visible, staffName, pin, onPinChange, onConfirm,
         <View className="rounded-t-2xl border-t border-app-border bg-app-surface p-4">
           <Text className="mb-2 text-xl font-bold text-app-text">Sign in as {staffName}</Text>
           <Text className="mb-4 text-app-muted">Enter staff PIN</Text>
-          <NumericKeypad value={pin} onChange={onPinChange} maxLength={8} />
+          <NumericKeypad value={pin} onChange={onPinChange} maxLength={8} secure allowReveal />
           <Pressable onPress={onConfirm} className="mt-4 rounded-xl py-4" style={primaryButtonStyle}>
             <Text className="text-center text-lg font-semibold text-white">Confirm</Text>
           </Pressable>

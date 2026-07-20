@@ -24,7 +24,7 @@ const PAYMENT_FILTERS = [
 export default function SalesListScreen() {
   const router = useRouter();
   const settings = useAppStore((s) => s.settings);
-  const { hasKitchen } = useBusinessFeatures();
+  const { hasKitchen, hasTableService } = useBusinessFeatures();
   const [paymentFilter, setPaymentFilter] = useState<string | null>(null);
 
   const filters = useMemo<SaleListFilters>(
@@ -86,6 +86,14 @@ export default function SalesListScreen() {
         onPress={() => router.push('/(main)/sales/new')}
         className="mb-2"
       />
+      {hasTableService ? (
+        <ActionButton
+          label="Tables"
+          onPress={() => router.push('/(main)/sales/tables')}
+          variant="secondary"
+          className="mb-3"
+        />
+      ) : null}
       {hasKitchen ? (
         <ActionButton
           label="Kitchen tickets"

@@ -42,7 +42,7 @@ export default function CategoriesScreen() {
 
   return (
     <KeyboardAvoidingScreen>
-      <View className="min-h-0 flex-1 px-4 pt-2">
+      <View className="min-h-0 flex-1 pt-2">
         <View className="mb-3 flex-row gap-2">
           <TextInput
             value={name}

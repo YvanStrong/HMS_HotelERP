@@ -23,6 +23,8 @@ type ProductRow = {
   tax_rate: number | null;
   tax_inclusive: number | null;
   image_uri: string | null;
+  expiry_date: string | null;
+  batch_lot: string | null;
   track_stock: number;
   is_active: number;
   created_at: string;
@@ -51,6 +53,8 @@ function mapProduct(row: ProductRow): Product {
     taxRate: isTaxable ? (taxRate || taxRateForClass('B')) : 0,
     taxInclusive: row.tax_inclusive === 1,
     imageUri: row.image_uri,
+    expiryDate: row.expiry_date ?? null,
+    batchLot: row.batch_lot ?? null,
     trackStock: row.track_stock === 1,
     isActive: row.is_active === 1,
     createdAt: row.created_at,
@@ -169,8 +173,9 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
   await db.runAsync(
     `INSERT INTO products (
       id, name, description, sku, barcode, category_id, cost_price, sell_price, stock_qty,
-      min_stock, unit, tax_class, is_taxable, tax_rate, tax_inclusive, image_uri, track_stock, is_active, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      min_stock, unit, tax_class, is_taxable, tax_rate, tax_inclusive, image_uri, expiry_date, batch_lot,
+      track_stock, is_active, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.name,
@@ -188,6 +193,8 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
       input.taxRate ?? tax.taxRate,
       (input.taxInclusive ?? tax.taxInclusive) ? 1 : 0,
       input.imageUri ?? null,
+      input.expiryDate ?? null,
+      input.batchLot ?? null,
       input.trackStock ? 1 : 0,
       input.isActive ? 1 : 0,
       now,
@@ -210,7 +217,7 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
     `UPDATE products SET
       name = ?, description = ?, sku = ?, barcode = ?, category_id = ?, cost_price = ?, sell_price = ?,
       stock_qty = ?, min_stock = ?, unit = ?, tax_class = ?, is_taxable = ?, tax_rate = ?, tax_inclusive = ?,
-      image_uri = ?, track_stock = ?, is_active = ?, updated_at = ?
+      image_uri = ?, expiry_date = ?, batch_lot = ?, track_stock = ?, is_active = ?, updated_at = ?
     WHERE id = ?`,
     [
       input.name ?? existing.name,
@@ -228,6 +235,8 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
       input.taxRate ?? tax.taxRate,
       (input.taxInclusive ?? existing.taxInclusive) ? 1 : 0,
       input.imageUri !== undefined ? input.imageUri : existing.imageUri,
+      input.expiryDate !== undefined ? input.expiryDate : existing.expiryDate,
+      input.batchLot !== undefined ? input.batchLot : existing.batchLot,
       (input.trackStock ?? existing.trackStock) ? 1 : 0,
       (input.isActive ?? existing.isActive) ? 1 : 0,
       now,

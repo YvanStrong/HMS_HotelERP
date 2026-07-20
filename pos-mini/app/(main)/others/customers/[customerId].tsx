@@ -4,6 +4,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ScreenContainer, ScreenList } from '../../../../src/components/ScreenContainer';
 import Toast from 'react-native-toast-message';
 import { EntityFormModal, type EntityFormValues } from '../../../../src/components/EntityFormModal';
+import { FormField } from '../../../../src/components/FormField';
 import { ListCard } from '../../../../src/components/ListCard';
 import { PaginatedFlashList } from '../../../../src/components/PaginatedFlashList';
 import { StatusBadge } from '../../../../src/components/StatusBadge';
@@ -31,6 +32,7 @@ export default function CustomerDetailScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState<EntityFormValues>(emptyForm);
+  const [creditLimitInput, setCreditLimitInput] = useState('0');
 
   const loadCustomer = useCallback(async () => {
     if (!customerId) return;
@@ -45,6 +47,7 @@ export default function CustomerDetailScreen() {
         address: c.address ?? '',
         notes: c.notes ?? '',
       });
+      setCreditLimitInput(String(c.creditLimit ?? 0));
     }
   }, [customerId]);
 
@@ -80,6 +83,7 @@ export default function CustomerDetailScreen() {
       address: customer.address ?? '',
       notes: customer.notes ?? '',
     });
+    setCreditLimitInput(String(customer.creditLimit ?? 0));
     setEditOpen(true);
   };
 
@@ -95,6 +99,7 @@ export default function CustomerDetailScreen() {
         email: form.email || null,
         address: form.address || null,
         notes: form.notes || null,
+        creditLimit: Number(creditLimitInput) || 0,
       });
       setCustomer(updated);
       setEditOpen(false);
@@ -124,6 +129,13 @@ export default function CustomerDetailScreen() {
             <StatusBadge label={`Owes ${formatMoney(customer.totalDebt, settings)}`} tone="warning" />
           </View>
         ) : null}
+        {customer.creditLimit > 0 ? (
+          <Text className="mt-1 text-sm text-app-muted">
+            Credit limit: {formatMoney(customer.creditLimit, settings)}
+            {' · '}
+            Available: {formatMoney(Math.max(0, customer.creditLimit - customer.totalDebt), settings)}
+          </Text>
+        ) : null}
         <Pressable
           onPress={() => setEditOpen(true)}
           className="mt-3 self-start rounded-lg border border-app-border px-3 py-2"
@@ -140,7 +152,7 @@ export default function CustomerDetailScreen() {
       </View>
 
       <Text className="px-4 pt-4 font-bold text-app-text">Purchase history ({salesTotal})</Text>
-      <ScreenList>
+      <ScreenList inset>
       <PaginatedFlashList
         data={sales}
         keyExtractor={(item) => item.id}
@@ -187,6 +199,15 @@ export default function CustomerDetailScreen() {
         onChange={setForm}
         onSave={() => void saveEdit()}
         onCancel={() => setEditOpen(false)}
+        footer={
+          <FormField
+            label="Credit limit (0 = unlimited)"
+            value={creditLimitInput}
+            onChangeText={setCreditLimitInput}
+            keyboardType="decimal-pad"
+            placeholder="0"
+          />
+        }
       />
     </ScreenContainer>
   );

@@ -12,6 +12,7 @@ type CustomerRow = {
   address: string | null;
   notes: string | null;
   total_debt: number;
+  credit_limit: number;
   created_at: string;
   updated_at: string;
 };
@@ -25,6 +26,7 @@ function mapCustomer(row: CustomerRow): Customer {
     address: row.address,
     notes: row.notes,
     totalDebt: row.total_debt,
+    creditLimit: row.credit_limit ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -92,9 +94,9 @@ export async function createCustomer(
   const id = generateId();
   const now = nowIso();
   await db.runAsync(
-    `INSERT INTO customers (id, name, phone, email, address, notes, total_debt, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-    [id, input.name, input.phone, input.email, input.address, input.notes, now, now],
+    `INSERT INTO customers (id, name, phone, email, address, notes, total_debt, credit_limit, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+    [id, input.name, input.phone, input.email, input.address, input.notes, input.creditLimit ?? 0, now, now],
   );
   const created = await getCustomerById(id);
   if (!created) throw new Error('Failed to create customer');
@@ -111,7 +113,7 @@ export async function updateCustomer(
   const now = nowIso();
 
   await db.runAsync(
-    `UPDATE customers SET name = ?, phone = ?, email = ?, address = ?, notes = ?, updated_at = ?
+    `UPDATE customers SET name = ?, phone = ?, email = ?, address = ?, notes = ?, credit_limit = ?, updated_at = ?
      WHERE id = ?`,
     [
       input.name ?? existing.name,
@@ -119,6 +121,7 @@ export async function updateCustomer(
       input.email !== undefined ? input.email : existing.email,
       input.address !== undefined ? input.address : existing.address,
       input.notes !== undefined ? input.notes : existing.notes,
+      input.creditLimit ?? existing.creditLimit,
       now,
       id,
     ],

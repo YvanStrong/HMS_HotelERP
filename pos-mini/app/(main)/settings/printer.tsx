@@ -3,7 +3,9 @@ import { ActivityIndicator, Pressable, Switch, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import { KeyboardFormScroll } from '../../../src/components/KeyboardFormScroll';
-import { getPrinterSettings, savePrinterSettings } from '../../../src/repositories/metaRepository';
+import { getPrinterSettings, getKitchenPrinterRoutes, saveKitchenPrinterRoutes, savePrinterSettings } from '../../../src/repositories/metaRepository';
+import { listCategories } from '../../../src/repositories/categoryRepository';
+import type { Category } from '../../../src/types';
 import {
   clearPrinterAddress,
   connectPrinter,
@@ -25,17 +27,23 @@ export default function PrinterSettingsScreen() {
   const [connecting, setConnecting] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const [autoPrint, setAutoPrint] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [kitchenRoutes, setKitchenRoutes] = useState<Awaited<ReturnType<typeof getKitchenPrinterRoutes>>>([]);
   const nativeAvailable = isPrinterModuleAvailable();
 
   const loadSaved = useCallback(async () => {
-    const [address, name, printerSettings] = await Promise.all([
+    const [address, name, printerSettings, cats, routes] = await Promise.all([
       savedPrinterAddress(),
       savedPrinterName(),
       getPrinterSettings(),
+      listCategories(),
+      getKitchenPrinterRoutes(),
     ]);
     setConnectedAddress(address);
     setConnectedName(name);
     setAutoPrint(printerSettings.autoPrint);
+    setCategories(cats);
+    setKitchenRoutes(routes);
   }, []);
 
   useFocusEffect(
@@ -95,6 +103,23 @@ export default function PrinterSettingsScreen() {
     Toast.show({ type: 'success', text1: 'Printer disconnected' });
   };
 
+  const assignKitchenRoute = async (category: Category) => {
+    if (!connectedAddress) {
+      Toast.show({ type: 'error', text1: 'Connect a printer first' });
+      return;
+    }
+    const next = kitchenRoutes.filter((r) => r.categoryId !== category.id);
+    next.push({
+      categoryId: category.id,
+      categoryName: category.name,
+      printerAddress: connectedAddress,
+      printerName: connectedName ?? undefined,
+    });
+    await saveKitchenPrinterRoutes(next);
+    setKitchenRoutes(next);
+    Toast.show({ type: 'success', text1: `${category.name} → kitchen printer` });
+  };
+
   return (
     <KeyboardFormScroll contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8 }}>
       <Text className="mb-4 text-xl font-bold text-app-text">Bluetooth Printer</Text>
@@ -148,6 +173,28 @@ export default function PrinterSettingsScreen() {
             <Text className="text-center font-bold text-app-text">Disconnect</Text>
           </Pressable>
         </>
+      ) : null}
+
+      {categories.length > 0 ? (
+        <View className="mb-4 mt-4 rounded-xl border border-app-border bg-app-surface p-4">
+          <Text className="mb-1 font-bold text-app-text">Kitchen printer routing</Text>
+          <Text className="mb-3 text-xs text-app-muted">
+            Assign the connected printer to a category. Kitchen tickets for that category print there; others use the default printer.
+          </Text>
+          {categories.map((cat) => {
+            const route = kitchenRoutes.find((r) => r.categoryId === cat.id);
+            return (
+              <Pressable
+                key={cat.id}
+                onPress={() => void assignKitchenRoute(cat)}
+                className="mb-2 flex-row items-center justify-between rounded-lg border border-app-border px-3 py-2"
+              >
+                <Text className="font-medium text-app-text">{cat.name}</Text>
+                <Text className="text-xs text-app-muted">{route?.printerName ?? route?.printerAddress ?? 'Default'}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
       ) : null}
     </KeyboardFormScroll>
   );

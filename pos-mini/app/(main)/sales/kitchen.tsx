@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import { ScreenContainer, ScreenList } from '../../../src/components/ScreenContainer';
 import { StatusBadge } from '../../../src/components/StatusBadge';
@@ -18,7 +18,6 @@ const STATUS_FLOW: Record<KitchenTicketStatus, KitchenTicketStatus | null> = {
 };
 
 export default function KitchenScreen() {
-  const router = useRouter();
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
 
   const load = useCallback(async () => {
@@ -37,13 +36,6 @@ export default function KitchenScreen() {
 
   return (
     <ScreenContainer>
-      <Pressable
-        onPress={() => router.push('/(main)/sales')}
-        className="mb-3 rounded-xl border border-app-border bg-app-surface py-2"
-      >
-        <Text className="text-center font-semibold text-app-text">← Back to sales</Text>
-      </Pressable>
-
       <ScreenList>
         {tickets.length === 0 ? (
           <View className="items-center py-12">

@@ -141,7 +141,7 @@ export default function SecuritySettingsScreen() {
   if (mode === 'forgot') {
     return (
       <KeyboardAvoidingScreen>
-        <View className="flex-1 px-4 pt-4">
+        <View className="flex-1 pt-4">
           <Text className="mb-2 text-xl font-bold text-app-text">Forgot PIN</Text>
           <Text className="mb-4 text-sm text-gray-600">{recoveryQuestion}</Text>
           <TextInput
@@ -164,7 +164,7 @@ export default function SecuritySettingsScreen() {
   if (mode === 'recovery') {
     return (
       <KeyboardAvoidingScreen>
-        <View className="flex-1 px-4 pt-4">
+        <View className="flex-1 pt-4">
           <Text className="mb-4 text-xl font-bold text-app-text">Recovery question</Text>
           <TextInput
             value={recoveryQuestion}
@@ -192,9 +192,9 @@ export default function SecuritySettingsScreen() {
   if (mode === 'verify') {
     return (
       <KeyboardAvoidingScreen>
-        <View className="flex-1 px-4 pt-4">
+        <View className="flex-1 pt-4">
           <Text className="mb-4 text-xl font-bold text-app-text">Enter current PIN</Text>
-          <NumericKeypad value={pin} onChange={setPin} maxLength={8} />
+          <NumericKeypad value={pin} onChange={setPin} maxLength={8} secure allowReveal />
           <Pressable onPress={() => void verifyCurrentPin()} className="mt-4 rounded-xl bg-app-primary py-4">
             <Text className="text-center font-bold text-white">Continue</Text>
           </Pressable>
@@ -209,11 +209,11 @@ export default function SecuritySettingsScreen() {
   if (mode === 'new' || mode === 'confirm') {
     return (
       <KeyboardAvoidingScreen>
-        <View className="flex-1 px-4 pt-4">
+        <View className="flex-1 pt-4">
           <Text className="mb-4 text-xl font-bold text-app-text">
             {mode === 'confirm' ? 'Confirm PIN' : 'Set new PIN'}
           </Text>
-          <NumericKeypad value={newPin} onChange={setNewPin} maxLength={8} />
+          <NumericKeypad value={newPin} onChange={setNewPin} maxLength={8} secure allowReveal />
           <Pressable onPress={() => void saveNewPin()} className="mt-4 rounded-xl bg-app-primary py-4">
             <Text className="text-center font-bold text-white">Save PIN</Text>
           </Pressable>

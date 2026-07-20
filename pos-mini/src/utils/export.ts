@@ -2,7 +2,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { getDb } from '../db/database';
 import { nowIso } from './ids';
-import { setLastBackupAt } from '../repositories/metaRepository';
+import { setLastBackupAt, setLastBackupSize } from '../repositories/metaRepository';
+import { encryptBackupPayload, decryptBackupPayload } from './backupCrypto';
 
 export async function exportToCsv(filename: string, headers: string[], rows: string[][]): Promise<string> {
   const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
@@ -55,9 +56,11 @@ const BACKUP_TABLES = [
   'shifts',
   'staff',
   'held_carts',
+  'pos_tables',
+  'product_bundles',
 ] as const;
 
-export async function exportJsonBackup(): Promise<string> {
+export async function exportJsonBackup(): Promise<{ path: string; sizeBytes: number }> {
   const db = getDb();
   const data: Record<string, unknown[]> = {};
 
@@ -67,21 +70,40 @@ export async function exportJsonBackup(): Promise<string> {
   }
 
   const payload = { version: 1, exportedAt: nowIso(), data };
+  const content = JSON.stringify(payload);
   const path = `${FileSystem.cacheDirectory}pos-mini-backup-${Date.now()}.json`;
-  await FileSystem.writeAsStringAsync(path, JSON.stringify(payload));
-  return path;
+  await FileSystem.writeAsStringAsync(path, content);
+  const info = await FileSystem.getInfoAsync(path);
+  const sizeBytes =
+    info.exists && 'size' in info && typeof info.size === 'number' ? info.size : content.length;
+  return { path, sizeBytes };
 }
 
-export async function exportAndShareJsonBackup(): Promise<void> {
-  const path = await exportJsonBackup();
+async function finalizeBackupExport(path: string, sizeBytes: number): Promise<void> {
   await setLastBackupAt(nowIso());
+  await setLastBackupSize(sizeBytes);
+}
+
+export async function exportAndShareJsonBackup(password?: string): Promise<number> {
+  const { path, sizeBytes } = await exportJsonBackup();
+  if (password?.trim()) {
+    const raw = await FileSystem.readAsStringAsync(path);
+    const encrypted = await encryptBackupPayload(raw, password.trim());
+    const encPath = `${FileSystem.cacheDirectory}pos-mini-backup-enc-${Date.now()}.json`;
+    await FileSystem.writeAsStringAsync(encPath, encrypted);
+    await finalizeBackupExport(encPath, encrypted.length);
+    await shareFile(encPath);
+    return encrypted.length;
+  }
+  await finalizeBackupExport(path, sizeBytes);
   await shareFile(path);
+  return sizeBytes;
 }
 
 /** Opens the system share sheet so the user can pick Google Drive (or any cloud app). */
-export async function uploadBackupToGoogleDrive(): Promise<void> {
-  const path = await exportJsonBackup();
-  await setLastBackupAt(nowIso());
+export async function uploadBackupToGoogleDrive(): Promise<number> {
+  const { path, sizeBytes } = await exportJsonBackup();
+  await finalizeBackupExport(path, sizeBytes);
   const canShare = await Sharing.isAvailableAsync();
   if (!canShare) {
     throw new Error('Sharing is not available on this device');
@@ -91,6 +113,12 @@ export async function uploadBackupToGoogleDrive(): Promise<void> {
     dialogTitle: 'Save backup to Google Drive',
     UTI: 'public.json',
   });
+  return sizeBytes;
+}
+
+export async function estimateJsonBackupSize(): Promise<number> {
+  const { sizeBytes } = await exportJsonBackup();
+  return sizeBytes;
 }
 
 export async function exportDatabaseFile(): Promise<string> {
@@ -107,12 +135,26 @@ export async function exportDatabaseFile(): Promise<string> {
 
 export async function exportAndShareDatabase(): Promise<void> {
   const path = await exportDatabaseFile();
-  await setLastBackupAt(nowIso());
+  const info = await FileSystem.getInfoAsync(path);
+  const sizeBytes =
+    info.exists && 'size' in info && typeof info.size === 'number' ? info.size : 0;
+  await finalizeBackupExport(path, sizeBytes);
   await shareFile(path);
 }
 
-export async function importJsonBackup(jsonContent: string): Promise<void> {
-  const payload = JSON.parse(jsonContent) as {
+export async function importJsonBackup(jsonContent: string, password?: string): Promise<void> {
+  let content = jsonContent;
+  try {
+    const wrapper = JSON.parse(jsonContent) as { encrypted?: boolean };
+    if (wrapper.encrypted) {
+      if (!password?.trim()) throw new Error('Password required for encrypted backup');
+      content = await decryptBackupPayload(jsonContent, password.trim());
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('Password')) throw e;
+  }
+
+  const payload = JSON.parse(content) as {
     version: number;
     data: Record<string, Record<string, unknown>[]>;
   };

@@ -9,6 +9,7 @@ import { EmptyState } from '../../../src/components/EmptyState';
 import { KeyboardFormScroll } from '../../../src/components/KeyboardFormScroll';
 import { ProductCard } from '../../../src/components/ProductCard';
 import { SearchBar } from '../../../src/components/SearchBar';
+import { REFUND_REASON_CODES } from '../../../src/constants/refundReasons';
 import { createRefund, getRefundableQuantities } from '../../../src/repositories/refundRepository';
 import { getProductByBarcode, listProducts, searchProducts } from '../../../src/repositories/productRepository';
 import { getSaleByInvoiceNumber, getSaleWithItems, listSales } from '../../../src/repositories/saleRepository';
@@ -25,6 +26,7 @@ type RefundLine = {
   maxQty: number;
   quantity: number;
   restock: boolean;
+  reasonCode: string;
 };
 
 type RefundMode = 'sale' | 'manual';
@@ -61,6 +63,7 @@ export default function NewRefundScreen() {
       maxQty: refundable[item.productId] ?? item.quantity,
       quantity: 0,
       restock: true,
+      reasonCode: 'customer_changed',
     })));
   }, []);
 
@@ -121,6 +124,7 @@ export default function NewRefundScreen() {
         maxQty: 9999,
         quantity: 1,
         restock: true,
+        reasonCode: 'customer_changed',
       }]);
     }
   };
@@ -158,6 +162,7 @@ export default function NewRefundScreen() {
           quantity: l.quantity,
           lineTotal: roundMoney(l.unitPrice * l.quantity),
           restock: l.restock,
+          reasonCode: l.reasonCode,
         })),
         subtotal,
         total: subtotal,
@@ -328,6 +333,25 @@ export default function NewRefundScreen() {
               />
             </View>
           </View>
+          {line.quantity > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-2">
+              {REFUND_REASON_CODES.map((r) => (
+                <Pressable
+                  key={r.code}
+                  onPress={() =>
+                    setLines(lines.map((l) => (l.productId === line.productId ? { ...l, reasonCode: r.code } : l)))
+                  }
+                  className="mr-2 rounded-lg border px-2 py-1"
+                  style={{
+                    borderColor: line.reasonCode === r.code ? colors.primary : colors.border,
+                    backgroundColor: line.reasonCode === r.code ? colors.primarySoft : colors.surface,
+                  }}
+                >
+                  <Text className="text-xs font-semibold text-app-text">{r.label}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : null}
           <Text className="mt-1 text-right font-bold text-app-text">
             {formatMoney(line.unitPrice * line.quantity, settings)}
           </Text>

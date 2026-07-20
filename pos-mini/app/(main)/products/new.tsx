@@ -38,6 +38,8 @@ export default function NewProductScreen() {
   const [taxClass, setTaxClass] = useState<ProductTaxClass>('A');
   const [trackStock, setTrackStock] = useState(true);
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [expiryDate, setExpiryDate] = useState('');
+  const [batchLot, setBatchLot] = useState('');
   const [showScanner, setShowScanner] = useState(false);
 
   const margin = useMemo(() => {
@@ -82,6 +84,8 @@ export default function NewProductScreen() {
         taxRate: taxClass === 'B' ? 18 : 0,
         taxInclusive: false,
         imageUri: null,
+        expiryDate: expiryDate.trim() || null,
+        batchLot: batchLot.trim() || null,
         trackStock,
         isActive: true,
       });
@@ -165,6 +169,8 @@ export default function NewProductScreen() {
           value={taxClass}
           onChange={(v) => setTaxClass(v as ProductTaxClass)}
         />
+        <FormField label="Expiry date" value={expiryDate} onChangeText={setExpiryDate} placeholder="YYYY-MM-DD (optional)" />
+        <FormField label="Batch / lot" value={batchLot} onChangeText={setBatchLot} placeholder="Optional" />
         <Text className="mb-2 text-sm text-app-muted">Add variants after saving the product.</Text>
         <Pressable
           onPress={() => void save()}

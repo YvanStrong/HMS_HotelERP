@@ -1,12 +1,9 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { differenceInDays } from 'date-fns';
-import { countLowStock, countProducts } from '../repositories/productRepository';
-import { getLastBackupAt } from '../repositories/metaRepository';
+import { countLowStock } from '../repositories/productRepository';
 
 const BACKUP_REMINDER_ID = 'pos-mini-backup-reminder';
 const LOW_STOCK_CHECK_ID = 'pos-mini-low-stock-weekly';
-const BACKUP_STALE_DAYS = 7;
 
 let sessionLowStockShown = false;
 let sessionBackupShown = false;
@@ -45,42 +42,11 @@ export async function showLowStockNotification(count: number): Promise<void> {
 }
 
 /**
- * Show a backup reminder only when we have real data:
- * - Last backup exists and is older than BACKUP_STALE_DAYS, or
- * - Never backed up but the business has products (honest message, not fake days).
+ * Backup reminders are handled in Settings → Backup (in-app banner + frequency).
+ * Kept for compatibility; does not show popups on home anymore.
  */
 export async function maybeShowBackupReminder(): Promise<void> {
-  if (sessionBackupShown) return;
-  const ok = await ensureNotificationPermissions();
-  if (!ok) return;
-
-  const lastBackup = await getLastBackupAt();
-
-  if (lastBackup) {
-    const days = differenceInDays(new Date(), new Date(lastBackup));
-    if (days < BACKUP_STALE_DAYS) return;
-    sessionBackupShown = true;
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'Backup reminder',
-        body: `Your last backup was ${days} day${days === 1 ? '' : 's'} ago. Export a backup in Settings.`,
-      },
-      trigger: null,
-    });
-    return;
-  }
-
-  const productCount = await countProducts();
-  if (productCount === 0) return;
-
-  sessionBackupShown = true;
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: 'Backup reminder',
-      body: 'No backup saved yet. Export a backup in Settings to protect your products and sales.',
-    },
-    trigger: null,
-  });
+  return;
 }
 
 export function resetSessionNotifications(): void {

@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
+import * as Haptics from 'expo-haptics';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { ScreenContainer } from '../../../src/components/ScreenContainer';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
@@ -13,6 +15,7 @@ import { CustomerPickerModal } from '../../../src/components/CustomerPickerModal
 import { EmptyState } from '../../../src/components/EmptyState';
 import { FormField } from '../../../src/components/FormField';
 import { KeyboardFormScroll } from '../../../src/components/KeyboardFormScroll';
+import { ManagerApprovalModal } from '../../../src/components/ManagerApprovalModal';
 import { NumericKeypad } from '../../../src/components/NumericKeypad';
 import { ProductCard } from '../../../src/components/ProductCard';
 import { SearchBar } from '../../../src/components/SearchBar';
@@ -23,22 +26,34 @@ import { findBestDiscountRule, listDiscountRules } from '../../../src/repositori
 import { listCategories } from '../../../src/repositories/categoryRepository';
 import { listCustomers } from '../../../src/repositories/customerRepository';
 import { deleteHeldCart, listHeldCarts, saveHeldCart } from '../../../src/repositories/heldCartRepository';
-import { getPaymentMethodSettings, getPrinterSettings, getRequireShift, type PaymentMethodSettings } from '../../../src/repositories/metaRepository';
+import {
+  getPaymentMethodSettings,
+  getPinnedProductIds,
+  getPosSettings,
+  getPrinterSettings,
+  getRequireShift,
+  type PaymentMethodSettings,
+} from '../../../src/repositories/metaRepository';
 import { listProductModifierGroups } from '../../../src/repositories/modifierRepository';
-import { getOpenShift } from '../../../src/repositories/shiftRepository';
 import { listVariantsByProduct } from '../../../src/repositories/variantRepository';
 import { findProductByScaleCode, getProductByBarcode, listProducts, searchProducts } from '../../../src/repositories/productRepository';
-import { createSale } from '../../../src/repositories/saleRepository';
+import { createSale, getPendingSaleByTableId, savePendingTableSale } from '../../../src/repositories/saleRepository';
+import { getTableById } from '../../../src/repositories/tableRepository';
+import { isBundleProduct } from '../../../src/repositories/bundleRepository';
+import { getOpenShift } from '../../../src/repositories/shiftRepository';
+import { staffCount } from '../../../src/repositories/staffRepository';
 import { printReceipt } from '../../../src/printing/PrinterService';
-import type { Category, CartItem, Customer, DiscountMode, DiscountType, HeldCart, ModifierGroup, PaymentMethod, Product, ProductVariant, SalePaymentInput, SelectedModifier } from '../../../src/types';
+import type { Category, CartItem, Customer, DiscountMode, DiscountType, HeldCart, ModifierGroup, PaymentMethod, PosTable, Product, ProductVariant, SalePaymentInput, SelectedModifier } from '../../../src/types';
 import { useAppStore } from '../../../src/store/appStore';
 import { useCartStore } from '../../../src/store/cartStore';
 import { parseScaleBarcode } from '../../../src/utils/barcode';
+import { buildCartLineKey } from '../../../src/utils/cartLineKey';
 import { getChipStyles } from '../../../src/constants/theme';
 import { useThemedStyles } from '../../../src/hooks/useTheme';
 import { useBusinessFeatures } from '../../../src/hooks/useBusinessFeatures';
 import { formatMoney } from '../../../src/utils/currency';
 import { roundMoney } from '../../../src/utils/calculations';
+import { discountNeedsApproval } from '../../../src/utils/permissions';
 
 function buildPaymentMethods(prefs: PaymentMethodSettings): { method: SalePaymentInput['paymentMethod']; label: string }[] {
   const list: { method: SalePaymentInput['paymentMethod']; label: string }[] = [{ method: 'cash', label: 'Cash' }];
@@ -50,12 +65,15 @@ function buildPaymentMethods(prefs: PaymentMethodSettings): { method: SalePaymen
 
 export default function NewSaleScreen() {
   const router = useRouter();
+  const { tableId: tableIdParam } = useLocalSearchParams<{ tableId?: string }>();
+  const tableId = typeof tableIdParam === 'string' ? tableIdParam : null;
   const { t } = useTranslation();
   const { cardStyle, colors } = useThemedStyles();
-  const { hasModifiers } = useBusinessFeatures();
+  const { hasModifiers, hasTableService } = useBusinessFeatures();
   const insets = useSafeAreaInsets();
   const chipStyle = (selected: boolean) => getChipStyles(colors, selected);
   const settings = useAppStore((s) => s.settings);
+  const currentStaff = useAppStore((s) => s.currentStaff);
   const refreshStats = useAppStore((s) => s.refreshStats);
   const cart = useCartStore();
   const {
@@ -85,11 +103,18 @@ export default function NewSaleScreen() {
     splitPayments,
     addSplitPayment,
     removeSplitPayment,
+    tipAmount,
+    serviceCharge,
+    setTipAmount,
+    setServiceCharge,
     getTotals,
     toSaleItems,
     getSnapshot,
     loadSnapshot,
     clear,
+    tableId: cartTableId,
+    pendingSaleId,
+    setTableContext,
   } = cart;
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -119,7 +144,90 @@ export default function NewSaleScreen() {
     unitPrice?: number;
     variant?: ProductVariant;
   } | null>(null);
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  const [discountThreshold, setDiscountThreshold] = useState(10);
+  const [staffExists, setStaffExists] = useState(false);
+  const [showManagerApproval, setShowManagerApproval] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState<'manual-discount' | 'complete-sale' | null>(null);
+  const [tipInput, setTipInput] = useState('');
+  const [serviceInput, setServiceInput] = useState('');
+  const [activeTable, setActiveTable] = useState<PosTable | null>(null);
   const totals = getTotals();
+
+  useFocusEffect(
+    useCallback(() => {
+      void ScreenOrientation.unlockAsync();
+      return () => {
+        void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+      };
+    }, []),
+  );
+
+  const loadTableBill = useCallback(
+    async (tid: string) => {
+      const [table, pending, allProducts] = await Promise.all([
+        getTableById(tid),
+        getPendingSaleByTableId(tid),
+        listProducts(),
+      ]);
+      setActiveTable(table);
+      setTableContext(tid, pending?.id ?? null);
+      if (!pending?.items?.length) return;
+
+      const cartItems: CartItem[] = pending.items.map((si) => {
+        const product = allProducts.find((p) => p.id === si.productId);
+        const modifiers: SelectedModifier[] | undefined = si.modifiersJson
+          ? JSON.parse(si.modifiersJson)
+          : undefined;
+        return {
+          lineKey: buildCartLineKey(si.productId, si.variantId ?? null, modifiers),
+          productId: si.productId,
+          productName: si.productName,
+          variantId: si.variantId ?? null,
+          variantName: si.variantName ?? null,
+          modifiers,
+          unitPrice: si.unitPrice,
+          costPrice: si.costPrice,
+          quantity: si.quantity,
+          discountAmount: si.discountAmount,
+          unit: product?.unit ?? 'pcs',
+          taxClass: product?.taxClass ?? (product?.isTaxable ? 'B' : 'A'),
+          isTaxable: product?.isTaxable ?? false,
+          taxRate: product?.taxRate ?? 0,
+          taxInclusive: product?.taxInclusive ?? false,
+          trackStock: product?.trackStock ?? false,
+          stockQty: product?.stockQty ?? 0,
+          imageUri: product?.imageUri ?? null,
+        };
+      });
+
+      loadSnapshot({
+        items: cartItems,
+        customerId: pending.customerId,
+        discountMode:
+          pending.discountPercent > 0 ? 'rule' : pending.discountAmount > 0 ? 'manual' : 'off',
+        discountPercent: pending.discountPercent,
+        fixedDiscount: pending.discountAmount,
+        manualDiscountType: 'fixed',
+        manualDiscountValue: pending.discountAmount,
+        notes: pending.notes ?? '',
+        tipAmount: pending.tipAmount ?? 0,
+        serviceCharge: pending.serviceCharge ?? 0,
+        tableId: tid,
+        pendingSaleId: pending.id,
+      });
+      setTipInput(String(pending.tipAmount ?? 0));
+      setServiceInput(String(pending.serviceCharge ?? 0));
+    },
+    [loadSnapshot, setTableContext],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!tableId || !hasTableService) return;
+      void loadTableBill(tableId);
+    }, [tableId, hasTableService, loadTableBill]),
+  );
 
   const openCheckout = useCallback(() => {
     if (!items.length) {
@@ -146,16 +254,22 @@ export default function NewSaleScreen() {
   useFocusEffect(
     useCallback(() => {
       void (async () => {
-        const [list, custs, cats, prefs] = await Promise.all([
+        const [list, custs, cats, prefs, pinned, pos, count] = await Promise.all([
           query ? searchProducts(query) : listProducts(),
           listCustomers(),
           listCategories(),
           getPaymentMethodSettings(),
+          getPinnedProductIds(),
+          getPosSettings(),
+          staffCount(),
         ]);
         setProducts(list);
         setCustomers(custs);
         setCategories(cats);
         setPaymentPrefs(prefs);
+        setPinnedIds(pinned);
+        setDiscountThreshold(pos.managerDiscountThresholdPercent);
+        setStaffExists(count > 0);
       })();
     }, [query]),
   );
@@ -164,6 +278,11 @@ export default function NewSaleScreen() {
     if (!categoryId) return products;
     return products.filter((p) => p.categoryId === categoryId);
   }, [products, categoryId]);
+
+  const quickKeyProducts = useMemo(
+    () => pinnedIds.map((id) => products.find((p) => p.id === id)).filter((p): p is Product => Boolean(p)),
+    [pinnedIds, products],
+  );
 
   const selectedCustomer = useMemo(
     () => customers.find((c) => c.id === customerId) ?? null,
@@ -218,7 +337,7 @@ export default function NewSaleScreen() {
       taxClass: product.taxClass,
       isTaxable: product.isTaxable,
       taxRate: product.taxRate,
-      taxInclusive: product.taxInclusive,
+      taxInclusive: product.taxInclusive ?? false,
       trackStock: product.trackStock,
       stockQty,
       imageUri: product.imageUri,
@@ -243,6 +362,13 @@ export default function NewSaleScreen() {
   };
 
   const beginAddProduct = async (product: Product, qty = 1, unitPrice?: number) => {
+    if (await isBundleProduct(product.id)) {
+      Toast.show({
+        type: 'info',
+        text1: 'Bundle product',
+        text2: 'Sold as one line; stock deducts from components',
+      });
+    }
     const variants = await listVariantsByProduct(product.id);
     if (variants.length > 0) {
       setPendingAdd({ product, qty, unitPrice });
@@ -313,6 +439,23 @@ export default function NewSaleScreen() {
       Toast.show({ type: 'error', text1: 'Enter a valid discount' });
       return;
     }
+    const subtotal = getTotals().subtotal;
+    const amount =
+      manualType === 'percent' ? roundMoney((subtotal * val) / 100) : roundMoney(val);
+    if (
+      discountNeedsApproval(subtotal, amount, discountThreshold, currentStaff, staffExists)
+    ) {
+      setPendingApproval('manual-discount');
+      setShowManagerApproval(true);
+      return;
+    }
+    setDiscountMode('manual');
+    setManualDiscount(manualType, val);
+    setShowManualDisc(false);
+  };
+
+  const finalizeManualDiscount = () => {
+    const val = Number(manualValue) || 0;
     setDiscountMode('manual');
     setManualDiscount(manualType, val);
     setShowManualDisc(false);
@@ -368,6 +511,25 @@ export default function NewSaleScreen() {
       return;
     }
 
+    if (
+      totals.discountAmount > 0 &&
+      discountNeedsApproval(
+        totals.subtotal,
+        totals.discountAmount,
+        discountThreshold,
+        currentStaff,
+        staffExists,
+      )
+    ) {
+      setPendingApproval('complete-sale');
+      setShowManagerApproval(true);
+      return;
+    }
+
+    await runCompleteSale();
+  };
+
+  const runCompleteSale = async () => {
     if (splitEnabled) {
       if (splitPaidTotal < totals.total) {
         Toast.show({ type: 'error', text1: 'Split payments do not cover total' });
@@ -381,6 +543,34 @@ export default function NewSaleScreen() {
       Toast.show({ type: 'error', text1: 'Select a customer for credit sales' });
       setShowCustomerPicker(true);
       return;
+    }
+
+    const creditAmount = splitEnabled
+      ? splitPayments.filter((p) => p.paymentMethod === 'credit').reduce((s, p) => s + p.amount, 0)
+      : paymentMethod === 'credit'
+        ? totals.total
+        : 0;
+
+    if (creditAmount > 0 && selectedCustomer) {
+      const projectedDebt = selectedCustomer.totalDebt + creditAmount;
+      if (selectedCustomer.creditLimit > 0 && projectedDebt > selectedCustomer.creditLimit) {
+        Toast.show({
+          type: 'error',
+          text1: 'Credit limit exceeded',
+          text2: `Limit ${formatMoney(selectedCustomer.creditLimit, settings)} · debt would be ${formatMoney(projectedDebt, settings)}`,
+        });
+        return;
+      }
+      if (
+        selectedCustomer.creditLimit > 0 &&
+        projectedDebt > selectedCustomer.creditLimit * 0.85
+      ) {
+        Toast.show({
+          type: 'info',
+          text1: 'Near credit limit',
+          text2: `${formatMoney(selectedCustomer.creditLimit - projectedDebt, settings)} remaining`,
+        });
+      }
     }
 
     const paid = splitEnabled
@@ -402,14 +592,21 @@ export default function NewSaleScreen() {
         discountAmount: totals.discountAmount,
         discountPercent,
         taxAmount: totals.taxAmount,
+        tipAmount: totals.tipAmount,
+        serviceCharge: totals.serviceCharge,
         total: totals.total,
         amountPaid: paid,
         changeAmount: splitEnabled ? Math.max(0, paid - totals.total) : paymentMethod === 'credit' ? 0 : Math.max(0, paid - totals.total),
         paymentMethod: splitEnabled ? 'split' : paymentMethod,
         notes: notes.trim() || null,
         payments: splitEnabled ? splitPayments : undefined,
+        tableId: tableId ?? cartTableId ?? null,
+        existingSaleId: pendingSaleId ?? null,
+        status: 'completed',
       });
       clear();
+      setTipInput('');
+      setServiceInput('');
       await refreshStats();
 
       const printer = await getPrinterSettings();
@@ -421,6 +618,7 @@ export default function NewSaleScreen() {
         }
       }
 
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Toast.show({ type: 'success', text1: 'Sale completed', text2: sale.invoiceNumber });
       router.replace(`/(main)/sales/${sale.id}`);
     } catch (e) {
@@ -437,6 +635,50 @@ export default function NewSaleScreen() {
       Toast.show({ type: 'error', text1: msg });
     }
   };
+
+  const saveTableBill = async () => {
+    const tid = tableId ?? cartTableId;
+    if (!tid) return;
+    if (!items.length) {
+      Toast.show({ type: 'error', text1: 'Add items first' });
+      return;
+    }
+    try {
+      await savePendingTableSale(tid, {
+        customerId: customerId ?? null,
+        items: toSaleItems(),
+        subtotal: totals.subtotal,
+        discountAmount: totals.discountAmount,
+        discountPercent,
+        taxAmount: totals.taxAmount,
+        tipAmount: totals.tipAmount,
+        serviceCharge: totals.serviceCharge,
+        total: totals.total,
+        notes: notes.trim() || null,
+      });
+      clear();
+      Toast.show({ type: 'success', text1: 'Bill saved to table' });
+      router.back();
+    } catch (e) {
+      Toast.show({ type: 'error', text1: e instanceof Error ? e.message : 'Save failed' });
+    }
+  };
+
+  const tableBanner =
+    activeTable && (tableId ?? cartTableId) ? (
+      <View
+        style={[cardStyle, { borderColor: colors.warning, backgroundColor: colors.primarySoft }]}
+        className="mb-3 flex-row items-center justify-between p-3"
+      >
+        <View>
+          <Text className="text-xs font-semibold uppercase text-app-muted">Table</Text>
+          <Text className="font-semibold text-app-text">{activeTable.name}</Text>
+        </View>
+        <Pressable onPress={() => router.back()} className="rounded-lg border border-app-border bg-app-surface px-3 py-2">
+          <Text className="text-sm font-medium text-app-text">Back</Text>
+        </Pressable>
+      </View>
+    ) : null;
 
   const customerBanner = (
     <View className="mb-3">
@@ -491,6 +733,7 @@ export default function NewSaleScreen() {
       <KeyboardFormScroll contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16 }}>
         <Text className="mb-2 text-xl font-bold text-app-text">Payment</Text>
         <Text className="mb-3 text-app-muted">Total: {formatMoney(totals.total, settings)}</Text>
+        {tableBanner}
         {customerBanner}
 
         <Pressable onPress={() => setSplitEnabled(!splitEnabled)} className="mb-3 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
@@ -546,6 +789,38 @@ export default function NewSaleScreen() {
 
         <FormField label="Sale notes" value={notes} onChangeText={setNotes} placeholder="Optional" multiline />
 
+        <View className="mb-3 flex-row gap-2">
+          <View className="flex-1">
+            <FormField
+              label="Tip"
+              value={tipInput}
+              onChangeText={(v) => {
+                setTipInput(v);
+                setTipAmount(Number(v) || 0);
+              }}
+              keyboardType="decimal-pad"
+              placeholder="0"
+            />
+          </View>
+          <View className="flex-1">
+            <FormField
+              label="Service charge"
+              value={serviceInput}
+              onChangeText={(v) => {
+                setServiceInput(v);
+                setServiceCharge(Number(v) || 0);
+              }}
+              keyboardType="decimal-pad"
+              placeholder="0"
+            />
+          </View>
+        </View>
+        {(tipAmount > 0 || serviceCharge > 0) ? (
+          <Text className="mb-3 text-sm text-app-muted">
+            Adjusted total: {formatMoney(totals.total, settings)}
+          </Text>
+        ) : null}
+
         <Pressable onPress={() => void completeSale()} className="mt-4 rounded-xl py-4" style={{ backgroundColor: colors.primary }}>
           <Text className="text-center font-semibold text-white">{t('sales.complete')}</Text>
         </Pressable>
@@ -570,6 +845,21 @@ export default function NewSaleScreen() {
           </Pressable>
         </View>
         <CategoryFilterTabs categories={categories} selectedId={categoryId} onSelect={setCategoryId} />
+        {quickKeyProducts.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-2">
+            {quickKeyProducts.map((p) => (
+              <Pressable
+                key={p.id}
+                onPress={() => addProduct(p)}
+                className="mr-2 rounded-lg border border-app-primary bg-app-primary-soft px-3 py-2"
+              >
+                <Text className="text-sm font-semibold text-app-text" numberOfLines={1}>
+                  {p.name}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : null}
         <View className="min-h-0 flex-1">
           {filteredProducts.length === 0 ? (
             <EmptyState title="No products" message="Add products or change filter." />
@@ -585,6 +875,7 @@ export default function NewSaleScreen() {
       </View>
 
       <View className="min-h-0 flex-1 px-4 pt-2">
+        {tableBanner}
         {customerBanner}
         {discountChip}
         <View className="mb-2 min-h-0 flex-1">
@@ -611,10 +902,15 @@ export default function NewSaleScreen() {
           className="border-t border-app-border pt-3"
           style={{ paddingBottom: Math.max(insets.bottom, 20) }}
         >
-          <View className="flex-row gap-2">
-          <Pressable onPress={openCheckout} className="flex-1 rounded-xl py-3" style={{ backgroundColor: colors.primary }}>
+          <View className="flex-row flex-wrap gap-2">
+          <Pressable onPress={openCheckout} className="flex-1 min-w-[120px] rounded-xl py-3" style={{ backgroundColor: colors.primary }}>
             <Text className="text-center font-semibold text-white">{t('sales.checkout')}</Text>
           </Pressable>
+          {tableId ?? cartTableId ? (
+            <Pressable onPress={() => void saveTableBill()} className="rounded-xl border border-app-border bg-app-surface px-3 py-3">
+              <Text className="font-semibold text-app-text">Save table</Text>
+            </Pressable>
+          ) : null}
           <Pressable onPress={() => void holdCart()} className="rounded-xl border border-app-border bg-app-surface px-3 py-3">
             <Text className="font-semibold text-app-text">Hold</Text>
           </Pressable>
@@ -712,6 +1008,22 @@ export default function NewSaleScreen() {
           setShowModifierPicker(false);
           setPendingAdd(null);
           setPendingModifierGroups([]);
+        }}
+      />
+
+      <ManagerApprovalModal
+        visible={showManagerApproval}
+        title="Manager approval required"
+        message="A manager PIN is required for this discount or void-level action."
+        onApproved={() => {
+          setShowManagerApproval(false);
+          if (pendingApproval === 'manual-discount') finalizeManualDiscount();
+          else if (pendingApproval === 'complete-sale') void runCompleteSale();
+          setPendingApproval(null);
+        }}
+        onCancel={() => {
+          setShowManagerApproval(false);
+          setPendingApproval(null);
         }}
       />
     </ScreenContainer>

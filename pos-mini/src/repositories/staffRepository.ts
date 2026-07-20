@@ -172,6 +172,19 @@ export async function verifyStaffLogin(username: string, pin: string): Promise<S
   return ok ? staff : null;
 }
 
+export async function verifyManagerPin(pin: string): Promise<Staff | null> {
+  const db = getDb();
+  const rows = await db.getAllAsync<{ id: string }>(
+    'SELECT id FROM staff WHERE is_active = 1 AND role = ?',
+    ['manager'],
+  );
+  for (const row of rows) {
+    const ok = await verifyStaffPin(row.id, pin);
+    if (ok) return getStaffById(row.id);
+  }
+  return null;
+}
+
 export async function staffCount(): Promise<number> {
   const db = getDb();
   const row = await db.getFirstAsync<{ count: number }>(

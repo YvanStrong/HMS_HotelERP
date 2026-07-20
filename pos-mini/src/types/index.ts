@@ -61,6 +61,8 @@ export interface Product {
   taxRate: number;
   taxInclusive: boolean;
   imageUri: string | null;
+  expiryDate: string | null;
+  batchLot: string | null;
   trackStock: boolean;
   isActive: boolean;
   createdAt: string;
@@ -76,6 +78,7 @@ export interface Customer {
   address: string | null;
   notes: string | null;
   totalDebt: number;
+  creditLimit: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -102,6 +105,8 @@ export interface Sale {
   discountAmount: number;
   discountPercent: number;
   taxAmount: number;
+  tipAmount: number;
+  serviceCharge: number;
   total: number;
   amountPaid: number;
   changeAmount: number;
@@ -109,6 +114,8 @@ export interface Sale {
   status: SaleStatus;
   refundStatus?: SaleRefundStatus;
   notes: string | null;
+  tableId: string | null;
+  tableName?: string | null;
   createdAt: string;
   updatedAt: string;
   items?: SaleItem[];
@@ -233,6 +240,7 @@ export interface RefundItem {
   quantity: number;
   lineTotal: number;
   restock?: boolean;
+  reasonCode?: string | null;
 }
 
 export interface SalePayment {
@@ -344,6 +352,8 @@ export interface CartTotals {
   subtotal: number;
   discountAmount: number;
   taxAmount: number;
+  tipAmount: number;
+  serviceCharge: number;
   total: number;
   itemCount: number;
 }
@@ -353,6 +363,29 @@ export interface HomeStats {
   todayTransactions: number;
   lowStockCount: number;
   totalProducts: number;
+}
+
+export interface ProductBundleItem {
+  id: string;
+  parentProductId: string;
+  childProductId: string;
+  childProductName?: string;
+  quantity: number;
+  createdAt: string;
+}
+
+export type TableStatus = 'available' | 'occupied' | 'merged';
+
+export interface PosTable {
+  id: string;
+  name: string;
+  seats: number;
+  status: TableStatus;
+  mergedIntoId: string | null;
+  openBillTotal?: number;
+  openBillId?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface NumberSequence {
@@ -378,6 +411,8 @@ export type CreateSaleInput = {
   discountAmount: number;
   discountPercent: number;
   taxAmount: number;
+  tipAmount?: number;
+  serviceCharge?: number;
   subtotal: number;
   total: number;
   amountPaid: number;
@@ -385,6 +420,9 @@ export type CreateSaleInput = {
   paymentMethod: PaymentMethod;
   notes?: string | null;
   payments?: SalePaymentInput[];
+  tableId?: string | null;
+  existingSaleId?: string | null;
+  status?: Sale['status'];
 };
 
 export type CreateProductVariantInput = Omit<ProductVariant, 'id' | 'createdAt'>;

@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { FormField } from '../../src/components/FormField';
+import { KeyboardFormScroll } from '../../src/components/KeyboardFormScroll';
 import { NumericKeypad } from '../../src/components/NumericKeypad';
 import { listStaff, verifyStaffLogin } from '../../src/repositories/staffRepository';
 import { setCurrentStaffId } from '../../src/repositories/metaRepository';
@@ -58,8 +58,7 @@ export default function StaffSignInScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-app-bg px-4 pt-6" edges={['top', 'bottom']}>
-      <Text className="mb-1 text-center text-2xl font-bold text-app-text">Staff sign in</Text>
+    <KeyboardFormScroll>
       <Text className="mb-6 text-center text-app-muted">Enter username and PIN to start your shift</Text>
 
       <FormField
@@ -72,7 +71,7 @@ export default function StaffSignInScreen() {
       />
 
       <Text className="mb-2 text-sm font-semibold text-app-text">PIN</Text>
-      <NumericKeypad value={pin} onChange={setPin} maxLength={8} />
+      <NumericKeypad value={pin} onChange={setPin} maxLength={8} secure allowReveal />
 
       <Pressable onPress={() => void signIn()} className="mt-4 rounded-xl py-4" style={primaryButtonStyle}>
         <Text className="text-center text-lg font-semibold text-white">Sign in</Text>
@@ -94,6 +93,6 @@ export default function StaffSignInScreen() {
           <Text className="text-xs capitalize text-app-muted">{s.role}</Text>
         </Pressable>
       ))}
-    </SafeAreaView>
+    </KeyboardFormScroll>
   );
 }

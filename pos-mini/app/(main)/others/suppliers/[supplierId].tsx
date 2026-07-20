@@ -106,7 +106,7 @@ export default function SupplierDetailScreen() {
       </View>
 
       <Text className="px-4 pt-4 font-bold text-app-text">Purchase history ({total})</Text>
-      <ScreenList>
+      <ScreenList inset>
       <PaginatedFlashList
         data={purchases}
         keyExtractor={(item) => item.id}

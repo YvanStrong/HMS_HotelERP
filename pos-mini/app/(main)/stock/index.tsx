@@ -64,6 +64,12 @@ export default function StockListScreen() {
           <Text className="text-center text-sm font-semibold text-white">Adjust</Text>
         </Pressable>
         <Pressable
+          onPress={() => router.push('/(main)/stock/count')}
+          className="flex-1 rounded-xl border border-app-border bg-app-surface py-2.5"
+        >
+          <Text className="text-center text-sm font-semibold text-app-text">Count</Text>
+        </Pressable>
+        <Pressable
           onPress={() => router.push('/(main)/stock/movements')}
           className="flex-1 rounded-xl border border-app-border bg-app-surface py-2.5"
         >

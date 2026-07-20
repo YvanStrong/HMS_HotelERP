@@ -70,7 +70,7 @@ export default function SetupScreen() {
   };
 
   return (
-    <KeyboardFormScroll edges={['top', 'bottom']} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 24 }}>
+    <KeyboardFormScroll edges={['bottom']}>
         <Text className="mb-1 text-2xl font-bold text-app-text">Welcome to POS Mini</Text>
         <Text className="mb-6 text-app-muted">Step {step} of 3</Text>
 

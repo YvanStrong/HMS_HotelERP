@@ -216,12 +216,12 @@ export default function DebtsScreen() {
         </Text>
       </View>
       <Text className="px-4 font-bold text-app-text">Customer debts ({customerDebtTotal})</Text>
-      <ScreenList>
+      <ScreenList inset>
         <PaginatedFlashList
           data={customersWithDebt}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <Pressable onPress={() => void selectCustomer(item.id)} style={cardStyle} className="mx-4 mb-2 mt-2 p-3">
+            <Pressable onPress={() => void selectCustomer(item.id)} style={cardStyle} className="mb-2 mt-2 p-3">
               <View className="flex-row justify-between">
                 <Text className="font-bold text-app-text">{item.name}</Text>
                 <Text className="font-bold text-app-danger">{formatMoney(item.totalDebt, settings)}</Text>

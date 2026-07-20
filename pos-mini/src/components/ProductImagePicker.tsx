@@ -17,18 +17,26 @@ export function ProductImagePicker({ value, onChange }: Props) {
     value && (value.startsWith('http://') || value.startsWith('https://')) ? value : '',
   );
 
-  const pickImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  const pickImage = async (fromCamera: boolean) => {
+    const permission = fromCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Toast.show({ type: 'error', text1: 'Photo library permission required' });
+      Toast.show({ type: 'error', text1: fromCamera ? 'Camera permission required' : 'Photo library permission required' });
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85,
-    });
+    const result = fromCamera
+      ? await ImagePicker.launchCameraAsync({
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.65,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.85,
+        });
     if (!result.canceled && result.assets[0]?.uri) {
       onChange(result.assets[0].uri);
       setUrlInput('');
@@ -60,10 +68,16 @@ export function ProductImagePicker({ value, onChange }: Props) {
         <ProductPhoto uri={value} size={88} />
         <View className="min-w-[140px] flex-1 gap-2">
           <Pressable
-            onPress={() => void pickImage()}
+            onPress={() => void pickImage(true)}
+            className="rounded-lg border border-app-border px-4 py-3"
+          >
+            <Text className="text-center text-sm font-semibold text-app-text">Take photo</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => void pickImage(false)}
             className="rounded-lg bg-app-primary px-4 py-3 active:opacity-90"
           >
-            <Text className="text-center text-sm font-semibold text-white">Upload photo</Text>
+            <Text className="text-center text-sm font-semibold text-white">Choose photo</Text>
           </Pressable>
           {value ? (
             <Pressable onPress={clearImage} className="rounded-lg border border-app-border px-4 py-2">

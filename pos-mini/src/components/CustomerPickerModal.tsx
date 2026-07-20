@@ -130,6 +130,8 @@ export function CustomerPickerModal({ visible, selectedId, onClose, onSelect }: 
 
         notes: form.notes.trim() || null,
 
+        creditLimit: 0,
+
       });
 
       setShowAddForm(false);

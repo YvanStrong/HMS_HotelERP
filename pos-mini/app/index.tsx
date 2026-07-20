@@ -7,12 +7,14 @@ import { useTranslation } from 'react-i18next';
 import { HomeGrid } from '../src/components/HomeGrid';
 import { HomeMenuModal } from '../src/components/HomeMenuModal';
 import { LogoutButton } from '../src/components/LogoutButton';
+import { OnboardingTour } from '../src/components/OnboardingTour';
 import { SummaryCard } from '../src/components/SummaryCard';
 import { useAppStore } from '../src/store/appStore';
 import { getThemeColors } from '../src/constants/theme';
 import { formatMoney } from '../src/utils/currency';
-import { showLowStockNotification, maybeShowBackupReminder } from '../src/notifications/alerts';
+import { showLowStockNotification } from '../src/notifications/alerts';
 import { useAndroidBackHandler } from '../src/hooks/useAndroidBackHandler';
+import { getOnboardingComplete } from '../src/repositories/metaRepository';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -32,6 +34,7 @@ export default function HomeScreen() {
   } = useAppStore();
   const palette = getThemeColors(themeMode);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const switchStaff = async () => {
     await lock();
@@ -65,7 +68,8 @@ export default function HomeScreen() {
         if (settings?.lowStockAlert && s.lowStockCount > 0) {
           await showLowStockNotification(s.lowStockCount);
         }
-        await maybeShowBackupReminder();
+        const done = await getOnboardingComplete();
+        if (!done) setShowOnboarding(true);
       });
     }, [isSetupComplete, isUnlocked, pinRequired, staffSignInRequired, refreshStats, settings?.lowStockAlert]),
   );
@@ -119,6 +123,7 @@ export default function HomeScreen() {
         </Pressable>
       </ScrollView>
       <HomeMenuModal visible={menuOpen} onClose={() => setMenuOpen(false)} onLock={() => void switchStaff()} pinRequired={Boolean(pinRequired || currentStaff)} />
+      <OnboardingTour visible={showOnboarding} onComplete={() => setShowOnboarding(false)} />
     </SafeAreaView>
   );
 }

@@ -8,7 +8,7 @@ import {
   saveBusinessSettings,
 } from '../repositories/settingsRepository';
 import { getTodaySalesStats } from '../repositories/saleRepository';
-import { getCurrentStaffId, getThemeSettings, setCurrentStaffId } from '../repositories/metaRepository';
+import { getCurrentStaffId, getThemeSettings, getRequireStaffLogin, setCurrentStaffId } from '../repositories/metaRepository';
 import { getStaffById, staffCount } from '../repositories/staffRepository';
 import { hasPinSet } from '../utils/pin';
 import { initI18n } from '../i18n';
@@ -62,11 +62,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const pinSet = await hasPinSet();
     const activeStaffCount = await staffCount();
     const theme = await getThemeSettings();
+    const requireStaffLogin = await getRequireStaffLogin();
 
     let pinRequired = Boolean(settings?.pinEnabled && pinSet);
     let staffSignInRequired = false;
 
-    if (activeStaffCount > 0) {
+    if (activeStaffCount > 0 && requireStaffLogin) {
       await setCurrentStaffId(null);
       staffSignInRequired = true;
       pinRequired = false;
@@ -155,8 +156,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   completeStaffSignIn: () => set({ staffSignInRequired: false }),
   lock: async () => {
     const activeStaffCount = await staffCount();
+    const requireStaffLogin = await getRequireStaffLogin();
     await setCurrentStaffId(null);
-    if (activeStaffCount > 0) {
+    if (activeStaffCount > 0 && requireStaffLogin) {
       set({ currentStaff: null, staffSignInRequired: true, isUnlocked: true });
       return;
     }

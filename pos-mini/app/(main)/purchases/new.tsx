@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -11,6 +11,7 @@ import { NumericKeypad } from '../../../src/components/NumericKeypad';
 import { ProductCard } from '../../../src/components/ProductCard';
 import { SearchBar } from '../../../src/components/SearchBar';
 import { createPurchase } from '../../../src/repositories/purchaseRepository';
+import { getLastSupplierUnitCost } from '../../../src/repositories/purchaseRepository';
 import { listProducts, searchProducts, getProductByBarcode } from '../../../src/repositories/productRepository';
 import { listSuppliers } from '../../../src/repositories/supplierRepository';
 import type { Product, Supplier } from '../../../src/types';
@@ -25,6 +26,7 @@ type CartLine = {
   productId: string;
   productName: string;
   unitCost: number;
+  lastSupplierCost?: number | null;
   quantity: number;
   isTaxable: boolean;
   taxRate: number;
@@ -91,7 +93,8 @@ export default function NewPurchaseScreen() {
 
   const selectedSupplier = suppliers.find((s) => s.id === supplierId) ?? null;
 
-  const addProduct = (product: Product) => {
+  const addProduct = async (product: Product) => {
+    const lastCost = supplierId ? await getLastSupplierUnitCost(supplierId, product.id) : null;
     const existing = lines.find((l) => l.productId === product.id);
     if (existing) {
       setLines(lines.map((l) =>
@@ -101,13 +104,19 @@ export default function NewPurchaseScreen() {
       setLines([...lines, {
         productId: product.id,
         productName: product.name,
-        unitCost: product.costPrice,
+        unitCost: lastCost ?? product.costPrice,
+        lastSupplierCost: lastCost,
         quantity: 1,
         isTaxable: product.isTaxable,
         taxRate: product.taxRate,
-        taxInclusive: product.taxInclusive,
+        taxInclusive: product.isTaxable ? true : product.taxInclusive,
       }]);
     }
+    Toast.show({
+      type: 'success',
+      text1: product.name,
+      text2: lastCost != null ? `Last supplier cost: ${lastCost}` : 'Added to basket',
+    });
   };
 
   const updateQty = (productId: string, qty: number) => {
@@ -184,8 +193,17 @@ export default function NewPurchaseScreen() {
       Toast.show({ type: 'error', text1: 'Add at least one item' });
       return;
     }
+    if (step === 1) {
+      setPayInput(String(total));
+    }
     setStep((s) => Math.min(2, s + 1));
   };
+
+  useEffect(() => {
+    if (step === 2) {
+      setPayInput(String(total));
+    }
+  }, [step, total]);
 
   if (editingCost) {
     return (
@@ -253,59 +271,25 @@ export default function NewPurchaseScreen() {
       ) : null}
 
       {step === 1 ? (
-        <View className="min-h-0 flex-1 px-4 pt-2">
-          <Text className="mb-2 text-sm text-app-muted">
-            Supplier: {selectedSupplier?.name ?? 'None'}
-          </Text>
-          <View className="mb-2 flex-row gap-2">
-            <View className="flex-1">
-              <SearchBar value={query} onChangeText={setQuery} placeholder="Search products…" />
+        <View className="min-h-0 flex-1">
+          <View className="px-4 pt-2">
+            <Text className="mb-2 text-sm text-app-muted">
+              Supplier: {selectedSupplier?.name ?? 'None'}
+            </Text>
+            <View className="mb-2 flex-row gap-2">
+              <View className="flex-1">
+                <SearchBar value={query} onChangeText={setQuery} placeholder="Search products…" />
+              </View>
+              <Pressable
+                onPress={() => setShowScanner(true)}
+                className="rounded-xl border border-app-border bg-app-surface px-4 py-2"
+              >
+                <Text className="font-semibold text-app-text">Scan</Text>
+              </Pressable>
             </View>
-            <Pressable
-              onPress={() => setShowScanner(true)}
-              className="rounded-xl border border-app-border bg-app-surface px-4 py-2"
-            >
-              <Text className="font-semibold text-app-text">Scan</Text>
-            </Pressable>
           </View>
 
-          {lines.length > 0 ? (
-            <View className="mb-2 min-h-0" style={{ maxHeight: 160 }}>
-              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator nestedScrollEnabled>
-                {lines.map((line) => (
-                  <View key={line.productId} style={cardStyle} className="mb-2 p-3">
-                    <Text className="font-semibold text-app-text">{line.productName}</Text>
-                    <View className="mt-1 flex-row items-center justify-between">
-                      <Pressable onPress={() => { setEditingCost(line.productId); setCostInput(String(line.unitCost)); }}>
-                        <Text className="text-sm text-app-muted">
-                          Cost: {formatMoney(line.unitCost, settings)}
-                        </Text>
-                      </Pressable>
-                      <View className="flex-row items-center gap-2">
-                        <Pressable onPress={() => updateQty(line.productId, line.quantity - 1)} className="rounded border border-app-border px-2">
-                          <Text className="font-bold text-app-text">−</Text>
-                        </Pressable>
-                        <Pressable
-                          onPress={() => {
-                            setEditingQty(line.productId);
-                            setQtyInput(formatQuantity(line.quantity));
-                          }}
-                          className="min-w-[28px] rounded border border-app-border px-2 py-0.5"
-                        >
-                          <Text className="text-center font-bold text-app-text">{formatQuantity(line.quantity)}</Text>
-                        </Pressable>
-                        <Pressable onPress={() => updateQty(line.productId, line.quantity + 1)} className="rounded border border-app-border px-2">
-                          <Text className="font-bold text-app-text">+</Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          ) : null}
-
-          <View className="min-h-0 flex-1">
+          <View className="min-h-0 flex-1 px-4">
             {products.length === 0 ? (
               <EmptyState title="No products" message="Add products first." />
             ) : (
@@ -318,15 +302,70 @@ export default function NewPurchaseScreen() {
             )}
           </View>
 
-          <View className="flex-row gap-2 py-3">
-            <Pressable onPress={() => setStep(0)} className="flex-1 rounded-xl border border-app-border py-3">
-              <Text className="text-center font-semibold text-app-text">Back</Text>
-            </Pressable>
-            <Pressable onPress={goNext} className="flex-1 rounded-xl py-3" style={{ backgroundColor: colors.primary }}>
-              <Text className="text-center font-semibold text-white">
-                Next · {formatMoney(total, settings)}
+          <View className="border-t border-app-border bg-app-surface px-4 pt-3">
+            <View className="mb-2 flex-row items-center justify-between">
+              <Text className="text-base font-bold text-app-text">
+                Basket ({lines.reduce((n, l) => n + l.quantity, 0)})
               </Text>
-            </Pressable>
+              <Text className="font-semibold text-app-primary">{formatMoney(total, settings)}</Text>
+            </View>
+            <View className="mb-2 min-h-[100px] max-h-[200px]">
+              {lines.length === 0 ? (
+                <View className="items-center justify-center rounded-xl border border-dashed border-app-border py-6">
+                  <Text className="text-sm text-app-muted">Tap + on a product to add it here</Text>
+                </View>
+              ) : (
+                <ScrollView showsVerticalScrollIndicator nestedScrollEnabled>
+                  {lines.map((line) => (
+                    <View key={line.productId} style={cardStyle} className="mb-2 p-3">
+                      <View className="flex-row items-start justify-between">
+                        <Text className="flex-1 font-semibold text-app-text">{line.productName}</Text>
+                        <Text className="font-bold text-app-text">
+                          {formatMoney(line.unitCost * line.quantity, settings)}
+                        </Text>
+                      </View>
+                      <View className="mt-1 flex-row items-center justify-between">
+                        <Pressable onPress={() => { setEditingCost(line.productId); setCostInput(String(line.unitCost)); }}>
+                          <Text className="text-sm text-app-muted">
+                            Cost: {formatMoney(line.unitCost, settings)}
+                            {line.lastSupplierCost != null
+                              ? ` · last: ${formatMoney(line.lastSupplierCost, settings)}`
+                              : ''}
+                          </Text>
+                        </Pressable>
+                        <View className="flex-row items-center gap-2">
+                          <Pressable onPress={() => updateQty(line.productId, line.quantity - 1)} className="rounded border border-app-border px-2">
+                            <Text className="font-bold text-app-text">−</Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => {
+                              setEditingQty(line.productId);
+                              setQtyInput(formatQuantity(line.quantity));
+                            }}
+                            className="min-w-[28px] rounded border border-app-border px-2 py-0.5"
+                          >
+                            <Text className="text-center font-bold text-app-text">{formatQuantity(line.quantity)}</Text>
+                          </Pressable>
+                          <Pressable onPress={() => updateQty(line.productId, line.quantity + 1)} className="rounded border border-app-border px-2">
+                            <Text className="font-bold text-app-text">+</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
+            <View className="flex-row gap-2 pb-3">
+              <Pressable onPress={() => setStep(0)} className="flex-1 rounded-xl border border-app-border py-3">
+                <Text className="text-center font-semibold text-app-text">Back</Text>
+              </Pressable>
+              <Pressable onPress={goNext} className="flex-1 rounded-xl py-3" style={{ backgroundColor: colors.primary }}>
+                <Text className="text-center font-semibold text-white">
+                  Next · {formatMoney(total, settings)}
+                </Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       ) : null}

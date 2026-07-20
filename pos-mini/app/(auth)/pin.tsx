@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
+import { KeyboardFormScroll } from '../../src/components/KeyboardFormScroll';
 import { NumericKeypad } from '../../src/components/NumericKeypad';
 import { useAppStore } from '../../src/store/appStore';
 import { usePrimaryButtonStyle, useThemeColors } from '../../src/hooks/useTheme';
@@ -94,8 +94,8 @@ export default function PinScreen() {
 
   if (mode === 'forgot') {
     return (
-      <SafeAreaView className="flex-1 bg-app-bg px-4 pt-10">
-        <Text className="mb-2 text-center text-2xl font-bold text-app-text">Forgot PIN</Text>
+      <KeyboardFormScroll>
+        <Text className="mb-2 text-center text-lg font-bold text-app-text">Forgot PIN</Text>
         <Text className="mb-4 text-center text-app-muted">{recoveryQuestion}</Text>
         <TextInput
           value={forgotAnswer}
@@ -110,20 +110,22 @@ export default function PinScreen() {
         <Pressable onPress={() => setMode('enter')} className="rounded-xl border border-app-border py-3">
           <Text className="text-center font-bold text-app-text">Cancel</Text>
         </Pressable>
-      </SafeAreaView>
+      </KeyboardFormScroll>
     );
   }
 
   if (mode === 'reset' || mode === 'confirm') {
     return (
-      <SafeAreaView className="flex-1 bg-app-bg px-4 pt-10">
-        <Text className="mb-6 text-center text-2xl font-bold text-app-text">
+      <KeyboardFormScroll>
+        <Text className="mb-6 text-center text-lg font-bold text-app-text">
           {mode === 'confirm' ? 'Confirm new PIN' : 'Set new PIN'}
         </Text>
         <NumericKeypad
           value={mode === 'confirm' ? confirmPin : newPin}
           onChange={mode === 'confirm' ? setConfirmPin : setNewPin}
           maxLength={8}
+          secure
+          allowReveal
         />
         <Pressable onPress={() => void saveNewPin()} className="mt-4 rounded-xl py-4" style={primaryButtonStyle}>
           <Text className="text-center text-lg font-semibold text-white">
@@ -140,14 +142,13 @@ export default function PinScreen() {
         >
           <Text className="text-center font-bold text-app-text">Cancel</Text>
         </Pressable>
-      </SafeAreaView>
+      </KeyboardFormScroll>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-app-bg px-4 pt-10">
-      <Text className="mb-2 text-center text-2xl font-bold text-app-text">Enter PIN</Text>
-      <Text className="mb-6 text-center text-app-muted">Unlock POS Mini</Text>
+    <KeyboardFormScroll>
+      <Text className="mb-6 text-center text-app-muted">Enter your PIN to unlock</Text>
       <View className="mb-4 flex-row justify-center gap-2">
         {[0, 1, 2, 3].map((i) => (
           <View
@@ -160,7 +161,7 @@ export default function PinScreen() {
           />
         ))}
       </View>
-      <NumericKeypad value={pin} onChange={setPin} maxLength={8} />
+      <NumericKeypad value={pin} onChange={setPin} maxLength={8} secure allowReveal />
       <Pressable onPress={() => void submit()} className="mt-4 rounded-xl py-4" style={primaryButtonStyle}>
         <Text className="text-center text-lg font-semibold text-white">Unlock</Text>
       </Pressable>
@@ -169,6 +170,6 @@ export default function PinScreen() {
           <Text className="text-center text-app-primary">Forgot PIN?</Text>
         </Pressable>
       ) : null}
-    </SafeAreaView>
+    </KeyboardFormScroll>
   );
 }

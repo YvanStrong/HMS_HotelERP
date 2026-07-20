@@ -48,6 +48,7 @@ export default function SettingsIndex() {
       <HubLink label="Business information" href="/(main)/settings/business" subtitle="Name, logo, address, contact" />
       <HubLink label="Currency" href="/(main)/settings/currency" subtitle="Currency code and symbol" />
       <HubLink label="Alerts" href="/(main)/settings/alerts" subtitle="Low stock and backup reminders" />
+      <HubLink label="POS & permissions" href="/(main)/settings/pos" subtitle="Shift gate, staff login, discount limits" />
       <HubLink label="Payment methods" href="/(main)/settings/payment" subtitle="Cash, card, mobile, credit" />
       <HubLink label="Receipt customization" href="/(main)/settings/receipt" subtitle="Logo, tax, change, barcodes" />
       <HubLink label="Discount rules" href="/(main)/settings/discounts" subtitle="Automatic discount rules" />
@@ -58,7 +59,7 @@ export default function SettingsIndex() {
       <HubLink label="Staff" href="/(main)/settings/staff" subtitle="Cashiers and managers" />
       <HubLink label="Shift / Z-report" href="/(main)/settings/shift" subtitle="Open and close shifts" />
       <HubLink label="PIN & security" href="/(main)/settings/security" subtitle="PIN lock and recovery" />
-      <HubLink label="Backup & restore" href="/(main)/settings/backup" subtitle="Export, import, CSV" />
+      <HubLink label="Backup & restore" href="/(main)/settings/backup" subtitle="Google Drive, schedule, size & import" />
       <HubLink label="About POS Mini" href="/(main)/settings/about" subtitle="Version and dev build notes" />
       <LogoutButton variant="full" />
     </ScreenContainer>
