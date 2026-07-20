@@ -27,6 +27,7 @@ type RefundItemRow = {
   quantity: number;
   line_total: number;
   restock?: number;
+  reason_code?: string | null;
 };
 
 function mapRefund(row: RefundRow): Refund {
@@ -54,6 +55,7 @@ function mapRefundItem(row: RefundItemRow): RefundItem {
     quantity: row.quantity,
     lineTotal: row.line_total,
     restock: row.restock === undefined ? true : row.restock === 1,
+    reasonCode: row.reason_code ?? null,
   };
 }
 
@@ -174,8 +176,8 @@ export async function createRefund(input: CreateRefundInput): Promise<Refund> {
       const shouldRestock = item.restock !== false;
       await db.runAsync(
         `INSERT INTO refund_items (
-          id, refund_id, product_id, product_name, unit_price, quantity, line_total, restock
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, refund_id, product_id, product_name, unit_price, quantity, line_total, restock, reason_code
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           generateId(),
           id,
@@ -185,6 +187,7 @@ export async function createRefund(input: CreateRefundInput): Promise<Refund> {
           item.quantity,
           item.lineTotal,
           shouldRestock ? 1 : 0,
+          item.reasonCode ?? null,
         ],
       );
 

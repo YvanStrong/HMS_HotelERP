@@ -4,7 +4,7 @@ import type { Sale, SaleItem } from '../types';
 import { getReceiptDisplayPrefs } from '../repositories/metaRepository';
 import { formatMoney } from '../utils/currency';
 import { useAppStore } from '../store/appStore';
-import { cardStyle } from '../constants/theme';
+import { useCardStyle } from '../hooks/useTheme';
 
 type Props = {
   sale: Sale;
@@ -14,6 +14,7 @@ type Props = {
 
 export function ReceiptView({ sale, items, barcodes = {} }: Props) {
   const settings = useAppStore((s) => s.settings);
+  const cardStyle = useCardStyle();
   const [prefs, setPrefs] = useState({
     showLogo: true,
     showTax: true,
@@ -45,6 +46,14 @@ export function ReceiptView({ sale, items, barcodes = {} }: Props) {
           <Text className="text-center text-sm text-app-muted">{settings.address}</Text>
         ) : null}
         <Text className="mt-3 text-sm text-app-text">Invoice: {sale.invoiceNumber}</Text>
+        {sale.status === 'voided' ? (
+          <Text className="mt-1 text-center font-bold text-app-danger">VOIDED</Text>
+        ) : null}
+        {sale.refundStatus === 'refunded' ? (
+          <Text className="mt-1 text-center font-bold text-amber-600">REFUNDED</Text>
+        ) : sale.refundStatus === 'partial' ? (
+          <Text className="mt-1 text-center font-bold text-amber-600">PARTIALLY REFUNDED</Text>
+        ) : null}
         <Text className="text-sm text-app-muted">{new Date(sale.createdAt).toLocaleString()}</Text>
         {sale.notes?.trim() ? (
           <Text className="mt-1 text-sm text-app-muted">Note: {sale.notes}</Text>

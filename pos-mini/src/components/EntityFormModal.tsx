@@ -1,6 +1,7 @@
 import { Modal, Pressable, ScrollView, Text, View, KeyboardAvoidingView, Platform } from 'react-native';
+import type { ReactNode } from 'react';
 import { FormField } from './FormField';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 
 export type EntityFormValues = {
   name: string;
@@ -18,6 +19,7 @@ type Props = {
   onSave: () => void;
   onCancel: () => void;
   saveLabel?: string;
+  footer?: ReactNode;
 };
 
 export function EntityFormModal({
@@ -28,7 +30,9 @@ export function EntityFormModal({
   onSave,
   onCancel,
   saveLabel = 'Save',
+  footer,
 }: Props) {
+  const colors = useThemeColors();
   const set = (key: keyof EntityFormValues, value: string) => {
     onChange({ ...values, [key]: value });
   };
@@ -81,6 +85,7 @@ export function EntityFormModal({
               placeholder="Optional notes"
               multiline
             />
+            {footer}
           </ScrollView>
           <View className="mt-4 flex-row gap-3">
             <Pressable onPress={onCancel} className="flex-1 rounded-xl border border-app-border py-3">

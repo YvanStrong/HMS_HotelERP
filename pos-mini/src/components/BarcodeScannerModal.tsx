@@ -44,14 +44,14 @@ export function BarcodeScannerModal({ visible, onClose, onScan }: Props) {
           </View>
         ) : !permission.granted ? (
           <View className="flex-1 items-center justify-center bg-gray-100 px-6">
-            <Text className="mb-4 text-center text-lg font-bold text-black">
+            <Text className="mb-4 text-center text-lg font-bold text-app-text">
               Camera access is required to scan barcodes.
             </Text>
-            <Pressable onPress={() => void requestPermission()} className="mb-3 border-2 border-black bg-app-primary px-6 py-3">
+            <Pressable onPress={() => void requestPermission()} className="mb-3 border-2 border-app-border bg-app-primary px-6 py-3">
               <Text className="font-bold text-white">Grant Permission</Text>
             </Pressable>
-            <Pressable onPress={handleClose} className="border-2 border-black bg-white px-6 py-3">
-              <Text className="font-bold text-black">Cancel</Text>
+            <Pressable onPress={handleClose} className="border-2 border-app-border bg-app-surface px-6 py-3">
+              <Text className="font-bold text-app-text">Cancel</Text>
             </Pressable>
           </View>
         ) : (
@@ -64,10 +64,10 @@ export function BarcodeScannerModal({ visible, onClose, onScan }: Props) {
               }}
               onBarcodeScanned={scanning ? handleBarcode : undefined}
             />
-            <View className="absolute bottom-0 left-0 right-0 border-t-2 border-black bg-white p-4">
-              <Text className="mb-3 text-center font-bold text-black">Point camera at barcode</Text>
-              <Pressable onPress={handleClose} className="border-2 border-black bg-white py-3">
-                <Text className="text-center font-bold text-black">Close</Text>
+            <View className="absolute bottom-0 left-0 right-0 border-t-2 border-app-border bg-app-surface p-4">
+              <Text className="mb-3 text-center font-bold text-app-text">Point camera at barcode</Text>
+              <Pressable onPress={handleClose} className="border-2 border-app-border bg-app-surface py-3">
+                <Text className="text-center font-bold text-app-text">Close</Text>
               </Pressable>
             </View>
           </>

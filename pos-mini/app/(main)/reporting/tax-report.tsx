@@ -9,6 +9,7 @@ import { formatMoney } from '../../../src/utils/currency';
 import {
   getPresetRange,
   getTaxReport,
+  hasAnyTaxedSales,
   type ReportDateRange,
   type TaxReportData,
 } from '../../../src/utils/reports';
@@ -17,21 +18,21 @@ export default function TaxReportScreen() {
   const settings = useAppStore((s) => s.settings);
   const [range, setRange] = useState<ReportDateRange>(getPresetRange('month'));
   const [report, setReport] = useState<TaxReportData | null>(null);
+  const [hasTaxData, setHasTaxData] = useState<boolean | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      if (!settings?.taxEnabled) {
-        setReport(null);
-        return;
-      }
+      void hasAnyTaxedSales().then(setHasTaxData);
       void getTaxReport(range).then(setReport);
-    }, [range, settings?.taxEnabled]),
+    }, [range]),
   );
 
-  if (!settings?.taxEnabled) {
+  if (hasTaxData === false) {
     return (
       <ScreenContainer>
-        <Text className="text-app-muted">Enable tax in Settings → Tax to view this report.</Text>
+        <Text className="text-app-muted">
+          No tax collected yet. Mark products as taxable and complete sales to see this report.
+        </Text>
       </ScreenContainer>
     );
   }

@@ -1,7 +1,7 @@
 import { Pressable, Text, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { cardStyle, colors } from '../constants/theme';
+import { useCardStyle, useThemeColors } from '../hooks/useTheme';
 
 type Props = {
   label: string;
@@ -11,6 +11,9 @@ type Props = {
 
 export function HubLink({ label, href, subtitle }: Props) {
   const router = useRouter();
+  const cardStyle = useCardStyle();
+  const palette = useThemeColors();
+
   return (
     <Pressable
       onPress={() => router.push(href)}
@@ -25,7 +28,7 @@ export function HubLink({ label, href, subtitle }: Props) {
           </Text>
         ) : null}
       </View>
-      <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+      <Ionicons name="chevron-forward" size={20} color={palette.textMuted} />
     </Pressable>
   );
 }

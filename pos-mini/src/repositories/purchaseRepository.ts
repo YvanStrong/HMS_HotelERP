@@ -198,6 +198,24 @@ export async function createPurchase(input: CreatePurchaseInput): Promise<Purcha
   return created;
 }
 
+export async function getLastSupplierUnitCost(
+  supplierId: string | null,
+  productId: string,
+): Promise<number | null> {
+  if (!supplierId) return null;
+  const db = getDb();
+  const row = await db.getFirstAsync<{ unit_cost: number }>(
+    `SELECT pi.unit_cost
+     FROM purchase_items pi
+     JOIN purchases p ON p.id = pi.purchase_id
+     WHERE pi.product_id = ? AND p.supplier_id = ? AND p.status = 'completed'
+     ORDER BY p.created_at DESC
+     LIMIT 1`,
+    [productId, supplierId],
+  );
+  return row?.unit_cost ?? null;
+}
+
 export async function recordPurchasePayment(
   purchaseId: string,
   amount: number,

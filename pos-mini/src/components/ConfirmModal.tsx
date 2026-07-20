@@ -1,5 +1,5 @@
 import { Modal, Pressable, Text, View } from 'react-native';
-import { cardStyle, colors, primaryButtonStyle } from '../constants/theme';
+import { useCardStyle, usePrimaryButtonStyle, useThemeColors } from '../hooks/useTheme';
 
 type Props = {
   visible: boolean;
@@ -22,6 +22,10 @@ export function ConfirmModal({
   onCancel,
   destructive,
 }: Props) {
+  const cardStyle = useCardStyle();
+  const primaryButtonStyle = usePrimaryButtonStyle();
+  const palette = useThemeColors();
+
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View className="flex-1 items-center justify-center bg-black/50 px-6">
@@ -37,7 +41,7 @@ export function ConfirmModal({
               className="rounded-lg px-4 py-2"
               style={{
                 ...primaryButtonStyle,
-                backgroundColor: destructive ? colors.danger : colors.primary,
+                backgroundColor: destructive ? palette.danger : palette.primary,
               }}
             >
               <Text className="font-semibold text-white">{confirmLabel}</Text>

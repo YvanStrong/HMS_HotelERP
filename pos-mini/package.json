@@ -3,12 +3,14 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.1.1",
     "@hookform/resolvers": "^5.0.1",
     "@react-native-community/datetimepicker": "8.4.4",
     "@shopify/flash-list": "2.0.2",
     "date-fns": "^4.1.0",
     "expo": "~54.0.0",
+    "expo-build-properties": "~0.14.8",
     "expo-camera": "~17.0.10",
     "expo-constants": "~18.0.13",
     "expo-crypto": "~15.0.9",
@@ -18,16 +20,21 @@
     "expo-image-picker": "~17.0.11",
     "expo-keep-awake": "~15.0.8",
     "expo-linking": "~8.0.12",
+    "expo-localization": "~17.0.8",
     "expo-notifications": "^0.32.17",
     "expo-print": "~15.0.8",
     "expo-router": "~6.0.24",
+    "expo-screen-orientation": "~9.0.9",
     "expo-secure-store": "~15.0.8",
     "expo-sharing": "~14.0.8",
     "expo-sqlite": "~16.0.10",
     "expo-status-bar": "~3.0.9",
+    "i18next": "^25.3.2",
     "nativewind": "^4.2.6",
     "react": "19.1.0",
+    "react-dom": "19.1.0",
     "react-hook-form": "^7.56.4",
+    "react-i18next": "^15.6.0",
     "react-native": "0.81.5",
     "react-native-chart-kit": "^6.12.0",
     "react-native-gesture-handler": "~2.28.0",
@@ -37,7 +44,9 @@
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-svg": "15.12.1",
+    "react-native-thermal-receipt-printer-image-qr": "^0.1.12",
     "react-native-toast-message": "^2.3.3",
+    "react-native-web": "^0.21.0",
     "react-native-worklets": "0.5.1",
     "tailwindcss": "^3.4.17",
     "uuid": "^11.1.0",
@@ -48,6 +57,7 @@
     "@types/react": "~19.1.10",
     "@types/uuid": "^10.0.0",
     "babel-preset-expo": "~54.0.10",
+    "eas-cli": "^16.0.0",
     "typescript": "~5.9.2"
   },
   "scripts": {
@@ -57,11 +67,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "build:apk": "eas build --platform android --profile preview",
+    "build:apk": "npm run build:apk:cloud",
+    "build:apk:cloud": "eas build --platform android --profile preview --non-interactive",
     "build:apk:local": "powershell -ExecutionPolicy Bypass -File ./build-apk.ps1"
   },
-  "private": true,
-  "optionalDependencies": {
-    "react-native-thermal-receipt-printer-image-qr": "^0.1.12"
-  }
+  "private": true
 }

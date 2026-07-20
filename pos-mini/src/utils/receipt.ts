@@ -34,6 +34,9 @@ export function buildReceiptText(
   if (settings.phone) lines.push(`Tel: ${settings.phone}`);
   lines.push('');
   lines.push(`Invoice: ${sale.invoiceNumber}`);
+  if (sale.status === 'voided') lines.push('*** VOIDED ***');
+  if (sale.refundStatus === 'refunded') lines.push('*** REFUNDED ***');
+  else if (sale.refundStatus === 'partial') lines.push('*** PARTIALLY REFUNDED ***');
   lines.push(`Date: ${new Date(sale.createdAt).toLocaleString()}`);
   if (sale.notes?.trim()) {
     lines.push(`Note: ${sale.notes.trim()}`);
@@ -61,6 +64,12 @@ export function buildReceiptText(
   if (prefs.showTax && sale.taxAmount > 0) {
     const taxLabel = (settings.taxName || 'Tax').slice(0, 20);
     lines.push(`${taxLabel}:${formatMoney(sale.taxAmount, settings).padStart(27 - taxLabel.length)}`);
+  }
+  if (sale.tipAmount > 0) {
+    lines.push(`Tip:${formatMoney(sale.tipAmount, settings).padStart(26)}`);
+  }
+  if (sale.serviceCharge > 0) {
+    lines.push(`Service:${formatMoney(sale.serviceCharge, settings).padStart(22)}`);
   }
   lines.push(`TOTAL:${formatMoney(sale.total, settings).padStart(25)}`);
   lines.push(`Paid:${formatMoney(sale.amountPaid, settings).padStart(26)}`);
@@ -112,11 +121,15 @@ export function buildReceiptHtml(
     <div class="center"><strong>${settings.businessName || 'POS Mini'}</strong></div>
     ${settings.address ? `<div class="center">${settings.address}</div>` : ''}
     <p>Invoice: ${sale.invoiceNumber}<br>Date: ${new Date(sale.createdAt).toLocaleString()}</p>
+    ${sale.status === 'voided' ? '<p class="center" style="color:#dc2626;font-weight:bold">VOIDED</p>' : ''}
+    ${sale.refundStatus === 'refunded' ? '<p class="center" style="color:#d97706;font-weight:bold">REFUNDED</p>' : sale.refundStatus === 'partial' ? '<p class="center" style="color:#d97706;font-weight:bold">PARTIALLY REFUNDED</p>' : ''}
     ${sale.notes ? `<p>Note: ${sale.notes}</p>` : ''}
     <table><tr><th>Item</th><th>Qty</th><th>Amt</th></tr>${itemRows}</table>
     <p class="right">Subtotal: ${formatMoney(sale.subtotal, settings)}</p>
     ${sale.discountAmount > 0 ? `<p class="right">Discount: ${formatMoney(sale.discountAmount, settings)}</p>` : ''}
     ${prefs.showTax && sale.taxAmount > 0 ? `<p class="right">${settings.taxName || 'Tax'}: ${formatMoney(sale.taxAmount, settings)}</p>` : ''}
+    ${sale.tipAmount > 0 ? `<p class="right">Tip: ${formatMoney(sale.tipAmount, settings)}</p>` : ''}
+    ${sale.serviceCharge > 0 ? `<p class="right">Service: ${formatMoney(sale.serviceCharge, settings)}</p>` : ''}
     <p class="right"><strong>Total: ${formatMoney(sale.total, settings)}</strong></p>
     <p class="right">Paid: ${formatMoney(sale.amountPaid, settings)}</p>
     ${prefs.showChange && sale.changeAmount > 0 ? `<p class="right">Change: ${formatMoney(sale.changeAmount, settings)}</p>` : ''}

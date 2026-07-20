@@ -7,6 +7,7 @@ export default function StockLayout() {
       <ThemedStack.Screen name="alerts" options={{ title: 'Low Stock Alerts' }} />
       <ThemedStack.Screen name="adjustments" options={{ title: 'Stock Adjustment' }} />
       <ThemedStack.Screen name="adjust" options={{ title: 'Stock Adjustment' }} />
+      <ThemedStack.Screen name="count" options={{ title: 'Stock Take' }} />
       <ThemedStack.Screen name="movements" options={{ title: 'Stock Movements' }} />
       <ThemedStack.Screen name="[productId]" options={{ title: 'Product Stock' }} />
     </ThemedStack>

@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 11;
 
 export const CREATE_TABLES_V1 = `
 CREATE TABLE IF NOT EXISTS app_meta (
@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS app_meta (
 CREATE TABLE IF NOT EXISTS business_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   business_name TEXT NOT NULL DEFAULT '',
+  business_type TEXT NOT NULL DEFAULT 'retail_store',
   business_logo TEXT,
   tax_name TEXT NOT NULL DEFAULT 'Tax',
   address TEXT NOT NULL DEFAULT '',
@@ -48,6 +49,11 @@ CREATE TABLE IF NOT EXISTS products (
   min_stock REAL NOT NULL DEFAULT 0,
   unit TEXT NOT NULL DEFAULT 'pcs',
   tax_class TEXT NOT NULL DEFAULT 'A',
+  is_taxable INTEGER NOT NULL DEFAULT 0,
+  tax_rate REAL NOT NULL DEFAULT 0,
+  tax_inclusive INTEGER NOT NULL DEFAULT 0,
+  expiry_date TEXT,
+  batch_lot TEXT,
   image_uri TEXT,
   track_stock INTEGER NOT NULL DEFAULT 1,
   is_active INTEGER NOT NULL DEFAULT 1,
@@ -64,6 +70,7 @@ CREATE TABLE IF NOT EXISTS customers (
   address TEXT,
   notes TEXT,
   total_debt REAL NOT NULL DEFAULT 0,
+  credit_limit REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -87,12 +94,15 @@ CREATE TABLE IF NOT EXISTS sales (
   discount_amount REAL NOT NULL DEFAULT 0,
   discount_percent REAL NOT NULL DEFAULT 0,
   tax_amount REAL NOT NULL DEFAULT 0,
+  tip_amount REAL NOT NULL DEFAULT 0,
+  service_charge REAL NOT NULL DEFAULT 0,
   total REAL NOT NULL DEFAULT 0,
   amount_paid REAL NOT NULL DEFAULT 0,
   change_amount REAL NOT NULL DEFAULT 0,
   payment_method TEXT NOT NULL DEFAULT 'cash',
   status TEXT NOT NULL DEFAULT 'completed',
   notes TEXT,
+  table_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (customer_id) REFERENCES customers(id)
@@ -170,6 +180,7 @@ CREATE TABLE IF NOT EXISTS refund_items (
   quantity REAL NOT NULL,
   line_total REAL NOT NULL,
   restock INTEGER NOT NULL DEFAULT 1,
+  reason_code TEXT,
   FOREIGN KEY (refund_id) REFERENCES refunds(id) ON DELETE CASCADE,
   FOREIGN KEY (product_id) REFERENCES products(id)
 );
@@ -240,6 +251,7 @@ CREATE TABLE IF NOT EXISTS shifts (
 CREATE TABLE IF NOT EXISTS staff (
   id TEXT PRIMARY KEY NOT NULL,
   name TEXT NOT NULL,
+  username TEXT NOT NULL DEFAULT '',
   role TEXT NOT NULL DEFAULT 'cashier',
   pin_hash TEXT NOT NULL,
   is_active INTEGER NOT NULL DEFAULT 1,
@@ -254,12 +266,35 @@ CREATE TABLE IF NOT EXISTS held_carts (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS pos_tables (
+  id TEXT PRIMARY KEY NOT NULL,
+  name TEXT NOT NULL,
+  seats INTEGER NOT NULL DEFAULT 4,
+  status TEXT NOT NULL DEFAULT 'available',
+  merged_into_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (merged_into_id) REFERENCES pos_tables(id)
+);
+
+CREATE TABLE IF NOT EXISTS product_bundles (
+  id TEXT PRIMARY KEY NOT NULL,
+  parent_product_id TEXT NOT NULL,
+  child_product_id TEXT NOT NULL,
+  quantity REAL NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (parent_product_id) REFERENCES products(id) ON DELETE CASCADE,
+  FOREIGN KEY (child_product_id) REFERENCES products(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
 CREATE INDEX IF NOT EXISTS idx_sales_created ON sales(created_at);
+CREATE INDEX IF NOT EXISTS idx_sales_table ON sales(table_id);
+CREATE INDEX IF NOT EXISTS idx_pos_tables_status ON pos_tables(status);
+CREATE INDEX IF NOT EXISTS idx_product_bundles_parent ON product_bundles(parent_product_id);
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
 CREATE INDEX IF NOT EXISTS idx_sale_payments_sale ON sale_payments(sale_id);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_created ON stock_movements(created_at);
 `;
-

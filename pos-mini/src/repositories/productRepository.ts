@@ -3,7 +3,7 @@ import type { ListQuery, PaginatedResult } from '../types/pagination';
 import { getDb } from '../db/database';
 import { generateId, nowIso } from '../utils/ids';
 import { buildWhere, clampLimit, clampOffset, likePattern } from './queryHelpers';
-import { normalizeProductTaxClass } from '../constants/productTax';
+import { normalizeProductTaxClass, taxRateForClass } from '../constants/productTax';
 import { normalizeProductUnit } from '../constants/productUnits';
 
 type ProductRow = {
@@ -18,8 +18,13 @@ type ProductRow = {
   stock_qty: number;
   min_stock: number;
   unit: string;
-  tax_class: string;
+  tax_class: string | null;
+  is_taxable: number | null;
+  tax_rate: number | null;
+  tax_inclusive: number | null;
   image_uri: string | null;
+  expiry_date: string | null;
+  batch_lot: string | null;
   track_stock: number;
   is_active: number;
   created_at: string;
@@ -28,6 +33,9 @@ type ProductRow = {
 };
 
 function mapProduct(row: ProductRow): Product {
+  const taxClass = normalizeProductTaxClass(row.tax_class);
+  const isTaxable = row.is_taxable === 1 || taxClass === 'B';
+  const taxRate = row.tax_rate ?? taxRateForClass(taxClass);
   return {
     id: row.id,
     name: row.name,
@@ -40,13 +48,29 @@ function mapProduct(row: ProductRow): Product {
     stockQty: row.stock_qty,
     minStock: row.min_stock,
     unit: row.unit,
-    taxClass: normalizeProductTaxClass(row.tax_class),
+    taxClass,
+    isTaxable,
+    taxRate: isTaxable ? (taxRate || taxRateForClass('B')) : 0,
+    taxInclusive: row.tax_inclusive === 1,
     imageUri: row.image_uri,
+    expiryDate: row.expiry_date ?? null,
+    batchLot: row.batch_lot ?? null,
     trackStock: row.track_stock === 1,
     isActive: row.is_active === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     categoryName: row.category_name ?? undefined,
+  };
+}
+
+function taxFieldsFromInput(taxClass: string | undefined, existing?: Product) {
+  const resolved = normalizeProductTaxClass(taxClass ?? existing?.taxClass);
+  const isTaxable = resolved === 'B';
+  return {
+    taxClass: resolved,
+    isTaxable,
+    taxRate: taxRateForClass(resolved),
+    taxInclusive: existing?.taxInclusive ?? false,
   };
 }
 
@@ -145,11 +169,13 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
   const db = getDb();
   const id = generateId();
   const now = nowIso();
+  const tax = taxFieldsFromInput(input.taxClass);
   await db.runAsync(
     `INSERT INTO products (
       id, name, description, sku, barcode, category_id, cost_price, sell_price, stock_qty,
-      min_stock, unit, tax_class, image_uri, track_stock, is_active, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      min_stock, unit, tax_class, is_taxable, tax_rate, tax_inclusive, image_uri, expiry_date, batch_lot,
+      track_stock, is_active, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.name,
@@ -162,8 +188,13 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
       input.stockQty,
       input.minStock,
       normalizeProductUnit(input.unit),
-      normalizeProductTaxClass(input.taxClass),
+      tax.taxClass,
+      tax.isTaxable ? 1 : 0,
+      input.taxRate ?? tax.taxRate,
+      (input.taxInclusive ?? tax.taxInclusive) ? 1 : 0,
       input.imageUri ?? null,
+      input.expiryDate ?? null,
+      input.batchLot ?? null,
       input.trackStock ? 1 : 0,
       input.isActive ? 1 : 0,
       now,
@@ -180,12 +211,13 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
   const existing = await getProductById(id);
   if (!existing) throw new Error('Product not found');
   const now = nowIso();
+  const tax = taxFieldsFromInput(input.taxClass, existing);
 
   await db.runAsync(
     `UPDATE products SET
       name = ?, description = ?, sku = ?, barcode = ?, category_id = ?, cost_price = ?, sell_price = ?,
-      stock_qty = ?, min_stock = ?, unit = ?, tax_class = ?, image_uri = ?, track_stock = ?,
-      is_active = ?, updated_at = ?
+      stock_qty = ?, min_stock = ?, unit = ?, tax_class = ?, is_taxable = ?, tax_rate = ?, tax_inclusive = ?,
+      image_uri = ?, expiry_date = ?, batch_lot = ?, track_stock = ?, is_active = ?, updated_at = ?
     WHERE id = ?`,
     [
       input.name ?? existing.name,
@@ -198,8 +230,13 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
       input.stockQty ?? existing.stockQty,
       input.minStock ?? existing.minStock,
       input.unit !== undefined ? normalizeProductUnit(input.unit) : existing.unit,
-      input.taxClass !== undefined ? normalizeProductTaxClass(input.taxClass) : existing.taxClass,
+      tax.taxClass,
+      (input.isTaxable ?? tax.isTaxable) ? 1 : 0,
+      input.taxRate ?? tax.taxRate,
+      (input.taxInclusive ?? existing.taxInclusive) ? 1 : 0,
       input.imageUri !== undefined ? input.imageUri : existing.imageUri,
+      input.expiryDate !== undefined ? input.expiryDate : existing.expiryDate,
+      input.batchLot !== undefined ? input.batchLot : existing.batchLot,
       (input.trackStock ?? existing.trackStock) ? 1 : 0,
       (input.isActive ?? existing.isActive) ? 1 : 0,
       now,

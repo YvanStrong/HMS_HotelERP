@@ -5,25 +5,28 @@ import Toast from 'react-native-toast-message';
 import { FormField } from '../../src/components/FormField';
 import { KeyboardFormScroll } from '../../src/components/KeyboardFormScroll';
 import { useAppStore } from '../../src/store/appStore';
-import { colors } from '../../src/constants/theme';
+import { useThemeColors } from '../../src/hooks/useTheme';
 import { setPinHash } from '../../src/utils/pin';
+import { setOnboardingPending } from '../../src/repositories/metaRepository';
 
+import { SelectField } from '../../src/components/SelectField';
+import { BUSINESS_TYPES, DEFAULT_BUSINESS_TYPE, type BusinessTypeId } from '../../src/constants/businessTypes';
 import { COMMON_CURRENCIES, filterCurrencies } from '../../src/constants/currencies';
 import { SearchBar } from '../../src/components/SearchBar';
 
 export default function SetupScreen() {
+  const colors = useThemeColors();
   const router = useRouter();
   const updateSettings = useAppStore((s) => s.updateSettings);
   const [step, setStep] = useState(1);
 
   const [businessName, setBusinessName] = useState('');
+  const [businessType, setBusinessType] = useState<BusinessTypeId>(DEFAULT_BUSINESS_TYPE);
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [currencySymbol, setCurrencySymbol] = useState('$');
-  const [taxEnabled, setTaxEnabled] = useState(false);
-  const [taxRate, setTaxRate] = useState('0');
   const [pin, setPin] = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
   const [pinEnabled, setPinEnabled] = useState(false);
@@ -46,18 +49,18 @@ export default function SetupScreen() {
     try {
       await updateSettings({
         businessName: businessName.trim(),
+        businessType,
         address,
         phone,
         email,
         currency,
         currencySymbol,
-        taxEnabled,
-        taxRate: Number(taxRate) || 0,
         pinEnabled,
       });
       if (pinEnabled) {
         await setPinHash(pin);
       }
+      await setOnboardingPending(true);
       Toast.show({ type: 'success', text1: 'Setup complete' });
       router.replace('/');
     } catch (e) {
@@ -69,7 +72,7 @@ export default function SetupScreen() {
   };
 
   return (
-    <KeyboardFormScroll edges={['top', 'bottom']} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 24 }}>
+    <KeyboardFormScroll edges={['bottom']}>
         <Text className="mb-1 text-2xl font-bold text-app-text">Welcome to POS Mini</Text>
         <Text className="mb-6 text-app-muted">Step {step} of 3</Text>
 
@@ -83,6 +86,20 @@ export default function SetupScreen() {
               onChangeText={setBusinessName}
               placeholder="e.g. Sunrise Café"
             />
+            <SelectField
+              label="Business type"
+              value={businessType}
+              onChange={setBusinessType}
+              options={BUSINESS_TYPES.map((t) => ({
+                value: t.id,
+                label: t.label,
+                description: t.description,
+              }))}
+            />
+            <Text className="mb-3 text-xs text-app-muted">
+              Features like kitchen tickets are enabled based on your business type. You can change this later in
+              Settings.
+            </Text>
             <FormField label="Address" value={address} onChangeText={setAddress} placeholder="Street, city" />
             <FormField
               label="Phone"
@@ -104,7 +121,7 @@ export default function SetupScreen() {
 
         {step === 2 ? (
           <View>
-            <Text className="mb-3 text-lg font-semibold text-app-text">Currency & tax</Text>
+            <Text className="mb-3 text-lg font-semibold text-app-text">Currency</Text>
             <Text className="mb-2 text-sm font-semibold text-app-text">Currency</Text>
             <SearchBar value={currencyQuery} onChangeText={setCurrencyQuery} placeholder="Search currencies..." />
             <View className="mb-4 flex-row flex-wrap gap-2">
@@ -125,19 +142,6 @@ export default function SetupScreen() {
                 </Pressable>
               ))}
             </View>
-            <View className="mb-3 flex-row items-center justify-between rounded-xl border border-app-border bg-app-surface px-4 py-3">
-              <Text className="font-semibold text-app-text">Enable tax</Text>
-              <Switch value={taxEnabled} onValueChange={setTaxEnabled} />
-            </View>
-            {taxEnabled ? (
-              <FormField
-                label="Tax rate (%)"
-                value={taxRate}
-                onChangeText={setTaxRate}
-                placeholder="18"
-                keyboardType="decimal-pad"
-              />
-            ) : null}
           </View>
         ) : null}
 

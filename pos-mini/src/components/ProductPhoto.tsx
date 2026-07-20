@@ -1,6 +1,6 @@
 import { Image, Text, View, type ImageStyle, type StyleProp } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 
 type Props = {
   uri: string | null | undefined;
@@ -10,6 +10,7 @@ type Props = {
 };
 
 export function ProductPhoto({ uri, size = 64, style, rounded = true }: Props) {
+  const colors = useThemeColors();
   const radius = rounded ? 10 : 0;
 
   if (!uri) {

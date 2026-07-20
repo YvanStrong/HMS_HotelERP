@@ -90,6 +90,7 @@ export default function CustomersScreen() {
           email: form.email || null,
           address: form.address || null,
           notes: form.notes || null,
+          creditLimit: 0,
         });
         Toast.show({ type: 'success', text1: 'Customer created' });
       }

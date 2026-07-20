@@ -430,3 +430,11 @@ export async function getTaxReport(range: ReportDateRange): Promise<TaxReportDat
     })),
   };
 }
+
+export async function hasAnyTaxedSales(): Promise<boolean> {
+  const db = getDb();
+  const row = await db.getFirstAsync<{ count: number }>(
+    `SELECT COUNT(*) AS count FROM sales WHERE status = 'completed' AND tax_amount > 0`,
+  );
+  return (row?.count ?? 0) > 0;
+}

@@ -1,10 +1,12 @@
 import type { BusinessSettings } from '../types';
+import { DEFAULT_BUSINESS_TYPE, type BusinessTypeId } from '../constants/businessTypes';
 import { getDb } from '../db/database';
 import { nowIso } from '../utils/ids';
 
 type SettingsRow = {
   id: number;
   business_name: string;
+  business_type: string;
   business_logo: string | null;
   tax_name: string;
   address: string;
@@ -27,6 +29,7 @@ function mapSettings(row: SettingsRow): BusinessSettings {
   return {
     id: row.id,
     businessName: row.business_name,
+    businessType: (row.business_type as BusinessTypeId) || DEFAULT_BUSINESS_TYPE,
     businessLogo: row.business_logo,
     taxName: row.tax_name ?? 'Tax',
     address: row.address,
@@ -62,12 +65,13 @@ export async function saveBusinessSettings(
   if (!existing) {
     await db.runAsync(
       `INSERT INTO business_settings (
-        id, business_name, business_logo, tax_name, address, phone, email, currency, currency_symbol,
+        id, business_name, business_type, business_logo, tax_name, address, phone, email, currency, currency_symbol,
         tax_enabled, tax_rate, tax_inclusive, receipt_header, receipt_footer,
         pin_enabled, low_stock_alert, created_at, updated_at
-      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.businessName ?? '',
+        input.businessType ?? DEFAULT_BUSINESS_TYPE,
         input.businessLogo ?? null,
         input.taxName ?? 'Tax',
         input.address ?? '',
@@ -89,13 +93,14 @@ export async function saveBusinessSettings(
   } else {
     await db.runAsync(
       `UPDATE business_settings SET
-        business_name = ?, business_logo = ?, tax_name = ?, address = ?, phone = ?, email = ?,
+        business_name = ?, business_type = ?, business_logo = ?, tax_name = ?, address = ?, phone = ?, email = ?,
         currency = ?, currency_symbol = ?, tax_enabled = ?, tax_rate = ?,
         tax_inclusive = ?, receipt_header = ?, receipt_footer = ?,
         pin_enabled = ?, low_stock_alert = ?, updated_at = ?
       WHERE id = 1`,
       [
         input.businessName ?? existing.businessName,
+        input.businessType ?? existing.businessType,
         input.businessLogo !== undefined ? input.businessLogo : existing.businessLogo,
         input.taxName ?? existing.taxName,
         input.address ?? existing.address,

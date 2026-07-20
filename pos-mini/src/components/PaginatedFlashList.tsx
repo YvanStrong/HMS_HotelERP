@@ -1,6 +1,6 @@
 import { ActivityIndicator, RefreshControl, Text, View, StyleSheet, type ViewStyle } from 'react-native';
 import { FlashList, type FlashListProps } from '@shopify/flash-list';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useTheme';
 import { EmptyState } from './EmptyState';
 
 type Props<T> = Omit<FlashListProps<T>, 'onEndReached'> & {
@@ -28,6 +28,7 @@ export function PaginatedFlashList<T>({
   style,
   ...rest
 }: Props<T>) {
+  const colors = useThemeColors();
   const isEmpty = !loading && (data?.length ?? 0) === 0;
   const listStyle: ViewStyle = StyleSheet.flatten([
     { flex: 1, minHeight: 0 },

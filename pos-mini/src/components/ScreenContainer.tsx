@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { ScrollView, View, type StyleProp, type ViewStyle } from 'react-native';
 import { getThemeColors } from '../constants/theme';
+import { SCREEN_HORIZONTAL_PADDING } from '../navigation/headerOptions';
 import { useAppStore } from '../store/appStore';
 
 type Props = {
@@ -14,7 +15,7 @@ type Props = {
 export function ScreenContainer({ children, style, padded = true, scroll = false }: Props) {
   const themeMode = useAppStore((s) => s.themeMode);
   const palette = getThemeColors(themeMode);
-  const pad = padded ? { paddingHorizontal: 16, paddingTop: 8 } : undefined;
+  const pad = padded ? { paddingHorizontal: SCREEN_HORIZONTAL_PADDING, paddingTop: 8 } : undefined;
 
   if (scroll) {
     return (
@@ -37,6 +38,25 @@ export function ScreenContainer({ children, style, padded = true, scroll = false
 }
 
 /** Flex region for FlashList / PaginatedFlashList below fixed toolbars. */
-export function ScreenList({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
-  return <View style={[{ flex: 1, minHeight: 0 }, style]}>{children}</View>;
+export function ScreenList({
+  children,
+  style,
+  inset = false,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+  /** Horizontal padding when parent ScreenContainer uses padded={false}. */
+  inset?: boolean;
+}) {
+  return (
+    <View
+      style={[
+        { flex: 1, minHeight: 0 },
+        inset ? { paddingHorizontal: SCREEN_HORIZONTAL_PADDING } : undefined,
+        style,
+      ]}
+    >
+      {children}
+    </View>
+  );
 }

@@ -582,7 +582,7 @@ export default function HotelDashboardPage() {
         {dash && dash.todaysDepartures.length > 0 && (
           <div className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="font-semibold">Today's departures</h3>
+              <h3 className="font-semibold">Today&apos;s departures</h3>
               <Link href={staffAppPath("reservations?filter=departures_today")} className="text-xs text-primary">All</Link>
             </div>
             <div className="overflow-auto">

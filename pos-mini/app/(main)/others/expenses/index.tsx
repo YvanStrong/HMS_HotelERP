@@ -19,7 +19,8 @@ import {
 } from '../../../../src/repositories/expenseRepository';
 import type { Expense, PaymentMethod } from '../../../../src/types';
 import { useAppStore } from '../../../../src/store/appStore';
-import { selectedChipStyle, unselectedChipStyle } from '../../../../src/constants/theme';
+import { useThemeColors } from '../../../../src/hooks/useTheme';
+import { getChipStyles } from '../../../../src/constants/theme';
 import { formatMoney } from '../../../../src/utils/currency';
 import { nowIso } from '../../../../src/utils/ids';
 
@@ -28,6 +29,8 @@ const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'card', 'mobile'];
 const CATEGORY_FILTERS = CATEGORIES.map((c) => ({ key: c, label: c }));
 
 export default function ExpensesScreen() {
+  const colors = useThemeColors();
+  const chipStyle = (selected: boolean) => getChipStyles(colors, selected);
   const settings = useAppStore((s) => s.settings);
   const [showForm, setShowForm] = useState(false);
   const [category, setCategory] = useState(CATEGORIES[0]);
@@ -115,7 +118,7 @@ export default function ExpensesScreen() {
               key={c}
               onPress={() => setCategory(c)}
               className="rounded-lg border px-3 py-2"
-              style={category === c ? selectedChipStyle : unselectedChipStyle}
+              style={category === c ? chipStyle(true) : chipStyle(false)}
             >
               <Text className="font-semibold text-app-text">{c}</Text>
             </Pressable>
@@ -137,7 +140,7 @@ export default function ExpensesScreen() {
               key={m}
               onPress={() => setPaymentMethod(m)}
               className="rounded-lg border px-3 py-2"
-              style={paymentMethod === m ? selectedChipStyle : unselectedChipStyle}
+              style={paymentMethod === m ? chipStyle(true) : chipStyle(false)}
             >
               <Text className="font-semibold capitalize text-app-text">{m}</Text>
             </Pressable>
