@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    /* Ijisho ERP palette — navy, sky blue, amber, and clean white */
+    /* Brand palette — navy, sky blue, amber, and clean white */
     --background: 204 94% 98%;
     --foreground: 211 56% 23%;
     --card: 0 0% 100%;

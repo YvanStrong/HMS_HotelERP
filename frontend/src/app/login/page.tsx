@@ -51,16 +51,20 @@ function LoginPageInner() {
           />
           <div className="relative z-[1] flex flex-col gap-6">
             <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-sky-300/30">
-              <img src="/images/ijisho-erp-logo.svg" alt="Ijisho ERP" className="h-36 w-full object-contain" />
+              <img
+                src="/images/kivu-cloud-solutions-logo.png"
+                alt="Kivu Cloud Solutions"
+                className="h-36 w-full object-contain"
+              />
             </div>
             <div>
-              <p className="font-serif text-3xl font-semibold leading-snug lg:text-4xl">IJISHO ERP</p>
+              <p className="font-serif text-3xl font-semibold leading-snug lg:text-4xl">Kivu Cloud Solutions</p>
               <p className="mt-2 text-sm uppercase tracking-[0.2em] text-sky-200">
                 Hotel management
               </p>
             </div>
             <p className="max-w-xs text-sm leading-relaxed text-slate-100/85">
-              Staff sign-in for reservations, rooms, housekeeping, billing, and reporting — one vision, every solution.
+              Staff sign-in for reservations, rooms, housekeeping, billing, and reporting.
             </p>
             <ul className="space-y-2 text-sm text-slate-100/85">
               <li className="flex items-center gap-2">
@@ -79,7 +83,11 @@ function LoginPageInner() {
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-5 py-6 sm:px-8 sm:py-8">
             <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6">
               <div className="md:hidden">
-                <img src="/images/ijisho-erp-logo.svg" alt="Ijisho ERP" className="h-20 w-40 object-contain" />
+                <img
+                  src="/images/kivu-cloud-solutions-logo.png"
+                  alt="Kivu Cloud Solutions"
+                  className="h-16 w-auto max-w-[220px] object-contain"
+                />
                 <h1 className="mt-3 font-serif text-2xl font-semibold text-[#1a3a5c]">
                   Sign in
                 </h1>

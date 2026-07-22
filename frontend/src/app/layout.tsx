@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     template: "%s | HMS",
   },
   icons: {
-    icon: [{ url: "/images/ijisho_eye_mark.svg", type: "image/svg+xml" }],
+    icon: [{ url: "/images/kivu-cloud-mark.png", type: "image/png" }],
   },
   description: "Modern Hotel Management System - Book rooms, manage reservations, and streamline your hotel operations.",
   keywords: ["hotel", "booking", "reservation", "management", "hospitality"],
