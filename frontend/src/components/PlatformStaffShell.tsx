@@ -7,6 +7,7 @@ import { clearToken, swaggerUiUrl } from "@/lib/api";
 import type { AuthUser } from "@/lib/auth";
 import { isSuperAdmin, loadAuthUser } from "@/lib/auth";
 import { SwaggerBlurb } from "./SwaggerBlurb";
+import { ReportBugButton } from "./ReportBugButton";
 
 const NAV: { href: string; label: string; icon?: string }[] = [
   { href: "/platform/hotels", label: "Hotels", icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" },
@@ -16,6 +17,7 @@ const NAV: { href: string; label: string; icon?: string }[] = [
   { href: "/platform/subscriptions", label: "Subscriptions", icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 12v-2m8-4a8 8 0 11-16 0 8 8 0 0116 0z" },
   { href: "/platform/analytics", label: "Analytics", icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" },
   { href: "/platform/audit", label: "Audit logs", icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" },
+  { href: "/platform/bugs", label: "Bug reports", icon: "M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" },
 ];
 
 export function PlatformStaffShell({ children }: { children: React.ReactNode }) {
@@ -118,6 +120,7 @@ export function PlatformStaffShell({ children }: { children: React.ReactNode }) 
 
         {/* Bottom Actions */}
         <div className="p-3 border-t border-border space-y-1">
+          <ReportBugButton variant="sidebar" />
           <a 
             href={swaggerUiUrl()} 
             target="_blank" 

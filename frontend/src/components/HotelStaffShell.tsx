@@ -12,6 +12,7 @@ import { useHotelContext } from "@/lib/useHotelContext";
 import { PosOrderToastHost } from "@/components/PosOrderToastHost";
 import { StaffNotificationBell } from "@/components/StaffNotificationBell";
 import { ModuleDisabledPage } from "@/components/ModuleDisabledPage";
+import { ReportBugButton } from "@/components/ReportBugButton";
 
 type NavItem = {
   key: HotelNavKey;
@@ -380,7 +381,9 @@ export function HotelStaffShell({
               </div>}
             </div>
             {user && (
-              <button
+              <>
+                <ReportBugButton variant="sidebar" collapsed={isSidebarCollapsed} />
+                <button
                 type="button"
                 onClick={logout}
                 className={`mt-1 w-full flex items-center rounded-lg text-sm text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors bg-transparent shadow-none border-none ${
@@ -393,6 +396,7 @@ export function HotelStaffShell({
                 </svg>
                 {!isSidebarCollapsed && "Sign out"}
               </button>
+              </>
             )}
           </div>
         </div>
