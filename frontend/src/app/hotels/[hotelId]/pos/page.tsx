@@ -188,6 +188,8 @@ export default function PosPage() {
   const [search, setSearch] = useState("");
   const [scanCode, setScanCode] = useState("");
   const scanInputRef = useRef<HTMLInputElement>(null);
+  const posPageRef = useRef<HTMLDivElement>(null);
+  const [isFullScreen, setIsFullScreen] = useState(false);
   const [category, setCategory] = useState<string>("All");
   const [cart, setCart] = useState<Record<string, number>>({});
   const [cartPriceOverrides, setCartPriceOverrides] = useState<Record<string, number>>({});
@@ -287,6 +289,27 @@ export default function PosPage() {
   useEffect(() => {
     if (!loading) scanInputRef.current?.focus();
   }, [loading]);
+
+  useEffect(() => {
+    function handleFullScreenChange() {
+      setIsFullScreen(document.fullscreenElement === posPageRef.current);
+    }
+
+    document.addEventListener("fullscreenchange", handleFullScreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullScreenChange);
+  }, []);
+
+  async function toggleFullScreen() {
+    try {
+      if (document.fullscreenElement === posPageRef.current) {
+        await document.exitFullscreen();
+      } else {
+        await posPageRef.current?.requestFullscreen();
+      }
+    } catch {
+      setError("Full-screen mode is not available in this browser.");
+    }
+  }
 
   useEffect(() => {
     const q = customerLabel.trim();
@@ -1030,7 +1053,12 @@ export default function PosPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+    <div
+      ref={posPageRef}
+      className={`flex min-h-0 flex-1 flex-col gap-2 overflow-hidden ${
+        isFullScreen ? "h-screen bg-background p-3" : "h-full"
+      }`}
+    >
       <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">POS</h1>
@@ -1071,6 +1099,9 @@ export default function PosPage() {
           </button>
           <button type="button" className="hms-btn-outline text-sm" onClick={loadDraft}>
             Load draft
+          </button>
+          <button type="button" className="hms-btn-outline text-sm" onClick={() => void toggleFullScreen()}>
+            {isFullScreen ? "Exit full screen" : "Full screen"}
           </button>
           {hotelId ? <PosAnnouncementsButton hotelId={hotelId} /> : null}
         </div>
