@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, getToken } from "@/lib/api";
 import { COUNTRY_OPTIONS, GENDER_OPTIONS, PHONE_CODE_OPTIONS } from "@/lib/guestFormConstants";
+import { GuestIdScanField } from "@/components/GuestIdScanField";
 import { printReservationDocument } from "@/lib/printReservationDocument";
 import { staffAppPath } from "@/lib/staffAppRoutes";
 import { useHotelContext } from "@/lib/useHotelContext";
@@ -918,6 +919,18 @@ export default function NewStaffReservationPage() {
               <p className="text-xs text-muted-foreground -mt-1">
                 Use search only when reusing an existing guest profile. You can also fill this form directly for a new guest.
               </p>
+              <GuestIdScanField
+                onParsed={(p) => {
+                  markGuestEdited();
+                  setFullName(p.fullName);
+                  setNationalId(p.nationalId);
+                  setIdDocNumber(p.nationalId);
+                  setIdType("NATIONAL_ID");
+                  if (p.dateOfBirth) setDob(p.dateOfBirth);
+                  if (p.gender) setGender(p.gender);
+                  setNationality((n) => n || "Rwanda");
+                }}
+              />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label className="block sm:col-span-2">
                   Full name *
