@@ -658,7 +658,6 @@ export default function HotelDashboardPage() {
         links={[
           { href: staffAppPath("pos"), label: "POS" },
           { href: staffAppPath("invoices"), label: "Invoices" },
-          { href: staffAppPath("menu"), label: "Menu" },
           { href: staffAppPath("inventory"), label: "Inventory" },
         ]}
       >

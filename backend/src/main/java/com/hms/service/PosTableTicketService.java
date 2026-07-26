@@ -815,7 +815,8 @@ public class PosTableTicketService {
                             ticket.getTableLabel(),
                             ticket.getDepot().getId(),
                             saleLines,
-                            staffId));
+                            staffId,
+                            null));
             PosDeliveryOrder order = posDeliveryOrderRepository
                     .findById(delivery.deliveryOrderId())
                     .orElseThrow(() -> notFound("Delivery order"));
@@ -834,7 +835,11 @@ public class PosTableTicketService {
                             req.reservationId(),
                             paymentMethod,
                             ticket.getTableLabel(),
-                            staffId));
+                            staffId,
+                            null,
+                            null,
+                            null,
+                            null));
             DepotSale sale = depotSaleRepository
                     .findById(saleRes.saleId())
                     .orElseThrow(() -> notFound("Sale"));

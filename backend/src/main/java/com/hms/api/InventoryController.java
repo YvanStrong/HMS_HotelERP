@@ -231,6 +231,26 @@ public class InventoryController {
         return ResponseEntity.status(HttpStatus.CREATED).body(inventoryDepotService.createSale(hotelId, hotelHeader, body));
     }
 
+    @GetMapping("/pos-promotions")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_WAITER','ROLE_CASHIER','ROLE_RECEPTIONIST')")
+    public java.util.List<InventoryDepotDtos.PosPromotionRow> listPosPromotions(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return inventoryDepotService.listPosPromotions(hotelId, hotelHeader);
+    }
+
+    @PostMapping("/pos-promotions")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_WAITER','ROLE_CASHIER','ROLE_RECEPTIONIST')")
+    public ResponseEntity<InventoryDepotDtos.PosPromotionRow> createPosPromotion(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody InventoryDepotDtos.CreatePosPromotionRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(inventoryDepotService.createPosPromotion(hotelId, hotelHeader, body));
+    }
+
     @GetMapping("/sales")
     @PreAuthorize(
             "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_WAITER','ROLE_CASHIER','ROLE_RECEPTIONIST')")

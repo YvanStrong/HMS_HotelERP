@@ -96,14 +96,23 @@ public final class InventoryDepotDtos {
             /** CASH or CARD (ROOM when chargeToRoom is true). */
             String paymentMethod,
             String tableLabel,
-            UUID staffId) {}
+            UUID staffId,
+            /** Optional saved promotion code to apply at checkout. */
+            String promoCode,
+            /** Currency customer paid in (USD/EUR). Null = hotel currency. */
+            String paymentCurrency,
+            /** Hotel currency per 1 unit of paymentCurrency. */
+            BigDecimal exchangeRate,
+            /** Amount received in paymentCurrency. */
+            BigDecimal foreignAmount) {}
 
     public record CreateDeliveryOrderRequest(
             String customerName,
             String locationLabel,
             @NotNull UUID depotId,
             @NotEmpty List<SaleLineInput> lines,
-            UUID staffId) {}
+            UUID staffId,
+            String promoCode) {}
 
     public record SaleLineRow(
             String productName,
@@ -122,7 +131,13 @@ public final class InventoryDepotDtos {
             List<SaleLineRow> lines,
             UUID roomChargeId,
             String paymentMethod,
-            String message) {}
+            String message,
+            BigDecimal subtotalAmount,
+            BigDecimal discountAmount,
+            String promoCode,
+            String paymentCurrency,
+            BigDecimal exchangeRate,
+            BigDecimal foreignAmount) {}
 
     public record SaleRow(
             UUID saleId,
@@ -144,7 +159,13 @@ public final class InventoryDepotDtos {
             Instant soldAt,
             String paymentMethod,
             String status,
-            List<SaleLineRow> lines) {}
+            List<SaleLineRow> lines,
+            BigDecimal subtotalAmount,
+            BigDecimal discountAmount,
+            String promoCode,
+            String paymentCurrency,
+            BigDecimal exchangeRate,
+            BigDecimal foreignAmount) {}
 
     public record CreateRefundRequest(String reason) {}
 
@@ -205,7 +226,10 @@ public final class InventoryDepotDtos {
             Instant createdAt,
             UUID saleId,
             String saleNumber,
-            List<SaleLineRow> lines) {}
+            List<SaleLineRow> lines,
+            BigDecimal subtotalAmount,
+            BigDecimal discountAmount,
+            String promoCode) {}
 
     public record CreateDeliveryOrderResponse(
             UUID deliveryOrderId,
@@ -214,7 +238,10 @@ public final class InventoryDepotDtos {
             BigDecimal totalAmount,
             Instant createdAt,
             List<SaleLineRow> lines,
-            String message) {}
+            String message,
+            BigDecimal subtotalAmount,
+            BigDecimal discountAmount,
+            String promoCode) {}
 
     public record CreateProformaResponse(
             UUID proformaId,
@@ -223,7 +250,28 @@ public final class InventoryDepotDtos {
             BigDecimal totalAmount,
             Instant createdAt,
             List<SaleLineRow> lines,
-            String message) {}
+            String message,
+            BigDecimal subtotalAmount,
+            BigDecimal discountAmount,
+            String promoCode) {}
+
+    public record PosPromotionRow(
+            UUID id,
+            String code,
+            String name,
+            String discountType,
+            BigDecimal discountValue,
+            boolean active,
+            Integer usageLimit,
+            int usageCount,
+            String appliesTo) {}
+
+    public record CreatePosPromotionRequest(
+            @NotBlank String code,
+            String name,
+            @NotBlank String discountType,
+            @NotNull BigDecimal discountValue,
+            Integer usageLimit) {}
 
     public record ProformaRow(
             UUID proformaId,

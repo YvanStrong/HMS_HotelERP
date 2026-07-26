@@ -9,6 +9,7 @@ import { apiFetch, getToken } from "@/lib/api";
 import { paginateSlice } from "@/lib/pagination";
 import { staffAppPath } from "@/lib/staffAppRoutes";
 import { COUNTRY_OPTIONS, GENDER_OPTIONS, PHONE_CODE_OPTIONS } from "@/lib/guestFormConstants";
+import { GuestIdScanField } from "@/components/GuestIdScanField";
 
 type ReservationGuestRow = {
   guestId: string;
@@ -594,6 +595,21 @@ export default function GuestsPage() {
                   <div className="w-1.5 h-6 bg-primary rounded-full" />
                   <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">Identity & Core</h3>
                 </div>
+                <GuestIdScanField
+                  onParsed={(p) => {
+                    setNewGuest((g) => ({
+                      ...g,
+                      fullName: p.fullName || g.fullName,
+                      nationalId: p.nationalId,
+                      idDocNumber: p.nationalId,
+                      idType: "NATIONAL_ID",
+                      dob: p.dateOfBirth || g.dob,
+                      gender: p.gender || g.gender,
+                      nationality: g.nationality || "Rwanda",
+                      country: g.country || "Rwanda",
+                    }));
+                  }}
+                />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="md:col-span-2 group">
                     <label className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1.5 block ml-1">Full Name *</label>

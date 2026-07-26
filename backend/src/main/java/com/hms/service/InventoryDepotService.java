@@ -19,6 +19,7 @@ import com.hms.entity.PosProforma;
 import com.hms.entity.PosProformaLine;
 import com.hms.entity.PosDeliveryOrder;
 import com.hms.entity.PosDeliveryOrderLine;
+import com.hms.entity.Promotion;
 import com.hms.entity.Reservation;
 import com.hms.entity.RoomCharge;
 import com.hms.entity.StockTransaction;
@@ -75,6 +76,7 @@ public class InventoryDepotService {
     private final ChargeService chargeService;
     private final AppUserRepository appUserRepository;
     private final PosOrderNotificationService posOrderNotificationService;
+    private final DynamicPricingService dynamicPricingService;
 
     @org.springframework.context.annotation.Lazy
     @org.springframework.beans.factory.annotation.Autowired
@@ -95,7 +97,8 @@ public class InventoryDepotService {
             ReservationRepository reservationRepository,
             ChargeService chargeService,
             AppUserRepository appUserRepository,
-            PosOrderNotificationService posOrderNotificationService) {
+            PosOrderNotificationService posOrderNotificationService,
+            DynamicPricingService dynamicPricingService) {
         this.tenantAccessService = tenantAccessService;
         this.inventoryDepotRepository = inventoryDepotRepository;
         this.depotProductRepository = depotProductRepository;
@@ -111,6 +114,7 @@ public class InventoryDepotService {
         this.chargeService = chargeService;
         this.appUserRepository = appUserRepository;
         this.posOrderNotificationService = posOrderNotificationService;
+        this.dynamicPricingService = dynamicPricingService;
     }
 
     @Transactional(readOnly = true)
@@ -443,6 +447,8 @@ public class InventoryDepotService {
                     sl.isTaxable()));
         }
         sale.setTotalAmount(scale2(total));
+        applyPromotionToSale(hotelId, sale, scale2(total), req.promoCode());
+        applyForeignCurrencyPayment(sale, req);
         sale = depotSaleRepository.save(sale);
         RoomCharge folioCharge = null;
         if (Boolean.TRUE.equals(req.chargeToRoom())) {
@@ -483,7 +489,13 @@ public class InventoryDepotService {
                 responseLines,
                 folioCharge != null ? folioCharge.getId() : null,
                 sale.getPaymentMethod(),
-                "Sale completed");
+                "Sale completed",
+                sale.getSubtotalAmount(),
+                sale.getDiscountAmount(),
+                sale.getPromoCode(),
+                sale.getPaymentCurrency(),
+                sale.getExchangeRate(),
+                sale.getForeignAmount());
     }
 
     @Transactional(readOnly = true)
@@ -528,7 +540,13 @@ public class InventoryDepotService {
                 sale.getCreatedAt(),
                 sale.getPaymentMethod(),
                 sale.getStatus(),
-                lineRows);
+                lineRows,
+                sale.getSubtotalAmount() != null ? sale.getSubtotalAmount() : sale.getTotalAmount(),
+                sale.getDiscountAmount() != null ? sale.getDiscountAmount() : BigDecimal.ZERO,
+                sale.getPromoCode(),
+                sale.getPaymentCurrency(),
+                sale.getExchangeRate(),
+                sale.getForeignAmount());
     }
 
     @Transactional
@@ -714,6 +732,7 @@ public class InventoryDepotService {
                     p.getProductName(), p.getProductCode(), dl.getQuantity(), dl.getUnitPrice(), dl.getLineTotal(), dl.isTaxable()));
         }
         order.setTotalAmount(scale2(total));
+        applyPromotionToDelivery(hotelId, order, scale2(total), req.promoCode());
         order = posDeliveryOrderRepository.save(order);
         if (isMobilePosActivity(order.getLocationLabel(), order.getStaffUser())) {
             posOrderNotificationService.publishDelivery(order);
@@ -725,7 +744,10 @@ public class InventoryDepotService {
                 order.getTotalAmount(),
                 order.getCreatedAt(),
                 responseLines,
-                "Delivery order saved");
+                "Delivery order saved",
+                order.getSubtotalAmount(),
+                order.getDiscountAmount(),
+                order.getPromoCode());
     }
 
     @Transactional(readOnly = true)
@@ -821,6 +843,7 @@ public class InventoryDepotService {
         }
 
         sale.setTotalAmount(scale2(total));
+        copyPromotionOntoSale(sale, order.getSubtotalAmount(), order.getDiscountAmount(), order.getPromoCode(), order.getPromotion());
         sale = depotSaleRepository.save(sale);
         order.setSale(sale);
         order.setStatus("INVOICED");
@@ -835,7 +858,13 @@ public class InventoryDepotService {
                 responseLines,
                 null,
                 sale.getPaymentMethod(),
-                "Delivery converted to invoice");
+                "Delivery converted to invoice",
+                sale.getSubtotalAmount(),
+                sale.getDiscountAmount(),
+                sale.getPromoCode(),
+                sale.getPaymentCurrency(),
+                sale.getExchangeRate(),
+                sale.getForeignAmount());
     }
 
     @Transactional
@@ -892,6 +921,7 @@ public class InventoryDepotService {
         }
 
         proforma.setTotalAmount(scale2(total));
+        applyPromotionToProforma(hotelId, proforma, scale2(total), req.promoCode());
         proforma = posProformaRepository.save(proforma);
         return new InventoryDepotDtos.CreateProformaResponse(
                 proforma.getId(),
@@ -900,7 +930,10 @@ public class InventoryDepotService {
                 proforma.getTotalAmount(),
                 proforma.getCreatedAt(),
                 responseLines,
-                "Proforma created");
+                "Proforma created",
+                proforma.getSubtotalAmount(),
+                proforma.getDiscountAmount(),
+                proforma.getPromoCode());
     }
 
     @Transactional(readOnly = true)
@@ -1010,6 +1043,12 @@ public class InventoryDepotService {
                     p.getProductName(), p.getProductCode(), sl.getQuantity(), sl.getUnitPrice(), sl.getLineTotal(), sl.isTaxable()));
         }
         sale.setTotalAmount(scale2(total));
+        copyPromotionOntoSale(
+                sale,
+                proforma.getSubtotalAmount(),
+                proforma.getDiscountAmount(),
+                proforma.getPromoCode(),
+                proforma.getPromotion());
         sale = depotSaleRepository.save(sale);
         posProformaRepository.delete(proforma);
         return new InventoryDepotDtos.CreateSaleResponse(
@@ -1021,7 +1060,13 @@ public class InventoryDepotService {
                 responseLines,
                 null,
                 sale.getPaymentMethod(),
-                "Proforma converted to invoice");
+                "Proforma converted to invoice",
+                sale.getSubtotalAmount(),
+                sale.getDiscountAmount(),
+                sale.getPromoCode(),
+                sale.getPaymentCurrency(),
+                sale.getExchangeRate(),
+                sale.getForeignAmount());
     }
 
     private static String normalizePaymentMethod(String raw) {
@@ -1092,7 +1137,103 @@ public class InventoryDepotService {
                 order.getCreatedAt(),
                 sale != null ? sale.getId() : null,
                 sale != null ? sale.getSaleNumber() : null,
-                lineRows);
+                lineRows,
+                order.getSubtotalAmount() != null ? order.getSubtotalAmount() : order.getTotalAmount(),
+                order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO,
+                order.getPromoCode());
+    }
+
+    private void applyPromotionToSale(UUID hotelId, DepotSale sale, BigDecimal subtotal, String promoCode) {
+        DynamicPricingService.AppliedPosPromo applied = dynamicPricingService.validatePosPromoCode(hotelId, promoCode, subtotal);
+        sale.setSubtotalAmount(subtotal);
+        sale.setDiscountAmount(applied.discountAmount());
+        sale.setTotalAmount(scale2(subtotal.subtract(applied.discountAmount()).max(BigDecimal.ZERO)));
+        if (applied.promotion() != null) {
+            sale.setPromotion(applied.promotion());
+            sale.setPromoCode(applied.promotion().getCode());
+            dynamicPricingService.incrementUsage(hotelId, applied.promotion().getCode());
+        } else {
+            sale.setPromotion(null);
+            sale.setPromoCode(null);
+        }
+    }
+
+    private void applyPromotionToProforma(UUID hotelId, PosProforma proforma, BigDecimal subtotal, String promoCode) {
+        DynamicPricingService.AppliedPosPromo applied = dynamicPricingService.validatePosPromoCode(hotelId, promoCode, subtotal);
+        proforma.setSubtotalAmount(subtotal);
+        proforma.setDiscountAmount(applied.discountAmount());
+        proforma.setTotalAmount(scale2(subtotal.subtract(applied.discountAmount()).max(BigDecimal.ZERO)));
+        if (applied.promotion() != null) {
+            proforma.setPromotion(applied.promotion());
+            proforma.setPromoCode(applied.promotion().getCode());
+        } else {
+            proforma.setPromotion(null);
+            proforma.setPromoCode(null);
+        }
+    }
+
+    private void applyPromotionToDelivery(UUID hotelId, PosDeliveryOrder order, BigDecimal subtotal, String promoCode) {
+        DynamicPricingService.AppliedPosPromo applied = dynamicPricingService.validatePosPromoCode(hotelId, promoCode, subtotal);
+        order.setSubtotalAmount(subtotal);
+        order.setDiscountAmount(applied.discountAmount());
+        order.setTotalAmount(scale2(subtotal.subtract(applied.discountAmount()).max(BigDecimal.ZERO)));
+        if (applied.promotion() != null) {
+            order.setPromotion(applied.promotion());
+            order.setPromoCode(applied.promotion().getCode());
+        } else {
+            order.setPromotion(null);
+            order.setPromoCode(null);
+        }
+    }
+
+    private void copyPromotionOntoSale(
+            DepotSale sale,
+            BigDecimal subtotal,
+            BigDecimal discount,
+            String promoCode,
+            Promotion promotion) {
+        BigDecimal safeSubtotal = subtotal != null ? subtotal : sale.getTotalAmount();
+        BigDecimal safeDiscount = discount != null ? discount : BigDecimal.ZERO;
+        sale.setSubtotalAmount(safeSubtotal);
+        sale.setDiscountAmount(safeDiscount);
+        sale.setTotalAmount(scale2(safeSubtotal.subtract(safeDiscount).max(BigDecimal.ZERO)));
+        sale.setPromoCode(promoCode);
+        sale.setPromotion(promotion);
+    }
+
+    @Transactional(readOnly = true)
+    public List<InventoryDepotDtos.PosPromotionRow> listPosPromotions(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        return dynamicPricingService.listPosPromotions(hotelId).stream()
+                .map(p -> new InventoryDepotDtos.PosPromotionRow(
+                        p.getId(),
+                        p.getCode(),
+                        p.getName(),
+                        p.getDiscountType(),
+                        p.getDiscountValue(),
+                        p.isActive(),
+                        p.getUsageLimit(),
+                        p.getUsageCount(),
+                        p.getAppliesTo()))
+                .toList();
+    }
+
+    @Transactional
+    public InventoryDepotDtos.PosPromotionRow createPosPromotion(
+            UUID hotelId, String hotelHeader, InventoryDepotDtos.CreatePosPromotionRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        Promotion p = dynamicPricingService.createPosPromotion(
+                hotelId, req.code(), req.name(), req.discountType(), req.discountValue(), req.usageLimit());
+        return new InventoryDepotDtos.PosPromotionRow(
+                p.getId(),
+                p.getCode(),
+                p.getName(),
+                p.getDiscountType(),
+                p.getDiscountValue(),
+                p.isActive(),
+                p.getUsageLimit(),
+                p.getUsageCount(),
+                p.getAppliesTo());
     }
 
     private InventoryDepotDtos.DepotRow toRow(InventoryDepot d) {
@@ -1239,6 +1380,46 @@ public class InventoryDepotService {
     private String nextDeliveryNumber(UUID hotelId) {
         long next = posDeliveryOrderRepository.countByHotelId(hotelId) + 1;
         return "DEL-" + Year.now().getValue() + "-" + String.format("%06d", next);
+    }
+
+    private void applyForeignCurrencyPayment(DepotSale sale, InventoryDepotDtos.CreateSaleRequest req) {
+        if (Boolean.TRUE.equals(req.chargeToRoom())) {
+            sale.setPaymentCurrency(null);
+            sale.setExchangeRate(null);
+            sale.setForeignAmount(null);
+            return;
+        }
+        String currency = req.paymentCurrency() == null ? null : req.paymentCurrency().trim().toUpperCase(Locale.ROOT);
+        if (currency == null || currency.isBlank()) {
+            sale.setPaymentCurrency(null);
+            sale.setExchangeRate(null);
+            sale.setForeignAmount(null);
+            return;
+        }
+        if (!currency.matches("[A-Z]{3}")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "paymentCurrency must be a 3-letter code (e.g. USD, EUR).");
+        }
+        String hotelCurrency = sale.getHotel() != null && sale.getHotel().getCurrency() != null
+                ? sale.getHotel().getCurrency().trim().toUpperCase(Locale.ROOT)
+                : "";
+        if (!hotelCurrency.isBlank() && currency.equals(hotelCurrency)) {
+            sale.setPaymentCurrency(null);
+            sale.setExchangeRate(null);
+            sale.setForeignAmount(null);
+            return;
+        }
+        BigDecimal rate = req.exchangeRate();
+        if (rate == null || rate.signum() <= 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "exchangeRate is required when paying in " + currency);
+        }
+        BigDecimal foreign = req.foreignAmount();
+        if (foreign == null || foreign.signum() <= 0) {
+            // Derive from sale total when client omitted it.
+            foreign = sale.getTotalAmount().divide(rate, 2, RoundingMode.HALF_UP);
+        }
+        sale.setPaymentCurrency(currency);
+        sale.setExchangeRate(rate.setScale(6, RoundingMode.HALF_UP));
+        sale.setForeignAmount(scale2(foreign));
     }
 
     private void applyMobileSaleFields(DepotSale sale, InventoryDepotDtos.CreateSaleRequest req, UUID hotelId) {

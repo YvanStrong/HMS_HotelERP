@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { getToken } from "@/lib/api";
 import { isGuestPortalUser, loadAuthUser } from "@/lib/auth";
 import { COUNTRY_OPTIONS, GENDER_OPTIONS } from "@/lib/guestFormConstants";
+import { GuestIdScanField } from "@/components/GuestIdScanField";
 import { printReservationDocument } from "@/lib/printReservationDocument";
 import { publicBook, publicFetch } from "@/lib/publicApi";
 
@@ -781,6 +782,21 @@ function BookHotelStayPageInner() {
               Same profile fields as front desk: legal name as on ID, document type, and address. Enter{" "}
               <strong>full name as on ID</strong> or both first and last name.
             </p>
+            <div className="sm:col-span-2">
+              <GuestIdScanField
+                onParsed={(p) => {
+                  setLegalFullName(p.fullName);
+                  setFirstName(p.firstName);
+                  setLastName(p.lastName);
+                  setNationalId(p.nationalId);
+                  setIdDocNumber(p.nationalId);
+                  setIdType("NATIONAL_ID");
+                  if (p.dateOfBirth) setDob(p.dateOfBirth);
+                  if (p.gender) setGender(p.gender);
+                  setNationality((n) => n || "Rwanda");
+                }}
+              />
+            </div>
             <div className="sm:col-span-2">
               <label>Full name (as on ID)</label>
               <input

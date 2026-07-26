@@ -56,6 +56,10 @@ public class Promotion {
     @Column(name = "min_nights", nullable = false)
     private int minNights = 1;
 
+    /** ROOMS, POS, or BOTH */
+    @Column(name = "applies_to", nullable = false, length = 20)
+    private String appliesTo = "ROOMS";
+
     @Column(nullable = false)
     private boolean active = true;
 

@@ -87,6 +87,12 @@ type CreateSaleResponse = {
   roomChargeId?: string | null;
   paymentMethod?: string | null;
   message: string;
+  subtotalAmount?: number | string | null;
+  discountAmount?: number | string | null;
+  promoCode?: string | null;
+  paymentCurrency?: string | null;
+  exchangeRate?: number | string | null;
+  foreignAmount?: number | string | null;
 };
 
 type CreateProformaResponse = {
@@ -97,6 +103,9 @@ type CreateProformaResponse = {
   createdAt: string;
   lines: CreateSaleResponse["lines"];
   message: string;
+  subtotalAmount?: number | string | null;
+  discountAmount?: number | string | null;
+  promoCode?: string | null;
 };
 
 type CreateDeliveryOrderResponse = {
@@ -107,7 +116,27 @@ type CreateDeliveryOrderResponse = {
   createdAt: string;
   lines: CreateSaleResponse["lines"];
   message: string;
+  subtotalAmount?: number | string | null;
+  discountAmount?: number | string | null;
+  promoCode?: string | null;
 };
+
+type PosPromotionRow = {
+  id: string;
+  code: string;
+  name: string | null;
+  discountType: "PERCENTAGE" | "FIXED_AMOUNT" | string;
+  discountValue: number | string;
+  active: boolean;
+  usageLimit?: number | null;
+  usageCount: number;
+  appliesTo: string;
+};
+
+type PosPayCurrency = "RWF" | "USD" | "EUR";
+
+const FX_RATES_KEY = (hotelId: string) => `hms_pos_fx_rates_${hotelId}`;
+const DEFAULT_FX_RATES: Record<"USD" | "EUR", number> = { USD: 1400, EUR: 1500 };
 
 type GuestSearchHit = {
   guest?: {
@@ -176,6 +205,9 @@ export default function PosPage() {
     phone: string;
     tin: string;
   }>({ companyName: "", phone: "", tin: "" });
+  const [hotelCurrency, setHotelCurrency] = useState("RWF");
+  const [payCurrency, setPayCurrency] = useState<PosPayCurrency>("RWF");
+  const [fxRates, setFxRates] = useState<Record<"USD" | "EUR", number>>({ ...DEFAULT_FX_RATES });
   const [customerLabel, setCustomerLabel] = useState("Walk-in Customer");
   const [customerTin, setCustomerTin] = useState("");
   const [chargeToFolio, setChargeToFolio] = useState(false);
@@ -188,6 +220,8 @@ export default function PosPage() {
   const [search, setSearch] = useState("");
   const [scanCode, setScanCode] = useState("");
   const scanInputRef = useRef<HTMLInputElement>(null);
+  const posPageRef = useRef<HTMLDivElement>(null);
+  const [isFullScreen, setIsFullScreen] = useState(false);
   const [category, setCategory] = useState<string>("All");
   const [cart, setCart] = useState<Record<string, number>>({});
   const [cartPriceOverrides, setCartPriceOverrides] = useState<Record<string, number>>({});
@@ -196,6 +230,14 @@ export default function PosPage() {
   const [addingItemId, setAddingItemId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [posPromotions, setPosPromotions] = useState<PosPromotionRow[]>([]);
+  const [selectedPromoCode, setSelectedPromoCode] = useState("");
+  const [showCreatePromo, setShowCreatePromo] = useState(false);
+  const [newPromoCode, setNewPromoCode] = useState("");
+  const [newPromoName, setNewPromoName] = useState("");
+  const [newPromoType, setNewPromoType] = useState<"PERCENTAGE" | "FIXED_AMOUNT">("PERCENTAGE");
+  const [newPromoValue, setNewPromoValue] = useState("");
+  const [savingPromo, setSavingPromo] = useState(false);
 
   const load = useCallback(async () => {
     if (!getToken()) {
@@ -206,7 +248,7 @@ export default function PosPage() {
     setLoading(true);
     setError(null);
     try {
-      const [d, inv, dp, hotel] = await Promise.all([
+      const [d, inv, dp, hotel, promos] = await Promise.all([
         apiFetch<DepotRow[]>(`/api/v1/hotels/${hotelId}/inventory/depots`),
         apiFetch<InventoryItemsPayload>(`/api/v1/hotels/${hotelId}/inventory/items`),
         apiFetch<DepotProductRow[]>(`/api/v1/hotels/${hotelId}/inventory/depot-products`),
@@ -215,18 +257,42 @@ export default function PosPage() {
           companyName?: string | null;
           phone?: string | null;
           tinNumber?: string | null;
+          currency?: string | null;
         }>(`/api/v1/hotels/${hotelId}/settings`, { quiet: true }).catch(() => null),
+        apiFetch<PosPromotionRow[]>(`/api/v1/hotels/${hotelId}/inventory/pos-promotions`, { quiet: true }).catch(
+          () => [],
+        ),
       ]);
       const activeDepots = (d ?? []).filter((x) => x.active);
       setDepots(activeDepots);
       setInventoryItems((inv?.data ?? []).filter((x) => x.active !== false));
       setDepotProducts((dp ?? []).filter((x) => x.active));
+      setPosPromotions(promos ?? []);
       if (hotel) {
         setHotelPrintHeader({
           companyName: (hotel.companyName || hotel.name || "").trim(),
           phone: (hotel.phone || "").trim(),
           tin: (hotel.tinNumber || "").trim(),
         });
+        const cur = (hotel.currency || "RWF").trim().toUpperCase() || "RWF";
+        setHotelCurrency(cur);
+        if (cur === "RWF" || cur === "USD" || cur === "EUR") {
+          setPayCurrency(cur);
+        } else {
+          setPayCurrency("RWF");
+        }
+      }
+      try {
+        const raw = localStorage.getItem(FX_RATES_KEY(hotelId));
+        if (raw) {
+          const parsed = JSON.parse(raw) as { USD?: number; EUR?: number };
+          setFxRates({
+            USD: Number(parsed.USD) > 0 ? Number(parsed.USD) : DEFAULT_FX_RATES.USD,
+            EUR: Number(parsed.EUR) > 0 ? Number(parsed.EUR) : DEFAULT_FX_RATES.EUR,
+          });
+        }
+      } catch {
+        /* ignore */
       }
       setDepotId((prev) => {
         if (prev && activeDepots.some((x) => x.id === prev)) return prev;
@@ -287,6 +353,27 @@ export default function PosPage() {
   useEffect(() => {
     if (!loading) scanInputRef.current?.focus();
   }, [loading]);
+
+  useEffect(() => {
+    function handleFullScreenChange() {
+      setIsFullScreen(document.fullscreenElement === posPageRef.current);
+    }
+
+    document.addEventListener("fullscreenchange", handleFullScreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullScreenChange);
+  }, []);
+
+  async function toggleFullScreen() {
+    try {
+      if (document.fullscreenElement === posPageRef.current) {
+        await document.exitFullscreen();
+      } else {
+        await posPageRef.current?.requestFullscreen();
+      }
+    } catch {
+      setError("Full-screen mode is not available in this browser.");
+    }
+  }
 
   useEffect(() => {
     const q = customerLabel.trim();
@@ -487,7 +574,118 @@ export default function PosPage() {
     }));
   }
 
-  const totalPayable = useMemo(() => cartRows.reduce((s, r) => s + r.lineTotal, 0), [cartRows]);
+  const subtotalPayable = useMemo(() => cartRows.reduce((s, r) => s + r.lineTotal, 0), [cartRows]);
+
+  const selectedPromotion = useMemo(
+    () => posPromotions.find((p) => p.code === selectedPromoCode) ?? null,
+    [posPromotions, selectedPromoCode],
+  );
+
+  const discountAmount = useMemo(() => {
+    if (!selectedPromotion || subtotalPayable <= 0) return 0;
+    const value = Number(selectedPromotion.discountValue);
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    if (selectedPromotion.discountType === "PERCENTAGE") {
+      return Math.round(Math.min(subtotalPayable, (subtotalPayable * value) / 100) * 100) / 100;
+    }
+    return Math.round(Math.min(subtotalPayable, value) * 100) / 100;
+  }, [selectedPromotion, subtotalPayable]);
+
+  const totalPayable = useMemo(
+    () => Math.round(Math.max(0, subtotalPayable - discountAmount) * 100) / 100,
+    [subtotalPayable, discountAmount],
+  );
+
+  const effectivePayCurrency: PosPayCurrency = chargeToFolio
+    ? hotelCurrency === "USD" || hotelCurrency === "EUR"
+      ? hotelCurrency
+      : "RWF"
+    : payCurrency;
+
+  const payingInForeign =
+    !chargeToFolio && hotelCurrency === "RWF" && (effectivePayCurrency === "USD" || effectivePayCurrency === "EUR");
+
+  const activeFxRate = useMemo(() => {
+    if (effectivePayCurrency === "USD" || effectivePayCurrency === "EUR") {
+      return fxRates[effectivePayCurrency];
+    }
+    return 1;
+  }, [effectivePayCurrency, fxRates]);
+
+  const foreignAmountDue = useMemo(() => {
+    if (!payingInForeign || !(activeFxRate > 0)) return totalPayable;
+    return Math.round((totalPayable / activeFxRate) * 100) / 100;
+  }, [payingInForeign, activeFxRate, totalPayable]);
+
+  function updateFxRate(code: "USD" | "EUR", raw: string) {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return;
+    setFxRates((prev) => {
+      const next = { ...prev, [code]: n };
+      try {
+        localStorage.setItem(FX_RATES_KEY(hotelId), JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
+
+  function buildFxPaymentPayload() {
+    if (!payingInForeign) {
+      return {
+        paymentCurrency: null as string | null,
+        exchangeRate: null as number | null,
+        foreignAmount: null as number | null,
+      };
+    }
+    return {
+      paymentCurrency: effectivePayCurrency,
+      exchangeRate: activeFxRate,
+      foreignAmount: foreignAmountDue,
+    };
+  }
+
+  async function savePosPromotion() {
+    const code = newPromoCode.trim().toUpperCase();
+    const value = Number(newPromoValue);
+    if (!code) {
+      setError("Enter a promotion code.");
+      return;
+    }
+    if (!Number.isFinite(value) || value <= 0) {
+      setError("Enter a valid promotion value.");
+      return;
+    }
+    if (newPromoType === "PERCENTAGE" && value > 100) {
+      setError("Percentage promotion cannot exceed 100.");
+      return;
+    }
+    setSavingPromo(true);
+    setError(null);
+    try {
+      const created = await apiFetch<PosPromotionRow>(`/api/v1/hotels/${hotelId}/inventory/pos-promotions`, {
+        method: "POST",
+        body: JSON.stringify({
+          code,
+          name: newPromoName.trim() || code,
+          discountType: newPromoType,
+          discountValue: value,
+        }),
+      });
+      setPosPromotions((prev) => [created, ...prev.filter((p) => p.code !== created.code)]);
+      setSelectedPromoCode(created.code);
+      setShowCreatePromo(false);
+      setNewPromoCode("");
+      setNewPromoName("");
+      setNewPromoValue("");
+      setMsg(`Promotion ${created.code} saved.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save promotion");
+    } finally {
+      setSavingPromo(false);
+    }
+  }
 
   async function ensureDepotProduct(item: InventoryItemRow, targetDepotId: string): Promise<DepotProductRow> {
     const existing = depotProductForItem(item.id, targetDepotId);
@@ -706,12 +904,15 @@ export default function PosPage() {
   function clearCart() {
     setCart({});
     setCartPriceOverrides({});
+    setSelectedPromoCode("");
     setMsg(null);
   }
 
   function resetRunningOrderFields() {
     setCart({});
     setCartPriceOverrides({});
+    setSelectedPromoCode("");
+    setPayCurrency(hotelCurrency === "USD" || hotelCurrency === "EUR" ? hotelCurrency : "RWF");
     setOrderType("Dine In");
     setLocationLabel("");
     setLocationMode("table");
@@ -767,6 +968,7 @@ export default function PosPage() {
         folioReservationId,
         folioSearch,
         depotId,
+        selectedPromoCode,
         savedAt: new Date().toISOString(),
       };
       sessionStorage.setItem(DRAFT_KEY(hotelId), JSON.stringify(payload));
@@ -795,6 +997,7 @@ export default function PosPage() {
         folioReservationId?: string;
         folioSearch?: string;
         depotId?: string;
+        selectedPromoCode?: string;
       };
       if (o.cart && typeof o.cart === "object") setCart(o.cart);
       if (o.cartPriceOverrides && typeof o.cartPriceOverrides === "object") {
@@ -817,6 +1020,7 @@ export default function PosPage() {
       if (typeof o.chargeToFolio === "boolean") setChargeToFolio(o.chargeToFolio);
       if (typeof o.folioReservationId === "string") setFolioReservationId(o.folioReservationId);
       if (typeof o.folioSearch === "string") setFolioSearch(o.folioSearch);
+      if (typeof o.selectedPromoCode === "string") setSelectedPromoCode(o.selectedPromoCode);
       if (o.depotId && o.depotId !== ALL_DEPOTS && depots.some((d) => d.id === o.depotId)) {
         setDepotId(o.depotId!);
       }
@@ -865,6 +1069,7 @@ export default function PosPage() {
           customerName: buildCustomerName(),
           depotId: saleDepotId,
           lines: buildCartLinePayload(),
+          promoCode: selectedPromoCode || null,
         }),
       });
       const depotName = depots.find((d) => d.id === saleDepotId)?.name ?? "Outlet";
@@ -877,6 +1082,9 @@ export default function PosPage() {
           customerName: buildCustomerName(),
           customerTin: customerTin.trim() || null,
           totalAmount: Number(res.totalAmount),
+          subtotalAmount: Number(res.subtotalAmount ?? subtotalPayable),
+          discountAmount: Number(res.discountAmount ?? discountAmount),
+          promoCode: (res.promoCode ?? selectedPromoCode) || null,
           soldAt: res.createdAt,
           lines: (res.lines ?? []).map((ln) => ({
             productName: ln.productName,
@@ -888,7 +1096,7 @@ export default function PosPage() {
           })),
           vatPercent: 18,
         },
-        "FRW",
+        "RWF",
       );
       resetRunningOrderFields();
       sessionStorage.removeItem(DRAFT_KEY(hotelId));
@@ -919,10 +1127,15 @@ export default function PosPage() {
       setError("Select a checked-in guest with an assigned room before charging POS sale to room folio.");
       return;
     }
+    if (payingInForeign && !(activeFxRate > 0)) {
+      setError(`Enter a valid ${effectivePayCurrency} → RWF exchange rate.`);
+      return;
+    }
     setPlacing(true);
     setError(null);
     setMsg(null);
     try {
+      const fx = buildFxPaymentPayload();
       const res = await apiFetch<CreateSaleResponse>(`/api/v1/hotels/${hotelId}/inventory/sales`, {
         method: "POST",
         body: JSON.stringify({
@@ -932,6 +1145,10 @@ export default function PosPage() {
           chargeToRoom: chargeToFolio,
           reservationId: chargeToFolio ? folioReservationId.trim() : null,
           paymentMethod: paymentMethod ?? "CASH",
+          promoCode: selectedPromoCode || null,
+          paymentCurrency: fx.paymentCurrency,
+          exchangeRate: fx.exchangeRate,
+          foreignAmount: fx.foreignAmount,
         }),
       });
       const depotName = depots.find((d) => d.id === saleDepotId)?.name ?? "Outlet";
@@ -945,6 +1162,13 @@ export default function PosPage() {
             customerName: buildCustomerName(),
             customerTin: customerTin.trim() || null,
             totalAmount: Number(res.totalAmount),
+            subtotalAmount: Number(res.subtotalAmount ?? subtotalPayable),
+            discountAmount: Number(res.discountAmount ?? discountAmount),
+            promoCode: (res.promoCode ?? selectedPromoCode) || null,
+            paymentCurrency: res.paymentCurrency ?? fx.paymentCurrency,
+            exchangeRate: res.exchangeRate != null ? Number(res.exchangeRate) : fx.exchangeRate,
+            foreignAmount: res.foreignAmount != null ? Number(res.foreignAmount) : fx.foreignAmount,
+            baseCurrency: hotelCurrency,
             soldAt: res.soldAt,
             paymentMethod: res.paymentMethod ?? paymentMethod ?? "CASH",
             lines: (res.lines ?? []).map((ln) => ({
@@ -957,7 +1181,7 @@ export default function PosPage() {
             })),
             vatPercent: 18,
           },
-          "FRW",
+          hotelCurrency || "RWF",
         );
       } catch {
         if (paymentMethod) {
@@ -1008,6 +1232,7 @@ export default function PosPage() {
           locationLabel: locationLabel.trim() || null,
           depotId: saleDepotId,
           lines: buildCartLinePayload(),
+          promoCode: selectedPromoCode || null,
         }),
       });
       printPosOrderSlip(buildOrderSlipPayload());
@@ -1030,7 +1255,12 @@ export default function PosPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+    <div
+      ref={posPageRef}
+      className={`flex min-h-0 flex-1 flex-col gap-2 overflow-hidden ${
+        isFullScreen ? "h-screen bg-background p-3" : "h-full"
+      }`}
+    >
       <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">POS</h1>
@@ -1071,6 +1301,9 @@ export default function PosPage() {
           </button>
           <button type="button" className="hms-btn-outline text-sm" onClick={loadDraft}>
             Load draft
+          </button>
+          <button type="button" className="hms-btn-outline text-sm" onClick={() => void toggleFullScreen()}>
+            {isFullScreen ? "Exit full screen" : "Full screen"}
           </button>
           {hotelId ? <PosAnnouncementsButton hotelId={hotelId} /> : null}
         </div>
@@ -1406,10 +1639,140 @@ export default function PosPage() {
           </div>
 
           <div className="shrink-0 space-y-3 border-t border-border/60 bg-muted/10 p-3">
-            <div className="flex items-baseline justify-between">
-              <span className="text-sm font-medium text-muted-foreground">Total payable</span>
-              <span className="text-xl font-bold tabular-nums text-primary">{formatMoney(totalPayable)}</span>
+            <div className="space-y-2 rounded-xl border border-border/70 bg-background/80 p-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Promotion</p>
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-primary hover:underline"
+                  onClick={() => setShowCreatePromo((v) => !v)}
+                >
+                  {showCreatePromo ? "Cancel" : "Save new"}
+                </button>
+              </div>
+              <select
+                className="hms-input w-full text-sm"
+                value={selectedPromoCode}
+                onChange={(e) => setSelectedPromoCode(e.target.value)}
+              >
+                <option value="">No promotion</option>
+                {posPromotions.map((p) => (
+                  <option key={p.id} value={p.code}>
+                    {p.code}
+                    {p.name ? ` — ${p.name}` : ""} (
+                    {p.discountType === "PERCENTAGE"
+                      ? `${Number(p.discountValue)}%`
+                      : `${formatMoney(Number(p.discountValue))} FRW`}
+                    )
+                  </option>
+                ))}
+              </select>
+              {showCreatePromo ? (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <input
+                    className="hms-input text-sm"
+                    placeholder="Code (e.g. LUNCH10)"
+                    value={newPromoCode}
+                    onChange={(e) => setNewPromoCode(e.target.value.toUpperCase())}
+                  />
+                  <input
+                    className="hms-input text-sm"
+                    placeholder="Name (optional)"
+                    value={newPromoName}
+                    onChange={(e) => setNewPromoName(e.target.value)}
+                  />
+                  <select
+                    className="hms-input text-sm"
+                    value={newPromoType}
+                    onChange={(e) => setNewPromoType(e.target.value as "PERCENTAGE" | "FIXED_AMOUNT")}
+                  >
+                    <option value="PERCENTAGE">Percentage %</option>
+                    <option value="FIXED_AMOUNT">Fixed amount</option>
+                  </select>
+                  <input
+                    className="hms-input text-sm"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder={newPromoType === "PERCENTAGE" ? "e.g. 10" : "e.g. 1000"}
+                    value={newPromoValue}
+                    onChange={(e) => setNewPromoValue(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="hms-btn-outline text-sm sm:col-span-2"
+                    disabled={savingPromo}
+                    onClick={() => void savePosPromotion()}
+                  >
+                    {savingPromo ? "Saving…" : "Save promotion"}
+                  </button>
+                </div>
+              ) : null}
             </div>
+            <div className="space-y-1">
+              <div className="flex items-baseline justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="tabular-nums text-foreground">{formatMoney(subtotalPayable)}</span>
+              </div>
+              {discountAmount > 0 ? (
+                <div className="flex items-baseline justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    Discount{selectedPromoCode ? ` (${selectedPromoCode})` : ""}
+                  </span>
+                  <span className="tabular-nums text-emerald-700">−{formatMoney(discountAmount)}</span>
+                </div>
+              ) : null}
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm font-medium text-muted-foreground">Total payable</span>
+                <span className="text-xl font-bold tabular-nums text-primary">
+                  {formatMoney(totalPayable)} {hotelCurrency}
+                </span>
+              </div>
+            </div>
+            {hotelCurrency === "RWF" && !chargeToFolio ? (
+              <div className="space-y-2 rounded-xl border border-border/70 bg-background/80 p-2.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pay in</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(["RWF", "USD", "EUR"] as const).map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => setPayCurrency(code)}
+                      className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                        payCurrency === code
+                          ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                          : "border-border/80 bg-background text-muted-foreground hover:bg-accent"
+                      }`}
+                    >
+                      {code}
+                    </button>
+                  ))}
+                </div>
+                {payingInForeign ? (
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div>
+                      <label className="text-[11px] text-muted-foreground">
+                        1 {effectivePayCurrency} = ? RWF
+                      </label>
+                      <input
+                        className="hms-input w-full text-sm"
+                        type="text"
+                        inputMode="decimal"
+                        value={String(activeFxRate)}
+                        onChange={(e) => updateFxRate(effectivePayCurrency as "USD" | "EUR", e.target.value)}
+                      />
+                    </div>
+                    <div className="flex flex-col justify-end rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                      <span className="text-[11px] text-emerald-800">Customer pays</span>
+                      <span className="text-lg font-bold tabular-nums text-emerald-900">
+                        {formatMoney(foreignAmountDue)} {effectivePayCurrency}
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : chargeToFolio ? (
+              <p className="text-xs text-muted-foreground">Room folio charges stay in {hotelCurrency}.</p>
+            ) : null}
             <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
               <button
                 type="button"
