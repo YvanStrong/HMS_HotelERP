@@ -18,6 +18,10 @@ export type DepotSalePrintPayload = {
   customerName: string | null;
   customerTin?: string | null;
   totalAmount: number;
+  /** Cart total before promotion discount (VAT-inclusive). */
+  subtotalAmount?: number | null;
+  discountAmount?: number | null;
+  promoCode?: string | null;
   soldAt: string;
   lines: DepotSaleLine[];
   /** VAT rate for extraction from VAT-inclusive line totals (Rwanda default 18). */
@@ -80,8 +84,10 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
   }
   subtotalExclVat = round2(subtotalExclVat);
   const totalIncl = round2(Number(payload.totalAmount));
+  const discountAmount = round2(Math.max(0, Number(payload.discountAmount ?? 0)));
+  const promoCode = payload.promoCode?.trim() || "";
   /** Remainder so subtotal + VAT matches charged total after per-line rounding. */
-  const vatTotal = round2(Math.max(0, totalIncl - subtotalExclVat));
+  const vatTotal = round2(Math.max(0, totalIncl + discountAmount - subtotalExclVat));
 
   return `<!doctype html><html><head><meta charset="utf-8"/><title>${esc(documentTitle)} ${esc(payload.saleNumber)}</title>
 <style>
@@ -255,6 +261,11 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
     <div class="invoice-totals">
       <div class="row"><span class="muted">Subtotal (excl. VAT)</span><span>${esc(subtotalExclVat.toFixed(2))}</span></div>
       <div class="row"><span class="muted">VAT ${esc(String(vatPercent))}%</span><span>${esc(vatTotal.toFixed(2))}</span></div>
+      ${
+        discountAmount > 0
+          ? `<div class="row"><span class="muted">Discount${promoCode ? ` (${esc(promoCode)})` : ""}</span><span>-${esc(discountAmount.toFixed(2))}</span></div>`
+          : ""
+      }
       <div class="row grand"><span>Total (incl. VAT)</span><span>${esc(totalIncl.toFixed(2))}</span></div>
       <p class="note">Line amounts are VAT-inclusive. VAT ${esc(String(vatPercent))}% is shown on taxable items only; non-taxable lines use 0%.</p>
     </div>

@@ -87,6 +87,9 @@ type CreateSaleResponse = {
   roomChargeId?: string | null;
   paymentMethod?: string | null;
   message: string;
+  subtotalAmount?: number | string | null;
+  discountAmount?: number | string | null;
+  promoCode?: string | null;
 };
 
 type CreateProformaResponse = {
@@ -97,6 +100,9 @@ type CreateProformaResponse = {
   createdAt: string;
   lines: CreateSaleResponse["lines"];
   message: string;
+  subtotalAmount?: number | string | null;
+  discountAmount?: number | string | null;
+  promoCode?: string | null;
 };
 
 type CreateDeliveryOrderResponse = {
@@ -107,6 +113,21 @@ type CreateDeliveryOrderResponse = {
   createdAt: string;
   lines: CreateSaleResponse["lines"];
   message: string;
+  subtotalAmount?: number | string | null;
+  discountAmount?: number | string | null;
+  promoCode?: string | null;
+};
+
+type PosPromotionRow = {
+  id: string;
+  code: string;
+  name: string | null;
+  discountType: "PERCENTAGE" | "FIXED_AMOUNT" | string;
+  discountValue: number | string;
+  active: boolean;
+  usageLimit?: number | null;
+  usageCount: number;
+  appliesTo: string;
 };
 
 type GuestSearchHit = {
@@ -198,6 +219,14 @@ export default function PosPage() {
   const [addingItemId, setAddingItemId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [posPromotions, setPosPromotions] = useState<PosPromotionRow[]>([]);
+  const [selectedPromoCode, setSelectedPromoCode] = useState("");
+  const [showCreatePromo, setShowCreatePromo] = useState(false);
+  const [newPromoCode, setNewPromoCode] = useState("");
+  const [newPromoName, setNewPromoName] = useState("");
+  const [newPromoType, setNewPromoType] = useState<"PERCENTAGE" | "FIXED_AMOUNT">("PERCENTAGE");
+  const [newPromoValue, setNewPromoValue] = useState("");
+  const [savingPromo, setSavingPromo] = useState(false);
 
   const load = useCallback(async () => {
     if (!getToken()) {
@@ -208,7 +237,7 @@ export default function PosPage() {
     setLoading(true);
     setError(null);
     try {
-      const [d, inv, dp, hotel] = await Promise.all([
+      const [d, inv, dp, hotel, promos] = await Promise.all([
         apiFetch<DepotRow[]>(`/api/v1/hotels/${hotelId}/inventory/depots`),
         apiFetch<InventoryItemsPayload>(`/api/v1/hotels/${hotelId}/inventory/items`),
         apiFetch<DepotProductRow[]>(`/api/v1/hotels/${hotelId}/inventory/depot-products`),
@@ -218,11 +247,15 @@ export default function PosPage() {
           phone?: string | null;
           tinNumber?: string | null;
         }>(`/api/v1/hotels/${hotelId}/settings`, { quiet: true }).catch(() => null),
+        apiFetch<PosPromotionRow[]>(`/api/v1/hotels/${hotelId}/inventory/pos-promotions`, { quiet: true }).catch(
+          () => [],
+        ),
       ]);
       const activeDepots = (d ?? []).filter((x) => x.active);
       setDepots(activeDepots);
       setInventoryItems((inv?.data ?? []).filter((x) => x.active !== false));
       setDepotProducts((dp ?? []).filter((x) => x.active));
+      setPosPromotions(promos ?? []);
       if (hotel) {
         setHotelPrintHeader({
           companyName: (hotel.companyName || hotel.name || "").trim(),
@@ -510,7 +543,68 @@ export default function PosPage() {
     }));
   }
 
-  const totalPayable = useMemo(() => cartRows.reduce((s, r) => s + r.lineTotal, 0), [cartRows]);
+  const subtotalPayable = useMemo(() => cartRows.reduce((s, r) => s + r.lineTotal, 0), [cartRows]);
+
+  const selectedPromotion = useMemo(
+    () => posPromotions.find((p) => p.code === selectedPromoCode) ?? null,
+    [posPromotions, selectedPromoCode],
+  );
+
+  const discountAmount = useMemo(() => {
+    if (!selectedPromotion || subtotalPayable <= 0) return 0;
+    const value = Number(selectedPromotion.discountValue);
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    if (selectedPromotion.discountType === "PERCENTAGE") {
+      return Math.round(Math.min(subtotalPayable, (subtotalPayable * value) / 100) * 100) / 100;
+    }
+    return Math.round(Math.min(subtotalPayable, value) * 100) / 100;
+  }, [selectedPromotion, subtotalPayable]);
+
+  const totalPayable = useMemo(
+    () => Math.round(Math.max(0, subtotalPayable - discountAmount) * 100) / 100,
+    [subtotalPayable, discountAmount],
+  );
+
+  async function savePosPromotion() {
+    const code = newPromoCode.trim().toUpperCase();
+    const value = Number(newPromoValue);
+    if (!code) {
+      setError("Enter a promotion code.");
+      return;
+    }
+    if (!Number.isFinite(value) || value <= 0) {
+      setError("Enter a valid promotion value.");
+      return;
+    }
+    if (newPromoType === "PERCENTAGE" && value > 100) {
+      setError("Percentage promotion cannot exceed 100.");
+      return;
+    }
+    setSavingPromo(true);
+    setError(null);
+    try {
+      const created = await apiFetch<PosPromotionRow>(`/api/v1/hotels/${hotelId}/inventory/pos-promotions`, {
+        method: "POST",
+        body: JSON.stringify({
+          code,
+          name: newPromoName.trim() || code,
+          discountType: newPromoType,
+          discountValue: value,
+        }),
+      });
+      setPosPromotions((prev) => [created, ...prev.filter((p) => p.code !== created.code)]);
+      setSelectedPromoCode(created.code);
+      setShowCreatePromo(false);
+      setNewPromoCode("");
+      setNewPromoName("");
+      setNewPromoValue("");
+      setMsg(`Promotion ${created.code} saved.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save promotion");
+    } finally {
+      setSavingPromo(false);
+    }
+  }
 
   async function ensureDepotProduct(item: InventoryItemRow, targetDepotId: string): Promise<DepotProductRow> {
     const existing = depotProductForItem(item.id, targetDepotId);
@@ -729,12 +823,14 @@ export default function PosPage() {
   function clearCart() {
     setCart({});
     setCartPriceOverrides({});
+    setSelectedPromoCode("");
     setMsg(null);
   }
 
   function resetRunningOrderFields() {
     setCart({});
     setCartPriceOverrides({});
+    setSelectedPromoCode("");
     setOrderType("Dine In");
     setLocationLabel("");
     setLocationMode("table");
@@ -790,6 +886,7 @@ export default function PosPage() {
         folioReservationId,
         folioSearch,
         depotId,
+        selectedPromoCode,
         savedAt: new Date().toISOString(),
       };
       sessionStorage.setItem(DRAFT_KEY(hotelId), JSON.stringify(payload));
@@ -818,6 +915,7 @@ export default function PosPage() {
         folioReservationId?: string;
         folioSearch?: string;
         depotId?: string;
+        selectedPromoCode?: string;
       };
       if (o.cart && typeof o.cart === "object") setCart(o.cart);
       if (o.cartPriceOverrides && typeof o.cartPriceOverrides === "object") {
@@ -840,6 +938,7 @@ export default function PosPage() {
       if (typeof o.chargeToFolio === "boolean") setChargeToFolio(o.chargeToFolio);
       if (typeof o.folioReservationId === "string") setFolioReservationId(o.folioReservationId);
       if (typeof o.folioSearch === "string") setFolioSearch(o.folioSearch);
+      if (typeof o.selectedPromoCode === "string") setSelectedPromoCode(o.selectedPromoCode);
       if (o.depotId && o.depotId !== ALL_DEPOTS && depots.some((d) => d.id === o.depotId)) {
         setDepotId(o.depotId!);
       }
@@ -888,6 +987,7 @@ export default function PosPage() {
           customerName: buildCustomerName(),
           depotId: saleDepotId,
           lines: buildCartLinePayload(),
+          promoCode: selectedPromoCode || null,
         }),
       });
       const depotName = depots.find((d) => d.id === saleDepotId)?.name ?? "Outlet";
@@ -900,6 +1000,9 @@ export default function PosPage() {
           customerName: buildCustomerName(),
           customerTin: customerTin.trim() || null,
           totalAmount: Number(res.totalAmount),
+          subtotalAmount: Number(res.subtotalAmount ?? subtotalPayable),
+          discountAmount: Number(res.discountAmount ?? discountAmount),
+          promoCode: (res.promoCode ?? selectedPromoCode) || null,
           soldAt: res.createdAt,
           lines: (res.lines ?? []).map((ln) => ({
             productName: ln.productName,
@@ -955,6 +1058,7 @@ export default function PosPage() {
           chargeToRoom: chargeToFolio,
           reservationId: chargeToFolio ? folioReservationId.trim() : null,
           paymentMethod: paymentMethod ?? "CASH",
+          promoCode: selectedPromoCode || null,
         }),
       });
       const depotName = depots.find((d) => d.id === saleDepotId)?.name ?? "Outlet";
@@ -968,6 +1072,9 @@ export default function PosPage() {
             customerName: buildCustomerName(),
             customerTin: customerTin.trim() || null,
             totalAmount: Number(res.totalAmount),
+            subtotalAmount: Number(res.subtotalAmount ?? subtotalPayable),
+            discountAmount: Number(res.discountAmount ?? discountAmount),
+            promoCode: (res.promoCode ?? selectedPromoCode) || null,
             soldAt: res.soldAt,
             paymentMethod: res.paymentMethod ?? paymentMethod ?? "CASH",
             lines: (res.lines ?? []).map((ln) => ({
@@ -1031,6 +1138,7 @@ export default function PosPage() {
           locationLabel: locationLabel.trim() || null,
           depotId: saleDepotId,
           lines: buildCartLinePayload(),
+          promoCode: selectedPromoCode || null,
         }),
       });
       printPosOrderSlip(buildOrderSlipPayload());
@@ -1437,9 +1545,92 @@ export default function PosPage() {
           </div>
 
           <div className="shrink-0 space-y-3 border-t border-border/60 bg-muted/10 p-3">
-            <div className="flex items-baseline justify-between">
-              <span className="text-sm font-medium text-muted-foreground">Total payable</span>
-              <span className="text-xl font-bold tabular-nums text-primary">{formatMoney(totalPayable)}</span>
+            <div className="space-y-2 rounded-xl border border-border/70 bg-background/80 p-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Promotion</p>
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-primary hover:underline"
+                  onClick={() => setShowCreatePromo((v) => !v)}
+                >
+                  {showCreatePromo ? "Cancel" : "Save new"}
+                </button>
+              </div>
+              <select
+                className="hms-input w-full text-sm"
+                value={selectedPromoCode}
+                onChange={(e) => setSelectedPromoCode(e.target.value)}
+              >
+                <option value="">No promotion</option>
+                {posPromotions.map((p) => (
+                  <option key={p.id} value={p.code}>
+                    {p.code}
+                    {p.name ? ` — ${p.name}` : ""} (
+                    {p.discountType === "PERCENTAGE"
+                      ? `${Number(p.discountValue)}%`
+                      : `${formatMoney(Number(p.discountValue))} FRW`}
+                    )
+                  </option>
+                ))}
+              </select>
+              {showCreatePromo ? (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <input
+                    className="hms-input text-sm"
+                    placeholder="Code (e.g. LUNCH10)"
+                    value={newPromoCode}
+                    onChange={(e) => setNewPromoCode(e.target.value.toUpperCase())}
+                  />
+                  <input
+                    className="hms-input text-sm"
+                    placeholder="Name (optional)"
+                    value={newPromoName}
+                    onChange={(e) => setNewPromoName(e.target.value)}
+                  />
+                  <select
+                    className="hms-input text-sm"
+                    value={newPromoType}
+                    onChange={(e) => setNewPromoType(e.target.value as "PERCENTAGE" | "FIXED_AMOUNT")}
+                  >
+                    <option value="PERCENTAGE">Percentage %</option>
+                    <option value="FIXED_AMOUNT">Fixed amount</option>
+                  </select>
+                  <input
+                    className="hms-input text-sm"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder={newPromoType === "PERCENTAGE" ? "e.g. 10" : "e.g. 1000"}
+                    value={newPromoValue}
+                    onChange={(e) => setNewPromoValue(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="hms-btn-outline text-sm sm:col-span-2"
+                    disabled={savingPromo}
+                    onClick={() => void savePosPromotion()}
+                  >
+                    {savingPromo ? "Saving…" : "Save promotion"}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-baseline justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="tabular-nums text-foreground">{formatMoney(subtotalPayable)}</span>
+              </div>
+              {discountAmount > 0 ? (
+                <div className="flex items-baseline justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    Discount{selectedPromoCode ? ` (${selectedPromoCode})` : ""}
+                  </span>
+                  <span className="tabular-nums text-emerald-700">−{formatMoney(discountAmount)}</span>
+                </div>
+              ) : null}
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm font-medium text-muted-foreground">Total payable</span>
+                <span className="text-xl font-bold tabular-nums text-primary">{formatMoney(totalPayable)}</span>
+              </div>
             </div>
             <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
               <button

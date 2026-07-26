@@ -1,8 +1,10 @@
 package com.hms.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hms.entity.Hotel;
 import com.hms.entity.PricingRule;
 import com.hms.entity.Promotion;
+import com.hms.repository.HotelRepository;
 import com.hms.repository.PricingRuleRepository;
 import com.hms.repository.PromotionRepository;
 import com.hms.repository.RoomRepository;
@@ -30,13 +32,15 @@ public class DynamicPricingService {
     private final PricingRuleRepository ruleRepo;
     private final PromotionRepository promoRepo;
     private final RoomRepository roomRepo;
+    private final HotelRepository hotelRepo;
     private final ObjectMapper objectMapper;
 
     public DynamicPricingService(PricingRuleRepository ruleRepo, PromotionRepository promoRepo,
-                                  RoomRepository roomRepo, ObjectMapper objectMapper) {
+                                  RoomRepository roomRepo, HotelRepository hotelRepo, ObjectMapper objectMapper) {
         this.ruleRepo = ruleRepo;
         this.promoRepo = promoRepo;
         this.roomRepo = roomRepo;
+        this.hotelRepo = hotelRepo;
         this.objectMapper = objectMapper;
     }
 
@@ -115,7 +119,54 @@ public class DynamicPricingService {
             throw new ApiException(HttpStatus.CONFLICT, "DUPLICATE_PROMO_CODE",
                     "Promotion code '" + proto.getCode() + "' already exists.");
         });
+        if (proto.getAppliesTo() == null || proto.getAppliesTo().isBlank()) {
+            proto.setAppliesTo("ROOMS");
+        } else {
+            proto.setAppliesTo(proto.getAppliesTo().trim().toUpperCase(Locale.ROOT));
+        }
         return promoRepo.save(proto);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Promotion> listPosPromotions(UUID hotelId) {
+        return promoRepo.findActivePosPromotions(hotelId);
+    }
+
+    @Transactional
+    public Promotion createPosPromotion(UUID hotelId, String code, String name, String discountType,
+            BigDecimal discountValue, Integer usageLimit) {
+        Hotel hotel = hotelRepo.findById(hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "HOTEL_NOT_FOUND", "Hotel not found"));
+        String normalizedCode = code == null ? "" : code.trim().toUpperCase(Locale.ROOT);
+        if (normalizedCode.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "PROMO_CODE_REQUIRED", "Promotion code is required.");
+        }
+        String type = discountType == null ? "" : discountType.trim().toUpperCase(Locale.ROOT);
+        if (!type.equals("PERCENTAGE") && !type.equals("FIXED_AMOUNT")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DISCOUNT_TYPE",
+                    "discountType must be PERCENTAGE or FIXED_AMOUNT.");
+        }
+        if (discountValue == null || discountValue.signum() <= 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DISCOUNT_VALUE",
+                    "discountValue must be greater than zero.");
+        }
+        if (type.equals("PERCENTAGE") && discountValue.compareTo(BigDecimal.valueOf(100)) > 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DISCOUNT_VALUE",
+                    "Percentage discount cannot exceed 100.");
+        }
+
+        Promotion promo = new Promotion();
+        promo.setHotel(hotel);
+        promo.setCode(normalizedCode);
+        promo.setName(name == null || name.isBlank() ? normalizedCode : name.trim());
+        promo.setDiscountType(type);
+        promo.setDiscountValue(discountValue);
+        promo.setMinNights(1);
+        promo.setUsageLimit(usageLimit);
+        promo.setUsageCount(0);
+        promo.setAppliesTo("POS");
+        promo.setActive(true);
+        return createPromotion(hotelId, promo);
     }
 
     /**
@@ -129,7 +180,46 @@ public class DynamicPricingService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PROMO_CODE", "Promotion code not found.");
         }
         Promotion promo = opt.get();
+        String appliesTo = promo.getAppliesTo() == null ? "ROOMS" : promo.getAppliesTo().trim().toUpperCase(Locale.ROOT);
+        if ("POS".equals(appliesTo)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "PROMO_NOT_FOR_ROOMS",
+                    "This promotion is for POS only.");
+        }
 
+        assertPromoUsable(promo);
+
+        if (nights < promo.getMinNights()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "PROMO_MIN_NIGHTS",
+                    "Minimum " + promo.getMinNights() + " nights required for this promotion.");
+        }
+
+        return computeDiscount(promo, subtotal);
+    }
+
+    /**
+     * Validate a POS promotion and return discount amount for the given cart subtotal.
+     */
+    @Transactional(readOnly = true)
+    public AppliedPosPromo validatePosPromoCode(UUID hotelId, String code, BigDecimal subtotal) {
+        if (code == null || code.isBlank()) {
+            return AppliedPosPromo.none();
+        }
+        Optional<Promotion> opt = promoRepo.findByHotel_IdAndCode(hotelId, code.trim().toUpperCase(Locale.ROOT));
+        if (opt.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PROMO_CODE", "Promotion code not found.");
+        }
+        Promotion promo = opt.get();
+        String appliesTo = promo.getAppliesTo() == null ? "ROOMS" : promo.getAppliesTo().trim().toUpperCase(Locale.ROOT);
+        if ("ROOMS".equals(appliesTo)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "PROMO_NOT_FOR_POS",
+                    "This promotion is for room bookings only.");
+        }
+        assertPromoUsable(promo);
+        BigDecimal discount = computeDiscount(promo, subtotal);
+        return new AppliedPosPromo(promo, discount);
+    }
+
+    private void assertPromoUsable(Promotion promo) {
         if (!promo.isActive()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "PROMO_INACTIVE", "This promotion is no longer active.");
         }
@@ -143,15 +233,14 @@ public class DynamicPricingService {
         if (promo.getUsageLimit() != null && promo.getUsageCount() >= promo.getUsageLimit()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "PROMO_EXHAUSTED", "This promotion has reached its usage limit.");
         }
-        if (nights < promo.getMinNights()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "PROMO_MIN_NIGHTS",
-                    "Minimum " + promo.getMinNights() + " nights required for this promotion.");
-        }
+    }
 
+    private BigDecimal computeDiscount(Promotion promo, BigDecimal subtotal) {
+        BigDecimal base = subtotal == null ? BigDecimal.ZERO : subtotal;
         return switch (promo.getDiscountType()) {
-            case "PERCENTAGE" -> subtotal.multiply(promo.getDiscountValue())
+            case "PERCENTAGE" -> base.multiply(promo.getDiscountValue())
                     .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-            case "FIXED_AMOUNT" -> promo.getDiscountValue().min(subtotal);
+            case "FIXED_AMOUNT" -> promo.getDiscountValue().min(base).setScale(2, RoundingMode.HALF_UP);
             default -> BigDecimal.ZERO;
         };
     }
@@ -162,6 +251,16 @@ public class DynamicPricingService {
             p.setUsageCount(p.getUsageCount() + 1);
             promoRepo.save(p);
         });
+    }
+
+    public record AppliedPosPromo(Promotion promotion, BigDecimal discountAmount) {
+        public static AppliedPosPromo none() {
+            return new AppliedPosPromo(null, BigDecimal.ZERO);
+        }
+
+        public boolean applied() {
+            return promotion != null && discountAmount != null && discountAmount.signum() > 0;
+        }
     }
 
     // --- Pricing Rule CRUD ---

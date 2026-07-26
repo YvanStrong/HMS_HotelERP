@@ -108,6 +108,7 @@ public class PricingController {
         promo.setDiscountType(body.getOrDefault("discountType", "PERCENTAGE").toString());
         promo.setDiscountValue(new BigDecimal(body.getOrDefault("discountValue", "0").toString()));
         promo.setMinNights((int) body.getOrDefault("minNights", 1));
+        promo.setAppliesTo(body.getOrDefault("appliesTo", "ROOMS").toString());
         if (body.containsKey("validFrom")) promo.setValidFrom(LocalDate.parse(body.get("validFrom").toString()));
         if (body.containsKey("validUntil")) promo.setValidUntil(LocalDate.parse(body.get("validUntil").toString()));
         if (body.containsKey("usageLimit")) promo.setUsageLimit((Integer) body.get("usageLimit"));
