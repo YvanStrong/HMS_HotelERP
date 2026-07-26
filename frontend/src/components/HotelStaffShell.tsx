@@ -38,11 +38,9 @@ const NAV_MODULES: Partial<Record<HotelNavKey, string>> = {
   housekeeping: "HOUSEKEEPING",
   hkMyTasks: "HK_MY_TASKS",
   facilities: "FACILITIES",
-  menu: "MENU",
   pos: "RESTAURANT_POS",
   selfOrders: "SELF_ORDERS",
   inventory: "INVENTORY",
-  fb: "FB",
   pricing: "PRICING",
   channels: "REVENUE_CHANNELS",
   iot: "IOT_SMART_ROOM",
@@ -90,7 +88,6 @@ const NAV_SECTIONS: NavSection[] = [
     title: "Services",
     items: [
       { key: "facilities", segment: "facilities", label: "Facilities", icon: "M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" },
-      { key: "menu", segment: "menu", label: "Menu", icon: "M4 6h16M4 12h16M4 18h10m4 0h2M9 6v12" },
       {
         key: "pos",
         segment: "pos",
@@ -104,7 +101,6 @@ const NAV_SECTIONS: NavSection[] = [
         icon: "M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",
       },
       { key: "inventory", segment: "inventory", label: "Inventory", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
-      { key: "fb", segment: "fb", label: "F&B", icon: "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" },
       { key: "pricing", segment: "pricing", label: "Pricing", icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
       { key: "channels", segment: "channels", label: "Channels", icon: "M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" },
     ]
