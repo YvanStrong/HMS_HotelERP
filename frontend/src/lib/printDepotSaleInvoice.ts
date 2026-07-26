@@ -22,6 +22,10 @@ export type DepotSalePrintPayload = {
   subtotalAmount?: number | null;
   discountAmount?: number | null;
   promoCode?: string | null;
+  paymentCurrency?: string | null;
+  exchangeRate?: number | null;
+  foreignAmount?: number | null;
+  baseCurrency?: string | null;
   soldAt: string;
   lines: DepotSaleLine[];
   /** VAT rate for extraction from VAT-inclusive line totals (Rwanda default 18). */
@@ -50,11 +54,16 @@ function splitInclusiveVat(gross: number, taxable: boolean, vatPercent: number):
   return { net, vat };
 }
 
-export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, currency = "FRW"): string {
+export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, currency = "RWF"): string {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const assetUrl = (path: string) => `${origin}${path.startsWith("/") ? path : `/${path}`}`;
   const vatPercent = payload.vatPercent ?? 18;
   const documentTitle = payload.documentTitle ?? "INVOICE";
+  const baseCurrency = (payload.baseCurrency || currency || "RWF").trim().toUpperCase();
+  const payCurrency = payload.paymentCurrency?.trim().toUpperCase() || "";
+  const exchangeRate = round2(Number(payload.exchangeRate ?? 0));
+  const foreignAmount = round2(Number(payload.foreignAmount ?? 0));
+  const showFx = Boolean(payCurrency && foreignAmount > 0 && exchangeRate > 0 && payCurrency !== baseCurrency);
 
   const soldAtLabel = (() => {
     try {
@@ -252,8 +261,8 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
         <tr>
           <th class="col-item">Item</th>
           <th class="col-qty">Qty</th>
-          <th class="col-unit">Unit (${esc(currency)})</th>
-          <th class="col-line">Line (${esc(currency)})</th>
+          <th class="col-unit">Unit (${esc(baseCurrency)})</th>
+          <th class="col-line">Line (${esc(baseCurrency)})</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -266,7 +275,12 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
           ? `<div class="row"><span class="muted">Discount${promoCode ? ` (${esc(promoCode)})` : ""}</span><span>-${esc(discountAmount.toFixed(2))}</span></div>`
           : ""
       }
-      <div class="row grand"><span>Total (incl. VAT)</span><span>${esc(totalIncl.toFixed(2))}</span></div>
+      <div class="row grand"><span>Total (incl. VAT)</span><span>${esc(totalIncl.toFixed(2))} ${esc(baseCurrency)}</span></div>
+      ${
+        showFx
+          ? `<div class="row"><span class="muted">Paid in ${esc(payCurrency)} @ ${esc(exchangeRate.toFixed(2))} ${esc(baseCurrency)}</span><span class="strong">${esc(foreignAmount.toFixed(2))} ${esc(payCurrency)}</span></div>`
+          : ""
+      }
       <p class="note">Line amounts are VAT-inclusive. VAT ${esc(String(vatPercent))}% is shown on taxable items only; non-taxable lines use 0%.</p>
     </div>
     <div class="foot">

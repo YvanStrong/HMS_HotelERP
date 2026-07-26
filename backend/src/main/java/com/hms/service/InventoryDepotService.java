@@ -448,6 +448,7 @@ public class InventoryDepotService {
         }
         sale.setTotalAmount(scale2(total));
         applyPromotionToSale(hotelId, sale, scale2(total), req.promoCode());
+        applyForeignCurrencyPayment(sale, req);
         sale = depotSaleRepository.save(sale);
         RoomCharge folioCharge = null;
         if (Boolean.TRUE.equals(req.chargeToRoom())) {
@@ -491,7 +492,10 @@ public class InventoryDepotService {
                 "Sale completed",
                 sale.getSubtotalAmount(),
                 sale.getDiscountAmount(),
-                sale.getPromoCode());
+                sale.getPromoCode(),
+                sale.getPaymentCurrency(),
+                sale.getExchangeRate(),
+                sale.getForeignAmount());
     }
 
     @Transactional(readOnly = true)
@@ -539,7 +543,10 @@ public class InventoryDepotService {
                 lineRows,
                 sale.getSubtotalAmount() != null ? sale.getSubtotalAmount() : sale.getTotalAmount(),
                 sale.getDiscountAmount() != null ? sale.getDiscountAmount() : BigDecimal.ZERO,
-                sale.getPromoCode());
+                sale.getPromoCode(),
+                sale.getPaymentCurrency(),
+                sale.getExchangeRate(),
+                sale.getForeignAmount());
     }
 
     @Transactional
@@ -854,7 +861,10 @@ public class InventoryDepotService {
                 "Delivery converted to invoice",
                 sale.getSubtotalAmount(),
                 sale.getDiscountAmount(),
-                sale.getPromoCode());
+                sale.getPromoCode(),
+                sale.getPaymentCurrency(),
+                sale.getExchangeRate(),
+                sale.getForeignAmount());
     }
 
     @Transactional
@@ -1053,7 +1063,10 @@ public class InventoryDepotService {
                 "Proforma converted to invoice",
                 sale.getSubtotalAmount(),
                 sale.getDiscountAmount(),
-                sale.getPromoCode());
+                sale.getPromoCode(),
+                sale.getPaymentCurrency(),
+                sale.getExchangeRate(),
+                sale.getForeignAmount());
     }
 
     private static String normalizePaymentMethod(String raw) {
@@ -1367,6 +1380,46 @@ public class InventoryDepotService {
     private String nextDeliveryNumber(UUID hotelId) {
         long next = posDeliveryOrderRepository.countByHotelId(hotelId) + 1;
         return "DEL-" + Year.now().getValue() + "-" + String.format("%06d", next);
+    }
+
+    private void applyForeignCurrencyPayment(DepotSale sale, InventoryDepotDtos.CreateSaleRequest req) {
+        if (Boolean.TRUE.equals(req.chargeToRoom())) {
+            sale.setPaymentCurrency(null);
+            sale.setExchangeRate(null);
+            sale.setForeignAmount(null);
+            return;
+        }
+        String currency = req.paymentCurrency() == null ? null : req.paymentCurrency().trim().toUpperCase(Locale.ROOT);
+        if (currency == null || currency.isBlank()) {
+            sale.setPaymentCurrency(null);
+            sale.setExchangeRate(null);
+            sale.setForeignAmount(null);
+            return;
+        }
+        if (!currency.matches("[A-Z]{3}")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "paymentCurrency must be a 3-letter code (e.g. USD, EUR).");
+        }
+        String hotelCurrency = sale.getHotel() != null && sale.getHotel().getCurrency() != null
+                ? sale.getHotel().getCurrency().trim().toUpperCase(Locale.ROOT)
+                : "";
+        if (!hotelCurrency.isBlank() && currency.equals(hotelCurrency)) {
+            sale.setPaymentCurrency(null);
+            sale.setExchangeRate(null);
+            sale.setForeignAmount(null);
+            return;
+        }
+        BigDecimal rate = req.exchangeRate();
+        if (rate == null || rate.signum() <= 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "exchangeRate is required when paying in " + currency);
+        }
+        BigDecimal foreign = req.foreignAmount();
+        if (foreign == null || foreign.signum() <= 0) {
+            // Derive from sale total when client omitted it.
+            foreign = sale.getTotalAmount().divide(rate, 2, RoundingMode.HALF_UP);
+        }
+        sale.setPaymentCurrency(currency);
+        sale.setExchangeRate(rate.setScale(6, RoundingMode.HALF_UP));
+        sale.setForeignAmount(scale2(foreign));
     }
 
     private void applyMobileSaleFields(DepotSale sale, InventoryDepotDtos.CreateSaleRequest req, UUID hotelId) {

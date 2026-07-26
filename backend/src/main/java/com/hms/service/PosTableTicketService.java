@@ -836,6 +836,9 @@ public class PosTableTicketService {
                             paymentMethod,
                             ticket.getTableLabel(),
                             staffId,
+                            null,
+                            null,
+                            null,
                             null));
             DepotSale sale = depotSaleRepository
                     .findById(saleRes.saleId())

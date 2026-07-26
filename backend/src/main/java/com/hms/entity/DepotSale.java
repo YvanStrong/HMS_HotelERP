@@ -39,6 +39,18 @@ public class DepotSale {
     @Column(name = "payment_method", nullable = false, length = 32)
     private String paymentMethod = "CASH";
 
+    /** Currency the customer paid in (USD/EUR/…). Null means hotel base currency. */
+    @Column(name = "payment_currency", length = 3)
+    private String paymentCurrency;
+
+    /** Hotel-currency units per 1 unit of payment_currency (e.g. RWF per USD). */
+    @Column(name = "exchange_rate", precision = 18, scale = 6)
+    private BigDecimal exchangeRate;
+
+    /** Amount received in payment_currency. */
+    @Column(name = "foreign_amount", precision = 14, scale = 2)
+    private BigDecimal foreignAmount;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "staff_user_id")
     private AppUser staffUser;

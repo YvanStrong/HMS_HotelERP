@@ -90,6 +90,9 @@ type CreateSaleResponse = {
   subtotalAmount?: number | string | null;
   discountAmount?: number | string | null;
   promoCode?: string | null;
+  paymentCurrency?: string | null;
+  exchangeRate?: number | string | null;
+  foreignAmount?: number | string | null;
 };
 
 type CreateProformaResponse = {
@@ -129,6 +132,11 @@ type PosPromotionRow = {
   usageCount: number;
   appliesTo: string;
 };
+
+type PosPayCurrency = "RWF" | "USD" | "EUR";
+
+const FX_RATES_KEY = (hotelId: string) => `hms_pos_fx_rates_${hotelId}`;
+const DEFAULT_FX_RATES: Record<"USD" | "EUR", number> = { USD: 1400, EUR: 1500 };
 
 type GuestSearchHit = {
   guest?: {
@@ -197,6 +205,9 @@ export default function PosPage() {
     phone: string;
     tin: string;
   }>({ companyName: "", phone: "", tin: "" });
+  const [hotelCurrency, setHotelCurrency] = useState("RWF");
+  const [payCurrency, setPayCurrency] = useState<PosPayCurrency>("RWF");
+  const [fxRates, setFxRates] = useState<Record<"USD" | "EUR", number>>({ ...DEFAULT_FX_RATES });
   const [customerLabel, setCustomerLabel] = useState("Walk-in Customer");
   const [customerTin, setCustomerTin] = useState("");
   const [chargeToFolio, setChargeToFolio] = useState(false);
@@ -246,6 +257,7 @@ export default function PosPage() {
           companyName?: string | null;
           phone?: string | null;
           tinNumber?: string | null;
+          currency?: string | null;
         }>(`/api/v1/hotels/${hotelId}/settings`, { quiet: true }).catch(() => null),
         apiFetch<PosPromotionRow[]>(`/api/v1/hotels/${hotelId}/inventory/pos-promotions`, { quiet: true }).catch(
           () => [],
@@ -262,6 +274,25 @@ export default function PosPage() {
           phone: (hotel.phone || "").trim(),
           tin: (hotel.tinNumber || "").trim(),
         });
+        const cur = (hotel.currency || "RWF").trim().toUpperCase() || "RWF";
+        setHotelCurrency(cur);
+        if (cur === "RWF" || cur === "USD" || cur === "EUR") {
+          setPayCurrency(cur);
+        } else {
+          setPayCurrency("RWF");
+        }
+      }
+      try {
+        const raw = localStorage.getItem(FX_RATES_KEY(hotelId));
+        if (raw) {
+          const parsed = JSON.parse(raw) as { USD?: number; EUR?: number };
+          setFxRates({
+            USD: Number(parsed.USD) > 0 ? Number(parsed.USD) : DEFAULT_FX_RATES.USD,
+            EUR: Number(parsed.EUR) > 0 ? Number(parsed.EUR) : DEFAULT_FX_RATES.EUR,
+          });
+        }
+      } catch {
+        /* ignore */
       }
       setDepotId((prev) => {
         if (prev && activeDepots.some((x) => x.id === prev)) return prev;
@@ -565,6 +596,56 @@ export default function PosPage() {
     [subtotalPayable, discountAmount],
   );
 
+  const effectivePayCurrency: PosPayCurrency = chargeToFolio
+    ? hotelCurrency === "USD" || hotelCurrency === "EUR"
+      ? hotelCurrency
+      : "RWF"
+    : payCurrency;
+
+  const payingInForeign =
+    !chargeToFolio && hotelCurrency === "RWF" && (effectivePayCurrency === "USD" || effectivePayCurrency === "EUR");
+
+  const activeFxRate = useMemo(() => {
+    if (effectivePayCurrency === "USD" || effectivePayCurrency === "EUR") {
+      return fxRates[effectivePayCurrency];
+    }
+    return 1;
+  }, [effectivePayCurrency, fxRates]);
+
+  const foreignAmountDue = useMemo(() => {
+    if (!payingInForeign || !(activeFxRate > 0)) return totalPayable;
+    return Math.round((totalPayable / activeFxRate) * 100) / 100;
+  }, [payingInForeign, activeFxRate, totalPayable]);
+
+  function updateFxRate(code: "USD" | "EUR", raw: string) {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return;
+    setFxRates((prev) => {
+      const next = { ...prev, [code]: n };
+      try {
+        localStorage.setItem(FX_RATES_KEY(hotelId), JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
+
+  function buildFxPaymentPayload() {
+    if (!payingInForeign) {
+      return {
+        paymentCurrency: null as string | null,
+        exchangeRate: null as number | null,
+        foreignAmount: null as number | null,
+      };
+    }
+    return {
+      paymentCurrency: effectivePayCurrency,
+      exchangeRate: activeFxRate,
+      foreignAmount: foreignAmountDue,
+    };
+  }
+
   async function savePosPromotion() {
     const code = newPromoCode.trim().toUpperCase();
     const value = Number(newPromoValue);
@@ -831,6 +912,7 @@ export default function PosPage() {
     setCart({});
     setCartPriceOverrides({});
     setSelectedPromoCode("");
+    setPayCurrency(hotelCurrency === "USD" || hotelCurrency === "EUR" ? hotelCurrency : "RWF");
     setOrderType("Dine In");
     setLocationLabel("");
     setLocationMode("table");
@@ -1014,7 +1096,7 @@ export default function PosPage() {
           })),
           vatPercent: 18,
         },
-        "FRW",
+        "RWF",
       );
       resetRunningOrderFields();
       sessionStorage.removeItem(DRAFT_KEY(hotelId));
@@ -1045,10 +1127,15 @@ export default function PosPage() {
       setError("Select a checked-in guest with an assigned room before charging POS sale to room folio.");
       return;
     }
+    if (payingInForeign && !(activeFxRate > 0)) {
+      setError(`Enter a valid ${effectivePayCurrency} → RWF exchange rate.`);
+      return;
+    }
     setPlacing(true);
     setError(null);
     setMsg(null);
     try {
+      const fx = buildFxPaymentPayload();
       const res = await apiFetch<CreateSaleResponse>(`/api/v1/hotels/${hotelId}/inventory/sales`, {
         method: "POST",
         body: JSON.stringify({
@@ -1059,6 +1146,9 @@ export default function PosPage() {
           reservationId: chargeToFolio ? folioReservationId.trim() : null,
           paymentMethod: paymentMethod ?? "CASH",
           promoCode: selectedPromoCode || null,
+          paymentCurrency: fx.paymentCurrency,
+          exchangeRate: fx.exchangeRate,
+          foreignAmount: fx.foreignAmount,
         }),
       });
       const depotName = depots.find((d) => d.id === saleDepotId)?.name ?? "Outlet";
@@ -1075,6 +1165,10 @@ export default function PosPage() {
             subtotalAmount: Number(res.subtotalAmount ?? subtotalPayable),
             discountAmount: Number(res.discountAmount ?? discountAmount),
             promoCode: (res.promoCode ?? selectedPromoCode) || null,
+            paymentCurrency: res.paymentCurrency ?? fx.paymentCurrency,
+            exchangeRate: res.exchangeRate != null ? Number(res.exchangeRate) : fx.exchangeRate,
+            foreignAmount: res.foreignAmount != null ? Number(res.foreignAmount) : fx.foreignAmount,
+            baseCurrency: hotelCurrency,
             soldAt: res.soldAt,
             paymentMethod: res.paymentMethod ?? paymentMethod ?? "CASH",
             lines: (res.lines ?? []).map((ln) => ({
@@ -1087,7 +1181,7 @@ export default function PosPage() {
             })),
             vatPercent: 18,
           },
-          "FRW",
+          hotelCurrency || "RWF",
         );
       } catch {
         if (paymentMethod) {
@@ -1629,9 +1723,56 @@ export default function PosPage() {
               ) : null}
               <div className="flex items-baseline justify-between">
                 <span className="text-sm font-medium text-muted-foreground">Total payable</span>
-                <span className="text-xl font-bold tabular-nums text-primary">{formatMoney(totalPayable)}</span>
+                <span className="text-xl font-bold tabular-nums text-primary">
+                  {formatMoney(totalPayable)} {hotelCurrency}
+                </span>
               </div>
             </div>
+            {hotelCurrency === "RWF" && !chargeToFolio ? (
+              <div className="space-y-2 rounded-xl border border-border/70 bg-background/80 p-2.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pay in</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(["RWF", "USD", "EUR"] as const).map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => setPayCurrency(code)}
+                      className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                        payCurrency === code
+                          ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                          : "border-border/80 bg-background text-muted-foreground hover:bg-accent"
+                      }`}
+                    >
+                      {code}
+                    </button>
+                  ))}
+                </div>
+                {payingInForeign ? (
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div>
+                      <label className="text-[11px] text-muted-foreground">
+                        1 {effectivePayCurrency} = ? RWF
+                      </label>
+                      <input
+                        className="hms-input w-full text-sm"
+                        type="text"
+                        inputMode="decimal"
+                        value={String(activeFxRate)}
+                        onChange={(e) => updateFxRate(effectivePayCurrency as "USD" | "EUR", e.target.value)}
+                      />
+                    </div>
+                    <div className="flex flex-col justify-end rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                      <span className="text-[11px] text-emerald-800">Customer pays</span>
+                      <span className="text-lg font-bold tabular-nums text-emerald-900">
+                        {formatMoney(foreignAmountDue)} {effectivePayCurrency}
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : chargeToFolio ? (
+              <p className="text-xs text-muted-foreground">Room folio charges stay in {hotelCurrency}.</p>
+            ) : null}
             <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
               <button
                 type="button"

@@ -98,7 +98,13 @@ public final class InventoryDepotDtos {
             String tableLabel,
             UUID staffId,
             /** Optional saved promotion code to apply at checkout. */
-            String promoCode) {}
+            String promoCode,
+            /** Currency customer paid in (USD/EUR). Null = hotel currency. */
+            String paymentCurrency,
+            /** Hotel currency per 1 unit of paymentCurrency. */
+            BigDecimal exchangeRate,
+            /** Amount received in paymentCurrency. */
+            BigDecimal foreignAmount) {}
 
     public record CreateDeliveryOrderRequest(
             String customerName,
@@ -128,7 +134,10 @@ public final class InventoryDepotDtos {
             String message,
             BigDecimal subtotalAmount,
             BigDecimal discountAmount,
-            String promoCode) {}
+            String promoCode,
+            String paymentCurrency,
+            BigDecimal exchangeRate,
+            BigDecimal foreignAmount) {}
 
     public record SaleRow(
             UUID saleId,
@@ -153,7 +162,10 @@ public final class InventoryDepotDtos {
             List<SaleLineRow> lines,
             BigDecimal subtotalAmount,
             BigDecimal discountAmount,
-            String promoCode) {}
+            String promoCode,
+            String paymentCurrency,
+            BigDecimal exchangeRate,
+            BigDecimal foreignAmount) {}
 
     public record CreateRefundRequest(String reason) {}
 
