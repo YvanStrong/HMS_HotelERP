@@ -217,25 +217,63 @@ export function buildReservationPrintHtml(p: ReservationPrintParams): string {
 </html>`;
 }
 
+/** Print via hidden iframe — opens the system print dialog without a blank tab. */
 export function openReservationPrintWindow(html: string, docTitle: string) {
-  const w = window.open("", "_blank");
-  if (w) {
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    w.print();
-    return;
+  if (typeof document === "undefined") return;
+
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.title = docTitle || "Print reservation";
+  Object.assign(iframe.style, {
+    position: "fixed",
+    right: "0",
+    bottom: "0",
+    width: "0",
+    height: "0",
+    border: "0",
+    opacity: "0",
+    pointerEvents: "none",
+  });
+  document.body.appendChild(iframe);
+
+  const w = iframe.contentWindow;
+  const d = iframe.contentDocument ?? w?.document ?? null;
+
+  const cleanup = () => {
+    iframe.remove();
+  };
+
+  try {
+    if (!w || !d) {
+      // Last resort: download HTML if iframe is unavailable
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${docTitle.replace(/[^\w.-]+/g, "_")}.html`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      cleanup();
+      return;
+    }
+    d.open();
+    d.write(html);
+    d.close();
+    window.setTimeout(() => {
+      try {
+        w.focus();
+        w.print();
+      } finally {
+        const remove = () => cleanup();
+        w.addEventListener?.("afterprint", remove, { once: true });
+        window.setTimeout(remove, 60_000);
+      }
+    }, 120);
+  } catch {
+    cleanup();
   }
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${docTitle.replace(/[^\w.-]+/g, "_")}.html`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 
 export function printReservationDocument(params: ReservationPrintParams) {

@@ -42,6 +42,16 @@ public class BugReport {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String description;
 
+    /** Optional screenshot / evidence as a {@code data:} URL (image/*). */
+    @Column(name = "screenshot_data", columnDefinition = "TEXT")
+    private String screenshotData;
+
+    @Column(name = "screenshot_file_name", length = 255)
+    private String screenshotFileName;
+
+    @Column(name = "screenshot_content_type", length = 128)
+    private String screenshotContentType;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private BugReportSeverity severity = BugReportSeverity.MEDIUM;

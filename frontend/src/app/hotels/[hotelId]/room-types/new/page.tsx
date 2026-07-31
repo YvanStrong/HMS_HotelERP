@@ -3,22 +3,23 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { apiFetch, getToken } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { staffAppPath } from "@/lib/staffAppRoutes";
-import { ImageUpload } from "@/components/ImageUpload";
+import { useHotelContext } from "@/lib/useHotelContext";
 
 export default function CreateRoomTypePage() {
   const params = useParams();
   const router = useRouter();
   const hotelId = String(params.hotelId);
-  
+  const { hotel } = useHotelContext(hotelId);
+  const currency = hotel.currency || "RWF";
+
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [description, setDescription] = useState("");
   const [baseRate, setBaseRate] = useState("");
   const [maxOccupancy, setMaxOccupancy] = useState("");
   const [bedCount, setBedCount] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
   const [amenities, setAmenities] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -28,7 +29,7 @@ export default function CreateRoomTypePage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    
+
     try {
       const body = {
         name: name.trim(),
@@ -37,15 +38,14 @@ export default function CreateRoomTypePage() {
         baseRate: parseFloat(baseRate) || 0,
         maxOccupancy: maxOccupancy ? parseInt(maxOccupancy, 10) : null,
         bedCount: bedCount ? parseInt(bedCount, 10) : null,
-        imageUrl: imageUrl || null,
-        amenities: amenities.split(",").map(a => a.trim()).filter(Boolean),
+        amenities: amenities.split(",").map((a) => a.trim()).filter(Boolean),
       };
-      
+
       await apiFetch(`/api/v1/hotels/${hotelId}/room-types`, {
         method: "POST",
         body: JSON.stringify(body),
       });
-      
+
       setSuccess(true);
       setTimeout(() => {
         router.push(staffAppPath("room-types"));
@@ -75,7 +75,6 @@ export default function CreateRoomTypePage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      {/* Breadcrumb */}
       <div className="mb-6">
         <Link
           href={staffAppPath("room-types")}
@@ -97,7 +96,6 @@ export default function CreateRoomTypePage() {
       )}
 
       <form onSubmit={handleSubmit} className="bg-card rounded-xl border border-border/60 p-6 shadow-soft space-y-5">
-        {/* Name & Code */}
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
             <label htmlFor="name" className="block text-sm font-medium mb-1.5">
@@ -110,10 +108,9 @@ export default function CreateRoomTypePage() {
               onChange={(e) => {
                 const val = e.target.value;
                 setName(val);
-                // Simple shorthand generator: Uppercase, remove vowels (except first char), replace spaces with hyphens
                 const generatedCode = val
                   .split(/\s+/)
-                  .map(word => {
+                  .map((word) => {
                     if (!word) return "";
                     const first = word[0].toUpperCase();
                     const rest = word.slice(1).toUpperCase().replace(/[AEIOU]/g, "");
@@ -128,7 +125,9 @@ export default function CreateRoomTypePage() {
             />
           </div>
           <div>
-            <label htmlFor="code" className="block text-sm font-medium mb-1.5">Code</label>
+            <label htmlFor="code" className="block text-sm font-medium mb-1.5">
+              Code
+            </label>
             <input
               id="code"
               type="text"
@@ -139,9 +138,10 @@ export default function CreateRoomTypePage() {
           </div>
         </div>
 
-        {/* Description */}
         <div>
-          <label htmlFor="description" className="block text-sm font-medium mb-1.5">Description</label>
+          <label htmlFor="description" className="block text-sm font-medium mb-1.5">
+            Description
+          </label>
           <textarea
             id="description"
             value={description}
@@ -151,13 +151,14 @@ export default function CreateRoomTypePage() {
           />
         </div>
 
-        {/* Base Rate */}
         <div>
           <label htmlFor="baseRate" className="block text-sm font-medium mb-1.5">
-            Base Rate <span className="text-red-500">*</span>
+            Base rate (per night) <span className="text-red-500">*</span>
           </label>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm font-semibold text-muted-foreground">
+              {currency}
+            </span>
             <input
               id="baseRate"
               type="number"
@@ -167,15 +168,20 @@ export default function CreateRoomTypePage() {
               onChange={(e) => setBaseRate(e.target.value)}
               placeholder="0.00"
               required
-              className="pl-10"
+              className="min-w-0 flex-1"
             />
           </div>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Default nightly price in {currency} (hotel currency from Settings). Used when creating reservations
+            if no seasonal or dynamic price applies.
+          </p>
         </div>
 
-        {/* Occupancy & Beds */}
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
-            <label htmlFor="maxOccupancy" className="block text-sm font-medium mb-1.5">Max Occupancy</label>
+            <label htmlFor="maxOccupancy" className="block text-sm font-medium mb-1.5">
+              Max Occupancy
+            </label>
             <input
               id="maxOccupancy"
               type="number"
@@ -186,7 +192,9 @@ export default function CreateRoomTypePage() {
             />
           </div>
           <div>
-            <label htmlFor="bedCount" className="block text-sm font-medium mb-1.5">Bed Count</label>
+            <label htmlFor="bedCount" className="block text-sm font-medium mb-1.5">
+              Bed Count
+            </label>
             <input
               id="bedCount"
               type="number"
@@ -198,15 +206,6 @@ export default function CreateRoomTypePage() {
           </div>
         </div>
 
-        {/* Image Upload */}
-        <ImageUpload
-          value={imageUrl}
-          onChange={setImageUrl}
-          label="Room Type Image"
-          placeholder="Enter image URL or upload"
-        />
-
-        {/* Amenities */}
         <div>
           <label htmlFor="amenities" className="block text-sm font-medium mb-1.5">
             Amenities <span className="text-muted-foreground font-normal">(comma-separated)</span>
@@ -221,13 +220,8 @@ export default function CreateRoomTypePage() {
           <p className="text-xs text-muted-foreground mt-1">Separate amenities with commas</p>
         </div>
 
-        {/* Submit Buttons */}
         <div className="flex items-center gap-3 pt-4 border-t">
-          <button
-            type="submit"
-            disabled={loading || !name.trim() || !baseRate}
-            className="hms-btn-solid"
-          >
+          <button type="submit" disabled={loading || !name.trim() || !baseRate} className="hms-btn-solid">
             {loading ? "Creating..." : "Create Room Type"}
           </button>
           <Link href={staffAppPath("room-types")} className="hms-btn-outline">

@@ -71,6 +71,7 @@ public final class PlatformDtos {
             UUID hotelId,
             String hotelName,
             String billingStatus,
+            String tier,
             LocalDate subscriptionStartDate,
             LocalDate subscriptionEndDate,
             Long daysRemaining,
@@ -81,7 +82,60 @@ public final class PlatformDtos {
             UUID blockedBy,
             Instant lastPaymentConfirmedAt,
             BigDecimal monthlyPrice,
-            String currency) {}
+            String currency,
+            List<SubscriptionPlanOption> availablePlans,
+            List<RenewQuote> renewQuotes,
+            List<UpgradeQuote> upgradeQuotes,
+            List<BillingRequestRow> pendingRequests) {}
+
+    public record SubscriptionPlanOption(
+            String tier, String label, BigDecimal monthlyPrice, int maxRooms, int maxUsers, int maxReservationsPerMonth) {}
+
+    public record RenewQuote(int months, BigDecimal amount, LocalDate newExpiryDate) {}
+
+    public record UpgradeQuote(
+            String targetTier,
+            String label,
+            BigDecimal monthlyPrice,
+            BigDecimal proratedAmountDue,
+            long daysRemaining,
+            String note) {}
+
+    public record BillingRequestRow(
+            UUID id,
+            UUID hotelId,
+            String hotelName,
+            String requestType,
+            String targetTier,
+            Integer months,
+            BigDecimal quotedAmount,
+            String currency,
+            String paymentReference,
+            String note,
+            String status,
+            Instant requestedAt) {}
+
+    public record CreateBillingRequest(
+            @NotBlank String requestType,
+            Integer months,
+            String targetTier,
+            String paymentReference,
+            String note) {}
+
+    public record ChangePlanRequest(
+            @NotBlank String tier,
+            BigDecimal amount,
+            String currency,
+            String paymentReference,
+            String note) {}
+
+    public record ResolveBillingRequest(
+            boolean approve,
+            Integer months,
+            BigDecimal amount,
+            String currency,
+            String paymentReference,
+            String note) {}
 
     public record RenewTenantSubscriptionRequest(
             @NotNull Integer months,

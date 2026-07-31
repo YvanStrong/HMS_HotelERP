@@ -3,12 +3,15 @@ package com.hms.api;
 import com.hms.api.dto.EbmDtos;
 import com.hms.config.HmsEbmProperties;
 import com.hms.entity.InventoryItem;
+import com.hms.repository.EbmCodeListRepository;
 import com.hms.repository.InventoryItemRepository;
 import com.hms.security.TenantAccessService;
 import com.hms.service.EbmDeviceService;
 import com.hms.service.EbmItemCdService;
+import com.hms.service.EbmSaleEventService;
 import com.hms.web.ApiException;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,19 +32,25 @@ public class EbmController {
 
     private final EbmDeviceService deviceService;
     private final EbmItemCdService itemCdService;
+    private final EbmSaleEventService saleEventService;
     private final InventoryItemRepository inventoryItemRepository;
+    private final EbmCodeListRepository codeListRepository;
     private final TenantAccessService tenantAccessService;
     private final HmsEbmProperties properties;
 
     public EbmController(
             EbmDeviceService deviceService,
             EbmItemCdService itemCdService,
+            EbmSaleEventService saleEventService,
             InventoryItemRepository inventoryItemRepository,
+            EbmCodeListRepository codeListRepository,
             TenantAccessService tenantAccessService,
             HmsEbmProperties properties) {
         this.deviceService = deviceService;
         this.itemCdService = itemCdService;
+        this.saleEventService = saleEventService;
         this.inventoryItemRepository = inventoryItemRepository;
+        this.codeListRepository = codeListRepository;
         this.tenantAccessService = tenantAccessService;
         this.properties = properties;
     }
@@ -85,12 +94,52 @@ public class EbmController {
         return deviceService.listOutbox(hotelId, hotelHeader, limit);
     }
 
+    @PostMapping("/outbox/{outboxId}/retry")
+    public EbmDtos.OutboxRow retryOutbox(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID outboxId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return deviceService.retryOutbox(hotelId, hotelHeader, outboxId);
+    }
+
+    @PostMapping("/outbox/retry-failed")
+    public Map<String, Object> retryFailed(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        int n = deviceService.retryAllFailed(hotelId, hotelHeader);
+        return Map.of("retried", n);
+    }
+
     @GetMapping("/sale-events")
     public List<EbmDtos.SaleEventRow> saleEvents(
             @PathVariable UUID hotelId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
             @RequestParam(defaultValue = "50") int limit) {
         return deviceService.listSaleEvents(hotelId, hotelHeader, limit);
+    }
+
+    @GetMapping("/sale-events/by-source")
+    public EbmDtos.SaleEventRow saleEventBySource(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam String sourceType,
+            @RequestParam UUID sourceId) {
+        return deviceService.findSaleEventBySource(hotelId, hotelHeader, sourceType, sourceId);
+    }
+
+    @GetMapping("/code-lists")
+    public List<EbmDtos.CodeListRow> codeLists(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) String category) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        var rows = category == null || category.isBlank()
+                ? codeListRepository.findByHotel_IdOrderByCategoryAscCodeAsc(hotelId)
+                : codeListRepository.findByHotel_IdAndCategoryOrderByCodeAsc(hotelId, category.trim().toUpperCase());
+        return rows.stream()
+                .map(e -> new EbmDtos.CodeListRow(
+                        e.getId(), e.getCategory(), e.getCode(), e.getName(), e.getParentCode(), e.getSyncedAt()))
+                .toList();
     }
 
     @PutMapping("/inventory-items/{itemId}/classify")
@@ -121,6 +170,13 @@ public class EbmController {
             itemCdService.ensureItemCd(item);
         }
         inventoryItemRepository.save(item);
+        if (Boolean.TRUE.equals(body.saveToVsdc())) {
+            try {
+                saleEventService.enqueueItemSave(hotelId, item);
+            } catch (Exception ignored) {
+                // never block classify
+            }
+        }
         return new EbmDtos.ItemCdView(
                 item.getId(),
                 item.getItemCd(),
@@ -128,6 +184,19 @@ public class EbmController {
                 item.getPkgUnitCd(),
                 item.getQtyUnitCd(),
                 item.getItemClsCd());
+    }
+
+    @PostMapping("/inventory-items/{itemId}/save-to-vsdc")
+    public Map<String, Object> saveItemToVsdc(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID itemId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        InventoryItem item = inventoryItemRepository
+                .findByIdAndHotel_Id(itemId, hotelId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Item not found"));
+        saleEventService.enqueueItemSave(hotelId, item);
+        return Map.of("enqueued", true, "itemCd", item.getItemCd() != null ? item.getItemCd() : "");
     }
 
     @GetMapping("/config")

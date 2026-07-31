@@ -21,6 +21,10 @@ type BugReport = {
   adminNotes?: string | null;
   emailSent: boolean;
   emailError?: string | null;
+  hasScreenshot?: boolean;
+  screenshotFileName?: string | null;
+  screenshotContentType?: string | null;
+  screenshotDataUrl?: string | null;
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string | null;
@@ -84,6 +88,19 @@ export default function PlatformBugsPage() {
   }, [selected]);
 
   const openCount = useMemo(() => rows.filter((r) => r.status === "OPEN").length, [rows]);
+
+  async function selectReport(row: BugReport) {
+    setSelected(row);
+    if (row.hasScreenshot && !row.screenshotDataUrl) {
+      try {
+        const full = await apiFetch<BugReport>(`/api/v1/platform/bug-reports/${row.id}`, { quiet: true });
+        setSelected(full);
+        setRows((prev) => prev.map((r) => (r.id === full.id ? { ...r, ...full, screenshotDataUrl: undefined } : r)));
+      } catch {
+        // Keep list row; screenshot may simply fail to load
+      }
+    }
+  }
 
   async function saveSelected() {
     if (!selected) return;
@@ -161,7 +178,7 @@ export default function PlatformBugsPage() {
                 <li key={row.id}>
                   <button
                     type="button"
-                    onClick={() => setSelected(row)}
+                    onClick={() => void selectReport(row)}
                     className={`w-full bg-transparent px-4 py-3 text-left hover:bg-slate-50 ${
                       selected?.id === row.id ? "bg-primary/5" : ""
                     }`}
@@ -173,6 +190,11 @@ export default function PlatformBugsPage() {
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
                         {row.status.replace(/_/g, " ")}
                       </span>
+                      {row.hasScreenshot && (
+                        <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800">
+                          Screenshot
+                        </span>
+                      )}
                       {!row.emailSent && (
                         <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
                           Email pending/failed
@@ -199,6 +221,30 @@ export default function PlatformBugsPage() {
                 <h2 className="text-lg font-bold">{selected.title}</h2>
                 <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{selected.description}</p>
               </div>
+              {selected.hasScreenshot && (
+                <div>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">Screenshot</p>
+                  {selected.screenshotDataUrl ? (
+                    <a
+                      href={selected.screenshotDataUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 block overflow-hidden rounded-xl border border-border"
+                    >
+                      <img
+                        src={selected.screenshotDataUrl}
+                        alt={selected.screenshotFileName || "Bug screenshot"}
+                        className="max-h-72 w-full object-contain bg-slate-50"
+                      />
+                      <p className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
+                        {selected.screenshotFileName || "Open full size"}
+                      </p>
+                    </a>
+                  ) : (
+                    <p className="mt-1 text-sm text-muted-foreground">Loading screenshot…</p>
+                  )}
+                </div>
+              )}
               <dl className="grid gap-2 text-sm">
                 <div>
                   <dt className="text-xs font-semibold uppercase text-muted-foreground">Reporter</dt>

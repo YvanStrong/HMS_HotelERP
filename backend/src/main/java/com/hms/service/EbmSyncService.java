@@ -2,12 +2,16 @@ package com.hms.service;
 
 import com.hms.config.HmsEbmProperties;
 import com.hms.ebm.EbmClient;
+import com.hms.entity.EbmCodeListEntry;
 import com.hms.entity.EbmDevice;
 import com.hms.entity.EbmSyncCursor;
+import com.hms.repository.EbmCodeListRepository;
 import com.hms.repository.EbmDeviceRepository;
 import com.hms.repository.EbmSyncCursorRepository;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -25,16 +29,19 @@ public class EbmSyncService {
     private final HmsEbmProperties properties;
     private final EbmDeviceRepository deviceRepository;
     private final EbmSyncCursorRepository cursorRepository;
+    private final EbmCodeListRepository codeListRepository;
     private final EbmClient ebmClient;
 
     public EbmSyncService(
             HmsEbmProperties properties,
             EbmDeviceRepository deviceRepository,
             EbmSyncCursorRepository cursorRepository,
+            EbmCodeListRepository codeListRepository,
             EbmClient ebmClient) {
         this.properties = properties;
         this.deviceRepository = deviceRepository;
         this.cursorRepository = cursorRepository;
+        this.codeListRepository = codeListRepository;
         this.ebmClient = ebmClient;
     }
 
@@ -66,9 +73,77 @@ public class EbmSyncService {
                     return c;
                 });
         Map<String, Object> response = ebmClient.pullCodeList(device, category, cursor.getLastReqDt());
+        persistCodeRows(device, category, response);
         Instant next = extractCursor(response);
         cursor.setLastReqDt(next != null ? next : Instant.now());
         cursorRepository.save(cursor);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void persistCodeRows(EbmDevice device, String category, Map<String, Object> response) {
+        List<Map<String, Object>> rows = extractList(response);
+        UUID hotelId = device.getHotel().getId();
+        for (Map<String, Object> row : rows) {
+            String code = firstString(row, "cd", "code", "itemClsCd", "clsCd", "cdId");
+            if (code == null || code.isBlank()) {
+                continue;
+            }
+            String name = firstString(row, "cdNm", "name", "itemClsNm", "clsNm", "userDfnNm");
+            String parent = firstString(row, "cdCls", "upperCd", "parentCd", "parentCode");
+            EbmCodeListEntry entry = codeListRepository
+                    .findByHotel_IdAndCategoryAndCode(hotelId, category, code)
+                    .orElseGet(EbmCodeListEntry::new);
+            entry.setHotel(device.getHotel());
+            entry.setDevice(device);
+            entry.setCategory(category);
+            entry.setCode(code);
+            entry.setName(name);
+            entry.setParentCode(parent);
+            entry.setRawJson(new LinkedHashMap<>(row));
+            codeListRepository.save(entry);
+        }
+        if (!rows.isEmpty()) {
+            log.info("EBM persisted {} code-list rows category={} hotel={}", rows.size(), category, hotelId);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> extractList(Map<String, Object> response) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        Object data = response.get("data");
+        if (data instanceof Map<?, ?> nested) {
+            for (String key : List.of("codeList", "clsList", "itemClsList", "list", "cds", "dataList")) {
+                Object list = nested.get(key);
+                if (list instanceof List<?> raw) {
+                    for (Object o : raw) {
+                        if (o instanceof Map<?, ?> m) {
+                            out.add((Map<String, Object>) m);
+                        }
+                    }
+                    if (!out.isEmpty()) {
+                        return out;
+                    }
+                }
+            }
+        }
+        if (data instanceof List<?> raw) {
+            for (Object o : raw) {
+                if (o instanceof Map<?, ?> m) {
+                    out.add((Map<String, Object>) m);
+                }
+            }
+        }
+        return out;
+    }
+
+    private static String firstString(Map<String, Object> row, String... keys) {
+        for (String k : keys) {
+            Object v = row.get(k);
+            if (v != null && !String.valueOf(v).isBlank()) {
+                return String.valueOf(v).trim();
+            }
+        }
+        return null;
     }
 
     private void checkOfflineWindow(EbmDevice device) {

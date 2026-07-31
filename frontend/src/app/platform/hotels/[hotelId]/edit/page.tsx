@@ -566,7 +566,7 @@ export default function EditHotelPage() {
             <div>
               <h2 className="text-lg font-semibold">Functionality &amp; Services</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Control what this tenant can see and use. Core modules stay locked on for every property.
+                Control what this tenant can see and use. Modules come from the business category; Dashboard and Settings always stay available.
               </p>
             </div>
             {moduleMessage && (

@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { AuthCookieSync } from "@/components/AuthCookieSync";
 import { ErrorPopupHost } from "@/components/ErrorPopupHost";
 import { QueryProvider } from "@/components/QueryProvider";
+import { ThemeProvider } from "@/lib/theme";
 import "./globals.css";
 
 const inter = Inter({
@@ -39,15 +40,22 @@ export const viewport: Viewport = {
   ],
 };
 
+const themeInitScript = `(function(){try{var t=localStorage.getItem('hms-theme');var dark=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(dark){document.documentElement.classList.add('dark');document.documentElement.style.colorScheme='dark';}else{document.documentElement.style.colorScheme='light';}}catch(e){}})();`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body className={`${inter.className} hms-body`}>
-        <QueryProvider>
-          <AuthCookieSync />
-          <ErrorPopupHost />
-          <div className="hms-canvas">{children}</div>
-        </QueryProvider>
+        <ThemeProvider>
+          <QueryProvider>
+            <AuthCookieSync />
+            <ErrorPopupHost />
+            <div className="hms-canvas">{children}</div>
+          </QueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

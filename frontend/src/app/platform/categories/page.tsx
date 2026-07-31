@@ -21,6 +21,17 @@ type BusinessCategoryRow = {
   modules: PlatformModuleRow[];
 };
 
+/** Always included so staff can open the app and configure the hotel. */
+const ALWAYS_ON_MODULES = ["DASHBOARD", "SETTINGS"] as const;
+
+const TIER_ORDER = ["CORE", "DEFAULT", "ADDON"] as const;
+
+const TIER_LABELS: Record<string, string> = {
+  CORE: "Core",
+  DEFAULT: "Operations",
+  ADDON: "Add-ons",
+};
+
 export default function PlatformCategoriesPage() {
   const [categories, setCategories] = useState<BusinessCategoryRow[]>([]);
   const [modulesByTier, setModulesByTier] = useState<Record<string, PlatformModuleRow[]>>({});
@@ -33,10 +44,25 @@ export default function PlatformCategoriesPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const selectableModules = useMemo(
-    () => Object.values(modulesByTier).flat().filter((module) => module.tier !== "CORE"),
-    [modulesByTier],
-  );
+  const selectableModules = useMemo(() => {
+    const all = Object.values(modulesByTier).flat();
+    return [...all].sort((a, b) => {
+      const tierDiff = TIER_ORDER.indexOf(a.tier as (typeof TIER_ORDER)[number]) - TIER_ORDER.indexOf(b.tier as (typeof TIER_ORDER)[number]);
+      if (tierDiff !== 0) return tierDiff;
+      return a.label.localeCompare(b.label);
+    });
+  }, [modulesByTier]);
+
+  const modulesByTierOrdered = useMemo(() => {
+    const groups: { tier: string; label: string; modules: PlatformModuleRow[] }[] = [];
+    for (const tier of TIER_ORDER) {
+      const modules = selectableModules.filter((m) => m.tier === tier);
+      if (modules.length) groups.push({ tier, label: TIER_LABELS[tier] ?? tier, modules });
+    }
+    const other = selectableModules.filter((m) => !TIER_ORDER.includes(m.tier as (typeof TIER_ORDER)[number]));
+    if (other.length) groups.push({ tier: "OTHER", label: "Other", modules: other });
+    return groups;
+  }, [selectableModules]);
 
   async function load() {
     if (!getToken()) return;
@@ -52,13 +78,19 @@ export default function PlatformCategoriesPage() {
     void load().catch((e) => setMessage(e instanceof Error ? e.message : "Could not load categories."));
   }, []);
 
+  function withAlwaysOn(keys: string[]) {
+    const next = new Set(keys.map((k) => k.toUpperCase()));
+    for (const key of ALWAYS_ON_MODULES) next.add(key);
+    return Array.from(next);
+  }
+
   function beginEdit(category?: BusinessCategoryRow) {
     setEditing(category ?? null);
     setCode(category?.code ?? "");
     setName(category?.name ?? "");
     setDescription(category?.description ?? "");
     setIcon(category?.icon ?? "");
-    setModuleKeys(category?.modules.map((module) => module.moduleKey) ?? []);
+    setModuleKeys(withAlwaysOn(category?.modules.map((module) => module.moduleKey) ?? []));
     setMessage(null);
   }
 
@@ -66,7 +98,7 @@ export default function PlatformCategoriesPage() {
     setBusy(true);
     setMessage(null);
     try {
-      const body = { code, name, description, icon, moduleKeys };
+      const body = { code, name, description, icon, moduleKeys: withAlwaysOn(moduleKeys) };
       if (editing) {
         await apiFetch(`/api/v1/platform/categories/${editing.id}`, {
           method: "PUT",
@@ -106,7 +138,14 @@ export default function PlatformCategoriesPage() {
   }
 
   function toggleModule(key: string) {
-    setModuleKeys((prev) => (prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]));
+    const normalized = key.toUpperCase();
+    if ((ALWAYS_ON_MODULES as readonly string[]).includes(normalized)) return;
+    setModuleKeys((prev) => (prev.includes(normalized) ? prev.filter((item) => item !== normalized) : [...prev, normalized]));
+  }
+
+  function selectAllInTier(tiers: string[]) {
+    const keys = selectableModules.filter((m) => tiers.includes(m.tier)).map((m) => m.moduleKey);
+    setModuleKeys(withAlwaysOn([...moduleKeys, ...keys]));
   }
 
   return (
@@ -114,7 +153,8 @@ export default function PlatformCategoriesPage() {
       <div>
         <h1 className="text-2xl font-black tracking-tight">Business Categories</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage category templates used when provisioning hotels, restaurants, event venues, and apartments.
+          Choose which modules a hotel gets when you assign this category. After login, staff only see the modules you selected
+          (Dashboard and Settings stay available so the hotel remains usable).
         </p>
       </div>
       {message && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{message}</div>}
@@ -140,15 +180,55 @@ export default function PlatformCategoriesPage() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-2 md:grid-cols-2">
-          {selectableModules.map((module) => (
-            <label key={module.moduleKey} className="flex items-start gap-3 rounded-xl border border-border bg-background p-3 text-sm">
-              <input type="checkbox" checked={moduleKeys.includes(module.moduleKey)} onChange={() => toggleModule(module.moduleKey)} />
-              <span>
-                <span className="block font-bold">{module.label}</span>
-                <span className="text-xs text-muted-foreground">{module.description}</span>
-              </span>
-            </label>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" className="hms-btn-outline text-sm" onClick={() => setModuleKeys(withAlwaysOn(selectableModules.map((m) => m.moduleKey)))}>
+            Select all
+          </button>
+          <button type="button" className="hms-btn-outline text-sm" onClick={() => selectAllInTier(["CORE", "DEFAULT"])}>
+            Core + operations
+          </button>
+          <button type="button" className="hms-btn-outline text-sm" onClick={() => setModuleKeys(withAlwaysOn([]))}>
+            Clear optional
+          </button>
+          <span className="self-center text-xs text-muted-foreground">
+            {moduleKeys.length} selected
+          </span>
+        </div>
+
+        <div className="mt-4 space-y-5">
+          {modulesByTierOrdered.map((group) => (
+            <div key={group.tier}>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</p>
+              <div className="grid gap-2 md:grid-cols-2">
+                {group.modules.map((module) => {
+                  const alwaysOn = (ALWAYS_ON_MODULES as readonly string[]).includes(module.moduleKey);
+                  return (
+                    <label
+                      key={module.moduleKey}
+                      className={`flex items-start gap-3 rounded-xl border border-border bg-background p-3 text-sm ${
+                        alwaysOn ? "opacity-90" : ""
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={moduleKeys.includes(module.moduleKey)}
+                        disabled={alwaysOn}
+                        onChange={() => toggleModule(module.moduleKey)}
+                      />
+                      <span>
+                        <span className="block font-bold">
+                          {module.label}
+                          {alwaysOn ? (
+                            <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-sky-700">Required</span>
+                          ) : null}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{module.description}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
           ))}
         </div>
 
@@ -183,7 +263,7 @@ export default function PlatformCategoriesPage() {
             </div>
             {category.description && <p className="mt-2 text-sm text-muted-foreground">{category.description}</p>}
             <p className="mt-3 text-xs text-muted-foreground">
-              Modules: {category.modules.map((module) => module.label).join(", ") || "Core modules only"}
+              Modules: {category.modules.map((module) => module.label).join(", ") || "Dashboard & Settings only"}
             </p>
           </div>
         ))}

@@ -56,8 +56,8 @@ export default function HomePage() {
             <Link className="landing-cta-primary" href="/book">
               Book a stay
             </Link>
-            <Link className="landing-cta-outline" href="/login">
-              Hotel team sign in
+            <Link className="landing-cta-outline" href="/pricing">
+              Pricing & demo
             </Link>
           </div>
         </div>
@@ -174,6 +174,9 @@ export default function HomePage() {
             <ul className="landing-footer-links">
               <li>
                 <Link href="/login">Team sign in</Link>
+              </li>
+              <li>
+                <Link href="/pricing">Pricing & demo</Link>
               </li>
               <li>
                 <Link href="/book/lookup">Guest booking lookup</Link>

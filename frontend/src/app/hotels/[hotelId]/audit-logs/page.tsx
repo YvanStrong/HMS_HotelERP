@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { PaginationBar } from "@/components/PaginationBar";
 import { apiFetch, getToken } from "@/lib/api";
+import { paginateSlice } from "@/lib/pagination";
 
 type AuditLog = {
   id: string;
@@ -30,6 +32,8 @@ type ExecutiveDashboard = {
   recentActivity?: ActivityRow[];
 };
 
+const PAGE_SIZE = 20;
+
 function actionTone(action: string) {
   const a = action.toUpperCase();
   if (a.includes("DELETE") || a.includes("CANCEL") || a.includes("FAILED")) return "bg-red-100 text-red-800";
@@ -50,17 +54,19 @@ export default function AuditLogsPage() {
   const [q, setQ] = useState("");
   const [targetType, setTargetType] = useState("ALL");
   const [dateScope, setDateScope] = useState("ALL");
+  const [page, setPage] = useState(1);
 
   async function loadData() {
     setLoading(true);
     setError(null);
     try {
       const [data, dashboard] = await Promise.all([
-        apiFetch<PageResponse>(`/api/v1/hotels/${hotelId}/audit-logs?size=80`),
+        apiFetch<PageResponse>(`/api/v1/hotels/${hotelId}/audit-logs?size=200`),
         apiFetch<ExecutiveDashboard>(`/api/v1/hotels/${hotelId}/reports/executive-dashboard`).catch(() => null),
       ]);
       setLogs(data.content || []);
       setRecentActivity(dashboard?.recentActivity || []);
+      setPage(1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load audit logs");
     } finally {
@@ -89,6 +95,12 @@ export default function AuditLogsPage() {
         .some((value) => String(value).toLowerCase().includes(needle));
     });
   }, [dateScope, logs, q, targetType]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [q, targetType, dateScope]);
+
+  const paged = useMemo(() => paginateSlice(filteredLogs, page, PAGE_SIZE), [filteredLogs, page]);
 
   const summary = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -202,7 +214,7 @@ export default function AuditLogsPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredLogs.map((log) => (
+              {paged.slice.map((log) => (
                 <tr key={log.id} className="hover:bg-muted/30 transition-colors">
                   <td className="whitespace-nowrap font-mono text-muted-foreground">
                     {new Date(log.createdAt).toLocaleString()}
@@ -227,7 +239,7 @@ export default function AuditLogsPage() {
                   </td>
                 </tr>
               ))}
-              {filteredLogs.length === 0 && !loading && (
+              {paged.total === 0 && !loading && (
                 <tr>
                   <td colSpan={5} className="text-center py-12 text-muted-foreground italic">No audit records found.</td>
                 </tr>
@@ -235,6 +247,14 @@ export default function AuditLogsPage() {
             </tbody>
           </table>
         </div>
+        <PaginationBar
+          page={page}
+          totalPages={paged.totalPages}
+          totalItems={paged.total}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+          noun="logs"
+        />
       </section>
     </div>
   );

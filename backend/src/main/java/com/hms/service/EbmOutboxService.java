@@ -113,10 +113,22 @@ public class EbmOutboxService {
             if (qr != null) {
                 sale.setEbmQrPayload(String.valueOf(qr));
             }
+            sale.setEbmSdcId(device.getSdcId());
+            sale.setEbmMrcNo(device.getMrcNo());
             sale.setEbmStatus("SUBMITTED");
             device.setLastSignatureAt(Instant.now());
             deviceRepository.save(device);
             saleEventRepository.save(sale);
+        }
+        if ("PURCHASE".equals(entry.getPhase()) || "ITEM_SAVE".equals(entry.getPhase())) {
+            sale.setEbmStatus("CONFIRMED");
+            sale.setEbmSdcId(device.getSdcId());
+            sale.setEbmMrcNo(device.getMrcNo());
+            saleEventRepository.save(sale);
+            if ("PURCHASE".equals(entry.getPhase())) {
+                device.setLastSignatureAt(Instant.now());
+                deviceRepository.save(device);
+            }
         }
         if ("STOCK_MASTER".equals(entry.getPhase())) {
             sale.setEbmStatus("CONFIRMED");

@@ -45,7 +45,20 @@ export type EbmSaleEventRow = {
   documentNumber: string | null;
   ebmStatus: string;
   ebmReceiptNo: string | null;
+  ebmSignature?: string | null;
+  ebmQrPayload?: string | null;
+  ebmSdcId?: string | null;
+  ebmMrcNo?: string | null;
   createdAt: string;
+};
+
+export type EbmCodeListRow = {
+  id: string;
+  category: string;
+  code: string;
+  name: string | null;
+  parentCode: string | null;
+  syncedAt: string;
 };
 
 export function loadEbmStatus(hotelId: string) {
@@ -84,6 +97,30 @@ export function loadEbmOutbox(hotelId: string, limit = 50) {
   return apiFetch<EbmOutboxRow[]>(`/api/v1/hotels/${hotelId}/ebm/outbox?limit=${limit}`, { quiet: true });
 }
 
+export function retryEbmOutbox(hotelId: string, outboxId: string) {
+  return apiFetch<EbmOutboxRow>(`/api/v1/hotels/${hotelId}/ebm/outbox/${outboxId}/retry`, {
+    method: "POST",
+  });
+}
+
+export function retryAllFailedEbmOutbox(hotelId: string) {
+  return apiFetch<{ retried: number }>(`/api/v1/hotels/${hotelId}/ebm/outbox/retry-failed`, {
+    method: "POST",
+  });
+}
+
 export function loadEbmSaleEvents(hotelId: string, limit = 50) {
   return apiFetch<EbmSaleEventRow[]>(`/api/v1/hotels/${hotelId}/ebm/sale-events?limit=${limit}`, { quiet: true });
+}
+
+export function loadEbmSaleEventBySource(hotelId: string, sourceType: string, sourceId: string) {
+  return apiFetch<EbmSaleEventRow>(
+    `/api/v1/hotels/${hotelId}/ebm/sale-events/by-source?sourceType=${encodeURIComponent(sourceType)}&sourceId=${encodeURIComponent(sourceId)}`,
+    { quiet: true },
+  );
+}
+
+export function loadEbmCodeLists(hotelId: string, category?: string) {
+  const q = category ? `?category=${encodeURIComponent(category)}` : "";
+  return apiFetch<EbmCodeListRow[]>(`/api/v1/hotels/${hotelId}/ebm/code-lists${q}`, { quiet: true });
 }

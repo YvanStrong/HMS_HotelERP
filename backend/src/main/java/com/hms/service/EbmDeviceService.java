@@ -6,6 +6,7 @@ import com.hms.ebm.EbmApiException;
 import com.hms.ebm.EbmClient;
 import com.hms.ebm.EbmKeyCrypto;
 import com.hms.entity.EbmDevice;
+import com.hms.entity.EbmOutboxEntry;
 import com.hms.entity.EbmSyncCursor;
 import com.hms.entity.Hotel;
 import com.hms.repository.EbmDeviceRepository;
@@ -207,8 +208,83 @@ public class EbmDeviceService {
                         e.getDocumentNumber(),
                         e.getEbmStatus(),
                         e.getEbmReceiptNo(),
+                        e.getEbmSignature(),
+                        e.getEbmQrPayload(),
+                        e.getEbmSdcId(),
+                        e.getEbmMrcNo(),
                         e.getCreatedAt()))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public EbmDtos.SaleEventRow findSaleEventBySource(
+            UUID hotelId, String hotelHeader, String sourceType, UUID sourceId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        return saleEventRepository
+                .findBySourceTypeAndSourceId(sourceType, sourceId)
+                .filter(e -> e.getHotel().getId().equals(hotelId))
+                .map(e -> new EbmDtos.SaleEventRow(
+                        e.getId(),
+                        e.getSourceType(),
+                        e.getSourceId(),
+                        e.getDocumentNumber(),
+                        e.getEbmStatus(),
+                        e.getEbmReceiptNo(),
+                        e.getEbmSignature(),
+                        e.getEbmQrPayload(),
+                        e.getEbmSdcId(),
+                        e.getEbmMrcNo(),
+                        e.getCreatedAt()))
+                .orElseThrow(() -> notFound("Sale event"));
+    }
+
+    @Transactional
+    public EbmDtos.OutboxRow retryOutbox(UUID hotelId, String hotelHeader, UUID outboxId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        EbmOutboxEntry entry = outboxRepository
+                .findById(outboxId)
+                .filter(e -> e.getDevice().getHotel().getId().equals(hotelId))
+                .orElseThrow(() -> notFound("Outbox entry"));
+        if (!List.of("FAILED", "BLOCKED", "PENDING").contains(entry.getStatus())) {
+            throw new ApiException(HttpStatus.CONFLICT, "Only FAILED, BLOCKED, or PENDING entries can be retried");
+        }
+        entry.setStatus("PENDING");
+        entry.setLastError(null);
+        outboxRepository.save(entry);
+        if (entry.getSaleEvent() != null && "FAILED".equals(entry.getSaleEvent().getEbmStatus())) {
+            entry.getSaleEvent().setEbmStatus("PENDING");
+            saleEventRepository.save(entry.getSaleEvent());
+        }
+        return new EbmDtos.OutboxRow(
+                entry.getId(),
+                entry.getPhase(),
+                entry.getStatus(),
+                entry.getSaleEvent() != null ? entry.getSaleEvent().getId() : null,
+                entry.getAttempts(),
+                entry.getLastError(),
+                entry.getCreatedAt(),
+                entry.getSubmittedAt(),
+                entry.getAckedAt());
+    }
+
+    @Transactional
+    public int retryAllFailed(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        List<EbmOutboxEntry> failed = outboxRepository
+                .findByDevice_Hotel_IdOrderByCreatedAtDesc(hotelId, PageRequest.of(0, 200))
+                .stream()
+                .filter(e -> "FAILED".equals(e.getStatus()) || "BLOCKED".equals(e.getStatus()))
+                .toList();
+        for (EbmOutboxEntry entry : failed) {
+            entry.setStatus("PENDING");
+            entry.setLastError(null);
+            outboxRepository.save(entry);
+            if (entry.getSaleEvent() != null && "FAILED".equals(entry.getSaleEvent().getEbmStatus())) {
+                entry.getSaleEvent().setEbmStatus("PENDING");
+                saleEventRepository.save(entry.getSaleEvent());
+            }
+        }
+        return failed.size();
     }
 
     public EbmDevice requireActiveDevice(UUID hotelId) {

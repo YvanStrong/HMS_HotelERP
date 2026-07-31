@@ -101,4 +101,13 @@ public final class ReportDtos {
             BigDecimal revenuePerGuest,
             String revenuePerGuestNote,
             GuestDashboardDocumentation documentation) {}
+
+    public record TabularReportResponse(
+            String reportType,
+            UUID hotelId,
+            LocalDate fromDate,
+            LocalDate toDate,
+            Map<String, Object> summary,
+            List<String> columns,
+            List<Map<String, Object>> rows) {}
 }

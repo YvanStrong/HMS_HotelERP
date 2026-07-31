@@ -68,6 +68,10 @@ public class InventoryService {
     @org.springframework.beans.factory.annotation.Autowired
     private EbmItemCdService ebmItemCdService;
 
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired
+    private EbmSaleEventService ebmSaleEventService;
+
     public InventoryService(
             InventoryItemRepository inventoryItemRepository,
             InventoryCategoryRepository inventoryCategoryRepository,
@@ -623,6 +627,16 @@ public class InventoryService {
         fresh.setStatus(allComplete ? PurchaseOrderStatus.COMPLETED : PurchaseOrderStatus.PARTIAL_RECEIVED);
         fresh.setReceivedDate(Instant.now());
         purchaseOrderRepository.save(fresh);
+
+        if (allComplete) {
+            try {
+                if (ebmSaleEventService != null) {
+                    ebmSaleEventService.enqueuePurchaseReceive(hotelId, fresh);
+                }
+            } catch (Exception ignored) {
+                // EBM must never block goods receipt
+            }
+        }
 
         return new InventoryDtos.ReceiveGoodsResponse(
                 UUID.randomUUID(),

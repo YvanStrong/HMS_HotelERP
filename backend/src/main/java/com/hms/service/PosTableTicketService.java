@@ -829,6 +829,7 @@ public class PosTableTicketService {
                     hotelHeader,
                     new InventoryDepotDtos.CreateSaleRequest(
                             customer,
+                            null,
                             ticket.getDepot().getId(),
                             saleLines,
                             chargeRoom,

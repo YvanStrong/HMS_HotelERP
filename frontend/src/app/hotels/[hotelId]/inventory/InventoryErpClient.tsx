@@ -418,6 +418,9 @@ export function InventoryErpClient() {
   const [returnQty, setReturnQty] = useState("");
 
   const [whForm, setWhForm] = useState({ name: "", code: "", address: "" });
+  const [editWarehouse, setEditWarehouse] = useState<WarehouseRow | null>(null);
+  const [editWhForm, setEditWhForm] = useState({ name: "", code: "", address: "", isDefault: false });
+  const [whSaving, setWhSaving] = useState(false);
   const [trFrom, setTrFrom] = useState("");
   const [trTo, setTrTo] = useState("");
   const [trItem, setTrItem] = useState("");
@@ -999,6 +1002,64 @@ export function InventoryErpClient() {
       void loadExtensions();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Warehouse create failed");
+    }
+  }
+
+  function openEditWarehouse(w: WarehouseRow) {
+    setEditWarehouse(w);
+    setEditWhForm({
+      name: w.name,
+      code: w.code,
+      address: w.address ?? "",
+      isDefault: w.isDefault,
+    });
+  }
+
+  async function saveEditWarehouse(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editWarehouse || !editWhForm.name.trim() || !editWhForm.code.trim()) return;
+    setError(null);
+    setWhSaving(true);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/inventory/warehouses/${editWarehouse.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: editWhForm.name.trim(),
+          code: editWhForm.code.trim().toUpperCase(),
+          address: editWhForm.address.trim() || null,
+          isDefault: editWhForm.isDefault,
+        }),
+      });
+      setMsg("Warehouse updated.");
+      setEditWarehouse(null);
+      void loadExtensions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Warehouse update failed");
+    } finally {
+      setWhSaving(false);
+    }
+  }
+
+  async function deleteWarehouse(w: WarehouseRow) {
+    if (w.isDefault) {
+      setError("Cannot delete the default warehouse.");
+      return;
+    }
+    const linked = menuOutlets.find((o) => o.warehouseId === w.id || o.warehouseCode?.toUpperCase() === w.code.toUpperCase());
+    const confirmMsg = linked
+      ? `Delete warehouse "${w.name}"? This will also deactivate the linked outlet "${linked.name}".`
+      : `Delete warehouse "${w.name}" (${w.code})?`;
+    if (!window.confirm(confirmMsg)) return;
+    setError(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/inventory/warehouses/${w.id}`, {
+        method: "DELETE",
+      });
+      setMsg(`Warehouse "${w.name}" deleted.`);
+      if (editWarehouse?.id === w.id) setEditWarehouse(null);
+      void loadExtensions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Warehouse delete failed");
     }
   }
 
@@ -2394,13 +2455,56 @@ export function InventoryErpClient() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
             <h2 className="text-lg font-semibold mb-3">Warehouses / stores</h2>
-            <ul className="text-sm space-y-1 mb-3">
-              {warehouses.map((w) => (
-                <li key={w.id}>
-                  {w.name} ({w.code}){w.isDefault ? " · default" : ""}
-                </li>
-              ))}
-            </ul>
+            <div className="mb-3 max-h-80 overflow-auto rounded-lg border border-border/60">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/40">
+                  <tr>
+                    <th className="px-2 py-2 text-left">Name</th>
+                    <th className="px-2 py-2 text-left">Code</th>
+                    <th className="px-2 py-2 text-left">Address</th>
+                    <th className="px-2 py-2 text-left">Default</th>
+                    <th className="px-2 py-2 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {warehouses.map((w) => (
+                    <tr key={w.id} className="border-t border-border/40">
+                      <td className="px-2 py-2 font-medium">{w.name}</td>
+                      <td className="px-2 py-2">{w.code}</td>
+                      <td className="px-2 py-2 text-muted-foreground">{w.address?.trim() || "—"}</td>
+                      <td className="px-2 py-2">{w.isDefault ? "Yes" : "—"}</td>
+                      <td className="px-2 py-2">
+                        <div className="flex justify-end gap-1.5">
+                          <button
+                            type="button"
+                            className="hms-btn-outline text-xs"
+                            onClick={() => openEditWarehouse(w)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="hms-btn-outline text-xs text-red-700 disabled:opacity-40"
+                            disabled={w.isDefault}
+                            title={w.isDefault ? "Cannot delete the default warehouse" : "Delete warehouse"}
+                            onClick={() => void deleteWarehouse(w)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {warehouses.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-2 py-4 text-center text-muted-foreground">
+                        No warehouses yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
             <form onSubmit={createWarehouse} className="grid grid-cols-1 gap-2">
               <input placeholder="Name" value={whForm.name} onChange={(e) => setWhForm((f) => ({ ...f, name: e.target.value }))} />
               <input placeholder="Code" value={whForm.code} onChange={(e) => setWhForm((f) => ({ ...f, code: e.target.value }))} />
@@ -2410,12 +2514,9 @@ export function InventoryErpClient() {
               </button>
             </form>
             <p className="text-xs text-muted-foreground mt-2">
-              Warehouses match{" "}
-              <Link href={staffAppPath("menu")} className="underline">
-                Menu
-              </Link>{" "}
-              outlets (Principal depot ↔ <strong>PRINCIPAL</strong> store). New stock products are added to Principal
-              automatically. Completing a transfer reduces the source outlet stock and increases destination outlet stock.
+              Warehouses match menu outlets (Principal depot ↔ <strong>PRINCIPAL</strong> store). New stock products are
+              added to Principal automatically. Completing a transfer reduces the source outlet stock and increases
+              destination outlet stock. Deleting a warehouse also deactivates its linked outlet when one exists.
             </p>
           </div>
           <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
@@ -2524,6 +2625,61 @@ export function InventoryErpClient() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {editWarehouse && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-lg">
+            <h3 className="text-lg font-semibold mb-3">Edit warehouse</h3>
+            <form onSubmit={saveEditWarehouse} className="grid grid-cols-1 gap-3 text-sm">
+              <div>
+                <label>Name</label>
+                <input
+                  value={editWhForm.name}
+                  onChange={(e) => setEditWhForm((f) => ({ ...f, name: e.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <label>Code</label>
+                <input
+                  value={editWhForm.code}
+                  onChange={(e) => setEditWhForm((f) => ({ ...f, code: e.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <label>Address</label>
+                <input
+                  value={editWhForm.address}
+                  onChange={(e) => setEditWhForm((f) => ({ ...f, address: e.target.value }))}
+                />
+              </div>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={editWhForm.isDefault}
+                  disabled={editWarehouse.isDefault}
+                  onChange={(e) => setEditWhForm((f) => ({ ...f, isDefault: e.target.checked }))}
+                />
+                Default warehouse
+              </label>
+              <div className="mt-1 flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="hms-btn-outline text-sm"
+                  onClick={() => setEditWarehouse(null)}
+                  disabled={whSaving}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="hms-btn-solid text-sm" disabled={whSaving}>
+                  {whSaving ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

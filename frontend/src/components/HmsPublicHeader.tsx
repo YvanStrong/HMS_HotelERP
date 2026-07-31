@@ -7,6 +7,7 @@ import { clearToken } from "@/lib/api";
 import type { AuthUser } from "@/lib/auth";
 import { isGuestPortalUser, isSuperAdmin, loadAuthUser } from "@/lib/auth";
 import { useHotelContext } from "@/lib/useHotelContext";
+import { ThemeToggle } from "@/lib/theme";
 
 /** Shared top bar for guest marketing and auth — adapts when a session is already present. */
 export function HmsPublicHeader() {
@@ -41,6 +42,9 @@ export function HmsPublicHeader() {
       <nav className="hms-public-nav" aria-label="Book">
         <Link href="/book">Book</Link>
         <Link href="/book/hotels">Hotels</Link>
+        <Link href="/pricing" className={pathname.startsWith("/pricing") ? "hms-public-nav-accent" : undefined}>
+          Pricing
+        </Link>
         <Link href="/book/me">My trips</Link>
         <Link href="/book/lookup">Find booking</Link>
         {(viewedHotelId || guestHotel) && (
@@ -57,6 +61,7 @@ export function HmsPublicHeader() {
         )}
       </nav>
       <div className="hms-public-actions">
+        <ThemeToggle compact />
         {user ? (
           <>
             {guestHotel && (

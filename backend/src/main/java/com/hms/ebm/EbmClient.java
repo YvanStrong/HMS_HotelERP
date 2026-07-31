@@ -45,9 +45,12 @@ public class EbmClient {
             case "INVOICE" -> properties.getPaths().getSalesInvoice();
             case "STOCK_IO" -> properties.getPaths().getStockIo();
             case "STOCK_MASTER" -> properties.getPaths().getStockMaster();
+            case "PURCHASE" -> properties.getPaths().getPurchase();
+            case "ITEM_SAVE" -> properties.getPaths().getItemSave();
             default -> throw new IllegalArgumentException("Unknown EBM phase: " + phase);
         };
         Map<String, Object> body = new LinkedHashMap<>(payload);
+        body.remove("_phase");
         body.putIfAbsent("tin", device.getTin());
         body.putIfAbsent("bhfId", device.getBranchId());
         body.putIfAbsent("sdcId", device.getSdcId());

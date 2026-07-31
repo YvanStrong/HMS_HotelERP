@@ -6,10 +6,14 @@ import { useParams } from "next/navigation";
 import {
   disableEbmDevice,
   initializeEbmDevice,
+  loadEbmCodeLists,
   loadEbmOutbox,
   loadEbmSaleEvents,
   loadEbmStatus,
   registerEbmDevice,
+  retryAllFailedEbmOutbox,
+  retryEbmOutbox,
+  type EbmCodeListRow,
   type EbmOutboxRow,
   type EbmSaleEventRow,
   type EbmStatus,
@@ -22,6 +26,7 @@ export default function EbmSettingsPage() {
   const [status, setStatus] = useState<EbmStatus | null>(null);
   const [outbox, setOutbox] = useState<EbmOutboxRow[]>([]);
   const [events, setEvents] = useState<EbmSaleEventRow[]>([]);
+  const [codes, setCodes] = useState<EbmCodeListRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -33,14 +38,16 @@ export default function EbmSettingsPage() {
 
   const load = useCallback(async () => {
     try {
-      const [s, o, e] = await Promise.all([
+      const [s, o, e, c] = await Promise.all([
         loadEbmStatus(hotelId),
         loadEbmOutbox(hotelId),
         loadEbmSaleEvents(hotelId),
+        loadEbmCodeLists(hotelId).catch(() => [] as EbmCodeListRow[]),
       ]);
       setStatus(s);
       setOutbox(o);
       setEvents(e);
+      setCodes(c);
       setTin((prev) => (prev ? prev : s.hotelTin ?? ""));
       setError(null);
     } catch (err) {
@@ -95,6 +102,32 @@ export default function EbmSettingsPage() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Disable failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function retryOne(id: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await retryEbmOutbox(hotelId, id);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Retry failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function retryFailed() {
+    setBusy(true);
+    setError(null);
+    try {
+      await retryAllFailedEbmOutbox(hotelId);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Retry-all failed");
     } finally {
       setBusy(false);
     }
@@ -234,11 +267,16 @@ export default function EbmSettingsPage() {
       </section>
 
       <section className="hms-section-card space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Outbox queue</p>
-          <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => void load()}>
-            Refresh
-          </button>
+          <div className="flex gap-2">
+            <button type="button" className="hms-btn-outline hms-btn-sm" disabled={busy} onClick={() => void retryFailed()}>
+              Retry failed
+            </button>
+            <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => void load()}>
+              Refresh
+            </button>
+          </div>
         </div>
         <div className="hms-table-wrap overflow-x-auto">
           <table className="hms-table w-full text-left text-sm">
@@ -249,6 +287,7 @@ export default function EbmSettingsPage() {
                 <th>Attempts</th>
                 <th>Created</th>
                 <th>Error</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -259,11 +298,23 @@ export default function EbmSettingsPage() {
                   <td>{row.attempts}</td>
                   <td>{new Date(row.createdAt).toLocaleString()}</td>
                   <td className="max-w-xs truncate text-amber-700">{row.lastError ?? "—"}</td>
+                  <td>
+                    {(row.status === "FAILED" || row.status === "BLOCKED") && (
+                      <button
+                        type="button"
+                        className="hms-btn-outline hms-btn-sm"
+                        disabled={busy}
+                        onClick={() => void retryOne(row.id)}
+                      >
+                        Retry
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
               {outbox.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="text-muted-foreground">
+                  <td colSpan={6} className="text-muted-foreground">
                     No outbox entries yet. Complete a sale after the device is ACTIVE.
                   </td>
                 </tr>
@@ -283,6 +334,7 @@ export default function EbmSettingsPage() {
                 <th>Document</th>
                 <th>Status</th>
                 <th>Receipt</th>
+                <th>SDC / MRC</th>
                 <th>Created</th>
               </tr>
             </thead>
@@ -293,13 +345,52 @@ export default function EbmSettingsPage() {
                   <td>{row.documentNumber ?? "—"}</td>
                   <td>{row.ebmStatus}</td>
                   <td>{row.ebmReceiptNo ?? "—"}</td>
+                  <td className="text-xs">
+                    {row.ebmSdcId ?? "—"} / {row.ebmMrcNo ?? "—"}
+                  </td>
                   <td>{new Date(row.createdAt).toLocaleString()}</td>
                 </tr>
               ))}
               {events.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="text-muted-foreground">
+                  <td colSpan={6} className="text-muted-foreground">
                     No fiscal sale events yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="hms-section-card space-y-3">
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Synced code lists</p>
+        <p className="text-sm text-muted-foreground">
+          Rows pulled from VSDC/OSDC ({codes.length} cached). Used for item classification codes.
+        </p>
+        <div className="hms-table-wrap max-h-72 overflow-auto">
+          <table className="hms-table w-full text-left text-sm">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Synced</th>
+              </tr>
+            </thead>
+            <tbody>
+              {codes.slice(0, 100).map((row) => (
+                <tr key={row.id}>
+                  <td>{row.category}</td>
+                  <td className="font-mono text-xs">{row.code}</td>
+                  <td>{row.name ?? "—"}</td>
+                  <td>{new Date(row.syncedAt).toLocaleString()}</td>
+                </tr>
+              ))}
+              {codes.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="text-muted-foreground">
+                    No codes synced yet. Enable EBM and wait for the sync job after Initialization.
                   </td>
                 </tr>
               )}

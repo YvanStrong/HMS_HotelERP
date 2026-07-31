@@ -3,6 +3,20 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
+type PendingBillingRequest = {
+  id: string;
+  hotelId: string;
+  hotelName: string;
+  requestType: string;
+  targetTier?: string | null;
+  months?: number | null;
+  quotedAmount: number;
+  currency?: string | null;
+  paymentReference?: string | null;
+  note?: string | null;
+  requestedAt?: string | null;
+};
+
 type SubscriptionAnalytics = {
   summary?: {
     totalCollected?: number;
@@ -11,11 +25,13 @@ type SubscriptionAnalytics = {
     expired?: number;
     manuallyBlocked?: number;
     tenantCount?: number;
+    pendingBillingRequests?: number;
   };
   dueTenants?: {
     hotelId: string;
     hotelName: string;
     status: string;
+    tier?: string;
     daysRemaining: number | string;
     expiryDate: string;
     monthlyPrice: number;
@@ -27,11 +43,19 @@ type SubscriptionAnalytics = {
     currency: string;
     paymentReference: string;
     confirmedAt: string;
+    note?: string;
   }[];
+  pendingBillingRequests?: PendingBillingRequest[];
 };
 
-function money(value?: number, currency = "USD") {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(Number(value ?? 0));
+function money(value?: number, currency = "RWF") {
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(
+      Number(value ?? 0),
+    );
+  } catch {
+    return `${currency} ${Number(value ?? 0).toLocaleString()}`;
+  }
 }
 
 function formatDays(value: number | string) {
@@ -44,9 +68,12 @@ function formatDays(value: number | string) {
 export default function PlatformSubscriptionsPage() {
   const [data, setData] = useState<SubscriptionAnalytics | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyTenant, setBusyTenant] = useState<string | null>(null);
+  const [busyRequest, setBusyRequest] = useState<string | null>(null);
   const [renewMonths, setRenewMonths] = useState<Record<string, string>>({});
+  const [planDrafts, setPlanDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -76,15 +103,41 @@ export default function PlatformSubscriptionsPage() {
     const months = Number(renewMonths[tenantId] || "1");
     setBusyTenant(tenantId);
     setError(null);
+    setMessage(null);
     try {
       await apiFetch(`/api/v1/platform/tenants/${tenantId}/subscription/renew`, {
         method: "POST",
         body: JSON.stringify({ months, note: "Subscription enabled from platform billing control room" }),
         quiet: true,
       });
+      setMessage("Subscription renewed. Access extends from current expiry when still active.");
       await loadData();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not enable or renew this hotel subscription.");
+    } finally {
+      setBusyTenant(null);
+    }
+  }
+
+  async function changePlan(tenantId: string) {
+    const tier = planDrafts[tenantId];
+    if (!tier) return;
+    setBusyTenant(tenantId);
+    setError(null);
+    setMessage(null);
+    try {
+      await apiFetch(`/api/v1/platform/tenants/${tenantId}/subscription/change-plan`, {
+        method: "POST",
+        body: JSON.stringify({
+          tier,
+          note: "Plan change applied from platform billing control room (prorated if upgrade)",
+        }),
+        quiet: true,
+      });
+      setMessage("Plan updated. Upgrades use prorated charge for remaining days; expiry is unchanged.");
+      await loadData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not change plan.");
     } finally {
       setBusyTenant(null);
     }
@@ -107,6 +160,28 @@ export default function PlatformSubscriptionsPage() {
     }
   }
 
+  async function resolveRequest(requestId: string, approve: boolean) {
+    setBusyRequest(requestId);
+    setError(null);
+    setMessage(null);
+    try {
+      await apiFetch(`/api/v1/platform/billing-requests/${requestId}/resolve`, {
+        method: "POST",
+        body: JSON.stringify({
+          approve,
+          note: approve ? "Payment confirmed from billing control room" : "Request rejected by platform admin",
+        }),
+        quiet: true,
+      });
+      setMessage(approve ? "Billing request approved and applied." : "Billing request rejected.");
+      await loadData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not resolve billing request.");
+    } finally {
+      setBusyRequest(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-3xl border border-border/60 bg-card p-6 shadow-soft">
@@ -115,7 +190,8 @@ export default function PlatformSubscriptionsPage() {
             <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">Platform billing</span>
             <h1 className="mt-4 text-3xl font-bold tracking-tight">Subscription control room</h1>
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Track collected platform subscription payments, expected monthly due, expiring tenants, expired accounts, and manual blocks in one place.
+              Renew or change plans mid-cycle, confirm hotel billing requests, and track collections. Upgrades apply
+              prorated charges for remaining days without waiting for expiry.
             </p>
           </div>
           <div className="rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 text-sm">
@@ -127,32 +203,87 @@ export default function PlatformSubscriptionsPage() {
 
       {loading && <div className="rounded-2xl border border-border/60 bg-card p-6">Loading subscription billing...</div>}
       {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-800">{error}</div>}
+      {message && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{message}</div>}
 
       {summary && (
         <>
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
             <Metric label="Collected total" value={money(summary.totalCollected)} tone="emerald" />
             <Metric label="Monthly due" value={money(summary.monthlyDue)} tone="blue" />
             <Metric label="Expiring soon" value={String(summary.expiringSoon ?? 0)} tone="amber" />
             <Metric label="Expired" value={String(summary.expired ?? 0)} tone="red" />
             <Metric label="Manual blocks" value={String(summary.manuallyBlocked ?? 0)} tone="slate" />
+            <Metric label="Pending requests" value={String(summary.pendingBillingRequests ?? 0)} tone="amber" />
           </section>
+
+          {(data?.pendingBillingRequests?.length ?? 0) > 0 && (
+            <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 shadow-soft">
+              <h2 className="text-lg font-semibold text-amber-950">Hotel billing requests</h2>
+              <p className="mt-1 text-sm text-amber-900/80">
+                Hotels can request renewals and upgrades anytime. Approve after you confirm payment.
+              </p>
+              <div className="mt-4 space-y-3">
+                {data!.pendingBillingRequests!.map((req) => (
+                  <div
+                    key={req.id}
+                    className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <p className="font-medium text-foreground">{req.hotelName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {req.requestType}
+                        {req.targetTier ? ` → ${req.targetTier}` : ""}
+                        {req.months ? ` · ${req.months} mo` : ""} · {money(Number(req.quotedAmount), req.currency || "RWF")}
+                        {req.paymentReference ? ` · ref ${req.paymentReference}` : ""}
+                      </p>
+                      {req.note && <p className="mt-1 text-xs text-muted-foreground">{req.note}</p>}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="hms-btn-solid text-sm"
+                        disabled={busyRequest === req.id}
+                        onClick={() => void resolveRequest(req.id, true)}
+                      >
+                        {busyRequest === req.id ? "Working…" : "Approve"}
+                      </button>
+                      <button
+                        type="button"
+                        className="hms-btn-outline text-sm"
+                        disabled={busyRequest === req.id}
+                        onClick={() => void resolveRequest(req.id, false)}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
             <div className="rounded-3xl border border-border/60 bg-card p-5 shadow-soft">
-              <h2 className="text-lg font-semibold">Due, expiring, and blocked tenants</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Choose a renewal period and enable access directly from this list.</p>
+              <h2 className="text-lg font-semibold">Tenants — renew or change plan anytime</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Mid-cycle renew extends from current expiry. Plan change applies immediately (prorated upgrades).
+              </p>
               <div className="mt-4 divide-y divide-border/60">
                 {(data?.dueTenants ?? []).map((tenant) => (
-                  <div key={tenant.hotelId} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="font-medium">{tenant.hotelName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {tenant.status.replaceAll("_", " ")} | {tenant.expiryDate || "No expiry"} | {formatDays(tenant.daysRemaining)}
-                      </p>
+                  <div key={tenant.hotelId} className="flex flex-col gap-3 py-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-medium">{tenant.hotelName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {tenant.status.replaceAll("_", " ")} · {tenant.tier?.replaceAll("_", " ") || "STARTER"} ·{" "}
+                          {tenant.expiryDate || "No expiry"} · {formatDays(tenant.daysRemaining)}
+                        </p>
+                      </div>
+                      <span className="w-fit rounded-full bg-muted px-3 py-1 text-sm font-semibold">
+                        {money(Number(tenant.monthlyPrice ?? 0))}
+                      </span>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-muted px-3 py-1 text-sm font-semibold">{money(Number(tenant.monthlyPrice ?? 0))}</span>
                       <select
                         className="h-9 w-32 rounded-lg border border-border bg-background px-2 text-sm"
                         value={renewMonths[tenant.hotelId] ?? "1"}
@@ -169,7 +300,29 @@ export default function PlatformSubscriptionsPage() {
                         disabled={busyTenant === tenant.hotelId}
                         onClick={() => void renewTenant(tenant.hotelId)}
                       >
-                        {tenant.status === "EXPIRED" ? "Enable / Renew" : "Renew"}
+                        {tenant.status === "EXPIRED" ? "Enable / Renew" : "Renew now"}
+                      </button>
+                      <select
+                        className="h-9 w-36 rounded-lg border border-border bg-background px-2 text-sm"
+                        value={planDrafts[tenant.hotelId] ?? ""}
+                        onChange={(event) => setPlanDrafts((prev) => ({ ...prev, [tenant.hotelId]: event.target.value }))}
+                      >
+                        <option value="">Change plan…</option>
+                        {["STARTER", "PROFESSIONAL", "ENTERPRISE"]
+                          .filter((t) => t !== tenant.tier)
+                          .map((t) => (
+                            <option key={t} value={t}>
+                              {t.replaceAll("_", " ")}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="hms-btn-outline text-sm"
+                        disabled={busyTenant === tenant.hotelId || !planDrafts[tenant.hotelId]}
+                        onClick={() => void changePlan(tenant.hotelId)}
+                      >
+                        Apply plan
                       </button>
                       {tenant.status === "MANUALLY_BLOCKED" && (
                         <button
@@ -184,7 +337,9 @@ export default function PlatformSubscriptionsPage() {
                     </div>
                   </div>
                 ))}
-                {!(data?.dueTenants ?? []).length && <p className="py-4 text-sm text-muted-foreground">No due or blocked tenants right now.</p>}
+                {!(data?.dueTenants ?? []).length && (
+                  <p className="py-4 text-sm text-muted-foreground">No tenants tracked yet.</p>
+                )}
               </div>
             </div>
 
@@ -195,15 +350,24 @@ export default function PlatformSubscriptionsPage() {
                 {(data?.recentPayments ?? []).map((payment) => (
                   <div key={`${payment.hotelId}-${payment.confirmedAt}`} className="rounded-2xl border border-border/60 bg-muted/30 p-4">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="font-medium">{payment.monthsPaid} month renewal</p>
-                      <p className="font-bold">{money(Number(payment.amount ?? 0), payment.currency || "USD")}</p>
+                      <p className="font-medium">
+                        {payment.monthsPaid > 0
+                          ? `${payment.monthsPaid} month renewal`
+                          : payment.note?.includes("plan") || payment.note?.includes("Plan")
+                            ? "Plan change"
+                            : "Payment"}
+                      </p>
+                      <p className="font-bold">{money(Number(payment.amount ?? 0), payment.currency || "RWF")}</p>
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {new Date(payment.confirmedAt).toLocaleString()} {payment.paymentReference ? `| Ref ${payment.paymentReference}` : ""}
+                      {new Date(payment.confirmedAt).toLocaleString()}{" "}
+                      {payment.paymentReference ? `| Ref ${payment.paymentReference}` : ""}
                     </p>
                   </div>
                 ))}
-                {!(data?.recentPayments ?? []).length && <p className="text-sm text-muted-foreground">No subscription payments confirmed yet.</p>}
+                {!(data?.recentPayments ?? []).length && (
+                  <p className="text-sm text-muted-foreground">No subscription payments confirmed yet.</p>
+                )}
               </div>
             </div>
           </section>
@@ -213,7 +377,15 @@ export default function PlatformSubscriptionsPage() {
   );
 }
 
-function Metric({ label, value, tone }: { label: string; value: string; tone: "emerald" | "blue" | "amber" | "red" | "slate" }) {
+function Metric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "emerald" | "blue" | "amber" | "red" | "slate";
+}) {
   const toneClass = {
     emerald: "bg-emerald-50 text-emerald-700 border-emerald-100",
     blue: "bg-blue-50 text-blue-700 border-blue-100",

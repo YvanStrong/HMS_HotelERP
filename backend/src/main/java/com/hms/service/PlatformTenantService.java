@@ -12,11 +12,14 @@ import com.hms.domain.ProvisioningStatus;
 import com.hms.domain.Role;
 import com.hms.domain.SubscriptionTier;
 import com.hms.domain.SubscriptionStatus;
+import com.hms.domain.TenantBillingRequestStatus;
+import com.hms.domain.TenantBillingRequestType;
 import com.hms.domain.TenantSubscriptionAuditAction;
 import com.hms.entity.AppUser;
 import com.hms.entity.Hotel;
 import com.hms.entity.PlatformAuditLog;
 import com.hms.entity.PlatformTenant;
+import com.hms.entity.TenantBillingRequest;
 import com.hms.entity.TenantPaymentRecord;
 import com.hms.entity.TenantSubscriptionAudit;
 import com.hms.repository.AppUserRepository;
@@ -25,6 +28,7 @@ import com.hms.repository.PlatformAuditLogRepository;
 import com.hms.repository.PlatformTenantRepository;
 import com.hms.repository.ReservationRepository;
 import com.hms.repository.RoomRepository;
+import com.hms.repository.TenantBillingRequestRepository;
 import com.hms.repository.TenantPaymentRecordRepository;
 import com.hms.repository.TenantSubscriptionAuditRepository;
 import com.hms.security.JwtAuthenticationFilter;
@@ -49,6 +53,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -74,6 +79,7 @@ public class PlatformTenantService {
     private final HmsMultitenancyProperties multitenancyProperties;
     private final TenantPaymentRecordRepository tenantPaymentRecordRepository;
     private final TenantSubscriptionAuditRepository tenantSubscriptionAuditRepository;
+    private final TenantBillingRequestRepository tenantBillingRequestRepository;
     private final SubscriptionStateResolver subscriptionStateResolver;
     private final TenantSubscriptionGuard tenantSubscriptionGuard;
     private final Clock clock;
@@ -94,6 +100,7 @@ public class PlatformTenantService {
             HmsMultitenancyProperties multitenancyProperties,
             TenantPaymentRecordRepository tenantPaymentRecordRepository,
             TenantSubscriptionAuditRepository tenantSubscriptionAuditRepository,
+            TenantBillingRequestRepository tenantBillingRequestRepository,
             SubscriptionStateResolver subscriptionStateResolver,
             TenantSubscriptionGuard tenantSubscriptionGuard,
             Clock clock) {
@@ -112,6 +119,7 @@ public class PlatformTenantService {
         this.multitenancyProperties = multitenancyProperties;
         this.tenantPaymentRecordRepository = tenantPaymentRecordRepository;
         this.tenantSubscriptionAuditRepository = tenantSubscriptionAuditRepository;
+        this.tenantBillingRequestRepository = tenantBillingRequestRepository;
         this.subscriptionStateResolver = subscriptionStateResolver;
         this.tenantSubscriptionGuard = tenantSubscriptionGuard;
         this.clock = clock;
@@ -312,6 +320,203 @@ public class PlatformTenantService {
                 newExpiry);
         tenantSubscriptionGuard.evict(tenantId);
         return toSubscriptionStatusResponse(tenant);
+    }
+
+    @Transactional
+    public PlatformDtos.TenantSubscriptionStatusResponse changePlan(
+            UUID tenantId, PlatformDtos.ChangePlanRequest request) {
+        SubscriptionTier target = parseTierRequired(request.tier());
+        UserPrincipal actor = tenantAccessService.currentUser();
+        PlatformTenant tenant = mustTenant(tenantId);
+        SubscriptionTier current = tenant.getTier() != null ? tenant.getTier() : SubscriptionTier.STARTER;
+        if (target == current) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SAME_PLAN", "Tenant is already on " + target.name());
+        }
+        LocalDate today = LocalDate.now(clock);
+        LocalDate expiry = tenant.getSubscriptionEnd() != null
+                ? LocalDate.ofInstant(tenant.getSubscriptionEnd(), ZoneOffset.UTC)
+                : today;
+        BigDecimal oldMonthly = tenant.getMonthlyPrice() != null
+                ? tenant.getMonthlyPrice()
+                : SubscriptionPlanCatalog.plan(current).monthlyPrice();
+        BigDecimal newMonthly = SubscriptionPlanCatalog.plan(target).monthlyPrice();
+        BigDecimal quoted = SubscriptionPlanCatalog.proratedUpgradeAmount(oldMonthly, newMonthly, today, expiry);
+        if (SubscriptionPlanCatalog.tierRank(target) < SubscriptionPlanCatalog.tierRank(current)) {
+            quoted = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        BigDecimal paymentAmount = request.amount() != null ? request.amount() : quoted;
+
+        PlatformBillingStatus previous = tenant.getBillingStatus();
+        Instant oldExpiry = tenant.getSubscriptionEnd();
+        tenant.setTier(target);
+        applyTierDefaults(tenant, target, null);
+        if (!tenant.isManuallyBlocked()) {
+            if (expiry.isBefore(today)) {
+                tenant.setBillingStatus(PlatformBillingStatus.EXPIRED);
+                tenant.getHotel().setSubscriptionStatus(SubscriptionStatus.SUSPENDED);
+            } else {
+                tenant.setBillingStatus(
+                        ChronoUnit.DAYS.between(today, expiry) <= SubscriptionStateResolver.EXPIRING_SOON_DAYS
+                                ? PlatformBillingStatus.EXPIRING_SOON
+                                : PlatformBillingStatus.ACTIVE);
+                tenant.getHotel().setSubscriptionStatus(SubscriptionStatus.ACTIVE);
+            }
+        }
+        if (paymentAmount != null && paymentAmount.compareTo(BigDecimal.ZERO) > 0) {
+            tenant.setLastPaymentConfirmedAt(Instant.now(clock));
+        }
+        platformTenantRepository.save(tenant);
+
+        if (paymentAmount != null && paymentAmount.compareTo(BigDecimal.ZERO) > 0) {
+            TenantPaymentRecord payment = new TenantPaymentRecord();
+            payment.setHotelId(tenantId);
+            payment.setMonthsPaid(0);
+            payment.setAmount(paymentAmount.setScale(2, RoundingMode.HALF_UP));
+            payment.setCurrency(trimOrDefault(request.currency(), tenant.getHotel().getCurrency()));
+            payment.setPaymentReference(trimOrNull(request.paymentReference()));
+            payment.setConfirmedBy(actor.getId());
+            payment.setConfirmedAt(Instant.now(clock));
+            payment.setNote(trimOrDefault(
+                    request.note(),
+                    "Plan change " + current.name() + " → " + target.name() + " (prorated)"));
+            payment.setCreatedAt(Instant.now(clock));
+            tenantPaymentRecordRepository.save(payment);
+        }
+
+        auditSubscription(
+                tenantId,
+                TenantSubscriptionAuditAction.PLAN_CHANGE,
+                previous,
+                tenant.getBillingStatus(),
+                actor.getId(),
+                "Plan " + current.name() + " → " + target.name() + "; due=" + paymentAmount,
+                oldExpiry,
+                tenant.getSubscriptionEnd());
+        tenantSubscriptionGuard.evict(tenantId);
+        return toSubscriptionStatusResponse(tenant);
+    }
+
+    @Transactional
+    public PlatformDtos.TenantSubscriptionStatusResponse createBillingRequest(
+            UUID hotelId, PlatformDtos.CreateBillingRequest request) {
+        UserPrincipal actor = tenantAccessService.currentUser();
+        PlatformTenant tenant = mustTenant(hotelId);
+        TenantBillingRequestType type;
+        try {
+            type = TenantBillingRequestType.valueOf(request.requestType().trim().toUpperCase());
+        } catch (Exception ex) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_REQUEST_TYPE", "requestType must be RENEW or UPGRADE");
+        }
+        LocalDate today = LocalDate.now(clock);
+        LocalDate expiry = tenant.getSubscriptionEnd() != null
+                ? LocalDate.ofInstant(tenant.getSubscriptionEnd(), ZoneOffset.UTC)
+                : today;
+        BigDecimal quoted;
+        SubscriptionTier targetTier = null;
+        Integer months = null;
+        if (type == TenantBillingRequestType.RENEW) {
+            months = request.months() != null ? request.months() : 1;
+            if (!List.of(1, 3, 6, 12).contains(months)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_RENEWAL_PERIOD", "Renewal months must be 1, 3, 6, or 12.");
+            }
+            quoted = SubscriptionPlanCatalog.renewAmount(tenant.getMonthlyPrice(), months);
+        } else {
+            targetTier = parseTierRequired(request.targetTier());
+            SubscriptionTier current = tenant.getTier() != null ? tenant.getTier() : SubscriptionTier.STARTER;
+            if (SubscriptionPlanCatalog.tierRank(targetTier) <= SubscriptionPlanCatalog.tierRank(current)) {
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        "NOT_AN_UPGRADE",
+                        "Choose a higher plan than " + current.name() + " for an upgrade.");
+            }
+            BigDecimal oldMonthly = tenant.getMonthlyPrice() != null
+                    ? tenant.getMonthlyPrice()
+                    : SubscriptionPlanCatalog.plan(current).monthlyPrice();
+            quoted = SubscriptionPlanCatalog.proratedUpgradeAmount(
+                    oldMonthly, SubscriptionPlanCatalog.plan(targetTier).monthlyPrice(), today, expiry);
+        }
+
+        TenantBillingRequest row = new TenantBillingRequest();
+        row.setHotelId(hotelId);
+        row.setRequestType(type);
+        row.setTargetTier(targetTier);
+        row.setMonths(months);
+        row.setQuotedAmount(quoted);
+        row.setCurrency(tenant.getHotel().getCurrency());
+        row.setPaymentReference(trimOrNull(request.paymentReference()));
+        row.setNote(trimOrNull(request.note()));
+        row.setStatus(TenantBillingRequestStatus.PENDING);
+        row.setRequestedBy(actor.getId());
+        row.setRequestedAt(Instant.now(clock));
+        tenantBillingRequestRepository.save(row);
+
+        auditSubscription(
+                hotelId,
+                TenantSubscriptionAuditAction.BILLING_REQUEST,
+                tenant.getBillingStatus(),
+                tenant.getBillingStatus(),
+                actor.getId(),
+                type.name() + " request quoted " + quoted + " " + row.getCurrency(),
+                tenant.getSubscriptionEnd(),
+                tenant.getSubscriptionEnd());
+        return toSubscriptionStatusResponse(tenant);
+    }
+
+    @Transactional(readOnly = true)
+    public List<PlatformDtos.BillingRequestRow> listPendingBillingRequests() {
+        return tenantBillingRequestRepository
+                .findByStatusOrderByRequestedAtDesc(TenantBillingRequestStatus.PENDING)
+                .stream()
+                .map(this::toBillingRequestRow)
+                .toList();
+    }
+
+    @Transactional
+    public PlatformDtos.TenantSubscriptionStatusResponse resolveBillingRequest(
+            UUID requestId, PlatformDtos.ResolveBillingRequest body) {
+        TenantBillingRequest req = tenantBillingRequestRepository
+                .findById(requestId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Billing request not found"));
+        if (req.getStatus() != TenantBillingRequestStatus.PENDING) {
+            throw new ApiException(HttpStatus.CONFLICT, "Billing request is already resolved");
+        }
+        UserPrincipal actor = tenantAccessService.currentUser();
+        if (!body.approve()) {
+            req.setStatus(TenantBillingRequestStatus.REJECTED);
+            req.setResolvedBy(actor.getId());
+            req.setResolvedAt(Instant.now(clock));
+            req.setResolveNote(trimOrNull(body.note()));
+            tenantBillingRequestRepository.save(req);
+            return subscriptionStatus(req.getHotelId());
+        }
+
+        PlatformDtos.TenantSubscriptionStatusResponse result;
+        if (req.getRequestType() == TenantBillingRequestType.RENEW) {
+            int months = body.months() != null ? body.months() : (req.getMonths() != null ? req.getMonths() : 1);
+            result = renewSubscription(
+                    req.getHotelId(),
+                    new PlatformDtos.RenewTenantSubscriptionRequest(
+                            months,
+                            body.amount() != null ? body.amount() : req.getQuotedAmount(),
+                            body.currency() != null ? body.currency() : req.getCurrency(),
+                            body.paymentReference() != null ? body.paymentReference() : req.getPaymentReference(),
+                            body.note() != null ? body.note() : req.getNote()));
+        } else {
+            result = changePlan(
+                    req.getHotelId(),
+                    new PlatformDtos.ChangePlanRequest(
+                            req.getTargetTier().name(),
+                            body.amount() != null ? body.amount() : req.getQuotedAmount(),
+                            body.currency() != null ? body.currency() : req.getCurrency(),
+                            body.paymentReference() != null ? body.paymentReference() : req.getPaymentReference(),
+                            body.note() != null ? body.note() : req.getNote()));
+        }
+        req.setStatus(TenantBillingRequestStatus.APPROVED);
+        req.setResolvedBy(actor.getId());
+        req.setResolvedAt(Instant.now(clock));
+        req.setResolveNote(trimOrNull(body.note()));
+        tenantBillingRequestRepository.save(req);
+        return result;
     }
 
     @Transactional
@@ -610,35 +815,14 @@ public class PlatformTenantService {
     }
 
     private void applyTierDefaults(PlatformTenant pt, SubscriptionTier tier, PlatformDtos.SubscriptionCustomLimits custom) {
-        int defRooms =
-                switch (tier) {
-                    case STARTER -> 50;
-                    case PROFESSIONAL -> 150;
-                    case ENTERPRISE -> 9999;
-                };
-        int defUsers =
-                switch (tier) {
-                    case STARTER -> 10;
-                    case PROFESSIONAL -> 50;
-                    case ENTERPRISE -> 500;
-                };
-        int defRes =
-                switch (tier) {
-                    case STARTER -> 500;
-                    case PROFESSIONAL -> 5000;
-                    case ENTERPRISE -> 100000;
-                };
-        BigDecimal price =
-                switch (tier) {
-                    case STARTER -> new BigDecimal("99.00");
-                    case PROFESSIONAL -> new BigDecimal("299.00");
-                    case ENTERPRISE -> new BigDecimal("999.00");
-                };
-        pt.setMaxRooms(custom != null && custom.maxRooms() != null ? custom.maxRooms() : defRooms);
-        pt.setMaxUsers(custom != null && custom.maxUsers() != null ? custom.maxUsers() : defUsers);
+        SubscriptionPlanCatalog.PlanDefinition def = SubscriptionPlanCatalog.plan(tier);
+        pt.setMaxRooms(custom != null && custom.maxRooms() != null ? custom.maxRooms() : def.maxRooms());
+        pt.setMaxUsers(custom != null && custom.maxUsers() != null ? custom.maxUsers() : def.maxUsers());
         pt.setMaxReservationsPerMonth(
-                custom != null && custom.maxReservationsPerMonth() != null ? custom.maxReservationsPerMonth() : defRes);
-        pt.setMonthlyPrice(price);
+                custom != null && custom.maxReservationsPerMonth() != null
+                        ? custom.maxReservationsPerMonth()
+                        : def.maxReservationsPerMonth());
+        pt.setMonthlyPrice(def.monthlyPrice());
     }
 
     @Transactional
@@ -848,26 +1032,52 @@ public class PlatformTenantService {
                     row.put("hotelId", t.getHotel().getId().toString());
                     row.put("hotelName", t.getHotelName() != null ? t.getHotelName() : t.getHotel().getName());
                     row.put("status", state.status().name());
+                    row.put("tier", t.getTier() != null ? t.getTier().name() : SubscriptionTier.STARTER.name());
                     row.put("daysRemaining", state.daysRemaining() == Long.MAX_VALUE ? "n/a" : state.daysRemaining());
                     row.put("expiryDate", state.expiryDate() != null ? state.expiryDate().toString() : "");
                     row.put("monthlyPrice", t.getMonthlyPrice() != null ? t.getMonthlyPrice() : BigDecimal.ZERO);
                     return row;
                 })
-                .filter(row -> !"ACTIVE".equals(row.get("status")))
+                .sorted((a, b) -> {
+                    int rank = statusRank(String.valueOf(a.get("status"))) - statusRank(String.valueOf(b.get("status")));
+                    if (rank != 0) return rank;
+                    return String.valueOf(a.get("hotelName")).compareToIgnoreCase(String.valueOf(b.get("hotelName")));
+                })
                 .toList();
         List<Map<String, Object>> recentPayments = payments.stream()
                 .sorted((a, b) -> b.getConfirmedAt().compareTo(a.getConfirmedAt()))
                 .limit(10)
-                .map(p -> Map.<String, Object>of(
-                        "hotelId", p.getHotelId().toString(),
-                        "monthsPaid", p.getMonthsPaid(),
-                        "amount", p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO,
-                        "currency", p.getCurrency() != null ? p.getCurrency() : "",
-                        "paymentReference", p.getPaymentReference() != null ? p.getPaymentReference() : "",
-                        "confirmedAt", p.getConfirmedAt().toString(),
-                        "note", p.getNote() != null ? p.getNote() : ""))
+                .map(p -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("hotelId", p.getHotelId().toString());
+                    m.put("monthsPaid", p.getMonthsPaid());
+                    m.put("amount", p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO);
+                    m.put("currency", p.getCurrency() != null ? p.getCurrency() : "");
+                    m.put("paymentReference", p.getPaymentReference() != null ? p.getPaymentReference() : "");
+                    m.put("confirmedAt", p.getConfirmedAt().toString());
+                    m.put("note", p.getNote() != null ? p.getNote() : "");
+                    return m;
+                })
                 .toList();
-        return Map.of(
+        List<Map<String, Object>> pendingBillingRequests = listPendingBillingRequests().stream()
+                .map(r -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id", r.id().toString());
+                    m.put("hotelId", r.hotelId().toString());
+                    m.put("hotelName", r.hotelName());
+                    m.put("requestType", r.requestType());
+                    m.put("targetTier", r.targetTier());
+                    m.put("months", r.months());
+                    m.put("quotedAmount", r.quotedAmount());
+                    m.put("currency", r.currency());
+                    m.put("paymentReference", r.paymentReference());
+                    m.put("note", r.note());
+                    m.put("requestedAt", r.requestedAt() != null ? r.requestedAt().toString() : null);
+                    return m;
+                })
+                .toList();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put(
                 "summary",
                 Map.of(
                         "totalCollected", collected.setScale(2, RoundingMode.HALF_UP),
@@ -875,11 +1085,22 @@ public class PlatformTenantService {
                         "expiringSoon", expiringSoon,
                         "expired", expired,
                         "manuallyBlocked", manuallyBlocked,
-                        "tenantCount", tenants.size()),
-                "dueTenants",
-                due,
-                "recentPayments",
-                recentPayments);
+                        "tenantCount", tenants.size(),
+                        "pendingBillingRequests", pendingBillingRequests.size()));
+        out.put("dueTenants", due);
+        out.put("recentPayments", recentPayments);
+        out.put("pendingBillingRequests", pendingBillingRequests);
+        return out;
+    }
+
+    private static int statusRank(String status) {
+        return switch (status) {
+            case "EXPIRED" -> 0;
+            case "MANUALLY_BLOCKED" -> 1;
+            case "EXPIRING_SOON" -> 2;
+            case "ACTIVE" -> 3;
+            default -> 4;
+        };
     }
 
     @Transactional(readOnly = true)
@@ -913,10 +1134,64 @@ public class PlatformTenantService {
 
     private PlatformDtos.TenantSubscriptionStatusResponse toSubscriptionStatusResponse(PlatformTenant tenant) {
         SubscriptionState state = subscriptionStateResolver.resolve(tenant);
+        LocalDate today = LocalDate.now(clock);
+        LocalDate expiry = state.expiryDate();
+        SubscriptionTier current = tenant.getTier() != null ? tenant.getTier() : SubscriptionTier.STARTER;
+        BigDecimal monthly = tenant.getMonthlyPrice() != null
+                ? tenant.getMonthlyPrice()
+                : SubscriptionPlanCatalog.plan(current).monthlyPrice();
+
+        List<PlatformDtos.SubscriptionPlanOption> plans = SubscriptionPlanCatalog.allPlans().values().stream()
+                .map(p -> new PlatformDtos.SubscriptionPlanOption(
+                        p.tier().name(),
+                        p.label(),
+                        p.monthlyPrice(),
+                        p.maxRooms(),
+                        p.maxUsers(),
+                        p.maxReservationsPerMonth()))
+                .toList();
+
+        List<PlatformDtos.RenewQuote> renewQuotes = List.of(1, 3, 6, 12).stream()
+                .map(months -> {
+                    LocalDate base = expiry != null && expiry.isAfter(today) ? expiry : today;
+                    return new PlatformDtos.RenewQuote(
+                            months,
+                            SubscriptionPlanCatalog.renewAmount(monthly, months),
+                            base.plusMonths(months));
+                })
+                .toList();
+
+        List<PlatformDtos.UpgradeQuote> upgradeQuotes = new ArrayList<>();
+        for (SubscriptionPlanCatalog.PlanDefinition plan : SubscriptionPlanCatalog.allPlans().values()) {
+            if (SubscriptionPlanCatalog.tierRank(plan.tier()) <= SubscriptionPlanCatalog.tierRank(current)) {
+                continue;
+            }
+            BigDecimal due = SubscriptionPlanCatalog.proratedUpgradeAmount(
+                    monthly, plan.monthlyPrice(), today, expiry != null ? expiry : today);
+            long daysLeft = expiry != null && expiry.isAfter(today) ? ChronoUnit.DAYS.between(today, expiry) : 0;
+            upgradeQuotes.add(new PlatformDtos.UpgradeQuote(
+                    plan.tier().name(),
+                    plan.label(),
+                    plan.monthlyPrice(),
+                    due,
+                    daysLeft,
+                    daysLeft > 0
+                            ? "Prorated upgrade for remaining " + daysLeft + " days; expiry stays the same."
+                            : "No active period remaining — renew first, then upgrade."));
+        }
+
+        List<PlatformDtos.BillingRequestRow> pending = tenantBillingRequestRepository
+                .findByHotelIdOrderByRequestedAtDesc(tenant.getHotel().getId())
+                .stream()
+                .filter(r -> r.getStatus() == TenantBillingRequestStatus.PENDING)
+                .map(this::toBillingRequestRow)
+                .toList();
+
         return new PlatformDtos.TenantSubscriptionStatusResponse(
                 tenant.getHotel().getId(),
                 tenant.getHotelName(),
                 state.status().name(),
+                current.name(),
                 tenant.getSubscriptionStart() != null
                         ? LocalDate.ofInstant(tenant.getSubscriptionStart(), ZoneOffset.UTC)
                         : null,
@@ -928,8 +1203,43 @@ public class PlatformTenantService {
                 tenant.getBlockedAt(),
                 tenant.getBlockedBy(),
                 tenant.getLastPaymentConfirmedAt(),
-                tenant.getMonthlyPrice(),
-                tenant.getHotel().getCurrency());
+                monthly,
+                tenant.getHotel().getCurrency(),
+                plans,
+                renewQuotes,
+                upgradeQuotes,
+                pending);
+    }
+
+    private PlatformDtos.BillingRequestRow toBillingRequestRow(TenantBillingRequest row) {
+        String hotelName = platformTenantRepository
+                .findById(row.getHotelId())
+                .map(t -> t.getHotelName() != null ? t.getHotelName() : t.getHotel().getName())
+                .orElse("Hotel");
+        return new PlatformDtos.BillingRequestRow(
+                row.getId(),
+                row.getHotelId(),
+                hotelName,
+                row.getRequestType().name(),
+                row.getTargetTier() != null ? row.getTargetTier().name() : null,
+                row.getMonths(),
+                row.getQuotedAmount(),
+                row.getCurrency(),
+                row.getPaymentReference(),
+                row.getNote(),
+                row.getStatus().name(),
+                row.getRequestedAt());
+    }
+
+    private static SubscriptionTier parseTierRequired(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "TIER_REQUIRED", "Subscription tier is required");
+        }
+        try {
+            return SubscriptionTier.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_TIER", "Unknown subscription tier");
+        }
     }
 
     private void auditSubscription(

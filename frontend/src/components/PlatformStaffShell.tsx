@@ -8,6 +8,7 @@ import type { AuthUser } from "@/lib/auth";
 import { isSuperAdmin, loadAuthUser } from "@/lib/auth";
 import { SwaggerBlurb } from "./SwaggerBlurb";
 import { ReportBugButton } from "./ReportBugButton";
+import { ThemeToggle } from "@/lib/theme";
 
 const NAV: { href: string; label: string; icon?: string }[] = [
   { href: "/platform/hotels", label: "Hotels", icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" },
@@ -38,7 +39,7 @@ export function PlatformStaffShell({ children }: { children: React.ReactNode }) 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-[hsl(204,94%,98%)] to-[hsl(38,92%,94%)]">
+    <div className="flex min-h-screen bg-gradient-to-br from-background to-secondary/50 dark:from-background dark:to-muted">
       {/* Mobile Overlay */}
       {isSidebarOpen && (
         <div 
@@ -48,7 +49,7 @@ export function PlatformStaffShell({ children }: { children: React.ReactNode }) 
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed lg:sticky top-0 left-0 z-50 h-screen w-64 bg-white/95 backdrop-blur-sm border-r border-border flex flex-col transition-transform duration-200 ${
+      <aside className={`fixed lg:sticky top-0 left-0 z-50 h-screen w-64 bg-card/95 backdrop-blur-sm border-r border-border flex flex-col transition-transform duration-200 ${
         isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
       }`}>
         {/* Brand */}
@@ -120,6 +121,7 @@ export function PlatformStaffShell({ children }: { children: React.ReactNode }) 
 
         {/* Bottom Actions */}
         <div className="p-3 border-t border-border space-y-1">
+          <ThemeToggle className="w-full justify-start" />
           <ReportBugButton variant="sidebar" />
           <a 
             href={swaggerUiUrl()} 
@@ -135,7 +137,7 @@ export function PlatformStaffShell({ children }: { children: React.ReactNode }) 
           <button
             type="button"
             onClick={logout}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-colors bg-transparent shadow-none border-none"
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors bg-transparent shadow-none border-none"
           >
             <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -148,7 +150,7 @@ export function PlatformStaffShell({ children }: { children: React.ReactNode }) 
       {/* Main Content */}
       <main className="flex-1 min-w-0">
         {/* Mobile Header */}
-        <div className="lg:hidden sticky top-0 z-30 bg-white/80 backdrop-blur-sm border-b border-border px-4 py-3 flex items-center justify-between">
+        <div className="lg:hidden sticky top-0 z-30 bg-card/80 backdrop-blur-sm border-b border-border px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
               <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

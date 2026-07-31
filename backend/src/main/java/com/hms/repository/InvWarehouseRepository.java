@@ -16,4 +16,6 @@ public interface InvWarehouseRepository extends JpaRepository<InvWarehouse, UUID
     Optional<InvWarehouse> findByHotel_IdAndCodeIgnoreCase(UUID hotelId, String code);
 
     boolean existsByHotel_IdAndCodeIgnoreCase(UUID hotelId, String code);
+
+    boolean existsByHotel_IdAndCodeIgnoreCaseAndIdNot(UUID hotelId, String code, UUID id);
 }

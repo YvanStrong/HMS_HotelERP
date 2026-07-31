@@ -8,6 +8,7 @@ import type { AuthUser } from "@/lib/auth";
 import { loadAuthUser } from "@/lib/auth";
 import { canAccessHotelNav, navHint, type HotelNavKey } from "@/lib/hotelNavAccess";
 import { staffAppPath } from "@/lib/staffAppRoutes";
+import { ThemeToggle } from "@/lib/theme";
 import { useHotelContext } from "@/lib/useHotelContext";
 import { PosOrderToastHost } from "@/components/PosOrderToastHost";
 import { StaffNotificationBell } from "@/components/StaffNotificationBell";
@@ -26,6 +27,7 @@ type NavSection = { title: string; items: NavItem[] };
 
 const NAV_MODULES: Partial<Record<HotelNavKey, string>> = {
   dashboard: "DASHBOARD",
+  reports: "REPORTS",
   accounting: "ACCOUNTING",
   roomTypes: "ROOM_TYPES",
   rooms: "ROOMS",
@@ -35,6 +37,7 @@ const NAV_MODULES: Partial<Record<HotelNavKey, string>> = {
   invoices: "INVOICES",
   guests: "GUESTS",
   staff: "STAFF",
+  duty: "STAFF",
   housekeeping: "HOUSEKEEPING",
   hkMyTasks: "HK_MY_TASKS",
   facilities: "FACILITIES",
@@ -55,6 +58,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: "Overview",
     items: [
       { key: "dashboard", segment: "dashboard", label: "Dashboard", icon: "M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" },
+      { key: "reports", segment: "reports", label: "Reports", icon: "M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
       { key: "accounting", segment: "accounting", label: "Accounting", icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 12v-2m8-4a8 8 0 11-16 0 8 8 0 0116 0z" },
     ]
   },
@@ -109,6 +113,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: "Administration",
     items: [
       { key: "staff", segment: "staff", label: "Staff", icon: "M17 20h5V9H2v11h5m10 0v-7.5A2.5 2.5 0 0014.5 10h-5A2.5 2.5 0 007 12.5V20m10 0H7m6-13a3 3 0 110-6 3 3 0 010 6z" },
+      { key: "duty", segment: "duty", label: "Duty & shifts", icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" },
       { key: "hr", segment: "hr", label: "HR", icon: "M17 20h5V9H2v11h5m10 0v-7.5A2.5 2.5 0 0014.5 10h-5A2.5 2.5 0 007 12.5V20m10 0H7M12 3a3 3 0 110 6 3 3 0 010-6zm-7 9a7 7 0 0114 0H5z" },
       { key: "iot", segment: "iot", label: "IoT & Smart Room", icon: "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0114 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" },
       { key: "auditLogs", segment: "audit-logs", label: "Audit Logs", icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
@@ -170,7 +175,7 @@ export function HotelStaffShell({
   );
 
   return (
-    <div className="h-screen overflow-hidden bg-gradient-to-br from-[hsl(204,94%,98%)] to-[hsl(38,92%,94%)] flex">
+    <div className="h-screen overflow-hidden bg-gradient-to-br from-background to-secondary/40 dark:from-background dark:to-muted flex">
       {/* Mobile sidebar overlay */}
       {isSidebarOpen && (
         <div
@@ -181,7 +186,7 @@ export function HotelStaffShell({
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:sticky lg:top-0 inset-y-0 left-0 z-50 h-screen bg-white/97 backdrop-blur-sm border-r border-border/80 shadow-[2px_0_16px_rgba(26,58,92,0.08)] transform transition-all duration-200 ease-in-out ${
+        className={`fixed lg:sticky lg:top-0 inset-y-0 left-0 z-50 h-screen bg-card/95 backdrop-blur-sm border-r border-border/80 shadow-[2px_0_16px_rgba(26,58,92,0.08)] dark:shadow-[2px_0_16px_rgba(0,0,0,0.35)] transform transition-all duration-200 ease-in-out ${
           isSidebarCollapsed ? "lg:w-20" : "lg:w-72"
         } w-72 ${
           isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
@@ -189,12 +194,12 @@ export function HotelStaffShell({
       >
         <div className="h-full flex flex-col">
           {/* Brand + Hotel area */}
-          <div className="relative p-4 border-b border-border/70" style={{ background: "linear-gradient(to bottom right, hsl(0 0% 100%), hsl(204 94% 97%))" }}>
+          <div className="relative p-4 border-b border-border/70 bg-gradient-to-br from-card to-muted/40">
             <div className={`flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-end"}`}>
               <button
                 type="button"
                 onClick={() => setIsSidebarCollapsed((prev) => !prev)}
-                className="absolute right-4 top-4 hidden h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-white text-muted-foreground shadow-sm transition hover:bg-accent hover:text-foreground lg:inline-flex"
+                className="absolute right-4 top-4 hidden h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-card text-muted-foreground shadow-sm transition hover:bg-accent hover:text-foreground lg:inline-flex"
                 aria-label={isSidebarCollapsed ? "Expand menu" : "Collapse menu"}
                 title={isSidebarCollapsed ? "Expand menu" : "Collapse menu"}
               >
@@ -205,7 +210,7 @@ export function HotelStaffShell({
               <button
                 type="button"
                 onClick={() => setIsSidebarOpen(false)}
-                className="lg:hidden h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-white text-muted-foreground shadow-sm"
+                className="lg:hidden h-9 w-9 items-center justify-center rounded-lg border border-border/70 bg-card text-muted-foreground shadow-sm"
                 aria-label="Close menu"
               >
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -367,6 +372,9 @@ export function HotelStaffShell({
 
           {/* User section */}
           <div className="p-3 border-t border-border/70">
+            <div className={`mb-1 ${isSidebarCollapsed ? "flex justify-center" : ""}`}>
+              <ThemeToggle compact={isSidebarCollapsed} className={isSidebarCollapsed ? "" : "w-full justify-start"} />
+            </div>
             <div className={`flex items-center rounded-lg ${isSidebarCollapsed ? "justify-center px-0 py-1.5" : "gap-2.5 px-1 py-1.5"}`}>
               <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white text-sm font-bold shadow-sm" style={{ background: "hsl(var(--primary))" }}>
                 {user?.username?.charAt(0).toUpperCase() || "U"}
@@ -382,7 +390,7 @@ export function HotelStaffShell({
                 <button
                 type="button"
                 onClick={logout}
-                className={`mt-1 w-full flex items-center rounded-lg text-sm text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors bg-transparent shadow-none border-none ${
+                className={`mt-1 w-full flex items-center rounded-lg text-sm text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors bg-transparent shadow-none border-none ${
                   isSidebarCollapsed ? "justify-center px-2 py-2" : "gap-2 px-2 py-2"
                 }`}
                 title="Sign out"
@@ -406,7 +414,7 @@ export function HotelStaffShell({
         <PosOrderToastHost hotelId={hotelId} />
 
         {/* Mobile header */}
-        <header className="bg-white border-b border-border px-4 py-3 flex items-center justify-start gap-3 pr-16 lg:hidden">
+        <header className="bg-card border-b border-border px-4 py-3 flex items-center justify-start gap-3 pr-16 lg:hidden">
           <button
             onClick={() => {
               if (window.innerWidth >= 1024) {

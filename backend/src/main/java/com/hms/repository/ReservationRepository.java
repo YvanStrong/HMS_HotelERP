@@ -164,6 +164,19 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
     long countByHotel_IdAndCheckInDateBetween(UUID hotelId, LocalDate fromInclusive, LocalDate toInclusive);
 
     @Query(
+            """
+            select r from Reservation r
+            join fetch r.guest
+            left join fetch r.room
+            where r.hotel.id = :hotelId
+              and r.checkInDate <= :to
+              and r.checkOutDate > :from
+            order by r.checkInDate desc, r.bookingReference asc
+            """)
+    List<Reservation> findOverlappingForReport(
+            @Param("hotelId") UUID hotelId, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    @Query(
             "select count(r) from Reservation r where r.hotel.id = :hotelId and r.createdAt >= :start and r.createdAt < :end")
     long countByHotel_IdAndCreatedAtBetween(
             @Param("hotelId") UUID hotelId, @Param("start") Instant start, @Param("end") Instant end);

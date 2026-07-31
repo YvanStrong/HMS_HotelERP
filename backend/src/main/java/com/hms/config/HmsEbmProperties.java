@@ -53,11 +53,16 @@ public class HmsEbmProperties {
     @Setter
     public static class Paths {
         private String init = "/initializer/selectInitInfo";
+        /** OSDC sales save; VSDC WAR may use /trnsSales/saveSales — override via config. */
         private String salesTransaction = "/trnsSales/saveSales";
         private String salesInvoice = "/trnsSales/saveSales";
         private String stockIo = "/stock/saveStockItems";
         private String stockMaster = "/stockMaster/saveStockMaster";
         private String codeList = "/code/selectCodes";
         private String itemClass = "/itemClass/selectItemsClass";
+        /** Official OSDC documentation: /insertTrnsPurchase */
+        private String purchase = "/insertTrnsPurchase";
+        /** Official OSDC documentation: /saveItem */
+        private String itemSave = "/saveItem";
     }
 }

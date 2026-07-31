@@ -32,6 +32,13 @@ export type DepotSalePrintPayload = {
   vatPercent?: number;
   /** Payment method shown on invoice (e.g. MOMO, CASH, CREDIT CARD, BANK). */
   paymentMethod?: string | null;
+  /** EBM fiscal fields from VSDC/OSDC ACK (when available). */
+  ebmReceiptNo?: string | null;
+  ebmSignature?: string | null;
+  ebmQrPayload?: string | null;
+  ebmSdcId?: string | null;
+  ebmMrcNo?: string | null;
+  ebmStatus?: string | null;
 };
 
 function esc(v: unknown): string {
@@ -283,6 +290,26 @@ export function buildDepotSaleInvoiceHtml(payload: DepotSalePrintPayload, curren
       }
       <p class="note">Line amounts are VAT-inclusive. VAT ${esc(String(vatPercent))}% is shown on taxable items only; non-taxable lines use 0%.</p>
     </div>
+    ${
+      payload.ebmReceiptNo || payload.ebmSdcId || payload.ebmMrcNo || payload.ebmQrPayload || payload.ebmSignature
+        ? `<div class="invoice-totals" style="margin-top:18px;max-width:100%">
+      <div class="row"><span class="muted">EBM / SDC</span><span class="strong">${esc(payload.ebmSdcId || "—")}</span></div>
+      <div class="row"><span class="muted">MRC</span><span class="strong">${esc(payload.ebmMrcNo || "—")}</span></div>
+      <div class="row"><span class="muted">Receipt No</span><span class="strong">${esc(payload.ebmReceiptNo || "—")}</span></div>
+      ${payload.ebmSignature ? `<div class="row"><span class="muted">Signature</span><span style="font-size:10px;word-break:break-all">${esc(payload.ebmSignature)}</span></div>` : ""}
+      ${
+        payload.ebmQrPayload
+          ? `<div style="margin-top:10px;text-align:center">
+        <img alt="EBM QR" style="width:120px;height:120px" src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&amp;data=${encodeURIComponent(payload.ebmQrPayload)}" />
+        <p class="note" style="margin-top:6px">Scan for RRA fiscal verification</p>
+      </div>`
+          : ""
+      }
+    </div>`
+        : payload.ebmStatus
+          ? `<p class="note">EBM fiscalization status: ${esc(payload.ebmStatus)} (signature/QR appear after VSDC acknowledgement).</p>`
+          : ""
+    }
     <div class="foot">
       Thank you for your purchase. To save a PDF, use your browser <strong>Print</strong> dialog and choose <strong>Save as PDF</strong>.
     </div>

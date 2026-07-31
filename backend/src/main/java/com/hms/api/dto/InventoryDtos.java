@@ -295,6 +295,8 @@ public final class InventoryDtos {
 
     public record WarehouseCreateRequest(@NotBlank String name, @NotBlank String code, String address, Boolean isDefault) {}
 
+    public record WarehouseUpdateRequest(@NotBlank String name, @NotBlank String code, String address, Boolean isDefault) {}
+
     public record WarehouseItem(UUID id, String name, String code, String address, boolean isDefault, boolean active) {}
 
     // ── Customers ─────────────────────────────────────────────────────────

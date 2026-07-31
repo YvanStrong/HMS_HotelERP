@@ -480,6 +480,57 @@ public class InvExtService {
         return toWarehouseItem(wh);
     }
 
+    @Transactional
+    public InventoryDtos.WarehouseItem updateWarehouse(
+            UUID hotelId, String hotelHeader, UUID warehouseId, InventoryDtos.WarehouseUpdateRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        InvWarehouse wh = warehouseRepository.findByIdAndHotel_Id(warehouseId, hotelId)
+                .orElseThrow(() -> notFound("Warehouse"));
+        if (!wh.isActive()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Warehouse not found");
+        }
+        String code = req.code().trim().toUpperCase();
+        if (warehouseRepository.existsByHotel_IdAndCodeIgnoreCaseAndIdNot(hotelId, code, warehouseId)) {
+            throw new ApiException(HttpStatus.CONFLICT, "Warehouse code already exists: " + code);
+        }
+        wh.setName(req.name().trim());
+        wh.setCode(code);
+        wh.setAddress(req.address() != null && !req.address().isBlank() ? req.address().trim() : null);
+        final UUID whId = wh.getId();
+        if (req.isDefault() != null && req.isDefault() && !wh.isDefault()) {
+            warehouseRepository.findByHotel_IdAndIsDefaultTrue(hotelId).ifPresent(other -> {
+                if (!other.getId().equals(whId)) {
+                    other.setDefault(false);
+                    warehouseRepository.save(other);
+                }
+            });
+            wh.setDefault(true);
+        } else if (req.isDefault() != null && !req.isDefault() && wh.isDefault()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Cannot unset the default warehouse; set another warehouse as default first");
+        }
+        wh = warehouseRepository.save(wh);
+        return toWarehouseItem(wh);
+    }
+
+    @Transactional
+    public void deleteWarehouse(UUID hotelId, String hotelHeader, UUID warehouseId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        InvWarehouse wh = warehouseRepository.findByIdAndHotel_Id(warehouseId, hotelId)
+                .orElseThrow(() -> notFound("Warehouse"));
+        if (!wh.isActive()) {
+            return;
+        }
+        if (wh.isDefault()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Cannot delete the default warehouse");
+        }
+        inventoryDepotRepository.findByHotel_IdAndLinkedWarehouse_Id(hotelId, warehouseId).ifPresent(depot -> {
+            depot.setActive(false);
+            inventoryDepotRepository.save(depot);
+        });
+        wh.setActive(false);
+        warehouseRepository.save(wh);
+    }
+
     @Transactional(readOnly = true)
     public List<InventoryDtos.WarehouseItem> listWarehouses(UUID hotelId, String hotelHeader) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
@@ -1006,6 +1057,13 @@ public class InvExtService {
         inv.setStatus("RETURNED");
         inv.setAmountPaid(BigDecimal.ZERO);
         inv = invoiceRepository.save(inv);
+        try {
+            if (ebmSaleEventService != null) {
+                ebmSaleEventService.enqueueInvSalesReturn(hotelId, inv);
+            }
+        } catch (Exception ignored) {
+            // EBM must never block returns
+        }
         return toInvoiceItem(inv);
     }
 

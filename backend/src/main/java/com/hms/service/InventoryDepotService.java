@@ -82,6 +82,10 @@ public class InventoryDepotService {
     @org.springframework.beans.factory.annotation.Autowired
     private EbmSaleEventService ebmSaleEventService;
 
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.hms.repository.TaxableSaleEventRepository taxableSaleEventRepository;
+
     public InventoryDepotService(
             TenantAccessService tenantAccessService,
             InventoryDepotRepository inventoryDepotRepository,
@@ -164,6 +168,10 @@ public class InventoryDepotService {
                         }
                         return saved;
                     });
+            if (!w.isActive()) {
+                w.setActive(true);
+                invWarehouseRepository.save(w);
+            }
             if (d.getLinkedWarehouse() == null
                     || !d.getLinkedWarehouse().getId().equals(w.getId())) {
                 d.setLinkedWarehouse(w);
@@ -372,6 +380,7 @@ public class InventoryDepotService {
         sale.setDepot(depot);
         sale.setSaleNumber(nextSaleNumber(hotelId));
         sale.setCustomerName(req.customerName() == null ? null : req.customerName().trim());
+        sale.setCustomerTin(req.customerTin() == null || req.customerTin().isBlank() ? null : req.customerTin().trim());
         sale.setPaymentMethod(normalizePaymentMethod(req.paymentMethod()));
         sale.setCreatedBy(tenantAccessService.currentUser().getUsername());
         applyMobileSaleFields(sale, req, hotelId);
@@ -531,11 +540,35 @@ public class InventoryDepotService {
                         sl.getLineTotal(),
                         sl.isTaxable()))
                 .toList();
+        String ebmReceipt = null;
+        String ebmSig = null;
+        String ebmQr = null;
+        String ebmSdc = null;
+        String ebmMrc = null;
+        String ebmStatus = null;
+        try {
+            if (taxableSaleEventRepository != null) {
+                var fiscal = taxableSaleEventRepository
+                        .findBySourceTypeAndSourceId("DEPOT_SALE", sale.getId())
+                        .orElse(null);
+                if (fiscal != null) {
+                    ebmReceipt = fiscal.getEbmReceiptNo();
+                    ebmSig = fiscal.getEbmSignature();
+                    ebmQr = fiscal.getEbmQrPayload();
+                    ebmSdc = fiscal.getEbmSdcId();
+                    ebmMrc = fiscal.getEbmMrcNo();
+                    ebmStatus = fiscal.getEbmStatus();
+                }
+            }
+        } catch (Exception ignored) {
+            // ignore
+        }
         return new InventoryDepotDtos.SaleDetailResponse(
                 sale.getId(),
                 sale.getSaleNumber(),
                 sale.getDepot().getName(),
                 sale.getCustomerName(),
+                sale.getCustomerTin(),
                 sale.getTotalAmount(),
                 sale.getCreatedAt(),
                 sale.getPaymentMethod(),
@@ -546,7 +579,13 @@ public class InventoryDepotService {
                 sale.getPromoCode(),
                 sale.getPaymentCurrency(),
                 sale.getExchangeRate(),
-                sale.getForeignAmount());
+                sale.getForeignAmount(),
+                ebmReceipt,
+                ebmSig,
+                ebmQr,
+                ebmSdc,
+                ebmMrc,
+                ebmStatus);
     }
 
     @Transactional
@@ -612,6 +651,14 @@ public class InventoryDepotService {
         sale.setStatus("REFUNDED");
         depotSaleRepository.save(sale);
         refund = depotSaleRefundRepository.save(refund);
+
+        try {
+            if (ebmSaleEventService != null) {
+                ebmSaleEventService.enqueueDepotRefund(hotelId, sale, refund);
+            }
+        } catch (Exception ignored) {
+            // EBM must never block refunds
+        }
 
         return new InventoryDepotDtos.RefundResponse(
                 refund.getId(),

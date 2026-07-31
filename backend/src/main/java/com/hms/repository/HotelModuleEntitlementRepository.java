@@ -33,7 +33,7 @@ public interface HotelModuleEntitlementRepository
     @Query("select e from HotelModuleEntitlement e where e.hotel.id = :hotelId and e.module.moduleKey = :key")
     Optional<HotelModuleEntitlement> findByHotelIdAndModuleKey(@Param("hotelId") UUID hotelId, @Param("key") String key);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from HotelModuleEntitlement e where e.hotel.id = :hotelId")
     void deleteByHotelId(@Param("hotelId") UUID hotelId);
 
