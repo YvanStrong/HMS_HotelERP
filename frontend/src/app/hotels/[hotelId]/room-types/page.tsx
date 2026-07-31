@@ -5,8 +5,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { PaginationBar } from "@/components/PaginationBar";
 import { apiFetch, getToken } from "@/lib/api";
+import { formatMoney } from "@/lib/money";
 import { paginateSlice } from "@/lib/pagination";
 import { staffAppPath } from "@/lib/staffAppRoutes";
+import { useHotelContext } from "@/lib/useHotelContext";
 
 type RoomTypeRow = {
   id: string;
@@ -22,6 +24,8 @@ const PAGE_SIZE = 10;
 export default function RoomTypesPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
+  const { hotel } = useHotelContext(hotelId);
+  const currency = hotel.currency || "RWF";
   const [rows, setRows] = useState<RoomTypeRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -97,7 +101,7 @@ export default function RoomTypesPage() {
                     <h3 className="text-lg font-semibold text-foreground">{r.name}</h3>
                     {r.code && <span className="text-[10px] font-mono bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">{r.code}</span>}
                   </div>
-                  <span className="text-lg font-bold text-primary">${r.baseRate}</span>
+                  <span className="text-lg font-bold text-primary">{formatMoney(r.baseRate, currency)}</span>
                 </div>
                 
                 <div className="mt-4 space-y-2 text-sm">

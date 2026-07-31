@@ -287,32 +287,38 @@ export default function RoomsPage() {
                 key={r.id}
                 type="button"
                 onClick={() => setDrawerRoomId(r.id)}
-                className="text-left bg-card rounded-xl border border-border/60 p-4 shadow-soft hover:shadow-float hover:border-primary/30 transition-all"
+                className="text-left bg-card rounded-xl border border-border/60 p-3 shadow-soft hover:shadow-float hover:border-primary/30 transition-all"
               >
-                <img
-                  src={r.photoUrl || DEFAULT_ROOM_IMAGE}
-                  alt={`${r.roomType.name} room ${r.roomNumber}`}
-                  className="mb-3 h-24 w-full rounded-lg border border-border/60 object-cover"
-                  loading="lazy"
-                  onError={(e) => {
-                    e.currentTarget.src = DEFAULT_ROOM_IMAGE;
-                  }}
-                />
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h3 className="text-lg font-semibold text-foreground">Room {r.roomNumber}</h3>
-                    <p className="text-xs text-muted-foreground">Fl {r.floor ?? "—"} · {r.roomType.name}</p>
+                <div className="relative mb-3 aspect-[16/10] w-full overflow-hidden rounded-lg border border-border/60 bg-muted">
+                  <img
+                    src={r.photoUrl || DEFAULT_ROOM_IMAGE}
+                    alt={`${r.roomType.name} room ${r.roomNumber}`}
+                    className="absolute inset-0 h-full w-full object-cover object-center"
+                    loading="lazy"
+                    onError={(e) => {
+                      e.currentTarget.src = DEFAULT_ROOM_IMAGE;
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <h3 className="text-base font-bold tracking-tight text-foreground">
+                      Room {r.roomNumber}
+                    </h3>
+                    <RoomStatusBadge status={r.status} size="sm" />
                   </div>
-                  <RoomStatusBadge status={r.status} />
+                  <p className="text-[11px] font-normal leading-snug text-muted-foreground">
+                    Fl {r.floor ?? "—"} · {r.roomType.name}
+                  </p>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {r.dnd && (
-                    <span className="text-[11px] font-medium text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded">
                       🚫 DND
                     </span>
                   )}
                   {r.hasActiveBlock && (
-                    <span className="text-[11px] font-medium text-foreground bg-muted px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-foreground bg-muted px-1.5 py-0.5 rounded">
                       🔒 Block
                     </span>
                   )}
@@ -349,21 +355,23 @@ export default function RoomsPage() {
                 {listQuery.data.data.map((r) => (
                   <tr key={r.id}>
                     <td>
-                      <img
-                        src={r.photoUrl || DEFAULT_ROOM_IMAGE}
-                        alt={`${r.roomType.name} room ${r.roomNumber}`}
-                        className="h-12 w-20 rounded border border-border/60 object-cover"
-                        loading="lazy"
-                        onError={(e) => {
-                          e.currentTarget.src = DEFAULT_ROOM_IMAGE;
-                        }}
-                      />
+                      <div className="relative h-12 w-20 overflow-hidden rounded border border-border/60 bg-muted">
+                        <img
+                          src={r.photoUrl || DEFAULT_ROOM_IMAGE}
+                          alt={`${r.roomType.name} room ${r.roomNumber}`}
+                          className="absolute inset-0 h-full w-full object-cover object-center"
+                          loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.src = DEFAULT_ROOM_IMAGE;
+                          }}
+                        />
+                      </div>
                     </td>
-                    <td className="font-medium">{r.roomNumber}</td>
-                    <td>{r.floor ?? "—"}</td>
-                    <td>{r.roomType.name}</td>
+                    <td className="font-bold tracking-tight">{r.roomNumber}</td>
+                    <td className="text-muted-foreground">{r.floor ?? "—"}</td>
+                    <td className="text-sm text-muted-foreground">{r.roomType.name}</td>
                     <td>
-                      <RoomStatusBadge status={r.status} />
+                      <RoomStatusBadge status={r.status} size="sm" />
                     </td>
                     <td className="text-right space-x-2 whitespace-nowrap">
                       <button type="button" className="text-primary text-xs font-semibold hover:underline" onClick={() => setDrawerRoomId(r.id)}>

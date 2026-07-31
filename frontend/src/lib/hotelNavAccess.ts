@@ -19,6 +19,7 @@ export type HotelNavKey =
   | "invoices"
   | "guests"
   | "staff"
+  | "duty"
   | "housekeeping"
   | "hkMyTasks"
   | "facilities"
@@ -232,6 +233,8 @@ export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): bool
       return canGuests(user);
     case "staff":
       return canStaff(user);
+    case "duty":
+      return canStaff(user);
     case "housekeeping":
       return canHousekeeping(user);
     case "hkMyTasks":
@@ -276,7 +279,7 @@ export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): bool
 export function navHint(key: HotelNavKey): string {
   const hints: Record<HotelNavKey, string> = {
     dashboard: "All-in-one overview: rooms & guests, sales, and accounting KPIs.",
-    reports: "Merged into Dashboard.",
+    reports: "Room, reservation, sales, and guest reports with Excel and PDF export.",
     accounting: "Full ledger, expenses, petty cash, and financial reports.",
     guestAnalytics: "Merged into Dashboard (Rooms section).",
     roomTypes: "GET /room-types: hotel admin, manager, receptionist, maintenance, finance.",
@@ -288,6 +291,7 @@ export function navHint(key: HotelNavKey): string {
     guests:
       "Guest directory, check-in/checkout desks, in-house board, complaint log, profile (folio, loyalty, registry, documents API).",
     staff: "Hotel staff management: hotel admin and manager.",
+    duty: "Duty and shift roster: schedule coverage, check-in status, and retained history for admins and managers.",
     housekeeping: "Permission: housekeeping:* or room:status.",
     hkMyTasks: "Housekeeping line staff: tasks assigned to you.",
     facilities: "List facilities: receptionist and reservation-capable roles.",

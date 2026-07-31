@@ -1140,6 +1140,7 @@ export default function PosPage() {
         method: "POST",
         body: JSON.stringify({
           customerName: buildCustomerName(),
+          customerTin: customerTin.trim() || null,
           depotId: saleDepotId,
           lines: buildCartLinePayload(),
           chargeToRoom: chargeToFolio,
@@ -1152,6 +1153,30 @@ export default function PosPage() {
         }),
       });
       const depotName = depots.find((d) => d.id === saleDepotId)?.name ?? "Outlet";
+      let fiscal: {
+        ebmReceiptNo?: string | null;
+        ebmSignature?: string | null;
+        ebmQrPayload?: string | null;
+        ebmSdcId?: string | null;
+        ebmMrcNo?: string | null;
+        ebmStatus?: string | null;
+      } = {};
+      try {
+        const { loadEbmSaleEventBySource } = await import("@/lib/ebmApi");
+        // Brief wait so outbox can ACK when VSDC is local/fast
+        await new Promise((r) => setTimeout(r, 1500));
+        const ev = await loadEbmSaleEventBySource(hotelId, "DEPOT_SALE", String(res.saleId));
+        fiscal = {
+          ebmReceiptNo: ev.ebmReceiptNo,
+          ebmSignature: ev.ebmSignature,
+          ebmQrPayload: ev.ebmQrPayload,
+          ebmSdcId: ev.ebmSdcId,
+          ebmMrcNo: ev.ebmMrcNo,
+          ebmStatus: ev.ebmStatus,
+        };
+      } catch {
+        // Fiscal fields optional when EBM disabled or still pending
+      }
       try {
         printDepotSaleInvoice(
           {
@@ -1180,6 +1205,7 @@ export default function PosPage() {
               taxable: ln.taxable !== false,
             })),
             vatPercent: 18,
+            ...fiscal,
           },
           hotelCurrency || "RWF",
         );

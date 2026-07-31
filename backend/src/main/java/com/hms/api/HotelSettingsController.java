@@ -8,12 +8,14 @@ import com.hms.service.PlatformTenantService;
 import com.hms.service.PosSettingsService;
 import com.hms.api.dto.PlatformDtos;
 import com.hms.web.ApiException;
+import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -80,6 +82,16 @@ public class HotelSettingsController {
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         return platformTenantService.subscriptionStatus(hotelId);
+    }
+
+    @PostMapping("/subscription/billing-request")
+    @PreAuthorize("hasAnyAuthority('ROLE_HOTEL_ADMIN','ROLE_SUPER_ADMIN','ROLE_FINANCE','ROLE_MANAGER')")
+    public PlatformDtos.TenantSubscriptionStatusResponse createBillingRequest(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody PlatformDtos.CreateBillingRequest body) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        return platformTenantService.createBillingRequest(hotelId, body);
     }
 
     @PutMapping("/settings")

@@ -14,6 +14,7 @@ import com.hms.web.ApiException;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -200,8 +201,13 @@ public class PlatformModuleController {
         category.setDescription(trimOrNull(body.description()));
         category.setIcon(trimOrNull(body.icon()));
         List<String> keys = body.moduleKeys() != null
-                ? body.moduleKeys().stream().map(key -> key.trim().toUpperCase()).toList()
-                : List.of();
+                ? body.moduleKeys().stream().map(key -> key.trim().toUpperCase()).collect(Collectors.toCollection(ArrayList::new))
+                : new ArrayList<>();
+        for (String required : List.of("DASHBOARD", "SETTINGS")) {
+            if (!keys.contains(required)) {
+                keys.add(required);
+            }
+        }
         category.getModules().clear();
         category.getModules().addAll(moduleRepository.findByModuleKeyIn(keys));
     }

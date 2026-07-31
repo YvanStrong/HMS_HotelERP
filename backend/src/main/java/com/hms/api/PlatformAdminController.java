@@ -73,6 +73,23 @@ public class PlatformAdminController {
         return platformTenantService.renewSubscription(tenantId, body);
     }
 
+    @PostMapping("/tenants/{tenantId}/subscription/change-plan")
+    public PlatformDtos.TenantSubscriptionStatusResponse changePlan(
+            @PathVariable UUID tenantId, @Valid @RequestBody PlatformDtos.ChangePlanRequest body) {
+        return platformTenantService.changePlan(tenantId, body);
+    }
+
+    @GetMapping("/billing-requests/pending")
+    public List<PlatformDtos.BillingRequestRow> pendingBillingRequests() {
+        return platformTenantService.listPendingBillingRequests();
+    }
+
+    @PostMapping("/billing-requests/{requestId}/resolve")
+    public PlatformDtos.TenantSubscriptionStatusResponse resolveBillingRequest(
+            @PathVariable UUID requestId, @RequestBody PlatformDtos.ResolveBillingRequest body) {
+        return platformTenantService.resolveBillingRequest(requestId, body);
+    }
+
     @PatchMapping("/tenants/{tenantId}/subscription/settings")
     public PlatformDtos.TenantSubscriptionStatusResponse updateSubscriptionSettings(
             @PathVariable UUID tenantId,

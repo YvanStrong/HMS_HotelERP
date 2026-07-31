@@ -37,6 +37,10 @@ public class UnifiedInvoiceRefundService {
     private final DepotSaleRefundRepository depotSaleRefundRepository;
     private final InventoryDepotService inventoryDepotService;
 
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired
+    private EbmSaleEventService ebmSaleEventService;
+
     public UnifiedInvoiceRefundService(
             TenantAccessService tenantAccessService,
             HotelRepository hotelRepository,
@@ -135,6 +139,14 @@ public class UnifiedInvoiceRefundService {
         inv.setStatus("REFUNDED");
         invoiceRepository.save(inv);
         refund = hotelInvoiceRefundRepository.save(refund);
+        try {
+            if (ebmSaleEventService != null) {
+                ebmSaleEventService.enqueueHotelInvoiceRefund(
+                        hotelId, inv, refund.getId(), refund.getRefundNumber());
+            }
+        } catch (Exception ignored) {
+            // EBM must never block refunds
+        }
         return new ApiDtos.UnifiedRefundRow(
                 refund.getId(),
                 refund.getRefundNumber(),

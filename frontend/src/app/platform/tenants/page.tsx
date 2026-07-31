@@ -282,7 +282,7 @@ export default function PlatformTenantsPage() {
                               step="0.01"
                               value={draft?.monthlyPrice ?? ""}
                               onChange={(event) => updateDraft(tenantId, { monthlyPrice: event.target.value })}
-                              placeholder="99.00"
+                              placeholder="150000"
                               className="w-full"
                             />
                           </label>

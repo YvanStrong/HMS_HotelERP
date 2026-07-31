@@ -2,6 +2,10 @@ package com.hms.service;
 
 import com.hms.entity.BugReport;
 import jakarta.mail.MessagingException;
+import jakarta.mail.util.ByteArrayDataSource;
+import java.util.Base64;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,6 +17,9 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class BugReportEmailService {
+
+    private static final Pattern DATA_URL =
+            Pattern.compile("^data:(image/[a-zA-Z0-9.+-]+);base64,(.+)$", Pattern.DOTALL);
 
     private final JavaMailSender mailSender;
 
@@ -65,11 +72,32 @@ public class BugReportEmailService {
         }
         helper.setSubject(subject);
         helper.setText(buildPlain(report), buildHtml(report));
+        attachScreenshot(helper, report);
         mailSender.send(message);
         log.info("Bug report email sent for id={} to={}", report.getId(), mask(to));
     }
 
+    private static void attachScreenshot(MimeMessageHelper helper, BugReport report) throws MessagingException {
+        String data = report.getScreenshotData();
+        if (data == null || data.isBlank()) {
+            return;
+        }
+        Matcher m = DATA_URL.matcher(data.trim());
+        if (!m.matches()) {
+            return;
+        }
+        String contentType = m.group(1);
+        byte[] bytes = Base64.getDecoder().decode(m.group(2).replaceAll("\\s+", ""));
+        String fileName = report.getScreenshotFileName() != null && !report.getScreenshotFileName().isBlank()
+                ? report.getScreenshotFileName()
+                : "bug-screenshot.png";
+        helper.addAttachment(fileName, new ByteArrayDataSource(bytes, contentType));
+    }
+
     private static String buildPlain(BugReport r) {
+        String screenshotNote = r.getScreenshotData() != null && !r.getScreenshotData().isBlank()
+                ? "Screenshot: attached (" + nullToDash(r.getScreenshotFileName()) + ")\n"
+                : "Screenshot: none\n";
         return """
                 New bug report
 
@@ -81,7 +109,7 @@ public class BugReportEmailService {
                 Role: %s
                 Hotel ID: %s
                 Page: %s
-
+                %s
                 Description:
                 %s
 
@@ -96,10 +124,20 @@ public class BugReportEmailService {
                         nullToDash(r.getReporterRole()),
                         r.getHotelId() == null ? "—" : r.getHotelId().toString(),
                         nullToDash(r.getPageUrl()),
+                        screenshotNote,
                         r.getDescription());
     }
 
     private static String buildHtml(BugReport r) {
+        boolean hasShot = r.getScreenshotData() != null && !r.getScreenshotData().isBlank();
+        String shotBlock = hasShot
+                ? """
+                  <p style="margin:16px 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#64748b;">Screenshot</p>
+                  <p style="margin:0 0 12px;font-size:13px;color:#475569;">Attached to this email (%s). Preview below when supported by your client.</p>
+                  <img src="%s" alt="Bug screenshot" style="max-width:100%%;border-radius:12px;border:1px solid #e2e8f0;" />
+                  """
+                        .formatted(esc(nullToDash(r.getScreenshotFileName())), r.getScreenshotData())
+                : "<p style=\"margin:16px 0 0;font-size:13px;color:#64748b;\">No screenshot attached.</p>";
         return """
                 <!doctype html>
                 <html><body style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;background:#f8fafc;padding:24px;">
@@ -114,6 +152,7 @@ public class BugReportEmailService {
                       <tr><td style="padding:6px 0;color:#64748b;">Page</td><td style="word-break:break-all;">%s</td></tr>
                     </table>
                     <div style="background:#f1f5f9;border-radius:12px;padding:16px;white-space:pre-wrap;line-height:1.5;">%s</div>
+                    %s
                   </div>
                 </body></html>
                 """
@@ -126,7 +165,8 @@ public class BugReportEmailService {
                         esc(nullToDash(r.getReporterRole())),
                         esc(r.getHotelId() == null ? "—" : r.getHotelId().toString()),
                         esc(nullToDash(r.getPageUrl())),
-                        esc(r.getDescription()));
+                        esc(r.getDescription()),
+                        shotBlock);
     }
 
     private static String nullToDash(String v) {

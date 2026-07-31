@@ -89,6 +89,7 @@ public final class InventoryDepotDtos {
 
     public record CreateSaleRequest(
             String customerName,
+            String customerTin,
             @NotNull UUID depotId,
             @NotEmpty List<SaleLineInput> lines,
             Boolean chargeToRoom,
@@ -155,6 +156,7 @@ public final class InventoryDepotDtos {
             String saleNumber,
             String depotName,
             String customerName,
+            String customerTin,
             BigDecimal totalAmount,
             Instant soldAt,
             String paymentMethod,
@@ -165,7 +167,13 @@ public final class InventoryDepotDtos {
             String promoCode,
             String paymentCurrency,
             BigDecimal exchangeRate,
-            BigDecimal foreignAmount) {}
+            BigDecimal foreignAmount,
+            String ebmReceiptNo,
+            String ebmSignature,
+            String ebmQrPayload,
+            String ebmSdcId,
+            String ebmMrcNo,
+            String ebmStatus) {}
 
     public record CreateRefundRequest(String reason) {}
 

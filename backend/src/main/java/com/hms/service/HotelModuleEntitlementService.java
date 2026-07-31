@@ -16,6 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service("moduleEntitlement")
 public class HotelModuleEntitlementService {
 
+    /** Always available so staff can open the app and configure the hotel. */
+    private static final Set<String> ALWAYS_ON_MODULES = Set.of("DASHBOARD", "SETTINGS");
+
     private static final Map<String, List<String>> DEPENDENCIES = Map.of(
             "PMS", List.of("ROOMS"),
             "HOUSEKEEPING", List.of("ROOMS"),
@@ -62,10 +65,7 @@ public class HotelModuleEntitlementService {
 
     @Transactional(readOnly = true)
     public Set<String> resolveEnabledModules(UUID hotelId) {
-        Set<String> keys = moduleRepository.findByLocked(true).stream()
-                .filter(PlatformModule::isActive)
-                .map(PlatformModule::getModuleKey)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> keys = new LinkedHashSet<>(ALWAYS_ON_MODULES);
         for (HotelModuleEntitlement entitlement : entitlementRepository.findByHotelIdAndEnabled(hotelId, true)) {
             if (entitlement.getModule().isActive() && entitlement.getBillingStatus() != ModuleBillingStatus.SUSPENDED) {
                 keys.add(entitlement.getModule().getModuleKey());
@@ -89,7 +89,7 @@ public class HotelModuleEntitlementService {
         if (!module.isActive()) {
             return false;
         }
-        if (module.isLocked()) {
+        if (ALWAYS_ON_MODULES.contains(module.getModuleKey())) {
             return true;
         }
         return entitlementRepository.existsByHotelIdAndModuleKeyAndEnabled(hotelId, module.getModuleKey(), true);
@@ -106,7 +106,7 @@ public class HotelModuleEntitlementService {
         Set<String> enabledKeys = new LinkedHashSet<>();
         for (PlatformModule module : moduleRepository.findAllByActiveTrueOrderBySortOrderAsc()) {
             HotelModuleEntitlement entitlement = entitlements.get(module.getModuleKey());
-            boolean moduleEnabled = module.isLocked()
+            boolean moduleEnabled = ALWAYS_ON_MODULES.contains(module.getModuleKey())
                     || (entitlement != null
                             && entitlement.isEnabled()
                             && entitlement.getBillingStatus() != ModuleBillingStatus.SUSPENDED);
@@ -114,7 +114,7 @@ public class HotelModuleEntitlementService {
             if (moduleEnabled) {
                 enabledKeys.add(module.getModuleKey());
             }
-            if (module.isLocked()) {
+            if (module.isLocked() || module.getTier() == ModuleTier.CORE) {
                 core.add(row);
             } else if (module.getTier() == ModuleTier.ADDON && !moduleEnabled) {
                 addons.add(row);
@@ -135,23 +135,48 @@ public class HotelModuleEntitlementService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Business category not found"));
         Map<String, HotelModuleEntitlement> old = entitlementRepository.findByHotelId(hotelId).stream()
                 .collect(Collectors.toMap(e -> e.getModule().getModuleKey(), e -> e));
-        entitlementRepository.deleteNonCoreNonAddonByHotelId(hotelId);
+        entitlementRepository.deleteByHotelId(hotelId);
         hotel.setBusinessCategory(category);
         hotelRepository.save(hotel);
-        Set<String> defaultKeys = category.getModules().stream()
-                .filter(module -> !module.isLocked() && module.getTier() != ModuleTier.ADDON)
-                .map(PlatformModule::getModuleKey)
-                .collect(Collectors.toSet());
+
+        Set<String> enabledKeys = new LinkedHashSet<>(ALWAYS_ON_MODULES);
         for (PlatformModule module : category.getModules()) {
-            if (!module.isLocked() && module.getTier() != ModuleTier.ADDON) {
-                upsertEntitlement(
-                        hotel, module, true, false, ModuleBillingStatus.INCLUDED, changedBy, "Applied category " + category.getCode());
+            if (module.isActive()) {
+                enabledKeys.add(module.getModuleKey());
             }
         }
+
+        for (String moduleKey : enabledKeys) {
+            PlatformModule module = findModule(moduleKey);
+            ModuleBillingStatus billing = module.getTier() == ModuleTier.ADDON
+                    ? ModuleBillingStatus.ADDON
+                    : ModuleBillingStatus.INCLUDED;
+            HotelModuleEntitlement entitlement = upsertEntitlement(
+                    hotel,
+                    module,
+                    true,
+                    false,
+                    billing,
+                    changedBy,
+                    "Applied category " + category.getCode());
+            if (module.getTier() == ModuleTier.ADDON && entitlement.getAddonActivatedAt() == null) {
+                entitlement.setAddonActivatedAt(Instant.now());
+                entitlementRepository.save(entitlement);
+            }
+        }
+
         for (Map.Entry<String, HotelModuleEntitlement> entry : old.entrySet()) {
-            HotelModuleEntitlement previous = entry.getValue();
-            if (previous.getModule().getTier() != ModuleTier.ADDON && !defaultKeys.contains(entry.getKey())) {
-                audit(hotelId, entry.getKey(), previous.isEnabled(), false, previous.getBillingStatus(), ModuleBillingStatus.INCLUDED, changedBy, "Applied category " + category.getCode());
+            if (!enabledKeys.contains(entry.getKey()) && entry.getValue().isEnabled()) {
+                HotelModuleEntitlement previous = entry.getValue();
+                audit(
+                        hotelId,
+                        entry.getKey(),
+                        true,
+                        false,
+                        previous.getBillingStatus(),
+                        ModuleBillingStatus.INCLUDED,
+                        changedBy,
+                        "Applied category " + category.getCode());
             }
         }
         return getEntitlementsForHotel(hotelId);
@@ -167,8 +192,9 @@ public class HotelModuleEntitlementService {
             UUID changedBy,
             String reason) {
         PlatformModule module = findModule(moduleKey);
-        if (module.isLocked()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "MODULE_LOCKED", "Core modules cannot be disabled.");
+        if (ALWAYS_ON_MODULES.contains(module.getModuleKey())) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST, "MODULE_LOCKED", "Dashboard and Settings cannot be disabled.");
         }
         ModuleBillingStatus status = parseBillingStatus(billingStatus, ModuleBillingStatus.INCLUDED);
         List<String> cascade = new ArrayList<>();

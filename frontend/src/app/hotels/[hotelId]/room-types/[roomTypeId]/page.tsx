@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
+import { formatMoney } from "@/lib/money";
 import { staffAppPath } from "@/lib/staffAppRoutes";
+import { useHotelContext } from "@/lib/useHotelContext";
 
 type RoomTypeSummary = {
   id: string;
@@ -40,6 +42,8 @@ export default function RoomTypeDetailPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
   const roomTypeId = String(params.roomTypeId);
+  const { hotel } = useHotelContext(hotelId);
+  const currency = hotel.currency || "RWF";
   const [roomType, setRoomType] = useState<RoomTypeSummary | null>(null);
   const [rooms, setRooms] = useState<RoomRow[]>([]);
   const [rates, setRates] = useState<RateEntry[]>([]);
@@ -151,8 +155,8 @@ export default function RoomTypeDetailPage() {
             <p className="mt-1 text-lg font-semibold">{roomType.code || "—"}</p>
           </div>
           <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Base Rate</p>
-            <p className="mt-1 text-lg font-semibold">{roomType.baseRate}</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Base rate / night</p>
+            <p className="mt-1 text-lg font-semibold">{formatMoney(roomType.baseRate, currency)}</p>
           </div>
           <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Max Occupancy</p>
@@ -249,7 +253,7 @@ export default function RoomTypeDetailPage() {
                   {rates.map((r) => (
                     <tr key={r.rateDate} className="border-t border-border/50">
                       <td>{r.rateDate}</td>
-                      <td>{r.nightlyRate}</td>
+                      <td>{formatMoney(r.nightlyRate, currency)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -273,8 +277,8 @@ export default function RoomTypeDetailPage() {
                 <input value={code} onChange={(e) => setCode(e.target.value)} />
               </label>
               <label>
-                Base rate
-                <input type="number" min="0" value={baseRate} onChange={(e) => setBaseRate(e.target.value)} />
+                Base rate (per night, {currency})
+                <input type="number" min="0" step="0.01" value={baseRate} onChange={(e) => setBaseRate(e.target.value)} />
               </label>
               <label>
                 Max occupancy

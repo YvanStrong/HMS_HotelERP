@@ -10,6 +10,7 @@ import com.hms.domain.RoomStatus;
 import com.hms.entity.Guest;
 import com.hms.entity.Payment;
 import com.hms.entity.Reservation;
+import com.hms.entity.Room;
 import com.hms.entity.RoomCharge;
 import com.hms.repository.GuestComplaintRepository;
 import com.hms.repository.GuestRepository;
@@ -63,6 +64,7 @@ public class ReportService {
     private final FolioLedgerService folioLedgerService;
     private final GuestComplaintRepository guestComplaintRepository;
     private final GuestStayAnalyticsRepository guestStayAnalyticsRepository;
+    private final ReportExportHelper reportExportHelper;
 
     public ReportService(
             RoomRepository roomRepository,
@@ -75,7 +77,8 @@ public class ReportService {
             TenantAccessService tenantAccessService,
             FolioLedgerService folioLedgerService,
             GuestComplaintRepository guestComplaintRepository,
-            GuestStayAnalyticsRepository guestStayAnalyticsRepository) {
+            GuestStayAnalyticsRepository guestStayAnalyticsRepository,
+            ReportExportHelper reportExportHelper) {
         this.roomRepository = roomRepository;
         this.reservationRepository = reservationRepository;
         this.guestRepository = guestRepository;
@@ -87,6 +90,7 @@ public class ReportService {
         this.folioLedgerService = folioLedgerService;
         this.guestComplaintRepository = guestComplaintRepository;
         this.guestStayAnalyticsRepository = guestStayAnalyticsRepository;
+        this.reportExportHelper = reportExportHelper;
     }
 
     @Transactional(readOnly = true)
@@ -182,36 +186,34 @@ public class ReportService {
     public byte[] exportOccupancyPdf(
             UUID hotelId, String hotelHeader, LocalDate start, LocalDate end, String groupBy) {
         ReportDtos.OccupancyReportResponse report = occupancy(hotelId, hotelHeader, start, end, groupBy, null);
-        try (PDDocument doc = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            PDPage page = new PDPage();
-            doc.addPage(page);
-            try (PDPageContentStream content = new PDPageContentStream(doc, page)) {
-                content.beginText();
-                content.setFont(PDF_FONT_BOLD, 14);
-                content.newLineAtOffset(50, 760);
-                content.showText("Occupancy Report");
-                content.setFont(PDF_FONT_REGULAR, 10);
-                content.newLineAtOffset(0, -18);
-                content.showText("Period: " + start + " to " + end + " | Group: " + groupBy);
-                content.newLineAtOffset(0, -20);
-                int count = 0;
-                for (Map<String, Object> row : report.data()) {
-                    if (count++ >= 30) {
-                        break;
-                    }
-                    content.showText(
-                            val(row.get("date")) + " | Occ: " + val(row.get("occupiedRooms")) + "/"
-                                    + val(row.get("totalRooms")) + " | Rate: " + val(row.get("occupancyRate"))
-                                    + "% | ADR: " + val(row.get("adr")) + " | RevPAR: " + val(row.get("revpar")));
-                    content.newLineAtOffset(0, -14);
-                }
-                content.endText();
-            }
-            doc.save(out);
-            return out.toByteArray();
-        } catch (Exception e) {
-            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to generate occupancy PDF");
-        }
+        List<String> headers = List.of("Date", "Total rooms", "Occupied", "Occupancy %", "ADR", "RevPAR");
+        List<List<String>> rows = report.data().stream()
+                .map(row -> List.of(
+                        val(row.get("date")),
+                        val(row.get("totalRooms")),
+                        val(row.get("occupiedRooms")),
+                        val(row.get("occupancyRate")),
+                        val(row.get("adr")),
+                        val(row.get("revpar"))))
+                .toList();
+        return reportExportHelper.toPdf("Occupancy Report", "Period: " + start + " to " + end, headers, rows);
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] exportOccupancyXlsx(
+            UUID hotelId, String hotelHeader, LocalDate start, LocalDate end, String groupBy) {
+        ReportDtos.OccupancyReportResponse report = occupancy(hotelId, hotelHeader, start, end, groupBy, null);
+        List<String> headers = List.of("Date", "Total rooms", "Occupied", "Occupancy %", "ADR", "RevPAR");
+        List<List<String>> rows = report.data().stream()
+                .map(row -> List.of(
+                        val(row.get("date")),
+                        val(row.get("totalRooms")),
+                        val(row.get("occupiedRooms")),
+                        val(row.get("occupancyRate")),
+                        val(row.get("adr")),
+                        val(row.get("revpar"))))
+                .toList();
+        return reportExportHelper.toXlsx("Occupancy", headers, rows);
     }
 
     @Transactional(readOnly = true)
@@ -710,6 +712,229 @@ public class ReportService {
             return r.getBookedByAppUser().getUsername();
         }
         return "System";
+    }
+
+    @Transactional(readOnly = true)
+    public ReportDtos.TabularReportResponse roomsReport(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        List<Room> rooms = roomRepository.findByHotel_Id(hotelId);
+        Map<String, Long> byStatus = new HashMap<>();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Room room : rooms) {
+            String status = room.getStatus() != null ? room.getStatus().name() : "UNKNOWN";
+            byStatus.merge(status, 1L, Long::sum);
+            Map<String, Object> row = new HashMap<>();
+            row.put("roomNumber", room.getRoomNumber());
+            row.put("roomType", room.getRoomType() != null ? room.getRoomType().getName() : "");
+            row.put("floor", room.getFloor() != null ? room.getFloor() : "");
+            row.put("status", status);
+            row.put("cleanliness", room.getCleanliness() != null ? room.getCleanliness().name() : "");
+            row.put("outOfOrder", room.isOutOfOrder());
+            row.put("dnd", room.isDnd());
+            rows.add(row);
+        }
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("totalRooms", rooms.size());
+        summary.put("byStatus", byStatus);
+        return new ReportDtos.TabularReportResponse(
+                "ROOMS",
+                hotelId,
+                null,
+                null,
+                summary,
+                List.of("roomNumber", "roomType", "floor", "status", "cleanliness", "outOfOrder", "dnd"),
+                rows);
+    }
+
+    @Transactional(readOnly = true)
+    public ReportDtos.TabularReportResponse reservationsReport(
+            UUID hotelId, String hotelHeader, LocalDate from, LocalDate to) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        assertDateRange(from, to);
+        List<Reservation> reservations = reservationRepository.findOverlappingForReport(hotelId, from, to);
+        Map<String, Long> byStatus = new HashMap<>();
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Reservation r : reservations) {
+            String status = r.getStatus() != null ? r.getStatus().name() : "UNKNOWN";
+            byStatus.merge(status, 1L, Long::sum);
+            totalAmount = totalAmount.add(r.getTotalAmount() != null ? r.getTotalAmount() : BigDecimal.ZERO);
+            Map<String, Object> row = new HashMap<>();
+            row.put("bookingReference", r.getBookingReference());
+            row.put("guestName", r.getGuest() != null ? r.getGuest().getFullName() : "");
+            row.put("roomNumber", r.getRoom() != null ? r.getRoom().getRoomNumber() : "");
+            row.put("checkInDate", r.getCheckInDate() != null ? r.getCheckInDate().toString() : "");
+            row.put("checkOutDate", r.getCheckOutDate() != null ? r.getCheckOutDate().toString() : "");
+            row.put("status", status);
+            row.put("adults", r.getAdults());
+            row.put("children", r.getChildren());
+            row.put("nightlyRate", money(r.getNightlyRate() != null ? r.getNightlyRate() : BigDecimal.ZERO));
+            row.put("totalAmount", money(r.getTotalAmount() != null ? r.getTotalAmount() : BigDecimal.ZERO));
+            row.put("source", r.getBookingSource() != null ? r.getBookingSource() : "");
+            rows.add(row);
+        }
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("reservationCount", reservations.size());
+        summary.put("byStatus", byStatus);
+        summary.put("totalAmount", money(totalAmount));
+        return new ReportDtos.TabularReportResponse(
+                "RESERVATIONS",
+                hotelId,
+                from,
+                to,
+                summary,
+                List.of(
+                        "bookingReference",
+                        "guestName",
+                        "roomNumber",
+                        "checkInDate",
+                        "checkOutDate",
+                        "status",
+                        "adults",
+                        "children",
+                        "nightlyRate",
+                        "totalAmount",
+                        "source"),
+                rows);
+    }
+
+    @Transactional(readOnly = true)
+    public ReportDtos.TabularReportResponse salesReport(
+            UUID hotelId, String hotelHeader, LocalDate from, LocalDate to) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        assertDateRange(from, to);
+        long totalRooms = roomRepository.countByHotel_Id(hotelId);
+        BigDecimal paymentsTotal = BigDecimal.ZERO;
+        BigDecimal invoicesTotal = BigDecimal.ZERO;
+        long invoiceCount = 0;
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
+            Instant dayStart = d.atStartOfDay(ZoneOffset.UTC).toInstant();
+            Instant dayEnd = d.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+            long occupied = reservationRepository.countDistinctOccupiedRoomsForNight(hotelId, d);
+            BigDecimal roomRevenue = reservationRepository.sumTotalAmountForOccupiedNight(hotelId, d);
+            if (roomRevenue == null) {
+                roomRevenue = BigDecimal.ZERO;
+            }
+            BigDecimal adr = occupied > 0
+                    ? roomRevenue.divide(BigDecimal.valueOf(occupied), 2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+            double occPct = totalRooms > 0 ? occupied * 100.0 / totalRooms : 0.0;
+            BigDecimal revpar = totalRooms > 0
+                    ? roomRevenue.divide(BigDecimal.valueOf(totalRooms), 2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+            BigDecimal payments = paymentRepository.sumCompletedForHotelInRange(hotelId, dayStart, dayEnd);
+            if (payments == null) {
+                payments = BigDecimal.ZERO;
+            }
+            BigDecimal invoices = invoiceRepository.sumTotalAmountByHotelAndCreatedAtRange(hotelId, dayStart, dayEnd);
+            if (invoices == null) {
+                invoices = BigDecimal.ZERO;
+            }
+            long dayInvoices = invoiceRepository.countByHotelAndCreatedAtRange(hotelId, dayStart, dayEnd);
+            paymentsTotal = paymentsTotal.add(payments);
+            invoicesTotal = invoicesTotal.add(invoices);
+            invoiceCount += dayInvoices;
+            Map<String, Object> row = new HashMap<>();
+            row.put("date", d.toString());
+            row.put("occupiedRooms", occupied);
+            row.put("occupancyPct", BigDecimal.valueOf(occPct).setScale(1, RoundingMode.HALF_UP));
+            row.put("adr", money(adr));
+            row.put("revpar", money(revpar));
+            row.put("roomRevenue", money(roomRevenue));
+            row.put("paymentsCollected", money(payments));
+            row.put("invoicesIssued", money(invoices));
+            row.put("invoiceCount", dayInvoices);
+            rows.add(row);
+        }
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("paymentsCollected", money(paymentsTotal));
+        summary.put("invoicesIssued", money(invoicesTotal));
+        summary.put("invoiceCount", invoiceCount);
+        summary.put("days", rows.size());
+        return new ReportDtos.TabularReportResponse(
+                "SALES",
+                hotelId,
+                from,
+                to,
+                summary,
+                List.of(
+                        "date",
+                        "occupiedRooms",
+                        "occupancyPct",
+                        "adr",
+                        "revpar",
+                        "roomRevenue",
+                        "paymentsCollected",
+                        "invoicesIssued",
+                        "invoiceCount"),
+                rows);
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] exportTabular(
+            String reportType,
+            UUID hotelId,
+            String hotelHeader,
+            LocalDate from,
+            LocalDate to,
+            String format) {
+        if ("GUESTS".equalsIgnoreCase(reportType)) {
+            ReportDtos.GuestDashboardResponse guest = guestDashboard(hotelId, hotelHeader, from, to);
+            List<String> headers = List.of("Nationality", "Count", "Percent");
+            List<List<String>> body = guest.nationalityDistribution().stream()
+                    .map(slice -> List.of(
+                            val(slice.nationality()),
+                            val(slice.count()),
+                            val(slice.percent())))
+                    .toList();
+            List<List<String>> withSummary = new ArrayList<>(body);
+            withSummary.add(0, List.of("Repeat guests", val(guest.repeatGuestCount()), ""));
+            withSummary.add(1, List.of("VIP guests", val(guest.vipGuestCount()), ""));
+            withSummary.add(2, List.of("No-show %", val(guest.noShowRatePercent()), ""));
+            withSummary.add(3, List.of("Avg stay nights", val(guest.averageStayNights()), ""));
+            String f = format == null ? "xlsx" : format.trim().toLowerCase();
+            String subtitle = "Period: " + guest.fromDate() + " to " + guest.toDate();
+            return switch (f) {
+                case "pdf" -> reportExportHelper.toPdf("Guests Report", subtitle, headers, withSummary);
+                case "csv" -> reportExportHelper.toCsv(headers, withSummary);
+                default -> reportExportHelper.toXlsx("Guests", headers, withSummary);
+            };
+        }
+        ReportDtos.TabularReportResponse report = switch (reportType.toUpperCase()) {
+            case "ROOMS" -> roomsReport(hotelId, hotelHeader);
+            case "RESERVATIONS" -> reservationsReport(hotelId, hotelHeader, from, to);
+            case "SALES" -> salesReport(hotelId, hotelHeader, from, to);
+            default -> throw new ApiException(HttpStatus.BAD_REQUEST, "Unknown report type");
+        };
+        List<String> headers = report.columns().stream()
+                .map(col -> col.replaceAll("([a-z])([A-Z])", "$1 $2"))
+                .map(col -> Character.toUpperCase(col.charAt(0)) + col.substring(1))
+                .toList();
+        List<List<String>> body = report.rows().stream()
+                .map(row -> report.columns().stream().map(col -> val(row.get(col))).toList())
+                .toList();
+        String f = format == null ? "xlsx" : format.trim().toLowerCase();
+        String subtitle = report.fromDate() != null
+                ? "Period: " + report.fromDate() + " to " + report.toDate()
+                : "Snapshot";
+        return switch (f) {
+            case "pdf" -> reportExportHelper.toPdf(report.reportType() + " Report", subtitle, headers, body);
+            case "csv" -> reportExportHelper.toCsv(headers, body);
+            default -> reportExportHelper.toXlsx(report.reportType(), headers, body);
+        };
+    }
+
+    private void assertDateRange(LocalDate from, LocalDate to) {
+        if (from == null || to == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "fromDate and toDate are required");
+        }
+        if (to.isBefore(from)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "toDate must be on or after fromDate");
+        }
+        if (ChronoUnit.DAYS.between(from, to) > 366) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Date range cannot exceed 366 days");
+        }
     }
 
     private String actionForReservation(Reservation r) {

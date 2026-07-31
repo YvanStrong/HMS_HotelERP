@@ -56,14 +56,21 @@ public final class EbmDtos {
             String documentNumber,
             String ebmStatus,
             String ebmReceiptNo,
+            String ebmSignature,
+            String ebmQrPayload,
+            String ebmSdcId,
+            String ebmMrcNo,
             Instant createdAt) {}
+
+    public record CodeListRow(UUID id, String category, String code, String name, String parentCode, Instant syncedAt) {}
 
     public record ClassifyItemRequest(
             String itemTyCd,
             String pkgUnitCd,
             String qtyUnitCd,
             String itemClsCd,
-            boolean regenerateItemCd) {}
+            boolean regenerateItemCd,
+            Boolean saveToVsdc) {}
 
     public record ItemCdView(UUID itemId, String itemCd, String itemTyCd, String pkgUnitCd, String qtyUnitCd, String itemClsCd) {}
 }

@@ -51,7 +51,7 @@ type ModuleEntitlementsResponse = {
   visibleDisabledModules?: string[];
 };
 
-const CORE_MODULES = new Set(["DASHBOARD", "REPORTS", "ACCOUNTING", "INVOICES", "INVENTORY", "STAFF", "AUDIT_LOGS", "SETTINGS"]);
+const ALWAYS_ON_MODULES = new Set(["DASHBOARD", "SETTINGS"]);
 
 const EMPTY_CONTEXT: HotelContextData = {
   hotelId: "",
@@ -71,7 +71,7 @@ const EMPTY_CONTEXT: HotelContextData = {
   invoicePrefix: "HMS",
   businessCategoryId: null,
   businessCategoryCode: null,
-  enabledModules: Array.from(CORE_MODULES),
+  enabledModules: Array.from(ALWAYS_ON_MODULES),
   visibleDisabledModules: [],
 };
 
@@ -116,7 +116,7 @@ export function useHotelContext(explicitHotelId?: string) {
         invoicePrefix: raw.invoicePrefix ?? "HMS",
         businessCategoryId: raw.businessCategoryId ?? null,
         businessCategoryCode: raw.businessCategoryCode ?? null,
-        enabledModules: modulesQuery.data?.enabledModules ?? Array.from(CORE_MODULES),
+        enabledModules: modulesQuery.data?.enabledModules ?? Array.from(ALWAYS_ON_MODULES),
         visibleDisabledModules: modulesQuery.data?.visibleDisabledModules ?? [],
       }
     : { ...EMPTY_CONTEXT, hotelId };
@@ -125,7 +125,7 @@ export function useHotelContext(explicitHotelId?: string) {
 
   function hasModule(key: string): boolean {
     const normalized = key.trim().toUpperCase();
-    if (CORE_MODULES.has(normalized)) return true;
+    if (ALWAYS_ON_MODULES.has(normalized)) return true;
     // Avoid "module disabled" flash on refresh while entitlements are still loading.
     if (!entitlementsLoaded) return true;
     return hotel.enabledModules.includes(normalized);

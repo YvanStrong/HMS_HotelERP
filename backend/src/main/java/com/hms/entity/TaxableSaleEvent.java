@@ -47,6 +47,12 @@ public class TaxableSaleEvent {
     @Column(name = "ebm_qr_payload", columnDefinition = "TEXT")
     private String ebmQrPayload;
 
+    @Column(name = "ebm_sdc_id", length = 64)
+    private String ebmSdcId;
+
+    @Column(name = "ebm_mrc_no", length = 64)
+    private String ebmMrcNo;
+
     @Column(name = "ebm_status", nullable = false, length = 16)
     private String ebmStatus = "PENDING";
 

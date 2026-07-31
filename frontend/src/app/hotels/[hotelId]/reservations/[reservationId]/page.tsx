@@ -14,6 +14,7 @@ import {
   openTaxInvoicePrintWindow,
   summarizeFromLineItems,
 } from "@/lib/taxInvoiceHtml";
+import { openReservationPrintWindow } from "@/lib/printReservationDocument";
 
 type PreferenceMoveActions = { onMove: (roomId: string) => void; movingRoomId: string | null };
 
@@ -439,6 +440,25 @@ export default function StaffReservationDetailPage() {
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const [checkInOpen, setCheckInOpen] = useState(false);
+  const [earlyArrivalOpen, setEarlyArrivalOpen] = useState(false);
+  const [earlyArrivalStep, setEarlyArrivalStep] = useState<"dates" | "confirm" | "checkin">("dates");
+  const [earlyArrivalBusy, setEarlyArrivalBusy] = useState(false);
+  const [earlyArrivalCheckIn, setEarlyArrivalCheckIn] = useState("");
+  const [earlyArrivalCheckOut, setEarlyArrivalCheckOut] = useState("");
+  const [earlyArrivalResult, setEarlyArrivalResult] = useState<{
+    checkInDate?: string;
+    checkOutDate?: string;
+    message?: string;
+    pricing?: {
+      nightlyRate?: number;
+      roomSubtotal?: number;
+      estimatedTaxes?: number;
+      estimatedFees?: number;
+      depositPaid?: number;
+      balanceDue?: number;
+    };
+    rebookingFee?: number;
+  } | null>(null);
   const [checkOutOpen, setCheckOutOpen] = useState(false);
   const [roomChoices, setRoomChoices] = useState<{ id: string; roomNumber: string }[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState<string>("");
@@ -517,27 +537,114 @@ export default function StaffReservationDetailPage() {
     load();
   }, [load]);
 
-  async function openCheckInModal() {
-    setBanner(null);
+  function todayYmdLocal() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  async function prepareCheckInForm() {
     setGuestIdOk(false);
     setEarlyIn(false);
     setSelectedRoomId(folio?.roomId ?? "");
+    const [policy, roomsJson] = await Promise.all([
+      apiFetch<FeePolicy>(`/api/v1/hotels/${hotelId}/fee-policy`),
+      apiFetch<PagedRooms>(`/api/v1/hotels/${hotelId}/rooms?page=1&size=200&status=VACANT_CLEAN,INSPECTED`),
+    ]);
+    setFees(policy);
+    let rooms = roomsJson.data.map((r) => ({ id: r.id, roomNumber: r.roomNumber }));
+    if (folio?.roomId && !rooms.some((r) => r.id === folio.roomId)) {
+      rooms = [{ id: folio.roomId, roomNumber: folio.roomNumber || "Assigned" }, ...rooms];
+    }
+    setRoomChoices(rooms);
+  }
+
+  async function openCheckInModal() {
+    setBanner(null);
     try {
-      const [policy, roomsJson] = await Promise.all([
-        apiFetch<FeePolicy>(`/api/v1/hotels/${hotelId}/fee-policy`),
-        apiFetch<PagedRooms>(
-          `/api/v1/hotels/${hotelId}/rooms?page=1&size=200&status=VACANT_CLEAN,INSPECTED`,
-        ),
-      ]);
-      setFees(policy);
-      let rooms = roomsJson.data.map((r) => ({ id: r.id, roomNumber: r.roomNumber }));
-      if (folio?.roomId && !rooms.some((r) => r.id === folio.roomId)) {
-        rooms = [{ id: folio.roomId, roomNumber: folio.roomNumber || "Assigned" }, ...rooms];
+      const bookedIn = folio?.stay.checkIn ?? "";
+      const today = todayYmdLocal();
+      if (bookedIn && today < bookedIn) {
+        setEarlyArrivalCheckIn(today);
+        setEarlyArrivalCheckOut(folio?.stay.checkOut ?? "");
+        setEarlyArrivalResult(null);
+        setEarlyArrivalStep("dates");
+        setEarlyArrivalOpen(true);
+        return;
       }
-      setRoomChoices(rooms);
+      await prepareCheckInForm();
       setCheckInOpen(true);
     } catch (e) {
       setBanner({ kind: "err", text: e instanceof Error ? e.message : "Could not load check-in data" });
+    }
+  }
+
+  async function submitEarlyArrivalModify() {
+    if (!earlyArrivalCheckIn || !earlyArrivalCheckOut || earlyArrivalCheckOut <= earlyArrivalCheckIn) {
+      setBanner({ kind: "err", text: "Check-out must be after the new check-in date." });
+      return;
+    }
+    setEarlyArrivalBusy(true);
+    setBanner(null);
+    try {
+      const res = await apiFetch<{
+        checkInDate?: string;
+        checkOutDate?: string;
+        message?: string;
+        rebookingFee?: number;
+        pricing?: {
+          nightlyRate?: number;
+          roomSubtotal?: number;
+          estimatedTaxes?: number;
+          estimatedFees?: number;
+          depositPaid?: number;
+          balanceDue?: number;
+        };
+      }>(`/api/v1/hotels/${hotelId}/reservations/${reservationId}/modify`, {
+        method: "POST",
+        body: JSON.stringify({
+          checkInDate: earlyArrivalCheckIn,
+          checkOutDate: earlyArrivalCheckOut,
+          rebookingFee: 0,
+          reason: `Early arrival: moved check-in from ${folio?.stay.checkIn ?? "scheduled date"} to ${earlyArrivalCheckIn}`,
+        }),
+      });
+      setEarlyArrivalResult(res);
+      setEarlyArrivalStep("confirm");
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Could not update stay dates" });
+    } finally {
+      setEarlyArrivalBusy(false);
+    }
+  }
+
+  async function continueEarlyArrivalToCheckIn() {
+    setEarlyArrivalBusy(true);
+    setBanner(null);
+    try {
+      await prepareCheckInForm();
+      setEarlyArrivalStep("checkin");
+    } catch (e) {
+      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Could not load check-in data" });
+    } finally {
+      setEarlyArrivalBusy(false);
+    }
+  }
+
+  async function skipEarlyArrivalDateChange() {
+    setEarlyArrivalBusy(true);
+    setBanner(null);
+    try {
+      await prepareCheckInForm();
+      setEarlyArrivalOpen(false);
+      setCheckInOpen(true);
+    } catch (e) {
+      setBanner({ kind: "err", text: e instanceof Error ? e.message : "Could not load check-in data" });
+    } finally {
+      setEarlyArrivalBusy(false);
     }
   }
 
@@ -557,6 +664,7 @@ export default function StaffReservationDetailPage() {
         body: JSON.stringify(body),
       });
       setCheckInOpen(false);
+      setEarlyArrivalOpen(false);
       setBanner({ kind: "ok", text: "Checked in successfully." });
       await load();
     } catch (e) {
@@ -1143,13 +1251,10 @@ export default function StaffReservationDetailPage() {
       <div><div class="sig-title">Receptionist Signature</div><div class="sig-line">Name, Signature & Date</div></div>
     </div>
     </div></body></html>`;
-    const w = window.open("", "_blank");
-    if (!w) return;
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    w.print();
+    openReservationPrintWindow(
+      html,
+      `Reservation-${folio.booking_reference ?? folio.confirmationCode ?? folio.reservationId}`,
+    );
   }
 
   const st = folio?.stay.reservationStatus;
@@ -1812,6 +1917,215 @@ export default function StaffReservationDetailPage() {
                 Post Charge
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {earlyArrivalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 55,
+            padding: "1rem",
+          }}
+        >
+          <div className="panel rounded-2xl border border-border/60 bg-card p-5 shadow-sm" style={{ maxWidth: 520, width: "100%" }}>
+            <h3 style={{ marginTop: 0, marginBottom: "0.35rem" }}>Early arrival</h3>
+            <p style={{ margin: "0 0 0.9rem", color: "var(--muted)", fontSize: "0.9rem" }}>
+              Booked check-in is <strong>{folio?.stay.checkIn}</strong>, but today is earlier. Update the stay
+              dates first so the extra night is billed, confirm the new total, then check in.
+            </p>
+            <div className="mb-4 flex gap-2 text-xs font-semibold uppercase tracking-wide">
+              {(
+                [
+                  ["dates", "1. Modify stay"],
+                  ["confirm", "2. Confirm total"],
+                  ["checkin", "3. Check in"],
+                ] as const
+              ).map(([key, label]) => (
+                <span
+                  key={key}
+                  className={`rounded-full px-2.5 py-1 ${
+                    earlyArrivalStep === key ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
+
+            {earlyArrivalStep === "dates" && (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label>
+                    New check-in
+                    <input
+                      type="date"
+                      value={earlyArrivalCheckIn}
+                      max={earlyArrivalCheckOut || undefined}
+                      onChange={(e) => setEarlyArrivalCheckIn(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Check-out
+                    <input
+                      type="date"
+                      value={earlyArrivalCheckOut}
+                      min={earlyArrivalCheckIn || undefined}
+                      onChange={(e) => setEarlyArrivalCheckOut(e.target.value)}
+                    />
+                  </label>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Suggested: move check-in to today ({todayYmdLocal()}) and keep checkout{" "}
+                  {folio?.stay.checkOut}.
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", justifyContent: "flex-end", marginTop: "1rem" }}>
+                  <button type="button" className="secondary" disabled={earlyArrivalBusy} onClick={() => setEarlyArrivalOpen(false)}>
+                    Cancel
+                  </button>
+                  <button type="button" className="secondary" disabled={earlyArrivalBusy} onClick={() => void skipEarlyArrivalDateChange()}>
+                    Skip &amp; check in anyway
+                  </button>
+                  <button type="button" disabled={earlyArrivalBusy} onClick={() => void submitEarlyArrivalModify()}>
+                    {earlyArrivalBusy ? "Updating…" : "Update stay dates"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {earlyArrivalStep === "confirm" && (
+              <>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
+                  <p className="m-0 font-semibold">{earlyArrivalResult?.message ?? "Stay dates updated."}</p>
+                  <p className="mt-2 mb-0">
+                    New stay: <strong>{earlyArrivalResult?.checkInDate ?? earlyArrivalCheckIn}</strong> →{" "}
+                    <strong>{earlyArrivalResult?.checkOutDate ?? earlyArrivalCheckOut}</strong>
+                  </p>
+                </div>
+                <div className="mt-3 grid gap-2 rounded-xl border border-border bg-slate-50 p-3 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Nightly rate</span>
+                    <strong>
+                      {earlyArrivalResult?.pricing?.nightlyRate != null
+                        ? `${earlyArrivalResult.pricing.nightlyRate} ${folio?.summary.currency ?? hotel.currency}`
+                        : "—"}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Room subtotal</span>
+                    <strong>
+                      {earlyArrivalResult?.pricing?.roomSubtotal != null
+                        ? `${earlyArrivalResult.pricing.roomSubtotal} ${folio?.summary.currency ?? hotel.currency}`
+                        : "—"}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Est. taxes</span>
+                    <strong>
+                      {earlyArrivalResult?.pricing?.estimatedTaxes != null
+                        ? `${earlyArrivalResult.pricing.estimatedTaxes} ${folio?.summary.currency ?? hotel.currency}`
+                        : "—"}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between gap-3 border-t border-border pt-2">
+                    <span className="font-semibold">Balance due</span>
+                    <strong>
+                      {earlyArrivalResult?.pricing?.balanceDue != null
+                        ? `${earlyArrivalResult.pricing.balanceDue} ${folio?.summary.currency ?? hotel.currency}`
+                        : "—"}
+                    </strong>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "1rem" }}>
+                  <button type="button" className="secondary" disabled={earlyArrivalBusy} onClick={() => setEarlyArrivalStep("dates")}>
+                    Back
+                  </button>
+                  <button type="button" disabled={earlyArrivalBusy} onClick={() => void continueEarlyArrivalToCheckIn()}>
+                    {earlyArrivalBusy ? "Loading…" : "Confirm & continue to check-in"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {earlyArrivalStep === "checkin" && (
+              <>
+                <p style={{ margin: "0 0 0.9rem", color: "var(--muted)", fontSize: "0.9rem" }}>
+                  Stay dates are updated. Verify guest ID and complete check-in.
+                </p>
+                <label style={{ display: "block", marginBottom: "0.45rem", fontWeight: 600 }}>Room</label>
+                <select
+                  value={selectedRoomId}
+                  onChange={(e) => setSelectedRoomId(e.target.value)}
+                  style={{ width: "100%", marginBottom: "1rem", padding: "0.55rem" }}
+                >
+                  <option value="">Keep / assign later…</option>
+                  {roomChoices.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.roomNumber} ({r.id === folio?.roomId ? "current" : "available"})
+                    </option>
+                  ))}
+                </select>
+                <div
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: "12px",
+                    padding: "10px 12px",
+                    marginBottom: "0.65rem",
+                    background: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "10px",
+                  }}
+                >
+                  <div>
+                    <p style={{ margin: 0, fontWeight: 600 }}>Guest ID verified</p>
+                    <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>Required before check-in</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setGuestIdOk((v) => !v)}
+                    aria-pressed={guestIdOk}
+                    style={{
+                      width: "56px",
+                      height: "30px",
+                      borderRadius: "999px",
+                      border: "1px solid var(--border)",
+                      background: guestIdOk ? "#0f766e" : "#e5e7eb",
+                      position: "relative",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: "3px",
+                        left: guestIdOk ? "29px" : "3px",
+                        width: "22px",
+                        height: "22px",
+                        borderRadius: "999px",
+                        background: "#fff",
+                        transition: "left 120ms ease",
+                      }}
+                    />
+                  </button>
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "1rem" }}>
+                  <button type="button" className="secondary" onClick={() => setEarlyArrivalStep("confirm")}>
+                    Back
+                  </button>
+                  <button type="button" disabled={!guestIdOk} onClick={() => void submitCheckIn()}>
+                    Complete check-in
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

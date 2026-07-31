@@ -5,6 +5,8 @@ public enum TenantSubscriptionAuditAction {
     MANUAL_BLOCK,
     MANUAL_UNBLOCK,
     RENEWAL,
+    PLAN_CHANGE,
+    BILLING_REQUEST,
     SETTINGS_UPDATE,
     LOGIN_REJECTED,
     TOKEN_REJECTED,

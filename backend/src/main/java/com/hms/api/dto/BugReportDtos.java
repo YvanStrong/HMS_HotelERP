@@ -15,7 +15,10 @@ public final class BugReportDtos {
             @NotBlank @Size(max = 200) String title,
             @NotBlank @Size(max = 8000) String description,
             BugReportSeverity severity,
-            @Size(max = 1024) String pageUrl) {}
+            @Size(max = 1024) String pageUrl,
+            /** Optional {@code data:image/...;base64,...} screenshot (max ~2.5MB decoded). */
+            String screenshotDataUrl,
+            @Size(max = 255) String screenshotFileName) {}
 
     public record UpdateBugReportRequest(BugReportStatus status, @Size(max = 8000) String adminNotes) {}
 
@@ -34,6 +37,11 @@ public final class BugReportDtos {
             String adminNotes,
             boolean emailSent,
             String emailError,
+            boolean hasScreenshot,
+            String screenshotFileName,
+            String screenshotContentType,
+            /** Present on detail fetch; omitted from list payloads to keep responses light. */
+            String screenshotDataUrl,
             Instant createdAt,
             Instant updatedAt,
             Instant resolvedAt) {}

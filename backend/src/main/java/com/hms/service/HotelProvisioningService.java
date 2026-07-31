@@ -29,7 +29,6 @@ import com.hms.repository.RoomStatusLogRepository;
 import com.hms.repository.RoomTypeRepository;
 import com.hms.repository.SupplierRepository;
 import com.hms.web.ApiException;
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -405,7 +404,7 @@ public class HotelProvisioningService {
         pt.setMaxRooms(50);
         pt.setMaxUsers(10);
         pt.setMaxReservationsPerMonth(500);
-        pt.setMonthlyPrice(new BigDecimal("99.00"));
+        pt.setMonthlyPrice(SubscriptionPlanCatalog.plan(SubscriptionTier.STARTER).monthlyPrice());
         pt.setBillingStatus(PlatformBillingStatus.ACTIVE);
         pt.setProvisioningStatus(ProvisioningStatus.PROVISIONED);
         platformTenantRepository.save(pt);

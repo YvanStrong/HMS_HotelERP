@@ -33,6 +33,9 @@ public class DepotSale {
     @Column(name = "customer_name", length = 160)
     private String customerName;
 
+    @Column(name = "customer_tin", length = 16)
+    private String customerTin;
+
     @Column(name = "table_label", length = 255)
     private String tableLabel;
 

@@ -46,14 +46,39 @@ type ImpersonationResult = {
   usage?: Record<string, unknown>;
 };
 
+type UpgradeQuote = {
+  targetTier: string;
+  label: string;
+  monthlyPrice: number;
+  proratedAmountDue: number;
+  daysRemaining: number;
+  note: string;
+};
+
+type BillingRequest = {
+  id: string;
+  requestType: string;
+  targetTier?: string | null;
+  months?: number | null;
+  quotedAmount: number;
+  currency?: string | null;
+  paymentReference?: string | null;
+  status: string;
+};
+
 type SubscriptionStatus = {
   billingStatus: string;
+  tier?: string | null;
   subscriptionEndDate?: string | null;
   daysRemaining?: number | null;
   suspended: boolean;
   manuallyBlocked: boolean;
   manualBlockReason?: string | null;
   lastPaymentConfirmedAt?: string | null;
+  monthlyPrice?: number | null;
+  currency?: string | null;
+  upgradeQuotes?: UpgradeQuote[];
+  pendingRequests?: BillingRequest[];
 };
 
 export default function PlatformHotelDetailPage() {
@@ -65,6 +90,7 @@ export default function PlatformHotelDetailPage() {
   const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
   const [subscriptionBusy, setSubscriptionBusy] = useState(false);
   const [renewMonths, setRenewMonths] = useState("1");
+  const [changeTier, setChangeTier] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -156,6 +182,44 @@ export default function PlatformHotelDetailPage() {
       await apiFetch(`/api/v1/platform/tenants/${hotelId}/subscription/renew`, {
         method: "POST",
         body: JSON.stringify({ months: Number(renewMonths), note: "Manual external payment confirmed by platform admin" }),
+        quiet: true,
+      });
+      await refreshSubscription();
+    } finally {
+      setSubscriptionBusy(false);
+    }
+  }
+
+  async function changePlan() {
+    if (!changeTier) return;
+    setSubscriptionBusy(true);
+    try {
+      const quote = subscription?.upgradeQuotes?.find((q) => q.targetTier === changeTier);
+      await apiFetch(`/api/v1/platform/tenants/${hotelId}/subscription/change-plan`, {
+        method: "POST",
+        body: JSON.stringify({
+          tier: changeTier,
+          amount: quote?.proratedAmountDue,
+          note: "Plan change applied by platform admin (prorated if upgrade)",
+        }),
+        quiet: true,
+      });
+      setChangeTier("");
+      await refreshSubscription();
+    } finally {
+      setSubscriptionBusy(false);
+    }
+  }
+
+  async function resolvePending(requestId: string, approve: boolean) {
+    setSubscriptionBusy(true);
+    try {
+      await apiFetch(`/api/v1/platform/billing-requests/${requestId}/resolve`, {
+        method: "POST",
+        body: JSON.stringify({
+          approve,
+          note: approve ? "Payment confirmed on hotel detail" : "Rejected on hotel detail",
+        }),
         quiet: true,
       });
       await refreshSubscription();
@@ -428,13 +492,17 @@ export default function PlatformHotelDetailPage() {
       </div>
 
       {subscription && (
-        <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+        <section className="space-y-4 rounded-2xl border border-border bg-card p-5 shadow-soft">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">Subscription</p>
               <h2 className="mt-1 text-xl font-black">Access Control</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Status: <span className="font-bold text-foreground">{subscription.billingStatus}</span> · Expiry: {subscription.subscriptionEndDate ?? "Not set"} · Days left: {subscription.daysRemaining ?? "n/a"}
+                Status: <span className="font-bold text-foreground">{subscription.billingStatus}</span>
+                {" · "}
+                Plan: <span className="font-bold text-foreground">{subscription.tier ?? "STARTER"}</span>
+                {" · "}
+                Expiry: {subscription.subscriptionEndDate ?? "Not set"} · Days left: {subscription.daysRemaining ?? "n/a"}
               </p>
               {subscription.manualBlockReason && <p className="mt-2 text-sm text-red-700">{subscription.manualBlockReason}</p>}
             </div>
@@ -446,7 +514,7 @@ export default function PlatformHotelDetailPage() {
                 <option value="12">12 months</option>
               </select>
               <button type="button" className="hms-btn-solid text-sm" disabled={subscriptionBusy} onClick={() => void renewSubscription()}>
-                Renew
+                Renew now
               </button>
               <button type="button" className="hms-btn-outline text-sm" disabled={subscriptionBusy} onClick={() => void blockSubscription()}>
                 Block
@@ -456,6 +524,65 @@ export default function PlatformHotelDetailPage() {
               </button>
             </div>
           </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-4">
+            <select className="w-44 text-sm" value={changeTier} onChange={(event) => setChangeTier(event.target.value)}>
+              <option value="">Change plan…</option>
+              {["STARTER", "PROFESSIONAL", "ENTERPRISE"]
+                .filter((t) => t !== subscription.tier)
+                .map((t) => {
+                  const quote = subscription.upgradeQuotes?.find((q) => q.targetTier === t);
+                  return (
+                    <option key={t} value={t}>
+                      {t.replaceAll("_", " ")}
+                      {quote ? ` · prorated ${quote.proratedAmountDue}` : ""}
+                    </option>
+                  );
+                })}
+            </select>
+            <button
+              type="button"
+              className="hms-btn-outline text-sm"
+              disabled={subscriptionBusy || !changeTier}
+              onClick={() => void changePlan()}
+            >
+              Apply plan change
+            </button>
+            <p className="text-xs text-muted-foreground">Upgrades charge prorated difference; expiry stays the same.</p>
+          </div>
+          {(subscription.pendingRequests?.length ?? 0) > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-sm font-semibold text-amber-950">Pending hotel requests</p>
+              <ul className="mt-2 space-y-2">
+                {subscription.pendingRequests!.map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <span>
+                      {r.requestType}
+                      {r.targetTier ? ` → ${r.targetTier}` : r.months ? ` · ${r.months} mo` : ""} ·{" "}
+                      {r.quotedAmount} {r.currency || subscription.currency || "RWF"}
+                    </span>
+                    <span className="flex gap-2">
+                      <button
+                        type="button"
+                        className="hms-btn-solid text-xs"
+                        disabled={subscriptionBusy}
+                        onClick={() => void resolvePending(r.id, true)}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        className="hms-btn-outline text-xs"
+                        disabled={subscriptionBusy}
+                        onClick={() => void resolvePending(r.id, false)}
+                      >
+                        Reject
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       )}
 

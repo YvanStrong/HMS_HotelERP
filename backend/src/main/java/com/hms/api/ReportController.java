@@ -5,6 +5,7 @@ import com.hms.service.ReportService;
 import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -47,20 +48,77 @@ public class ReportController {
             @RequestParam LocalDate startDate,
             @RequestParam LocalDate endDate,
             @RequestParam(defaultValue = "day") String groupBy,
-            @RequestParam(defaultValue = "csv") String format) {
-        String f = format == null ? "csv" : format.trim().toLowerCase();
-        if ("pdf".equals(f)) {
-            byte[] bytes = reportService.exportOccupancyPdf(hotelId, hotelHeader, startDate, endDate, groupBy);
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=occupancy-report.pdf")
-                    .contentType(MediaType.APPLICATION_PDF)
-                    .body(bytes);
+            @RequestParam(defaultValue = "xlsx") String format) {
+        return exportBytes(
+                format,
+                "occupancy-report",
+                reportService.exportOccupancyCsv(hotelId, hotelHeader, startDate, endDate, groupBy)
+                        .getBytes(StandardCharsets.UTF_8),
+                reportService.exportOccupancyXlsx(hotelId, hotelHeader, startDate, endDate, groupBy),
+                reportService.exportOccupancyPdf(hotelId, hotelHeader, startDate, endDate, groupBy));
+    }
+
+    @GetMapping("/rooms")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public ReportDtos.TabularReportResponse rooms(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return reportService.roomsReport(hotelId, hotelHeader);
+    }
+
+    @GetMapping("/reservations")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public ReportDtos.TabularReportResponse reservations(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam LocalDate fromDate,
+            @RequestParam LocalDate toDate) {
+        return reportService.reservationsReport(hotelId, hotelHeader, fromDate, toDate);
+    }
+
+    @GetMapping("/sales")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public ReportDtos.TabularReportResponse sales(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam LocalDate fromDate,
+            @RequestParam LocalDate toDate) {
+        return reportService.salesReport(hotelId, hotelHeader, fromDate, toDate);
+    }
+
+    @GetMapping("/{reportType}/export")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public ResponseEntity<byte[]> exportTabular(
+            @PathVariable UUID hotelId,
+            @PathVariable String reportType,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) LocalDate fromDate,
+            @RequestParam(required = false) LocalDate toDate,
+            @RequestParam(defaultValue = "xlsx") String format) {
+        String type = reportType.trim().toUpperCase();
+        if (!Set.of("ROOMS", "RESERVATIONS", "SALES", "GUESTS").contains(type)) {
+            return ResponseEntity.notFound().build();
         }
-        byte[] bytes = reportService.exportOccupancyCsv(hotelId, hotelHeader, startDate, endDate, groupBy)
-                .getBytes(StandardCharsets.UTF_8);
+        LocalDate from = fromDate;
+        LocalDate to = toDate;
+        if (!type.equals("ROOMS")) {
+            if (from == null || to == null) {
+                to = LocalDate.now();
+                from = to.minusDays(29);
+            }
+        }
+        byte[] bytes = reportService.exportTabular(type, hotelId, hotelHeader, from, to, format);
+        String f = format == null ? "xlsx" : format.trim().toLowerCase();
+        String filename = type.toLowerCase() + "-report." + ("pdf".equals(f) ? "pdf" : "csv".equals(f) ? "csv" : "xlsx");
+        MediaType media = "pdf".equals(f)
+                ? MediaType.APPLICATION_PDF
+                : "csv".equals(f)
+                        ? new MediaType("text", "csv")
+                        : MediaType.parseMediaType(
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=occupancy-report.csv")
-                .contentType(new MediaType("text", "csv"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename)
+                .contentType(media)
                 .body(bytes);
     }
 
@@ -136,5 +194,27 @@ public class ReportController {
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
             @RequestParam(required = false) LocalDate fromDate) {
         return reportService.complaintsMetrics(hotelId, hotelHeader, fromDate);
+    }
+
+    private static ResponseEntity<byte[]> exportBytes(
+            String format, String baseName, byte[] csv, byte[] xlsx, byte[] pdf) {
+        String f = format == null ? "xlsx" : format.trim().toLowerCase();
+        if ("pdf".equals(f)) {
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + baseName + ".pdf")
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .body(pdf);
+        }
+        if ("csv".equals(f)) {
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + baseName + ".csv")
+                    .contentType(new MediaType("text", "csv"))
+                    .body(csv);
+        }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + baseName + ".xlsx")
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(xlsx);
     }
 }
