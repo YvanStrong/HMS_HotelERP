@@ -27,7 +27,8 @@ public final class EbmDtos {
             Instant lastSignatureAt,
             String lastError,
             boolean hasSigningKey,
-            Instant createdAt) {}
+            Instant createdAt,
+            boolean trainingMode) {}
 
     public record StatusResponse(
             boolean ebmEnabled,
@@ -36,7 +37,13 @@ public final class EbmDtos {
             long pendingOutbox,
             long failedSaleEvents,
             String offlineAlertLevel,
-            Instant lastSignatureAt) {}
+            Instant lastSignatureAt,
+            boolean trainingMode) {}
+
+    public record TrainingModeRequest(boolean enabled) {}
+
+    public record UpdateImportRequest(
+            String taskCd, String dclNo, String hsCd, String itemSeq, String imptItemSttsCd) {}
 
     public record OutboxRow(
             UUID id,
@@ -57,6 +64,8 @@ public final class EbmDtos {
             String ebmStatus,
             String ebmReceiptNo,
             String ebmSignature,
+            String ebmInternalData,
+            String ebmInvoiceNo,
             String ebmQrPayload,
             String ebmSdcId,
             String ebmMrcNo,

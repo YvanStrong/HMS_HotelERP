@@ -15,6 +15,8 @@ public interface DepotSaleRepository extends JpaRepository<DepotSale, UUID> {
     @Query("select count(s) from DepotSale s where s.hotel.id = :hotelId")
     long countByHotelId(@Param("hotelId") UUID hotelId);
 
+    boolean existsBySaleNumber(String saleNumber);
+
     @Query(
             """
             select coalesce(sum(s.totalAmount), 0)
@@ -24,6 +26,58 @@ public interface DepotSaleRepository extends JpaRepository<DepotSale, UUID> {
               and s.createdAt < :to
             """)
     BigDecimal sumSalesBetween(
+            @Param("hotelId") UUID hotelId,
+            @Param("from") Instant from,
+            @Param("to") Instant to);
+
+    @Query(
+            """
+            select coalesce(sum(s.totalAmount), 0)
+            from DepotSale s
+            where s.hotel.id = :hotelId
+              and s.createdAt >= :from
+              and s.createdAt < :to
+              and s.status not in ('REFUNDED', 'VOID', 'CANCELLED')
+            """)
+    BigDecimal sumCompletedSalesBetween(
+            @Param("hotelId") UUID hotelId,
+            @Param("from") Instant from,
+            @Param("to") Instant to);
+
+    @Query(
+            """
+            select coalesce(sum(
+                l.quantity * case
+                    when p.costPrice is not null and p.costPrice > 0 then p.costPrice
+                    when ii.unitCost is not null and ii.unitCost > 0 then ii.unitCost
+                    else 0
+                end
+            ), 0)
+            from DepotSaleLine l
+            join l.sale s
+            join l.product p
+            left join p.inventoryItem ii
+            where s.hotel.id = :hotelId
+              and s.createdAt >= :from
+              and s.createdAt < :to
+              and s.status not in ('REFUNDED', 'VOID', 'CANCELLED')
+            """)
+    BigDecimal sumCompletedCostBetween(
+            @Param("hotelId") UUID hotelId,
+            @Param("from") Instant from,
+            @Param("to") Instant to);
+
+    @Query(
+            """
+            select coalesce(sum(s.totalAmount), 0)
+            from DepotSale s
+            where s.hotel.id = :hotelId
+              and s.createdAt >= :from
+              and s.createdAt < :to
+              and s.status not in ('REFUNDED', 'VOID', 'CANCELLED')
+              and upper(s.paymentMethod) = 'CREDIT'
+            """)
+    BigDecimal sumCreditSalesBetween(
             @Param("hotelId") UUID hotelId,
             @Param("from") Instant from,
             @Param("to") Instant to);
@@ -58,6 +112,7 @@ public interface DepotSaleRepository extends JpaRepository<DepotSale, UUID> {
             """
             select s from DepotSale s
             join fetch s.depot d
+            left join fetch s.staffUser
             where s.hotel.id = :hotelId
             and (:depotId is null or d.id = :depotId)
             order by s.createdAt desc

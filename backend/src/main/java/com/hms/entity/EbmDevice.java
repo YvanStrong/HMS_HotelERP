@@ -61,6 +61,10 @@ public class EbmDevice {
     @Column(name = "last_error", columnDefinition = "TEXT")
     private String lastError;
 
+    /** When true, POS prints TS/TR only and sales are not sent to VSDC as NS/NR. */
+    @Column(name = "training_mode", nullable = false)
+    private boolean trainingMode = false;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

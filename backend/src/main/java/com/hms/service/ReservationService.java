@@ -341,12 +341,7 @@ public class ReservationService {
             throw new ApiException(HttpStatus.NOT_FOUND, "Hotel not found");
         }
         if (body.guest() != null) {
-            if (body.guest().nationalId() == null || body.guest().nationalId().isBlank()) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "national_id is required");
-            }
-            if (body.guest().dateOfBirth() == null) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "date_of_birth is required");
-            }
+            GuestInputValidator.requireNewGuestFields(body.guest());
         }
         Optional<UserPrincipal> portal = Optional.empty();
         if (authentication != null
@@ -418,6 +413,27 @@ public class ReservationService {
             String actor,
             boolean serverAuthoritativePricing,
             Optional<UserPrincipal> portalBooker) {
+        if (req.checkInDate() == null || req.checkOutDate() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "checkInDate and checkOutDate are required");
+        }
+        validateDates(req.checkInDate(), req.checkOutDate());
+        if (req.adults() < 1) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "adults must be at least 1");
+        }
+        if (req.children() != null && req.children() < 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "children cannot be negative");
+        }
+        if ((req.roomTypeId() == null)
+                && (req.roomTypeCode() == null || req.roomTypeCode().isBlank())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "roomTypeId or roomTypeCode is required");
+        }
+        if (req.payment() != null
+                && req.payment().depositAmount() != null
+                && req.payment().depositAmount().signum() > 0
+                && (req.payment().paymentMethod() == null || req.payment().paymentMethod().isBlank())) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST, "paymentMethod is required when depositAmount is greater than zero");
+        }
         req =
                 withExclusiveCheckOut(
                         req,
@@ -425,7 +441,6 @@ public class ReservationService {
         Hotel hotel = hotelRepository
                 .findById(hotelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Hotel not found"));
-        validateDates(req.checkInDate(), req.checkOutDate());
         int guests = req.adults() + (req.children() != null ? req.children() : 0);
         RoomType roomType = resolveRoomType(hotelId, req.roomTypeId(), req.roomTypeCode());
         if (roomType.getMaxOccupancy() < guests) {
@@ -735,12 +750,7 @@ public class ReservationService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "guestId or guest object required");
         }
         ApiDtos.GuestInput g = req.guest();
-        if (g.nationalId() == null || g.nationalId().isBlank()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "national_id is required");
-        }
-        if (g.dateOfBirth() == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "date_of_birth is required");
-        }
+        GuestInputValidator.requireNewGuestFields(g);
         guestRepository
                 .findByHotel_IdAndNationalIdIgnoreCase(hotel.getId(), g.nationalId().trim())
                 .ifPresent(
@@ -775,9 +785,13 @@ public class ReservationService {
         if (preferredRoomId != null) {
             Room pref = roomRepository
                     .findByIdAndHotel_Id(preferredRoomId, hotelId)
-                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Preferred room not found"));
+                    .orElseThrow(() -> new ApiException(
+                            HttpStatus.NOT_FOUND, "PREFERRED_ROOM_NOT_FOUND", "Preferred room not found"));
             if (!pref.getRoomType().getId().equals(roomTypeId)) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "Preferred room does not match room type");
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        "PREFERRED_ROOM_TYPE_MISMATCH",
+                        "Preferred room does not match the selected room type");
             }
             ensureRoomAssignable(pref, checkIn, checkOut, guests);
             return pref;
@@ -791,15 +805,8 @@ public class ReservationService {
         }
         throw new ApiException(
                 HttpStatus.CONFLICT,
-                "No VACANT_CLEAN rooms for roomTypeId="
-                        + roomTypeId
-                        + " between "
-                        + checkIn
-                        + " and "
-                        + checkOut
-                        + " (hotelId="
-                        + hotelId
-                        + "). Add rooms of this type, free a room (check-out / cancel), use different dates, or set preferredRoomId if one room is free.");
+                "ROOM_UNAVAILABLE",
+                "No clean vacant rooms are available for this room type and dates. Try different dates, another room type, free a room (check-out or cancel), or select a specific available room.");
     }
 
     private void ensureRoomAssignable(Room room, LocalDate checkIn, LocalDate checkOut, int guests) {
@@ -809,19 +816,34 @@ public class ReservationService {
     private void ensureRoomAssignable(
             Room room, LocalDate checkIn, LocalDate checkOut, int guests, UUID excludeReservationId) {
         if (room.getRoomType().getMaxOccupancy() < guests) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Room type capacity insufficient for guest count");
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "OCCUPANCY_EXCEEDED",
+                    "Too many guests for this room type. Reduce the guest count or choose a larger room type.");
         }
         if (room.isOutOfOrder() || room.getStatus() == RoomStatus.OUT_OF_ORDER || room.getStatus() == RoomStatus.BLOCKED) {
-            throw new ApiException(HttpStatus.CONFLICT, "Room is not available for assignment");
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "ROOM_NOT_ASSIGNABLE",
+                    "That room is not available right now (blocked or out of order). Choose another room.");
         }
         if (!RoomBookingEligibility.isVacantBookable(room)) {
-            throw new ApiException(HttpStatus.CONFLICT, "Room is not available");
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "ROOM_NOT_ASSIGNABLE",
+                    "That room is not available right now. It may need cleaning or is already in use.");
         }
         if (reservationRepository.countOverlapping(room.getId(), checkIn, checkOut, excludeReservationId) > 0) {
-            throw new ApiException(HttpStatus.CONFLICT, "Room is already reserved for overlapping dates");
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "ROOM_DATE_CONFLICT",
+                    "That room is already booked for overlapping dates. Choose another room or change the stay dates.");
         }
         if (roomBlockRepository.countActiveOverlapping(room.getId(), checkIn, checkOut) > 0) {
-            throw new ApiException(HttpStatus.CONFLICT, "Room has an active block overlapping these dates");
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "ROOM_BLOCKED",
+                    "That room has an active block for these dates. Choose another room or change the stay dates.");
         }
     }
 
@@ -2520,8 +2542,24 @@ public class ReservationService {
     }
 
     private void validateDates(LocalDate checkIn, LocalDate checkOut) {
+        if (checkIn == null || checkOut == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "checkInDate and checkOutDate are required");
+        }
         if (!checkOut.isAfter(checkIn)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "checkOutDate must be after checkInDate");
+        }
+        LocalDate today = LocalDate.now();
+        if (checkIn.isBefore(today)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "CHECK_IN_IN_PAST",
+                    "Check-in date cannot be in the past. Choose today or a future date.");
+        }
+        if (!checkOut.isAfter(today)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "CHECK_OUT_IN_PAST",
+                    "Check-out date cannot be in the past. Choose a future check-out date.");
         }
     }
 }

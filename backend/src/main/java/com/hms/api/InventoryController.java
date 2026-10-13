@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -132,6 +133,16 @@ public class InventoryController {
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
             @RequestBody InventoryDtos.InventoryItemPatchRequest body) {
         return inventoryService.patchItem(hotelId, hotelHeader, itemId, body);
+    }
+
+    @DeleteMapping("/items/{itemId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public void deleteItem(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID itemId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        inventoryService.deleteItem(hotelId, hotelHeader, itemId);
     }
 
     @PostMapping("/items/{itemId}/consume")
@@ -284,6 +295,16 @@ public class InventoryController {
         return inventoryDepotService.getSaleDetail(hotelId, hotelHeader, saleId);
     }
 
+    @PostMapping("/sales/{saleId}/mark-paid")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_WAITER','ROLE_CASHIER','ROLE_RECEPTIONIST')")
+    public InventoryDepotDtos.SaleRow markSalePaid(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID saleId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return inventoryDepotService.markSalePaid(hotelId, hotelHeader, saleId);
+    }
+
     @PostMapping("/sales/{saleId}/refund-full")
     @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER')")
     public ResponseEntity<InventoryDepotDtos.RefundResponse> refundSaleFull(
@@ -346,6 +367,26 @@ public class InventoryController {
         return inventoryDepotService.getDeliveryOrderDetail(hotelId, hotelHeader, deliveryOrderId);
     }
 
+    @GetMapping("/deliveries/{deliveryOrderId}/combined")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_WAITER','ROLE_CASHIER','ROLE_RECEPTIONIST')")
+    public InventoryDepotDtos.DeliveryOrderDetailResponse getCombinedDeliveryOrder(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID deliveryOrderId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return inventoryDepotService.getCombinedDeliveryDetail(hotelId, hotelHeader, deliveryOrderId);
+    }
+
+    @PostMapping("/deliveries/convert-to-invoice")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_WAITER','ROLE_CASHIER','ROLE_RECEPTIONIST')")
+    public InventoryDepotDtos.CreateSaleResponse convertSelectedDeliveriesToInvoice(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody InventoryDepotDtos.ConvertDeliveriesRequest body) {
+        return inventoryDepotService.convertDeliveriesToSale(hotelId, hotelHeader, body.deliveryOrderIds());
+    }
+
     @PostMapping("/deliveries/{deliveryOrderId}/convert-to-invoice")
     @PreAuthorize(
             "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE','ROLE_FNB_STAFF','ROLE_WAITER','ROLE_CASHIER','ROLE_RECEPTIONIST')")
@@ -353,7 +394,7 @@ public class InventoryController {
             @PathVariable UUID hotelId,
             @PathVariable UUID deliveryOrderId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
-        return inventoryDepotService.convertDeliveryToSale(hotelId, hotelHeader, deliveryOrderId);
+        return inventoryDepotService.convertDeliveriesToSale(hotelId, hotelHeader, java.util.List.of(deliveryOrderId));
     }
 
     @PostMapping("/proformas")
@@ -470,6 +511,16 @@ public class InventoryController {
             @Valid @RequestBody InventoryDtos.FabricationFormulaCreateRequest body) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(invExtService.createFabricationFormula(hotelId, hotelHeader, body));
+    }
+
+    @PutMapping("/fabrication/formulas/{formulaId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')")
+    public InventoryDtos.FabricationFormulaItem updateFabricationFormula(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID formulaId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody InventoryDtos.FabricationFormulaCreateRequest body) {
+        return invExtService.updateFabricationFormula(hotelId, hotelHeader, formulaId, body);
     }
 
     @PostMapping("/fabrication/runs")

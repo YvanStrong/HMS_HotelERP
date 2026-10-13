@@ -28,6 +28,10 @@
     --radius: 0.75rem;
 
     /* Hotel brand — aligned with logo */
+    --font-inter: ui-sans-serif, system-ui, sans-serif;
+    --font-pricing-sans: ui-sans-serif, system-ui, sans-serif;
+    --font-pricing-serif: Georgia, "Times New Roman", serif;
+
     --hotel-gold: 38 92% 50%;
     --hotel-navy: 222 47% 11%;
     --hotel-slate: 215 20% 44%;

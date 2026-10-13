@@ -123,12 +123,7 @@ public class GuestService {
     public GuestDtos.GuestSearchHit createGuestForStaff(
             UUID hotelId, String hotelHeader, ApiDtos.GuestInput input) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
-        if (input.nationalId() == null || input.nationalId().isBlank()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "national_id is required");
-        }
-        if (input.dateOfBirth() == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "date_of_birth is required");
-        }
+        GuestInputValidator.requireNewGuestFields(input);
         guestRepository
                 .findByHotel_IdAndNationalIdIgnoreCase(hotelId, input.nationalId().trim())
                 .ifPresent(

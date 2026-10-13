@@ -42,11 +42,30 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem, UU
     long countByHotel_IdAndActiveTrue(UUID hotelId);
 
     @Query(
-            "select count(i) from InventoryItem i where i.hotel.id = :hotelId and i.active = true and i.currentStock < i.reorderPoint")
+            """
+            select count(i) from InventoryItem i
+            where i.hotel.id = :hotelId and i.active = true
+            and i.stockType <> 'NON_STOCK'
+            and i.currentStock < i.reorderPoint
+            """)
     long countLowStock(@Param("hotelId") UUID hotelId);
 
-    @Query("select count(i) from InventoryItem i where i.hotel.id = :hotelId and i.active = true and i.currentStock <= 0")
+    @Query(
+            """
+            select count(i) from InventoryItem i
+            where i.hotel.id = :hotelId and i.active = true
+            and i.stockType <> 'NON_STOCK'
+            and i.currentStock <= 0
+            """)
     long countOutOfStock(@Param("hotelId") UUID hotelId);
+
+    @Query(
+            """
+            select i from InventoryItem i join fetch i.category c left join fetch i.preferredSupplier
+            where i.hotel.id = :hotelId and i.active = false
+            order by i.name asc
+            """)
+    List<InventoryItem> findInactive(@Param("hotelId") UUID hotelId);
 
     @Query(
             "select coalesce(sum(i.currentStock * coalesce(i.unitCost, 0)), 0) from InventoryItem i where i.hotel.id = :hotelId and i.active = true")

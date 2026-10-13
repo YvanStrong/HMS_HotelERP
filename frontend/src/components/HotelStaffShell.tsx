@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { clearToken } from "@/lib/api";
 import type { AuthUser } from "@/lib/auth";
 import { loadAuthUser } from "@/lib/auth";
-import { canAccessHotelNav, navHint, type HotelNavKey } from "@/lib/hotelNavAccess";
+import { canAccessHotelNav, type HotelNavKey } from "@/lib/hotelNavAccess";
 import { staffAppPath } from "@/lib/staffAppRoutes";
 import { ThemeToggle } from "@/lib/theme";
 import { useHotelContext } from "@/lib/useHotelContext";
@@ -14,6 +14,7 @@ import { PosOrderToastHost } from "@/components/PosOrderToastHost";
 import { StaffNotificationBell } from "@/components/StaffNotificationBell";
 import { ModuleDisabledPage } from "@/components/ModuleDisabledPage";
 import { ReportBugButton } from "@/components/ReportBugButton";
+import { HelpChatWidget } from "@/components/HelpChatWidget";
 
 type NavItem = {
   key: HotelNavKey;
@@ -60,6 +61,7 @@ const NAV_SECTIONS: NavSection[] = [
       { key: "dashboard", segment: "dashboard", label: "Dashboard", icon: "M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" },
       { key: "reports", segment: "reports", label: "Reports", icon: "M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
       { key: "accounting", segment: "accounting", label: "Accounting", icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 12v-2m8-4a8 8 0 11-16 0 8 8 0 0116 0z" },
+      { key: "accounting", segment: "accounting/credit-debt", label: "Credit & debt", icon: "M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" },
     ]
   },
   {
@@ -134,7 +136,7 @@ export function HotelStaffShell({
   const isPosWorkspace = pathname === staffAppPath("pos") || /\/pos$/.test(pathname ?? "");
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
-  const { hotel, hasModule, isModuleVisibleWhenDisabled, entitlementsLoaded, loading: hotelLoading } =
+  const { hotel, hasModule, entitlementsLoaded, loading: hotelLoading } =
     useHotelContext(hotelId);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -172,6 +174,9 @@ export function HotelStaffShell({
   const currentModuleKey = currentNavItem ? NAV_MODULES[currentNavItem.key] : null;
   const currentModuleDisabled = Boolean(
     entitlementsLoaded && currentModuleKey && !hasModule(currentModuleKey),
+  );
+  const currentRoleDenied = Boolean(
+    currentNavItem && user && !canAccessHotelNav(user, currentNavItem.key),
   );
 
   return (
@@ -243,8 +248,10 @@ export function HotelStaffShell({
           <nav className={`flex-1 overflow-y-auto py-2 space-y-1 scrollbar-thin ${isSidebarCollapsed ? "px-2" : "px-3"}`}>
             {NAV_SECTIONS.map((section) => {
               const visibleItems = section.items.filter((item) => {
+                if (!canAccessHotelNav(user, item.key)) return false;
                 const moduleKey = NAV_MODULES[item.key];
-                return !moduleKey || hasModule(moduleKey) || isModuleVisibleWhenDisabled(moduleKey);
+                // Hide modules that are not entitled (do not show locked placeholders).
+                return !moduleKey || hasModule(moduleKey);
               });
               if (visibleItems.length === 0) return null;
               return (
@@ -269,12 +276,6 @@ export function HotelStaffShell({
                 {(isSidebarCollapsed || isSectionExpanded(section.title)) && (
                   <div className="space-y-1 mt-1">
                     {visibleItems.map((item) => {
-                      const moduleKey = NAV_MODULES[item.key];
-                      const moduleEnabled = !moduleKey || hasModule(moduleKey);
-                      const canSeeDisabled = Boolean(moduleKey && isModuleVisibleWhenDisabled(moduleKey));
-                      if (!moduleEnabled && !canSeeDisabled) {
-                        return null;
-                      }
                       const publicHref =
                         item.publicTarget === "guest_self_order"
                           ? `/book/order/${hotelId}`
@@ -287,45 +288,22 @@ export function HotelStaffShell({
                         : item.segment === "dashboard"
                           ? pathname === "/app" || pathname === "/app/dashboard"
                           : pathname === href || (pathname?.startsWith(`${href}/`) ?? false);
-                      const roleAllowed = canAccessHotelNav(user, item.key);
-                      const allowed = roleAllowed && moduleEnabled;
                       const className = `flex items-center rounded-lg text-sm font-medium transition-colors ${
                         isSidebarCollapsed ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2"
                       } ${
                         active
                           ? "bg-primary/10 text-primary"
                           : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                      } ${!allowed ? "opacity-50 cursor-not-allowed" : ""}`;
-                      const title = allowed
-                        ? item.label
-                        : !moduleEnabled
-                          ? "Contact your administrator to enable this feature"
-                          : `Requires access — ${navHint(item.key)}`;
+                      }`;
                       const inner = (
                         <>
                           <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
                           </svg>
                           {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
-                          {!isSidebarCollapsed && !moduleEnabled ? (
-                            <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
-                              Locked
-                            </span>
-                          ) : !allowed && !isSidebarCollapsed && (
-                            <svg className="w-4 h-4 ml-auto text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                            </svg>
-                          )}
                         </>
                       );
                       if (publicHref) {
-                        if (!allowed) {
-                          return (
-                            <span key={item.segment} className={className} title={title}>
-                              {inner}
-                            </span>
-                          );
-                        }
                         return (
                           <a
                             key={item.segment}
@@ -334,30 +312,20 @@ export function HotelStaffShell({
                             rel="noopener noreferrer"
                             onClick={() => setIsSidebarOpen(false)}
                             className={className}
-                            title={title}
+                            title={item.label}
                           >
                             {inner}
                           </a>
-                        );
-                      }
-                      if (!allowed) {
-                        return (
-                          <span key={item.segment} className={className} title={title}>
-                            {inner}
-                          </span>
                         );
                       }
                       return (
                         <Link
                           key={item.segment}
                           href={href}
-                          prefetch={allowed}
-                          onPointerEnter={() => {
-                            if (allowed) router.prefetch(href);
-                          }}
+                          prefetch={false}
                           onClick={() => setIsSidebarOpen(false)}
                           className={className}
-                          title={title}
+                          title={item.label}
                         >
                           {inner}
                         </Link>
@@ -412,6 +380,7 @@ export function HotelStaffShell({
           <StaffNotificationBell hotelId={hotelId} />
         </div>
         <PosOrderToastHost hotelId={hotelId} />
+        <HelpChatWidget />
 
         {/* Mobile header */}
         <header className="bg-card border-b border-border px-4 py-3 flex items-center justify-start gap-3 pr-16 lg:hidden">
@@ -442,7 +411,9 @@ export function HotelStaffShell({
           }
         >
           <div className={isPosWorkspace ? "h-full min-w-0 w-full max-w-none" : "mx-auto min-w-0 max-w-7xl"}>
-            {currentModuleDisabled ? (
+            {currentRoleDenied ? (
+              <ModuleDisabledPage module={currentNavItem?.label ?? "This page"} reason="access" />
+            ) : currentModuleDisabled ? (
               <ModuleDisabledPage module={currentNavItem?.label ?? "This module"} />
             ) : (
               children

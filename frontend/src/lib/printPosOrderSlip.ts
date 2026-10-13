@@ -1,3 +1,6 @@
+import { tryDirectThermalPrint } from "@/lib/directThermalPrint";
+import { encodeEscPosOrderSlip } from "@/lib/escposReceipt";
+
 /** Non-fiscal kitchen/service order slip (COMMANDE / ORDER). */
 
 export type PosOrderSlipLine = {
@@ -29,7 +32,20 @@ function esc(v: unknown): string {
 
 function money(n: number): string {
   const v = Number.isFinite(n) ? n : 0;
-  return Math.round(v).toString();
+  const rounded = Math.round(v * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+}
+
+const COLS = 32;
+
+function fitLine(left: string, right: string): string {
+  const r = right.replace(/\s+/g, " ").trim();
+  const l = left.replace(/\s+/g, " ").trim();
+  if (!r) return l;
+  if (l.length + r.length + 1 <= COLS) {
+    return l + " ".repeat(COLS - l.length - r.length) + r;
+  }
+  return `${l}\n${" ".repeat(Math.max(0, COLS - r.length))}${r}`;
 }
 
 export function buildPosOrderSlipHtml(payload: PosOrderSlipPayload): string {
@@ -42,12 +58,8 @@ export function buildPosOrderSlipHtml(payload: PosOrderSlipPayload): string {
 
   const rows = payload.lines
     .map(
-      (ln) => `
-    <tr>
-      <td class="item">${esc(ln.itemName)}</td>
-      <td class="qty">${esc(ln.quantity)}</td>
-      <td class="amt">${esc(money(ln.lineTotal))}</td>
-    </tr>`,
+      (ln) => `<pre class="mono">${esc(ln.itemName)}</pre>
+<pre class="mono amt">${esc(fitLine(`${ln.quantity} x`, money(ln.lineTotal)))}</pre>`,
     )
     .join("");
 
@@ -57,36 +69,37 @@ export function buildPosOrderSlipHtml(payload: PosOrderSlipPayload): string {
   <meta charset="utf-8" />
   <title>COMMANDE / ORDER</title>
   <style>
-    @page { size: 80mm auto; margin: 4mm; }
+    @page { size: 72mm auto; margin: 1mm; }
     * { box-sizing: border-box; }
-    body {
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 68mm;
+      color: #000;
+      background: #fff;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .center { text-align: center; word-break: break-word; }
+    .bold { font-weight: 700; }
+    .sep { border: 0; border-top: 1px dashed #000; margin: 4px 0; }
+    h1 { font-size: 14px; margin: 0 0 2px; }
+    .sub { font-size: 11px; margin: 0; }
+    pre.mono {
       margin: 0;
       font-family: "Courier New", Courier, monospace;
       font-size: 12px;
-      color: #000;
-      width: 72mm;
+      font-weight: 700;
+      white-space: pre;
+      line-height: 1.25;
     }
-    .center { text-align: center; }
-    .right { text-align: right; }
-    .bold { font-weight: 700; }
-    .sep { border: 0; border-top: 1px dashed #000; margin: 6px 0; }
-    .stars { letter-spacing: 1px; margin: 6px 0; }
-    h1 { font-size: 14px; margin: 0 0 2px; }
-    .sub { font-size: 11px; margin: 0; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 2px 0; vertical-align: top; }
-    th { font-size: 11px; text-align: left; border-bottom: 1px dashed #000; }
-    td.item { width: 55%; }
-    td.qty, th.qty { width: 15%; text-align: center; }
-    td.amt, th.amt { width: 30%; text-align: right; }
-    .meta { margin-top: 4px; }
-    .footer { font-size: 10px; margin-top: 4px; }
+    pre.amt, pre.total { font-weight: 900; }
   </style>
 </head>
 <body>
   <div class="center">
     <h1>${esc(company)}</h1>
-    <p class="sub">${esc(company)}</p>
     ${payload.phone ? `<p class="sub">Phone : ${esc(payload.phone)}</p>` : ""}
     ${payload.tin ? `<p class="sub">TIN: ${esc(payload.tin)}</p>` : ""}
   </div>
@@ -96,39 +109,17 @@ export function buildPosOrderSlipHtml(payload: PosOrderSlipPayload): string {
     <p class="sub" style="margin:2px 0 0;">NOT OFFICIAL RECEIPT</p>
   </div>
   <hr class="sep" />
-  <table>
-    <thead>
-      <tr>
-        <th>Item</th>
-        <th class="qty">Qty</th>
-        <th class="amt">Total</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${rows || `<tr><td colspan="3" class="center">No items</td></tr>`}
-    </tbody>
-  </table>
+  <pre class="mono">${esc(fitLine("Item", "Total"))}</pre>
+  ${rows || `<pre class="mono center">No items</pre>`}
   <hr class="sep" />
-  <table>
-    <tr>
-      <td class="bold">TOTAL</td>
-      <td class="amt bold">${esc(money(payload.totalAmount))}</td>
-    </tr>
-  </table>
+  <pre class="mono total">${esc(fitLine("TOTAL", money(payload.totalAmount)))}</pre>
   <hr class="sep" />
-  <div class="meta">
-    <div><span class="bold">Table:</span> ${esc(table)}</div>
-    ${payload.outletName ? `<div>Outlet: ${esc(payload.outletName)}</div>` : ""}
-    ${payload.customerName ? `<div>Customer: ${esc(payload.customerName)}</div>` : ""}
-    <div>Served by: ${esc(servedBy)}</div>
-  </div>
+  <pre class="mono">${esc(fitLine("Table", table))}</pre>
+  ${payload.outletName ? `<pre class="mono">${esc(fitLine("Outlet", payload.outletName))}</pre>` : ""}
+  ${payload.customerName ? `<pre class="mono">${esc(fitLine("Customer", payload.customerName))}</pre>` : ""}
+  <pre class="mono">${esc(fitLine("Served by", servedBy))}</pre>
   <p class="center bold" style="margin:8px 0;">*** THANKS ***</p>
-  <table class="footer">
-    <tr>
-      <td>${esc(dateLabel)}</td>
-      <td class="right">${esc(timeLabel)}</td>
-    </tr>
-  </table>
+  <pre class="mono">${esc(fitLine(dateLabel, timeLabel))}</pre>
   <p class="center stars">***************************</p>
   <p class="center footer">Powered by HMS HotelERP</p>
 </body>
@@ -137,6 +128,22 @@ export function buildPosOrderSlipHtml(payload: PosOrderSlipPayload): string {
 
 export function printPosOrderSlip(payload: PosOrderSlipPayload): void {
   const html = buildPosOrderSlipHtml(payload);
+  const bytes = encodeEscPosOrderSlip({
+    companyName: payload.companyName,
+    phone: payload.phone,
+    tableLabel: payload.tableLabel,
+    customerName: payload.customerName,
+    outletName: payload.outletName,
+    servedBy: payload.servedBy,
+    lines: payload.lines,
+    totalAmount: payload.totalAmount,
+  });
+  void tryDirectThermalPrint(bytes).then((ok) => {
+    if (!ok) printPosSlipIframe(html);
+  });
+}
+
+function printPosSlipIframe(html: string): void {
   const iframe = document.createElement("iframe");
   Object.assign(iframe.style, {
     position: "fixed",

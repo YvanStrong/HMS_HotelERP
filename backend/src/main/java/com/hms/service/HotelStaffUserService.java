@@ -97,7 +97,8 @@ public class HotelStaffUserService {
         UserPrincipal actor = tenantAccessService.currentUser();
         tenantAccessService.assertRoleAny(Role.SUPER_ADMIN, Role.HOTEL_ADMIN, Role.MANAGER);
 
-        if (req.password() == null || req.password().length() < MIN_PASSWORD_LEN) {
+        String rawPassword = req.password() == null ? "" : req.password().trim();
+        if (!rawPassword.isEmpty() && rawPassword.length() < MIN_PASSWORD_LEN) {
             throw new ApiException(
                     HttpStatus.BAD_REQUEST, "WEAK_PASSWORD", "Password must be at least " + MIN_PASSWORD_LEN + " characters");
         }
@@ -121,7 +122,7 @@ public class HotelStaffUserService {
         AppUser user = new AppUser();
         user.setUsername(username);
         user.setEmail(email);
-        user.setPasswordHash(passwordEncoder.encode(req.password()));
+        user.setPasswordHash(rawPassword.isEmpty() ? null : passwordEncoder.encode(rawPassword));
         user.setRole(targetRole);
         user.setActive(true);
         user.setHotel(hotel);
@@ -294,6 +295,7 @@ public class HotelStaffUserService {
                 u.getRole().name(),
                 u.isActive(),
                 u.getPosPinHash() != null && !u.getPosPinHash().isBlank(),
+                u.getPasswordHash() != null && !u.getPasswordHash().isBlank(),
                 u.getCreatedAt());
     }
 }

@@ -9,6 +9,7 @@ import com.hms.entity.EbmDevice;
 import com.hms.entity.EbmOutboxEntry;
 import com.hms.entity.EbmSyncCursor;
 import com.hms.entity.Hotel;
+import com.hms.entity.TaxableSaleEvent;
 import com.hms.repository.EbmDeviceRepository;
 import com.hms.repository.EbmOutboxRepository;
 import com.hms.repository.EbmSyncCursorRepository;
@@ -18,6 +19,7 @@ import com.hms.security.TenantAccessService;
 import com.hms.web.ApiException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -73,6 +75,7 @@ public class EbmDeviceService {
                 .findFirstByHotel_IdAndStatusOrderByCreatedAtDesc(hotelId, "ACTIVE")
                 .orElse(null);
         String offlineLevel = offlineLevel(active);
+        boolean training = active != null && active.isTrainingMode();
         return new EbmDtos.StatusResponse(
                 properties.isEnabled(),
                 hotel.getTinNumber(),
@@ -80,7 +83,8 @@ public class EbmDeviceService {
                 pending,
                 failedSales,
                 offlineLevel,
-                active != null ? active.getLastSignatureAt() : null);
+                active != null ? active.getLastSignatureAt() : null,
+                training);
     }
 
     @Transactional
@@ -201,18 +205,7 @@ public class EbmDeviceService {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         int size = Math.min(Math.max(limit, 1), 200);
         return saleEventRepository.findByHotel_IdOrderByCreatedAtDesc(hotelId, PageRequest.of(0, size)).stream()
-                .map(e -> new EbmDtos.SaleEventRow(
-                        e.getId(),
-                        e.getSourceType(),
-                        e.getSourceId(),
-                        e.getDocumentNumber(),
-                        e.getEbmStatus(),
-                        e.getEbmReceiptNo(),
-                        e.getEbmSignature(),
-                        e.getEbmQrPayload(),
-                        e.getEbmSdcId(),
-                        e.getEbmMrcNo(),
-                        e.getCreatedAt()))
+                .map(this::toSaleEventRow)
                 .toList();
     }
 
@@ -223,19 +216,25 @@ public class EbmDeviceService {
         return saleEventRepository
                 .findBySourceTypeAndSourceId(sourceType, sourceId)
                 .filter(e -> e.getHotel().getId().equals(hotelId))
-                .map(e -> new EbmDtos.SaleEventRow(
-                        e.getId(),
-                        e.getSourceType(),
-                        e.getSourceId(),
-                        e.getDocumentNumber(),
-                        e.getEbmStatus(),
-                        e.getEbmReceiptNo(),
-                        e.getEbmSignature(),
-                        e.getEbmQrPayload(),
-                        e.getEbmSdcId(),
-                        e.getEbmMrcNo(),
-                        e.getCreatedAt()))
+                .map(this::toSaleEventRow)
                 .orElseThrow(() -> notFound("Sale event"));
+    }
+
+    private EbmDtos.SaleEventRow toSaleEventRow(TaxableSaleEvent e) {
+        return new EbmDtos.SaleEventRow(
+                e.getId(),
+                e.getSourceType(),
+                e.getSourceId(),
+                e.getDocumentNumber(),
+                e.getEbmStatus(),
+                e.getEbmReceiptNo(),
+                e.getEbmSignature(),
+                e.getEbmInternalData(),
+                e.getEbmInvoiceNo(),
+                e.getEbmQrPayload(),
+                e.getEbmSdcId(),
+                e.getEbmMrcNo(),
+                e.getCreatedAt());
     }
 
     @Transactional
@@ -287,6 +286,33 @@ public class EbmDeviceService {
         return failed.size();
     }
 
+    @Transactional
+    public EbmDtos.DeviceView setTrainingMode(UUID hotelId, String hotelHeader, UUID deviceId, boolean enabled) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        EbmDevice device = deviceRepository
+                .findByIdAndHotel_Id(deviceId, hotelId)
+                .orElseThrow(() -> notFound("EBM device"));
+        device.setTrainingMode(enabled);
+        return toView(deviceRepository.save(device));
+    }
+
+    @Transactional
+    public Map<String, Object> updateImportItem(
+            UUID hotelId, String hotelHeader, EbmDtos.UpdateImportRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        EbmDevice device = requireActiveDevice(hotelId);
+        if (device == null) {
+            throw new ApiException(HttpStatus.CONFLICT, "No ACTIVE EBM device");
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (req.taskCd() != null) payload.put("taskCd", req.taskCd());
+        if (req.dclNo() != null) payload.put("dclNo", req.dclNo());
+        if (req.hsCd() != null) payload.put("hsCd", req.hsCd());
+        if (req.itemSeq() != null) payload.put("itemSeq", req.itemSeq());
+        if (req.imptItemSttsCd() != null) payload.put("imptItemSttsCd", req.imptItemSttsCd());
+        return ebmClient.updateImportItem(device, payload);
+    }
+
     public EbmDevice requireActiveDevice(UUID hotelId) {
         return deviceRepository
                 .findFirstByHotel_IdAndStatusOrderByCreatedAtDesc(hotelId, "ACTIVE")
@@ -319,7 +345,7 @@ public class EbmDeviceService {
     }
 
     private void ensureCursors(EbmDevice device) {
-        for (String category : List.of("CODE_LIST", "ITEM_CLASS", "CUSTOMER", "NOTICES")) {
+        for (String category : EbmSyncService.CATEGORIES) {
             if (syncCursorRepository.findByDeviceIdAndCategory(device.getId(), category).isEmpty()) {
                 EbmSyncCursor c = new EbmSyncCursor();
                 c.setDeviceId(device.getId());
@@ -344,7 +370,8 @@ public class EbmDeviceService {
                 d.getLastSignatureAt(),
                 d.getLastError(),
                 d.getEncryptedSigningKey() != null && !d.getEncryptedSigningKey().isBlank(),
-                d.getCreatedAt());
+                d.getCreatedAt(),
+                d.isTrainingMode());
     }
 
     private String offlineLevel(EbmDevice active) {

@@ -3,7 +3,7 @@
 import { Client } from "@stomp/stompjs";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { apiFetch, getToken } from "@/lib/api";
+import { apiFetch, getToken, websocketBrokerUrl } from "@/lib/api";
 import {
   HMS_POS_ORDER_EVENT,
   posOrderEventKey,
@@ -21,15 +21,7 @@ type ToastState = {
 const DEFAULT_TIMEOUT_MS = 8000;
 
 function wsBrokerUrl(): string {
-  const raw = process.env.NEXT_PUBLIC_API_URL;
-  if (raw && String(raw).trim()) {
-    return String(raw).trim().replace(/\/$/, "").replace(/^http/, "ws") + "/ws";
-  }
-  if (typeof window !== "undefined") {
-    const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    return `${proto}://${window.location.hostname}:8080/ws`;
-  }
-  return "ws://localhost:8080/ws";
+  return websocketBrokerUrl();
 }
 
 export function PosOrderToastHost({ hotelId }: { hotelId: string }) {

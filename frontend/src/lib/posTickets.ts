@@ -11,6 +11,7 @@ export type PosTableRow = {
   occupied: boolean;
   activeTicketId?: string | null;
   waiterName?: string | null;
+  waiterUserId?: string | null;
 };
 
 export type TicketLineRow = {

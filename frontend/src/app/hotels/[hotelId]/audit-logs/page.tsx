@@ -13,6 +13,8 @@ type AuditLog = {
   targetId: string | null;
   details: string | null;
   actorUserId: string;
+  actorUsername?: string | null;
+  ipAddress?: string | null;
   createdAt: string;
 };
 
@@ -39,7 +41,7 @@ function actionTone(action: string) {
   if (a.includes("DELETE") || a.includes("CANCEL") || a.includes("FAILED")) return "bg-red-100 text-red-800";
   if (a.includes("LOGIN") || a.includes("AUTH") || a.includes("ROLE")) return "bg-violet-100 text-violet-800";
   if (a.includes("RESERVATION") || a.includes("CHECK")) return "bg-blue-100 text-blue-800";
-  if (a.includes("UPDATE") || a.includes("CREATE")) return "bg-emerald-100 text-emerald-800";
+  if (a.includes("UPDATE") || a.includes("CREATE") || a.includes("DELETE") || a.includes("POST")) return "bg-emerald-100 text-emerald-800";
   return "bg-slate-100 text-slate-700";
 }
 
@@ -61,7 +63,7 @@ export default function AuditLogsPage() {
     setError(null);
     try {
       const [data, dashboard] = await Promise.all([
-        apiFetch<PageResponse>(`/api/v1/hotels/${hotelId}/audit-logs?size=200`),
+        apiFetch<PageResponse>(`/api/v1/hotels/${hotelId}/audit-logs?size=500`),
         apiFetch<ExecutiveDashboard>(`/api/v1/hotels/${hotelId}/reports/executive-dashboard`).catch(() => null),
       ]);
       setLogs(data.content || []);
@@ -90,7 +92,7 @@ export default function AuditLogsPage() {
       if (targetType !== "ALL" && log.targetType !== targetType) return false;
       if (dateScope === "TODAY" && !log.createdAt.startsWith(today)) return false;
       if (!needle) return true;
-      return [log.action, log.targetType, log.targetId, log.details, log.actorUserId]
+      return [log.action, log.targetType, log.targetId, log.details, log.actorUserId, log.actorUsername, log.ipAddress]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle));
     });
@@ -118,7 +120,7 @@ export default function AuditLogsPage() {
             <p className="text-xs font-black uppercase tracking-[0.22em] text-primary">Operational memory</p>
             <h1 className="mt-2 text-3xl font-black tracking-tight text-foreground">Audit Logs</h1>
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Recent activity, compliance trail, and security-sensitive changes in one smart operations view.
+              Recent activity, compliance trail, and every create / update / delete in the hotel — not only sign-in.
             </p>
           </div>
           <button onClick={loadData} className="hms-btn-outline hms-btn-sm" disabled={loading}>
@@ -210,6 +212,7 @@ export default function AuditLogsPage() {
                 <th>Action</th>
                 <th>Target</th>
                 <th>Actor</th>
+                <th>IP</th>
                 <th>Details</th>
               </tr>
             </thead>
@@ -231,17 +234,18 @@ export default function AuditLogsPage() {
                       </span>
                     )}
                   </td>
-                  <td className="font-mono text-[10px] text-muted-foreground">
-                    {log.actorUserId?.slice(0, 8)}...
+                  <td className="text-xs font-semibold text-foreground">
+                    {actorName(log)}
                   </td>
-                  <td className="max-w-xs truncate text-muted-foreground italic" title={log.details || ""}>
-                    {log.details || "—"}
+                  <td className="font-mono text-[10px] text-muted-foreground">{log.ipAddress || "—"}</td>
+                  <td className="max-w-xs truncate text-muted-foreground italic" title={formatDetails(log.details)}>
+                    {formatDetails(log.details)}
                   </td>
                 </tr>
               ))}
               {paged.total === 0 && !loading && (
                 <tr>
-                  <td colSpan={5} className="text-center py-12 text-muted-foreground italic">No audit records found.</td>
+                  <td colSpan={6} className="text-center py-12 text-muted-foreground italic">No audit records found.</td>
                 </tr>
               )}
             </tbody>
@@ -258,4 +262,35 @@ export default function AuditLogsPage() {
       </section>
     </div>
   );
+}
+
+function formatDetails(raw: string | null | undefined): string {
+  if (!raw) return "—";
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const skip = new Set(["username"]);
+    const bits = Object.entries(parsed)
+      .filter(([k, v]) => !skip.has(k) && v != null && v !== "")
+      .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`);
+    return bits.join(" · ") || "—";
+  } catch {
+    return raw;
+  }
+}
+
+function usernameFromDetails(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { username?: unknown };
+    return typeof parsed.username === "string" && parsed.username.trim() ? parsed.username : null;
+  } catch {
+    return null;
+  }
+}
+
+function actorName(log: AuditLog): string {
+  const named = (log.actorUsername && log.actorUsername.trim()) || usernameFromDetails(log.details);
+  if (named) return named;
+  if (log.actorUserId) return log.actorUserId.slice(0, 8);
+  return "—";
 }

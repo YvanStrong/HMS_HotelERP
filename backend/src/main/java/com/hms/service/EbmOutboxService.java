@@ -101,14 +101,31 @@ public class EbmOutboxService {
             return;
         }
         if ("INVOICE".equals(entry.getPhase())) {
-            Object receipt = first(response, "rcptNo", "receiptNo", "invcNo");
-            Object signature = first(response, "rcptSign", "signature", "intrlData");
+            Object receipt = first(response, "rcptNo", "receiptNo", "sdcReceiptNo");
+            Object invc = first(response, "invcNo", "invoiceNo", "totRcptNo");
+            Object signature = first(response, "rcptSign", "signature", "receiptSignature");
+            Object internal = first(response, "intrlData", "internalData", "sdcIntrlData");
             Object qr = first(response, "qrCode", "qrPayload", "sdcQr");
+            // Legacy ACKs sometimes only returned intrlData under signature aliases
+            if (signature == null && internal == null) {
+                Object legacy = first(response, "intrlData");
+                if (legacy != null) {
+                    internal = legacy;
+                }
+            }
             if (receipt != null) {
                 sale.setEbmReceiptNo(String.valueOf(receipt));
+            } else if (invc != null && sale.getEbmReceiptNo() == null) {
+                sale.setEbmReceiptNo(String.valueOf(invc));
+            }
+            if (invc != null) {
+                sale.setEbmInvoiceNo(String.valueOf(invc));
             }
             if (signature != null) {
                 sale.setEbmSignature(String.valueOf(signature));
+            }
+            if (internal != null) {
+                sale.setEbmInternalData(String.valueOf(internal));
             }
             if (qr != null) {
                 sale.setEbmQrPayload(String.valueOf(qr));

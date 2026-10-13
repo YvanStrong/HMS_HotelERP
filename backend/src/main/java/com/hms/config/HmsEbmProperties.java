@@ -64,5 +64,11 @@ public class HmsEbmProperties {
         private String purchase = "/insertTrnsPurchase";
         /** Official OSDC documentation: /saveItem */
         private String itemSave = "/saveItem";
+        private String customer = "/customers/selectCustomer";
+        private String selectItem = "/items/selectItems";
+        private String notices = "/notices/selectNotices";
+        private String importItems = "/imports/selectImportItems";
+        private String importUpdate = "/imports/updateImportItems";
+        private String selectPurchase = "/trnsPurchase/selectTrnsPurchaseSales";
     }
 }

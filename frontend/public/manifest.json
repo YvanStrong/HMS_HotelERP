@@ -1,21 +1,26 @@
 {
-  "name": "HMS Hotel ERP",
-  "short_name": "HMS",
-  "description": "Next-Gen Hotel Management System",
+  "name": "Kivu Cloud HotelERP",
+  "short_name": "HotelERP",
+  "description": "Hotel management and guest booking software for Rwanda by Kivu Cloud Solutions.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#16a34a",
+  "theme_color": "#0ea5e9",
+  "lang": "en-RW",
+  "dir": "ltr",
+  "categories": ["business", "travel"],
   "icons": [
     {
-      "src": "/images/logoubumwe.png",
+      "src": "/images/kivu-cloud-mark.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "/images/logoubumwe.png",
+      "src": "/images/kivu-cloud-mark.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }

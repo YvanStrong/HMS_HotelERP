@@ -4,7 +4,7 @@ import { userHasAnyPermission, userHasPermission, userHasRole } from "./permissi
 
 /**
  * Hotel sidebar keys — visibility mirrors backend {@code @PreAuthorize} / Postman folders where possible.
- * Locked entries stay visible; use {@link canAccessHotelNav} for styling.
+ * Items the user cannot access are hidden from the navigation (not shown locked).
  */
 export type HotelNavKey =
   | "dashboard"
@@ -195,16 +195,10 @@ function canReports(user: AuthUser | null): boolean {
 function canAccounting(user: AuthUser | null): boolean {
   if (!user) return false;
   if (isSuperAdmin(user)) return true;
-  return userHasRole(user, [
-    "HOTEL_ADMIN",
-    "MANAGER",
-    "FINANCE",
-    "RECEPTIONIST",
-    "HOUSEKEEPING",
-    "HOUSEKEEPING_SUPERVISOR",
-    "MAINTENANCE",
-    "FNB_STAFF",
-  ]) || userHasAnyPermission(user, ["billing:*", "report:*", "hotel:*"]);
+  return (
+    userHasRole(user, ["HOTEL_ADMIN", "MANAGER", "FINANCE"]) ||
+    userHasAnyPermission(user, ["billing:*", "report:*", "hotel:*"])
+  );
 }
 
 export function canAccessHotelNav(user: AuthUser | null, key: HotelNavKey): boolean {

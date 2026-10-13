@@ -24,7 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class EbmSyncService {
 
     private static final Logger log = LoggerFactory.getLogger(EbmSyncService.class);
-    private static final List<String> CATEGORIES = List.of("CODE_LIST", "ITEM_CLASS", "CUSTOMER", "NOTICES");
+    public static final List<String> CATEGORIES = List.of(
+            "CODE_LIST", "ITEM_CLASS", "CUSTOMER", "NOTICES", "ITEMS", "IMPORTS", "PURCHASES");
 
     private final HmsEbmProperties properties;
     private final EbmDeviceRepository deviceRepository;
@@ -72,7 +73,8 @@ public class EbmSyncService {
                     c.setCategory(category);
                     return c;
                 });
-        Map<String, Object> response = ebmClient.pullCodeList(device, category, cursor.getLastReqDt());
+        Instant previous = cursor.getLastReqDt();
+        Map<String, Object> response = ebmClient.pullDelta(device, category, previous);
         persistCodeRows(device, category, response);
         Instant next = extractCursor(response);
         cursor.setLastReqDt(next != null ? next : Instant.now());
@@ -84,11 +86,13 @@ public class EbmSyncService {
         List<Map<String, Object>> rows = extractList(response);
         UUID hotelId = device.getHotel().getId();
         for (Map<String, Object> row : rows) {
-            String code = firstString(row, "cd", "code", "itemClsCd", "clsCd", "cdId");
+            String code = firstString(
+                    row, "cd", "code", "itemClsCd", "clsCd", "cdId", "itemCd", "custNo", "noticeNo", "dclNo", "invcNo");
             if (code == null || code.isBlank()) {
                 continue;
             }
-            String name = firstString(row, "cdNm", "name", "itemClsNm", "clsNm", "userDfnNm");
+            String name = firstString(
+                    row, "cdNm", "name", "itemClsNm", "clsNm", "userDfnNm", "itemNm", "custNm", "title", "spplrNm");
             String parent = firstString(row, "cdCls", "upperCd", "parentCd", "parentCode");
             EbmCodeListEntry entry = codeListRepository
                     .findByHotel_IdAndCategoryAndCode(hotelId, category, code)
@@ -112,7 +116,19 @@ public class EbmSyncService {
         List<Map<String, Object>> out = new ArrayList<>();
         Object data = response.get("data");
         if (data instanceof Map<?, ?> nested) {
-            for (String key : List.of("codeList", "clsList", "itemClsList", "list", "cds", "dataList")) {
+            for (String key : List.of(
+                    "codeList",
+                    "clsList",
+                    "itemClsList",
+                    "list",
+                    "cds",
+                    "dataList",
+                    "custList",
+                    "noticeList",
+                    "itemList",
+                    "importList",
+                    "saleList",
+                    "purchaseList")) {
                 Object list = nested.get(key);
                 if (list instanceof List<?> raw) {
                     for (Object o : raw) {

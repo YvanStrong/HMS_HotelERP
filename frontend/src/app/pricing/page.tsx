@@ -3,20 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
-import { Outfit, Source_Serif_4 } from "next/font/google";
 import { HmsPublicHeader } from "@/components/HmsPublicHeader";
 
-const outfit = Outfit({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-pricing-sans",
-});
-
-const sourceSerif = Source_Serif_4({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-pricing-serif",
-});
+const outfit = { variable: "--font-pricing-sans" };
+const sourceSerif = { variable: "--font-pricing-serif" };
 
 const HERO_IMAGE =
   "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=2200&q=85";

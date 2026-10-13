@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
+import { friendlyBookingError } from "@/lib/friendlyBookingError";
 import { formatMoney } from "@/lib/money";
 import { staffAppPath } from "@/lib/staffAppRoutes";
 import { useHotelContext } from "@/lib/useHotelContext";
@@ -339,9 +340,7 @@ export default function GroupReserveBlockPage() {
       const raw = e instanceof Error ? e.message : "Block reserve failed";
       setBanner({
         kind: "err",
-        text: raw.includes("No VACANT_CLEAN") || raw.toLowerCase().includes("conflict")
-          ? `${raw} — Refresh availability and try fewer rooms or different dates.`
-          : raw,
+        text: friendlyBookingError(raw),
       });
     } finally {
       setSubmitting(false);

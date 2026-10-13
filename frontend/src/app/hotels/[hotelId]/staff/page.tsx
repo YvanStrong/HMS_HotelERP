@@ -13,6 +13,7 @@ type StaffUser = {
   role: string;
   isActive: boolean;
   hasPosPin: boolean;
+  hasLogin?: boolean;
   createdAt: string;
 };
 
@@ -98,8 +99,12 @@ export default function StaffManagementPage() {
     e.preventDefault();
     setMsg(null);
     setError(null);
-    if (!username.trim() || !password.trim()) {
-      setError("Username and password are required.");
+    if (!username.trim()) {
+      setError("Username is required.");
+      return;
+    }
+    if (password.trim() && password.trim().length < 8) {
+      setError("Password must be at least 8 characters, or leave it blank.");
       return;
     }
     setLoading(true);
@@ -108,7 +113,7 @@ export default function StaffManagementPage() {
         method: "POST",
         body: JSON.stringify({
           username: username.trim(),
-          password,
+          password: password.trim() || null,
           email: email.trim() || null,
           role,
         }),
@@ -117,7 +122,7 @@ export default function StaffManagementPage() {
       setPassword("");
       setEmail("");
       setRole("HOUSEKEEPING");
-      setMsg("Staff user created.");
+      setMsg(password.trim() ? "Staff user created." : "Staff saved. Use Add login credentials when they should sign in.");
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Create failed");
@@ -161,7 +166,7 @@ export default function StaffManagementPage() {
         method: "POST",
         body: JSON.stringify({ newPassword }),
       });
-      setMsg("Password reset completed.");
+      setMsg(selectedUser.hasLogin === false ? "Login credentials added." : "Password reset completed.");
       setShowPasswordModal(false);
       setSelectedUser(null);
       setNewPassword("");
@@ -272,13 +277,17 @@ export default function StaffManagementPage() {
             <label>Username</label>
             <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" />
 
-            <label style={{ marginTop: "0.75rem" }}>Password</label>
+            <label style={{ marginTop: "0.75rem" }}>Password (optional)</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
+              placeholder="Leave blank if they should not sign in yet"
             />
+            <p className="text-xs text-muted-foreground mt-1">
+              You can add login credentials later from the staff list.
+            </p>
 
             <label style={{ marginTop: "0.75rem" }}>Email (optional)</label>
             <input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
@@ -321,6 +330,7 @@ export default function StaffManagementPage() {
                 <th>Role</th>
                 <th>Email</th>
                 <th>Status</th>
+                <th>Login</th>
                 <th>POS PIN</th>
                 <th>Created</th>
                 <th>Actions</th>
@@ -337,6 +347,7 @@ export default function StaffManagementPage() {
                   </td>
                   <td>{u.email ?? "—"}</td>
                   <td>{u.isActive ? "ACTIVE" : "INACTIVE"}</td>
+                  <td>{u.hasLogin === false ? "No login" : "Yes"}</td>
                   <td>{u.hasPosPin ? "SET" : "—"}</td>
                   <td>{u.createdAt ? new Date(u.createdAt).toLocaleString() : "—"}</td>
                   <td>
@@ -363,7 +374,7 @@ export default function StaffManagementPage() {
                           setShowPasswordModal(true);
                         }}
                       >
-                        Reset password
+                        {u.hasLogin === false ? "Add login credentials" : "Reset password"}
                       </button>
                       <button
                         type="button"
@@ -441,15 +452,21 @@ export default function StaffManagementPage() {
       {showPasswordModal && selectedUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
           <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl">
-            <h3 className="text-lg font-semibold">Reset password: {selectedUser.username}</h3>
+            <h3 className="text-lg font-semibold">
+              {selectedUser.hasLogin === false ? "Add login credentials" : "Reset password"}: {selectedUser.username}
+            </h3>
             <div className="mt-3">
-              <label>New password</label>
+              <label>{selectedUser.hasLogin === false ? "Password" : "New password"}</label>
               <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" />
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" className="hms-btn-outline" onClick={() => setShowPasswordModal(false)}>Cancel</button>
               <button type="button" className="hms-btn-solid" disabled={actionLoadingId === selectedUser.id} onClick={() => void savePasswordReset()}>
-                {actionLoadingId === selectedUser.id ? "Saving..." : "Reset password"}
+                {actionLoadingId === selectedUser.id
+                  ? "Saving..."
+                  : selectedUser.hasLogin === false
+                    ? "Add login credentials"
+                    : "Reset password"}
               </button>
             </div>
           </div>

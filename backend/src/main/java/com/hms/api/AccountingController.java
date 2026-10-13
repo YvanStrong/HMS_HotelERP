@@ -1,7 +1,9 @@
 package com.hms.api;
 
 import com.hms.api.dto.AccountingDtos;
+import com.hms.api.dto.ZReportDtos;
 import com.hms.service.AccountingService;
+import com.hms.service.ZReportService;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -32,9 +34,16 @@ public class AccountingController {
             "hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_HOTEL_ADMIN','ROLE_MANAGER','ROLE_FINANCE')";
 
     private final AccountingService accountingService;
+    private final com.hms.service.CompanyObligationService companyObligationService;
+    private final ZReportService zReportService;
 
-    public AccountingController(AccountingService accountingService) {
+    public AccountingController(
+            AccountingService accountingService,
+            com.hms.service.CompanyObligationService companyObligationService,
+            ZReportService zReportService) {
         this.accountingService = accountingService;
+        this.companyObligationService = companyObligationService;
+        this.zReportService = zReportService;
     }
 
     @GetMapping
@@ -246,5 +255,73 @@ public class AccountingController {
             @PathVariable UUID hotelId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         return accountingService.syncUnpostedPayroll(hotelId, hotelHeader);
+    }
+
+    @GetMapping("/obligations")
+    @PreAuthorize(ACCOUNTING_READ)
+    public AccountingDtos.CompanyObligationList listObligations(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return companyObligationService.list(hotelId, hotelHeader);
+    }
+
+    @PostMapping("/obligations")
+    @PreAuthorize(CASH_DISBURSE)
+    public ResponseEntity<AccountingDtos.CompanyObligationRow> createObligation(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @Valid @RequestBody AccountingDtos.CreateCompanyObligationRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(companyObligationService.create(hotelId, hotelHeader, body));
+    }
+
+    @PostMapping("/obligations/{id}/settle")
+    @PreAuthorize(CASH_DISBURSE)
+    public AccountingDtos.CompanyObligationRow settleObligation(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return companyObligationService.settle(hotelId, hotelHeader, id);
+    }
+
+    @GetMapping("/z-report")
+    @PreAuthorize(ACCOUNTING_READ)
+    public ZReportDtos.ZReport zReport(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) LocalDate date,
+            @RequestParam(required = false) LocalDate fromDate,
+            @RequestParam(required = false) LocalDate toDate) {
+        return zReportService.preview(hotelId, hotelHeader, date, fromDate, toDate);
+    }
+
+    @GetMapping(value = "/z-report/pdf", produces = "application/pdf")
+    @PreAuthorize(ACCOUNTING_READ)
+    public ResponseEntity<byte[]> zReportPdf(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) LocalDate date,
+            @RequestParam(required = false) LocalDate fromDate,
+            @RequestParam(required = false) LocalDate toDate) {
+        byte[] pdf = zReportService.pdf(hotelId, hotelHeader, date, fromDate, toDate);
+        LocalDate from = fromDate != null ? fromDate : date;
+        LocalDate to = toDate != null ? toDate : from;
+        String filename = from != null && to != null && !from.equals(to)
+                ? "z-report-" + from + "-to-" + to + ".pdf"
+                : "z-report-" + (from != null ? from : LocalDate.now()) + ".pdf";
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                .body(pdf);
+    }
+
+    @PostMapping("/z-report/email")
+    @PreAuthorize(ACCOUNTING_READ)
+    public ZReportDtos.ZReportEmailResult emailZReport(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) LocalDate date,
+            @RequestParam(required = false) LocalDate fromDate,
+            @RequestParam(required = false) LocalDate toDate) {
+        return zReportService.email(hotelId, hotelHeader, date, fromDate, toDate);
     }
 }

@@ -32,7 +32,7 @@ export function HmsPublicHeader() {
   const viewedHotelId = viewedHotelMatch?.[1] ?? null;
   const brandHotelId = viewedHotelId ?? undefined;
   const { hotel } = useHotelContext(brandHotelId);
-  const brandLabel = brandHotelId && hotel.name ? hotel.name : "HMS";
+  const brandLabel = brandHotelId && hotel.name ? hotel.name : "Kivu Cloud";
 
   return (
     <header className="hms-public-header">

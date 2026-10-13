@@ -317,7 +317,17 @@ export default function HotelSettingsPage() {
         <div className="grid gap-4 md:grid-cols-5">
           <div>
             <label>Currency</label>
-            <input value={form.currency ?? ""} onChange={(e) => setField("currency", e.target.value.toUpperCase())} placeholder="USD" />
+            <select value={form.currency ?? "RWF"} onChange={(e) => setField("currency", e.target.value)}>
+              <option value="RWF">RWF (FRw)</option>
+              <option value="USD">USD ($)</option>
+              <option value="EUR">EUR (€)</option>
+              <option value="GBP">GBP (£)</option>
+              <option value="CAD">CAD (C$)</option>
+              <option value="AUD">AUD (A$)</option>
+              <option value="JPY">JPY (¥)</option>
+              <option value="CNY">CNY (¥)</option>
+              <option value="AED">AED (د.إ)</option>
+            </select>
           </div>
           <div>
             <label>Timezone</label>

@@ -129,15 +129,16 @@ public class HotelModuleEntitlementService {
 
     @Transactional
     public PlatformDtos.HotelModuleEntitlementsResponse applyCategory(UUID hotelId, UUID categoryId, UUID changedBy) {
-        Hotel hotel = mustHotel(hotelId);
         PlatformBusinessCategory category = categoryRepository
                 .findByIdWithModules(categoryId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Business category not found"));
         Map<String, HotelModuleEntitlement> old = entitlementRepository.findByHotelId(hotelId).stream()
                 .collect(Collectors.toMap(e -> e.getModule().getModuleKey(), e -> e));
         entitlementRepository.deleteByHotelId(hotelId);
+        // deleteByHotelId clears the persistence context; reload before attaching the category.
+        Hotel hotel = mustHotel(hotelId);
         hotel.setBusinessCategory(category);
-        hotelRepository.save(hotel);
+        hotel = hotelRepository.save(hotel);
 
         Set<String> enabledKeys = new LinkedHashSet<>(ALWAYS_ON_MODULES);
         for (PlatformModule module : category.getModules()) {

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, getToken } from "@/lib/api";
+import { showErrorPopup } from "@/lib/errorPopup";
+import { friendlyBookingError } from "@/lib/friendlyBookingError";
 import { COUNTRY_OPTIONS, GENDER_OPTIONS, PHONE_CODE_OPTIONS } from "@/lib/guestFormConstants";
 import { GuestIdScanField } from "@/components/GuestIdScanField";
 import { printReservationDocument } from "@/lib/printReservationDocument";
@@ -103,8 +105,15 @@ export default function NewStaffReservationPage() {
   const queryHydratedRef = useRef(false);
 
   const [step, setStep] = useState(1);
-  const [error, setError] = useState<string | null>(null);
   const [linkedGroupLabel, setLinkedGroupLabel] = useState<string | null>(null);
+
+  function flashError(message: string, title = "Please check this step") {
+    showErrorPopup({
+      title,
+      message: friendlyBookingError(message),
+      timeoutMs: 5600,
+    });
+  }
 
   const [searchQ, setSearchQ] = useState("");
   const [hits, setHits] = useState<GuestSearchHit[]>([]);
@@ -290,14 +299,6 @@ export default function NewStaffReservationPage() {
     draftKey,
   ]);
 
-  const saveAndContinue = useCallback(
-    (nextStep: number) => {
-      saveDraft();
-      setStep(nextStep);
-    },
-    [saveDraft],
-  );
-
   const openHelperPageWithDraft = useCallback(
     (path: string) => {
       saveDraft();
@@ -340,7 +341,6 @@ export default function NewStaffReservationPage() {
   }, []);
 
   const runGuestSearch = useCallback(async (queryOverride?: string) => {
-    setError(null);
     const q = (queryOverride ?? searchQ).trim();
     if (!q) {
       setHits([]);
@@ -352,13 +352,17 @@ export default function NewStaffReservationPage() {
     try {
       const list = await apiFetch<GuestSearchHit[]>(
         `/api/v1/hotels/${hotelId}/guests/search?q=${encodeURIComponent(q)}`,
+        { quiet: true },
       );
       if (reqId === guestSearchReqRef.current) {
         setHits(list);
       }
     } catch (e) {
       if (reqId === guestSearchReqRef.current) {
-        setError(e instanceof Error ? e.message : "Search failed");
+        showErrorPopup({
+          title: "Guest search failed",
+          message: e instanceof Error ? e.message : "Search failed",
+        });
       }
     } finally {
       if (reqId === guestSearchReqRef.current) {
@@ -383,10 +387,22 @@ export default function NewStaffReservationPage() {
   }, [searchQ, step, runGuestSearch]);
 
   async function loadAvailability() {
-    setError(null);
     setAvail(null);
-    if (!checkIn || !checkOut || checkOut <= checkIn) {
-      setError("Check-out must be after check-in.");
+    if (!checkIn || !checkOut) {
+      flashError("Check-in and check-out dates are required.");
+      return;
+    }
+    const today = localYmd();
+    if (checkIn < today) {
+      flashError("Check-in cannot be in the past. Choose today or a future date.");
+      return;
+    }
+    if (checkOut <= today) {
+      flashError("Check-out cannot be in the past. Choose a future check-out date.");
+      return;
+    }
+    if (!(checkOut > checkIn)) {
+      flashError("Check-out must be after check-in.");
       return;
     }
     try {
@@ -395,13 +411,15 @@ export default function NewStaffReservationPage() {
         check_out: checkOut,
         adults: String(adults),
       });
-      const data = await apiFetch<AvailResponse>(`/api/v1/hotels/${hotelId}/rooms/availability?${p}`);
+      const data = await apiFetch<AvailResponse>(`/api/v1/hotels/${hotelId}/rooms/availability?${p}`, {
+        quiet: true,
+      });
       setAvail(data);
       if (data.available_room_types.length && !roomTypeId) {
         setRoomTypeId(data.available_room_types[0].room_type_id);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Availability failed");
+      flashError(e instanceof Error ? e.message : "Availability failed", "Availability check failed");
     }
   }
 
@@ -594,6 +612,87 @@ export default function NewStaffReservationPage() {
     };
   }, [roomSnapshot]);
 
+  function guestStepError(): string | null {
+    if (guestId) return null;
+    if (!fullName.trim()) return "Full name is required.";
+    if (!nationalId.trim()) return "National ID is required.";
+    if (!dob) return "Date of birth is required.";
+    if (dob > localYmd()) return "Date of birth cannot be in the future.";
+    if (!country.trim()) return "Country is required.";
+    if (idType !== "NATIONAL_ID" && !idDocNumber.trim()) {
+      return "ID document number is required for the selected ID type.";
+    }
+    return null;
+  }
+
+  function stayStepError(): string | null {
+    const today = localYmd();
+    if (!checkIn) return "Check-in date is required.";
+    if (!checkOut) return "Check-out date is required.";
+    if (!(checkOut > checkIn)) return "Check-out must be after check-in.";
+    if (checkIn < today) return "Check-in cannot be in the past. Choose today or a future date.";
+    if (checkOut <= today) return "Check-out cannot be in the past. Choose a future check-out date.";
+    if (!Number.isFinite(adults) || adults < 1) return "At least one adult is required.";
+    if (!roomTypeId) return "Select an available room type.";
+    if (!selectedAvail || selectedNightlyRate <= 0 || selectedAvail.total_price <= 0) {
+      return "Selected room type must have a positive room price. Refresh availability and choose again.";
+    }
+    return null;
+  }
+
+  function roomStepError(): string | null {
+    if (!preferredRoomId) return null;
+    const room = roomSnapshot.find((r) => r.id === preferredRoomId);
+    if (room && room.roomType.id !== roomTypeId) {
+      return "Preferred room must match the selected room type.";
+    }
+    return null;
+  }
+
+  function confirmStepError(): string | null {
+    const prior = guestStepError() || stayStepError() || roomStepError();
+    if (prior) return prior;
+    if (deposit.trim()) {
+      const dep = Number(deposit);
+      if (!Number.isFinite(dep) || dep < 0) {
+        return "Deposit must be a valid non-negative amount.";
+      }
+      if (dep > 0 && !paymentMethod.trim()) {
+        return "Payment method is required when collecting a deposit.";
+      }
+    }
+    return null;
+  }
+
+  /** Returns error for the step being left, or null if OK. */
+  function validateLeavingStep(fromStep: number): string | null {
+    if (fromStep === 1) return guestStepError();
+    if (fromStep === 2) return stayStepError();
+    if (fromStep === 3) return roomStepError();
+    if (fromStep === 4) return guestStepError() || stayStepError() || roomStepError();
+    if (fromStep === 5) return confirmStepError();
+    return null;
+  }
+
+  /** First incomplete step (1–5), used to jump back when confirm fails. */
+  function firstInvalidStep(): number {
+    if (guestStepError()) return 1;
+    if (stayStepError()) return 2;
+    if (roomStepError()) return 3;
+    if (confirmStepError()) return 5;
+    return 5;
+  }
+
+  function saveAndContinue(nextStep: number) {
+    const err = validateLeavingStep(step);
+    if (err) {
+      flashError(err);
+      return;
+    }
+    saveDraft();
+    setStep(nextStep);
+  }
+
   function guestPayload() {
     const parts = fullName.trim().split(/\s+/, 2);
     return {
@@ -631,19 +730,26 @@ export default function NewStaffReservationPage() {
 
   async function ensureGuest(): Promise<string> {
     if (guestId) return guestId;
-    if (!nationalId.trim() || !dob) throw new Error("National ID and date of birth are required.");
+    const guestErr = guestStepError();
+    if (guestErr) throw new Error(guestErr);
     const created = await apiFetch<GuestSearchHit>(`/api/v1/hotels/${hotelId}/guests`, {
       method: "POST",
       body: JSON.stringify(guestPayload()),
+      quiet: true,
     });
     setGuestId(created.guest.id);
     return created.guest.id;
   }
 
   async function confirmBooking() {
-    setError(null);
-    setSubmitting(true);
     setDone(null);
+    const confirmErr = confirmStepError();
+    if (confirmErr) {
+      flashError(confirmErr);
+      setStep(firstInvalidStep());
+      return;
+    }
+    setSubmitting(true);
     try {
       if (!getToken()) throw new Error("Not signed in.");
       if (!selectedAvail || selectedNightlyRate <= 0 || selectedAvail.total_price <= 0) {
@@ -683,13 +789,15 @@ export default function NewStaffReservationPage() {
       const res = await apiFetch<CreateRes>(`/api/v1/hotels/${hotelId}/reservations`, {
         method: "POST",
         body: JSON.stringify(body),
+        quiet: true,
       });
       setDone(res);
       if (typeof window !== "undefined") {
         localStorage.removeItem(draftKey);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Booking failed");
+      flashError(e instanceof Error ? e.message : "Booking failed", "Booking failed");
+      if (stayStepError()) setStep(2);
     } finally {
       setSubmitting(false);
     }
@@ -776,7 +884,6 @@ export default function NewStaffReservationPage() {
           {walkIn ? "Walk-in / counter booking" : "Staff booking"} — complete each step, then confirm.
         </p>
       </div>
-      {error && <div className="error">{error}</div>}
       {pendingDraft && !done && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
           <p className="text-sm font-medium text-amber-900">
@@ -1259,20 +1366,21 @@ export default function NewStaffReservationPage() {
               <h2 className="text-lg font-semibold">Stay</h2>
               <div className="grid sm:grid-cols-3 gap-3">
                 <label>
-                  Check-in
-                  <input type="date" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} />
+                  Check-in *
+                  <input type="date" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} required />
                 </label>
                 <label>
-                  Check-out
-                  <input type="date" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} />
+                  Check-out *
+                  <input type="date" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} required />
                 </label>
                 <label>
-                  Adults
+                  Adults *
                   <input
                     type="number"
                     min={1}
                     value={adults}
                     onChange={(e) => setAdults(Number(e.target.value) || 1)}
+                    required
                   />
                 </label>
               </div>
@@ -1284,7 +1392,8 @@ export default function NewStaffReservationPage() {
               </button>
               {avail && (
                 <div>
-                  <p className="text-sm font-medium mb-2">Available room types</p>
+                  <p className="text-sm font-medium mb-2">Available room types *</p>
+                  <p className="text-xs text-muted-foreground mb-2">Select one room type to continue.</p>
                   <div
                     style={{
                       display: "grid",
@@ -1402,7 +1511,6 @@ export default function NewStaffReservationPage() {
                 <button
                   type="button"
                   className="hms-btn-solid"
-                  disabled={!roomTypeId}
                   onClick={() => saveAndContinue(3)}
                 >
                   Save &amp; continue

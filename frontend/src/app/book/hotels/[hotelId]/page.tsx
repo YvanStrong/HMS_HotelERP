@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { getToken } from "@/lib/api";
+import { friendlyBookingError } from "@/lib/friendlyBookingError";
 import { isGuestPortalUser, loadAuthUser } from "@/lib/auth";
 import { COUNTRY_OPTIONS, GENDER_OPTIONS } from "@/lib/guestFormConstants";
 import { GuestIdScanField } from "@/components/GuestIdScanField";
@@ -328,8 +329,41 @@ function BookHotelStayPageInner() {
       setBookMsg("Select a room type.");
       return;
     }
-    if (!nationalId.trim() || !dob) {
-      setBookMsg("National ID and date of birth are required.");
+    if (!checkIn || !checkOut) {
+      setBookMsg("Check-in and check-out dates are required.");
+      return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (checkIn < today) {
+      setBookMsg("Check-in cannot be in the past. Choose today or a future date.");
+      return;
+    }
+    if (checkOut <= today) {
+      setBookMsg("Check-out cannot be in the past. Choose a future check-out date.");
+      return;
+    }
+    if (!(checkOut > checkIn)) {
+      setBookMsg("Check-out must be after check-in.");
+      return;
+    }
+    if (!Number.isFinite(adults) || adults < 1) {
+      setBookMsg("At least one adult is required.");
+      return;
+    }
+    if (!nationalId.trim()) {
+      setBookMsg("National ID is required.");
+      return;
+    }
+    if (!dob) {
+      setBookMsg("Date of birth is required.");
+      return;
+    }
+    if (dob > new Date().toISOString().slice(0, 10)) {
+      setBookMsg("Date of birth cannot be in the future.");
+      return;
+    }
+    if (!guestCountry.trim()) {
+      setBookMsg("Country is required.");
       return;
     }
     const fn0 = firstName.trim();
@@ -398,7 +432,7 @@ function BookHotelStayPageInner() {
       setConfirmed(res);
       setBookMsg(res.message);
     } catch (err) {
-      setBookMsg(err instanceof Error ? err.message : "Booking failed");
+      setBookMsg(friendlyBookingError(err instanceof Error ? err.message : "Booking failed"));
     }
   }
 

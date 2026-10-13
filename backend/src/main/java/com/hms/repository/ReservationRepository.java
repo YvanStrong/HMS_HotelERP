@@ -129,11 +129,29 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
             select count(distinct r.room.id) from Reservation r
             where r.hotel.id = :hotelId
             and r.room is not null
-            and r.status in ('CONFIRMED', 'CHECKED_IN')
+            and r.status in ('CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT')
             and r.checkInDate <= :day
             and r.checkOutDate > :day
             """)
     long countDistinctOccupiedRoomsForNight(@Param("hotelId") UUID hotelId, @Param("day") LocalDate day);
+
+    @Query(
+            value = """
+            select coalesce(sum(
+                case
+                    when r.nightly_rate is not null and r.nightly_rate > 0 then r.nightly_rate
+                    else r.total_amount / greatest(1, (r.check_out_date - r.check_in_date))
+                end
+            ), 0)
+            from reservations r
+            where r.hotel_id = :hotelId
+              and r.room_id is not null
+              and r.status in ('CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT')
+              and r.check_in_date <= :day
+              and r.check_out_date > :day
+            """,
+            nativeQuery = true)
+    BigDecimal sumNightlyRoomRevenue(@Param("hotelId") UUID hotelId, @Param("day") LocalDate day);
 
     @Query(
             "select count(r) from Reservation r where r.hotel.id = :hotelId and r.checkInDate = :day and r.status in ('CONFIRMED','CHECKED_IN')")

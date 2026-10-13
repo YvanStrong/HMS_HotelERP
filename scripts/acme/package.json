@@ -1,0 +1,10 @@
+{
+  "name": "kivucloud-acme",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Let's Encrypt issuance for kivucloud.rw",
+  "main": "issue-cert.js",
+  "dependencies": {
+    "acme-client": "^5.4.0"
+  }
+}

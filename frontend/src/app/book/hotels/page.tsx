@@ -70,9 +70,9 @@ export default function BookHotelsCatalogPage() {
     <div className="container-page py-8">
       <div className="bg-card rounded-xl border border-border/60 p-5 sm:p-6 shadow-soft mb-8">
         <p className="text-xs uppercase tracking-[0.18em] font-semibold text-muted-foreground mb-1">Discovery</p>
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Browse all hotels</h1>
+        <h1 className="text-3xl font-bold tracking-tight mb-2">Hotels in Rwanda</h1>
         <p className="text-muted-foreground">
-          Explore available properties, compare options quickly, and open a hotel to book in a few steps.
+          Explore properties on Kivu Cloud HotelERP, compare rooms and rates, and book direct.
         </p>
       </div>
 
