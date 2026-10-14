@@ -8,5 +8,15 @@ target/
 .env.local
 ~$*
 tsconfig.tsbuildinfo
+certs/
+scripts/acme/node_modules/
+logs/
 secrets/
+db-dumps/
 *-firebase-adminsdk-*.json
+.tools/
+.claude/
+tmp-jar-patch/
+tmp-xlsb/
+uploads/
+.trustedhosts-result.txt

@@ -3,11 +3,14 @@ package com.hms.web;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.Map;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -46,5 +49,35 @@ public class GlobalExceptionHandler {
                         "Request payload validation failed",
                         req.getRequestURI(),
                         fields));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleConstraint(
+            DataIntegrityViolationException ex, HttpServletRequest req) {
+        String raw = String.valueOf(ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage())
+                .toLowerCase();
+        String message = "Could not save this product. Please try again.";
+        if (raw.contains("sale_number")) {
+            message = "Could not assign an invoice number. Place the order again.";
+        } else if (raw.contains("item_cd")) {
+            message = "Could not assign a tax item code. Save the product again.";
+        } else if (raw.contains("sku")) {
+            message = "A product with this SKU already exists. Try again — a new SKU will be assigned.";
+        } else if (raw.contains("product_code") || raw.contains("uk_depot_product_hotel_code")) {
+            message = "A product with this code already exists. Change the name slightly and try again.";
+        } else if (raw.contains("product_number")) {
+            message = "Could not assign a product number. Try saving again.";
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiErrorResponse.of("CONFLICT", message, req.getRequestURI()));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleTooBig(MaxUploadSizeExceededException ex, HttpServletRequest req) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorResponse.of(
+                        "PAYLOAD_TOO_LARGE",
+                        "Image is too large. Use a photo under 3 MB.",
+                        req.getRequestURI()));
     }
 }

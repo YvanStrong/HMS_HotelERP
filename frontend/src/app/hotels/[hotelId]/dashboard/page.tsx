@@ -425,7 +425,7 @@ export default function HotelDashboardPage() {
       <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Hotel Dashboard</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
             <p className="mt-1 text-muted-foreground">
               All-in-one view — rooms & guests, sales, and accounting in one place.
             </p>

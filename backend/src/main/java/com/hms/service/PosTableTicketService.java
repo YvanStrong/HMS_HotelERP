@@ -106,7 +106,17 @@ public class PosTableTicketService {
                     ? posTableRepository.findByHotel_IdOrderByDepotNameSortOrder(hotelId)
                     : posTableRepository.findByHotel_IdAndActiveTrueOrderByDepotNameSortOrder(hotelId);
         }
-        return tables.stream().map(t -> toTableRow(hotelId, t)).toList();
+        Map<String, AppUser> waiterByTable = new HashMap<>();
+        java.util.Set<String> pendingTables = new java.util.HashSet<>();
+        for (PosDeliveryOrder order : posDeliveryOrderRepository.findPendingForTables(hotelId)) {
+            if (order.getLocationLabel() == null || order.getDepot() == null) continue;
+            String key = order.getDepot().getId() + "|" + order.getLocationLabel().trim().toLowerCase(Locale.ROOT);
+            pendingTables.add(key);
+            if (order.getStaffUser() != null) {
+                waiterByTable.putIfAbsent(key, order.getStaffUser());
+            }
+        }
+        return tables.stream().map(t -> toTableRow(hotelId, t, waiterByTable, pendingTables)).toList();
     }
 
     @Transactional
@@ -1243,8 +1253,39 @@ public class PosTableTicketService {
                 });
     }
 
+    @Transactional(readOnly = true)
+    public List<MobilePosDtos.PosWaiterOption> listWaiters(UUID hotelId, String hotelHeader) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        return appUserRepository
+                .findByHotel_IdAndRoleIn(
+                        hotelId,
+                        List.of(
+                                Role.WAITER,
+                                Role.FNB_STAFF,
+                                Role.CASHIER,
+                                Role.RECEPTIONIST,
+                                Role.MANAGER,
+                                Role.HOTEL_ADMIN))
+                .stream()
+                .filter(AppUser::isActive)
+                .sorted(Comparator.comparing(u -> u.getUsername() == null ? "" : u.getUsername().toLowerCase(Locale.ROOT)))
+                .map(u -> new MobilePosDtos.PosWaiterOption(u.getId(), u.getUsername(), u.getRole().name()))
+                .toList();
+    }
+
     private MobilePosDtos.PosTableRow toTableRow(UUID hotelId, PosTable t) {
+        return toTableRow(hotelId, t, Map.of(), java.util.Set.of());
+    }
+
+    private MobilePosDtos.PosTableRow toTableRow(
+            UUID hotelId, PosTable t, Map<String, AppUser> waiterByTable, java.util.Set<String> pendingTables) {
         Optional<PosTableTicket> active = activeTicketForTable(hotelId, t);
+        String key = t.getDepot().getId() + "|" + t.getTableLabel().trim().toLowerCase(Locale.ROOT);
+        AppUser deliveryWaiter = waiterByTable.get(key);
+        AppUser ticketWaiter = active.map(PosTableTicket::getStaffUser).orElse(null);
+        String waiterName = ticketWaiter != null ? waiterDisplay(active.get()) : deliveryWaiter != null ? deliveryWaiter.getUsername() : null;
+        UUID waiterUserId = ticketWaiter != null ? ticketWaiter.getId() : deliveryWaiter != null ? deliveryWaiter.getId() : null;
+        boolean occupied = active.isPresent() || pendingTables.contains(key);
         return new MobilePosDtos.PosTableRow(
                 t.getId(),
                 t.getDepot().getId(),
@@ -1253,9 +1294,10 @@ public class PosTableTicketService {
                 t.getSortOrder(),
                 t.getCapacity(),
                 t.isActive(),
-                active.isPresent(),
+                occupied,
                 active.map(PosTableTicket::getId).orElse(null),
-                active.map(this::waiterDisplay).orElse(null));
+                waiterName,
+                waiterUserId);
     }
 
     private Optional<PosTableTicket> activeTicketForTable(UUID hotelId, PosTable t) {

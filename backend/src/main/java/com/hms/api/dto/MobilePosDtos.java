@@ -25,7 +25,10 @@ public final class MobilePosDtos {
             boolean active,
             boolean occupied,
             UUID activeTicketId,
-            String waiterName) {}
+            String waiterName,
+            UUID waiterUserId) {}
+
+    public record PosWaiterOption(UUID id, String username, String role) {}
 
     public record CreatePosTableRequest(
             @NotNull UUID depotId,

@@ -59,15 +59,43 @@ public class EbmClient {
     }
 
     public Map<String, Object> pullCodeList(EbmDevice device, String category, Instant lastReqDt) {
-        String path = "ITEM_CLASS".equals(category)
-                ? properties.getPaths().getItemClass()
-                : properties.getPaths().getCodeList();
+        return pullDelta(device, category, lastReqDt);
+    }
+
+    /**
+     * Delta pull by RRA category. {@code lastReqDt} is always sent so VSDC returns only rows after the
+     * previous request (import/purchase/item/notice/customer/code-list).
+     */
+    public Map<String, Object> pullDelta(EbmDevice device, String category, Instant lastReqDt) {
+        HmsEbmProperties.Paths paths = properties.getPaths();
+        String cat = category == null ? "CODE_LIST" : category.trim().toUpperCase();
+        String path = switch (cat) {
+            case "ITEM_CLASS" -> paths.getItemClass();
+            case "CUSTOMER" -> paths.getCustomer();
+            case "NOTICES" -> paths.getNotices();
+            case "ITEMS" -> paths.getSelectItem();
+            case "IMPORTS" -> paths.getImportItems();
+            case "PURCHASES" -> paths.getSelectPurchase();
+            default -> paths.getCodeList();
+        };
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("tin", device.getTin());
         body.put("bhfId", device.getBranchId());
         body.put("lastReqDt", lastReqDt != null ? lastReqDt.toString() : "20160523000000");
-        body.put("cdCls", category);
+        if ("CODE_LIST".equals(cat)) {
+            body.put("cdCls", category);
+        }
         return post(device, path, body);
+    }
+
+    public Map<String, Object> updateImportItem(EbmDevice device, Map<String, Object> payload) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("tin", device.getTin());
+        body.put("bhfId", device.getBranchId());
+        if (payload != null) {
+            body.putAll(payload);
+        }
+        return post(device, properties.getPaths().getImportUpdate(), body);
     }
 
     @SuppressWarnings("unchecked")

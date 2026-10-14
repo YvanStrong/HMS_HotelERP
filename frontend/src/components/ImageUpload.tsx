@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { apiFetch } from "@/lib/api";
 
 interface ImageUploadProps {
   value?: string;
@@ -11,7 +12,6 @@ interface ImageUploadProps {
   previewClassName?: string;
 }
 
-/** True when the string is safe to pass to an {@code <img src>} (avoids Next/Image parse errors while typing). */
 function isRenderableImageSrc(url: string | undefined): boolean {
   const t = (url ?? "").trim();
   if (!t) return false;
@@ -28,6 +28,44 @@ function isRenderableImageSrc(url: string | undefined): boolean {
   return false;
 }
 
+function compressImageFile(file: File, maxEdge = 900, quality = 0.72): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Could not process image"));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("Could not compress image"));
+            return;
+          }
+          resolve(blob);
+        },
+        "image/jpeg",
+        quality,
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not read image"));
+    };
+    img.src = url;
+  });
+}
+
 export function ImageUpload({
   value,
   onChange,
@@ -38,19 +76,31 @@ export function ImageUpload({
 }: ImageUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [previewError, setPreviewError] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function uploadFile(file: File) {
+    setBusy(true);
+    setLocalError(null);
+    setPreviewError(false);
+    try {
+      const blob = await compressImageFile(file);
+      const fd = new FormData();
+      fd.append("file", blob, "photo.jpg");
+      const res = await apiFetch<{ url: string }>("/api/v1/media/images", { method: "POST", body: fd });
+      if (!res?.url) throw new Error("Upload did not return an image URL");
+      onChange(res.url);
+    } catch (e) {
+      setLocalError(e instanceof Error ? e.message : "Image upload failed");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        onChange(result);
-        setPreviewError(false);
-      };
-      reader.readAsDataURL(file);
-    }
+    if (file) void uploadFile(file);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -67,15 +117,7 @@ export function ImageUpload({
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
-    if (file && file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        onChange(result);
-        setPreviewError(false);
-      };
-      reader.readAsDataURL(file);
-    }
+    if (file && file.type.startsWith("image/")) void uploadFile(file);
   };
 
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,13 +133,7 @@ export function ImageUpload({
     const file = imageItem.getAsFile();
     if (!file) return;
     e.preventDefault();
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result as string;
-      onChange(result);
-      setPreviewError(false);
-    };
-    reader.readAsDataURL(file);
+    void uploadFile(file);
   };
 
   const showPreview = Boolean(value && !previewError && isRenderableImageSrc(value));
@@ -108,7 +144,6 @@ export function ImageUpload({
 
       {showPreview && (
         <div className={`relative w-full ${previewClassName} rounded-xl overflow-hidden border border-border bg-muted/40`}>
-          {/* Use native img so partial URLs while typing never hit next/image's strict src parser. */}
           <img
             src={value!.trim()}
             alt="Preview"
@@ -140,6 +175,7 @@ export function ImageUpload({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
+          disabled={busy}
           className="px-4 py-2.5 bg-secondary text-secondary-foreground rounded-lg font-medium text-sm hover:bg-secondary/80 transition-colors border border-border"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -151,6 +187,9 @@ export function ImageUpload({
           </svg>
         </button>
       </div>
+
+      {busy ? <p className="text-xs text-muted-foreground">Uploading image…</p> : null}
+      {localError ? <p className="text-xs text-destructive">{localError}</p> : null}
 
       {!showPreview && (
         <div

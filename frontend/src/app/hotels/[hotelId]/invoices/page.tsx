@@ -11,7 +11,7 @@ import {
   eventBillingDocumentLabel,
   loadEventBillingDocuments,
 } from "@/lib/eventApi";
-import { printDepotSaleInvoice } from "@/lib/printDepotSaleInvoice";
+import { issuerFieldsFromHotel, printDepotSaleInvoice } from "@/lib/printDepotSaleInvoice";
 import { useHotelContext } from "@/lib/useHotelContext";
 import {
   buildTaxInvoiceHtml,
@@ -89,6 +89,7 @@ type RecentSaleRow = {
   soldAt: string;
   paymentMethod?: string | null;
   status?: string | null;
+  waiterName?: string | null;
 };
 
 type RecentSaleDetail = RecentSaleRow & {
@@ -100,6 +101,35 @@ type RecentSaleDetail = RecentSaleRow & {
     lineTotal: number;
     taxable?: boolean;
   }[];
+  ebmReceiptNo?: string | null;
+  ebmSignature?: string | null;
+  ebmInternalData?: string | null;
+  ebmInvoiceNo?: string | null;
+  ebmQrPayload?: string | null;
+  ebmSdcId?: string | null;
+  ebmMrcNo?: string | null;
+  ebmStatus?: string | null;
+};
+
+type PosRefundResponse = {
+  refundId: string;
+  refundNumber: string;
+  saleId: string;
+  saleNumber: string;
+  depotName: string;
+  customerName: string | null;
+  refundAmount: number;
+  refundMethod: string | null;
+  reason: string | null;
+  refundedAt: string;
+  lines: {
+    productName: string;
+    productCode: string;
+    quantityRefunded: number;
+    unitPrice: number;
+    lineTotal: number;
+  }[];
+  message?: string;
 };
 
 type ConvertProformaResponse = {
@@ -109,6 +139,18 @@ type ConvertProformaResponse = {
   totalAmount: number;
   soldAt: string;
   paymentMethod?: string | null;
+  message?: string | null;
+  lines?: {
+    productName: string;
+    productCode: string;
+    quantity: number;
+    unitPrice: number;
+    lineTotal: number;
+    taxable?: boolean;
+  }[];
+  subtotalAmount?: number | null;
+  discountAmount?: number | null;
+  promoCode?: string | null;
 };
 
 type PosProformaRow = {
@@ -142,6 +184,7 @@ type DeliveryOrderRow = {
   createdAt: string;
   saleId?: string | null;
   saleNumber?: string | null;
+  waiterName?: string | null;
 };
 
 type DeliveryOrderDetail = DeliveryOrderRow & {
@@ -169,6 +212,7 @@ type UnifiedInvoiceRow = {
   createdAt: string;
   paymentMethod?: string | null;
   refundStatus?: string | null;
+  waiterName?: string | null;
   action?: "reservation" | "sales" | "pos" | "facility" | "event";
 };
 
@@ -187,8 +231,9 @@ type ViewListModalState = {
   reference: string;
   totalAmount: number;
   currency: string;
-  paymentMethod?: string | null;
-  lines: InvoiceProductLine[];
+      paymentMethod?: string | null;
+      waiterName?: string | null;
+      lines: InvoiceProductLine[];
   loading: boolean;
   error: string | null;
 };
@@ -256,6 +301,7 @@ function normalizeRecentSaleRow(raw: RecentSaleRow & { id?: string }): RecentSal
     soldAt: raw.soldAt,
     paymentMethod: raw.paymentMethod ?? "CASH",
     status: raw.status ?? "COMPLETED",
+    waiterName: raw.waiterName?.trim() || null,
   };
 }
 
@@ -298,15 +344,16 @@ export default function InvoicesPage() {
   const searchParams = useSearchParams();
   const hotelId = String(params.hotelId);
   const { hotel } = useHotelContext(hotelId);
+  const issuer = issuerFieldsFromHotel(hotel);
 
   const [user, setUser] = useState<AuthUser | null>(null);
   const canRefund = canRefundInvoices(user?.role);
 
-  const [tab, setTab] = useState<"reservation" | "sales" | "recentSales" | "proforma" | "deliveries" | "refunds">("reservation");
+  const [tab, setTab] = useState<"reservation" | "sales" | "recentSales" | "proforma" | "deliveries" | "refunds" | "credit">("reservation");
 
   useEffect(() => {
     const t = searchParams.get("tab");
-    if (t === "deliveries" || t === "sales" || t === "recentSales" || t === "proforma" || t === "reservation" || t === "refunds") {
+    if (t === "deliveries" || t === "sales" || t === "recentSales" || t === "proforma" || t === "reservation" || t === "refunds" || t === "credit") {
       setTab(t);
     }
   }, [searchParams]);
@@ -318,6 +365,7 @@ export default function InvoicesPage() {
   const [deliveriesLoading, setDeliveriesLoading] = useState(false);
   const [refundsLoading, setRefundsLoading] = useState(false);
   const [refundingSaleId, setRefundingSaleId] = useState<string | null>(null);
+  const [payingCreditId, setPayingCreditId] = useState<string | null>(null);
   const [refundModal, setRefundModal] = useState<UnifiedInvoiceRow | null>(null);
   const [refundReason, setRefundReason] = useState("");
   const [refundModalError, setRefundModalError] = useState<string | null>(null);
@@ -332,12 +380,15 @@ export default function InvoicesPage() {
   const [eventDocsLoading, setEventDocsLoading] = useState(false);
   const [posProformas, setPosProformas] = useState<PosProformaRow[]>([]);
   const [deliveries, setDeliveries] = useState<DeliveryOrderRow[]>([]);
+  const [viewingDelivery, setViewingDelivery] = useState<DeliveryOrderDetail | null>(null);
+  const [selectedDeliveryIds, setSelectedDeliveryIds] = useState<string[]>([]);
   const [refunds, setRefunds] = useState<RefundRow[]>([]);
   const [invoicePage, setInvoicePage] = useState(1);
   const [invoicePagination, setInvoicePagination] = useState<InvoiceListPageResponse["pagination"] | null>(null);
   const [totalInvoicedSumAll, setTotalInvoicedSumAll] = useState<number | null>(null);
   const [proformas, setProformas] = useState<ProformaListItem[]>([]);
   const [invoiceSearch, setInvoiceSearch] = useState("");
+  const [waiterFilter, setWaiterFilter] = useState("");
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(null);
   const [selectedSalesInvoiceId, setSelectedSalesInvoiceId] = useState<string | null>(null);
@@ -599,6 +650,7 @@ export default function InvoicesPage() {
         createdAt: row.soldAt,
         paymentMethod: row.paymentMethod ?? "CASH",
         refundStatus: row.status ?? "COMPLETED",
+        waiterName: row.waiterName || null,
         action: "pos" as const,
       })),
       ...facilityInvoices.map((row) => ({
@@ -628,16 +680,27 @@ export default function InvoicesPage() {
     return rows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [eventInvoices, facilityInvoices, invoices, recentSales, salesInvoices]);
 
+  const waiterOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const row of unifiedInvoices) {
+      const name = row.waiterName?.trim();
+      if (name) names.add(name);
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [unifiedInvoices]);
+
   const filteredUnifiedInvoices = useMemo(() => {
     const q = invoiceSearch.trim().toLowerCase();
-    if (!q) return unifiedInvoices;
-    return unifiedInvoices.filter((row) =>
-      [row.source, row.invoiceNumber, row.reference, row.customer, row.currency, row.paymentMethod ?? ""]
+    const waiter = waiterFilter.trim().toLowerCase();
+    return unifiedInvoices.filter((row) => {
+      if (waiter && (row.waiterName ?? "").trim().toLowerCase() !== waiter) return false;
+      if (!q) return true;
+      return [row.source, row.invoiceNumber, row.reference, row.customer, row.currency, row.paymentMethod ?? "", row.waiterName ?? ""]
         .join(" ")
         .toLowerCase()
-        .includes(q),
-    );
-  }, [invoiceSearch, unifiedInvoices]);
+        .includes(q);
+    });
+  }, [invoiceSearch, unifiedInvoices, waiterFilter]);
 
   const headerSummary = useMemo(() => {
     if (tab === "proforma") {
@@ -654,6 +717,16 @@ export default function InvoicesPage() {
         suffix: " FRW",
       };
     }
+    if (tab === "credit") {
+      const open = unifiedInvoices.filter(
+        (row) => (row.paymentMethod || "").toUpperCase() === "CREDIT" && !isRefundedStatus(row.refundStatus),
+      );
+      return {
+        label: "Open credit",
+        amount: open.reduce((sum, row) => sum + Number(row.totalAmount ?? 0), 0),
+        suffix: "",
+      };
+    }
     if (tab === "refunds") {
       return {
         label: "Refunds total",
@@ -662,13 +735,13 @@ export default function InvoicesPage() {
       };
     }
     return {
-      label: "Final invoiced total",
+      label: waiterFilter ? `Sold by ${waiterFilter}` : "Final invoiced total",
       amount: filteredUnifiedInvoices
         .filter((row) => !isRefundedStatus(row.refundStatus))
         .reduce((sum, row) => sum + Number(row.totalAmount ?? 0), 0),
       suffix: "",
     };
-  }, [tab, posProformas, deliveries, refunds, filteredUnifiedInvoices]);
+  }, [tab, posProformas, deliveries, refunds, filteredUnifiedInvoices, waiterFilter, unifiedInvoices]);
 
   const unifiedInvoiceTotalPages = Math.max(1, Math.ceil(filteredUnifiedInvoices.length / INVOICE_PAGE_SIZE));
   const pagedUnifiedInvoices = filteredUnifiedInvoices.slice(
@@ -678,7 +751,7 @@ export default function InvoicesPage() {
 
   useEffect(() => {
     setInvoicePage(1);
-  }, [invoiceSearch, unifiedInvoices.length]);
+  }, [invoiceSearch, waiterFilter, unifiedInvoices.length]);
 
   async function printEventBillingDocument(documentId: string) {
     setError(null);
@@ -689,7 +762,7 @@ export default function InvoicesPage() {
     }
   }
 
-  function printSelectedTaxInvoice() {
+  async function printSelectedTaxInvoice() {
     if (!invoiceDetail) return;
     setError(null);
     try {
@@ -711,6 +784,8 @@ export default function InvoicesPage() {
       const roomLabel = `${d.roomNumber ?? "—"} (${d.roomTypeName ?? "—"})`;
       const currency = d.currency ?? "USD";
       const whenLabel = d.createdAt ? new Date(d.createdAt).toLocaleString() : new Date().toLocaleString();
+      const { resolveEbmPrintFields } = await import("@/lib/ebmPrint");
+      const ebm = await resolveEbmPrintFields(hotelId, "INVOICE", d.id);
       const html = buildTaxInvoiceHtml({
         invoiceNumber: d.invoiceNumber,
         items,
@@ -728,9 +803,11 @@ export default function InvoicesPage() {
         balanceAfter: sums.balanceAfter,
         hotelLogoUrl: hotel.logoUrl,
         hotelName: hotel.name,
+        ebmActivated: ebm.ebmActivated,
+        ebm,
       });
       if (!openTaxInvoicePrintWindow(html)) {
-        setError("Pop-up blocked — allow pop-ups to print the invoice.");
+        setError("Could not open the print dialog. Try again or check browser print permissions.");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not open invoice");
@@ -779,14 +856,18 @@ export default function InvoicesPage() {
     }
   }
 
-  function printSelectedSalesInvoice() {
+  async function printSelectedSalesInvoice() {
     if (!salesInvoiceDetail) return;
     const d = salesInvoiceDetail;
+    const { resolveEbmPrintFields } = await import("@/lib/ebmPrint");
+    const ebm = await resolveEbmPrintFields(hotelId, "INV_SALES_INVOICE", d.id);
     printDepotSaleInvoice(
       {
+        ...issuer,
         saleId: d.id,
         saleNumber: d.invoiceNumber,
-        documentTitle: "INVOICE",
+        documentTitle: "COPY",
+        isCopy: true,
         depotName: "Sales invoice",
         customerName: d.customerName,
         totalAmount: Number(d.totalAmount ?? 0),
@@ -801,6 +882,16 @@ export default function InvoicesPage() {
         })),
         vatPercent: 18,
         paymentMethod: d.paymentMethod ?? null,
+        ebmActivated: ebm.ebmActivated,
+        ebmReceiptNo: ebm.ebmReceiptNo,
+        ebmSignature: ebm.ebmSignature,
+        ebmInternalData: ebm.ebmInternalData,
+        ebmInvoiceNo: ebm.ebmInvoiceNo,
+        ebmQrPayload: ebm.ebmQrPayload,
+        ebmSdcId: ebm.ebmSdcId,
+        ebmMrcNo: ebm.ebmMrcNo,
+        ebmStatus: ebm.ebmStatus,
+        ebmDate: ebm.ebmDate,
       },
       "FRW",
     );
@@ -809,11 +900,15 @@ export default function InvoicesPage() {
   async function reprintRecentSale(row: RecentSaleRow) {
     try {
       const data = await apiFetch<RecentSaleDetail>(`/api/v1/hotels/${hotelId}/inventory/sales/${row.saleId}`);
+      const { resolveEbmPrintFields } = await import("@/lib/ebmPrint");
+      const ebm = await resolveEbmPrintFields(hotelId, "DEPOT_SALE", String(data.saleId));
       printDepotSaleInvoice(
         {
+          ...issuer,
           saleId: data.saleId,
           saleNumber: data.saleNumber,
-          documentTitle: "INVOICE",
+          documentTitle: "COPY",
+          isCopy: true,
           depotName: data.depotName,
           customerName: data.customerName,
           totalAmount: Number(data.totalAmount ?? 0),
@@ -828,6 +923,16 @@ export default function InvoicesPage() {
           })),
           vatPercent: 18,
           paymentMethod: data.paymentMethod ?? row.paymentMethod ?? "CASH",
+          ebmActivated: ebm.ebmActivated,
+          ebmReceiptNo: data.ebmReceiptNo ?? ebm.ebmReceiptNo,
+          ebmSignature: data.ebmSignature ?? ebm.ebmSignature,
+          ebmInternalData: data.ebmInternalData ?? ebm.ebmInternalData,
+          ebmInvoiceNo: data.ebmInvoiceNo ?? ebm.ebmInvoiceNo,
+          ebmQrPayload: data.ebmQrPayload ?? ebm.ebmQrPayload,
+          ebmSdcId: data.ebmSdcId ?? ebm.ebmSdcId,
+          ebmMrcNo: data.ebmMrcNo ?? ebm.ebmMrcNo,
+          ebmStatus: data.ebmStatus ?? ebm.ebmStatus,
+          ebmDate: ebm.ebmDate ?? data.soldAt,
         },
         "FRW",
       );
@@ -849,6 +954,7 @@ export default function InvoicesPage() {
       totalAmount: row.totalAmount,
       currency: row.currency,
       paymentMethod: row.paymentMethod ?? null,
+      waiterName: row.waiterName ?? null,
       lines: [],
       loading: true,
       error: null,
@@ -982,17 +1088,61 @@ export default function InvoicesPage() {
       const reasonBody = { reason: refundReason.trim() || null };
       if (refundModal.action === "pos") {
         const q = new URLSearchParams({ saleId: refundModal.id });
-        await apiFetch(`/api/v1/hotels/${hotelId}/inventory/sales/refund-full?${q.toString()}`, {
-          method: "POST",
-          body: JSON.stringify(reasonBody),
-          quiet: true,
-        });
+        const refund = await apiFetch<PosRefundResponse>(
+          `/api/v1/hotels/${hotelId}/inventory/sales/refund-full?${q.toString()}`,
+          {
+            method: "POST",
+            body: JSON.stringify(reasonBody),
+            quiet: true,
+          },
+        );
         setRecentSales((prev) =>
           prev.map((s) => (s.saleId === refundModal.id ? { ...s, status: "REFUNDED" } : s)),
         );
         setSuccess(
           `Refund completed for ${refundModal.invoiceNumber}. Stock restored to ${refundModal.reference}.`,
         );
+        try {
+          const { resolveEbmPrintFields } = await import("@/lib/ebmPrint");
+          const ebm = await resolveEbmPrintFields(hotelId, "DEPOT_REFUND", refund.refundId, {
+            waitMs: 800,
+          });
+          printDepotSaleInvoice(
+            {
+              ...issuer,
+              saleId: refund.refundId,
+              saleNumber: refund.refundNumber,
+              documentTitle: "REFUND",
+              depotName: refund.depotName,
+              customerName: refund.customerName,
+              totalAmount: Number(refund.refundAmount ?? 0),
+              soldAt: refund.refundedAt,
+              paymentMethod: refund.refundMethod,
+              lines: (refund.lines ?? []).map((ln) => ({
+                productName: ln.productName,
+                productCode: ln.productCode,
+                quantity: Number(ln.quantityRefunded),
+                unitPrice: Number(ln.unitPrice),
+                lineTotal: Number(ln.lineTotal),
+                taxable: true,
+              })),
+              vatPercent: 18,
+              ebmActivated: ebm.ebmActivated,
+              ebmReceiptNo: ebm.ebmReceiptNo,
+              ebmSignature: ebm.ebmSignature,
+              ebmInternalData: ebm.ebmInternalData,
+              ebmInvoiceNo: ebm.ebmInvoiceNo,
+              ebmQrPayload: ebm.ebmQrPayload,
+              ebmSdcId: ebm.ebmSdcId,
+              ebmMrcNo: ebm.ebmMrcNo,
+              ebmStatus: ebm.ebmStatus,
+              ebmDate: ebm.ebmDate,
+            },
+            "FRW",
+          );
+        } catch {
+          // Print is best-effort after successful refund
+        }
       } else if (refundModal.action === "reservation") {
         await apiFetch(`/api/v1/hotels/${hotelId}/invoices/${refundModal.id}/refund-full`, {
           method: "POST",
@@ -1036,11 +1186,15 @@ export default function InvoicesPage() {
   async function printSalesInvoiceRow(id: string) {
     try {
       const d = await apiFetch<SalesInvoiceDetail>(`/api/v1/hotels/${hotelId}/inventory/sales-invoices/${id}`);
+      const { resolveEbmPrintFields } = await import("@/lib/ebmPrint");
+      const ebm = await resolveEbmPrintFields(hotelId, "INV_SALES_INVOICE", d.id);
       printDepotSaleInvoice(
         {
+          ...issuer,
           saleId: d.id,
           saleNumber: d.invoiceNumber,
-          documentTitle: "INVOICE",
+          documentTitle: "COPY",
+          isCopy: true,
           depotName: "Sales invoice",
           customerName: d.customerName,
           totalAmount: Number(d.totalAmount ?? 0),
@@ -1055,6 +1209,16 @@ export default function InvoicesPage() {
           })),
           vatPercent: 18,
           paymentMethod: d.paymentMethod ?? null,
+          ebmActivated: ebm.ebmActivated,
+          ebmReceiptNo: ebm.ebmReceiptNo,
+          ebmSignature: ebm.ebmSignature,
+          ebmInternalData: ebm.ebmInternalData,
+          ebmInvoiceNo: ebm.ebmInvoiceNo,
+          ebmQrPayload: ebm.ebmQrPayload,
+          ebmSdcId: ebm.ebmSdcId,
+          ebmMrcNo: ebm.ebmMrcNo,
+          ebmStatus: ebm.ebmStatus,
+          ebmDate: ebm.ebmDate,
         },
         "FRW",
       );
@@ -1066,9 +1230,11 @@ export default function InvoicesPage() {
   function printFacilityInvoice(row: UnifiedInvoiceRow) {
     printDepotSaleInvoice(
       {
+        ...issuer,
         saleId: row.id,
         saleNumber: row.invoiceNumber,
-        documentTitle: "INVOICE",
+        documentTitle: "COPY",
+        isCopy: true,
         depotName: "Facility",
         customerName: row.customer,
         totalAmount: row.totalAmount,
@@ -1113,13 +1279,40 @@ export default function InvoicesPage() {
     }
   }
 
-  async function convertDeliveryToInvoice(row: DeliveryOrderRow) {
+  async function markCreditPaid(row: UnifiedInvoiceRow) {
+    setPayingCreditId(row.id);
+    setError(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/inventory/sales/${row.id}/mark-paid`, { method: "POST" });
+      setRecentSales((prev) =>
+        prev.map((sale) => (sale.saleId === row.id ? { ...sale, paymentMethod: "CASH" } : sale)),
+      );
+      setSuccess(`${row.invoiceNumber} is paid and left the credit list.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not mark the invoice paid");
+    } finally {
+      setPayingCreditId(null);
+    }
+  }
+
+  function toggleDeliverySelected(id: string) {
+    setSelectedDeliveryIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  async function convertDeliveryToInvoice(rows: DeliveryOrderRow[]) {
+    if (rows.length === 0) {
+      setError("Select the deliveries to put on one invoice.");
+      return;
+    }
+    const ids = rows.map((r) => r.deliveryOrderId);
+    const row = rows[0];
     try {
       const sale = await apiFetch<ConvertProformaResponse>(
-        `/api/v1/hotels/${hotelId}/inventory/deliveries/${row.deliveryOrderId}/convert-to-invoice`,
-        { method: "POST" },
+        `/api/v1/hotels/${hotelId}/inventory/deliveries/convert-to-invoice`,
+        { method: "POST", body: JSON.stringify({ deliveryOrderIds: ids }) },
       );
-      setDeliveries((prev) => prev.filter((d) => d.deliveryOrderId !== row.deliveryOrderId));
+      setDeliveries((prev) => prev.filter((d) => !ids.includes(d.deliveryOrderId)));
+      setSelectedDeliveryIds((prev) => prev.filter((id) => !ids.includes(id)));
       const saleRow: RecentSaleRow = {
         saleId: String(sale.saleId),
         saleNumber: sale.saleNumber,
@@ -1129,11 +1322,52 @@ export default function InvoicesPage() {
         soldAt: sale.soldAt ?? new Date().toISOString(),
         paymentMethod: sale.paymentMethod ?? "CASH",
         status: "COMPLETED",
+        waiterName: rows.find((r) => r.waiterName?.trim())?.waiterName ?? null,
       };
       setRecentSales((prev) => [saleRow, ...prev]);
+      if (sale.lines && sale.lines.length > 0) {
+        printDepotSaleInvoice(
+          {
+            ...issuer,
+            saleId: String(sale.saleId),
+            saleNumber: sale.saleNumber,
+            documentTitle: "INVOICE",
+            depotName: row.depotName,
+            customerName: row.customerName,
+            totalAmount: Number(sale.totalAmount ?? 0),
+            subtotalAmount: sale.subtotalAmount != null ? Number(sale.subtotalAmount) : undefined,
+            discountAmount: sale.discountAmount != null ? Number(sale.discountAmount) : undefined,
+            promoCode: sale.promoCode ?? null,
+            soldAt: sale.soldAt,
+            paymentMethod: sale.paymentMethod ?? "CASH",
+            lines: sale.lines.map((ln) => ({
+              productName: ln.productName,
+              productCode: ln.productCode,
+              quantity: Number(ln.quantity),
+              unitPrice: Number(ln.unitPrice),
+              lineTotal: Number(ln.lineTotal),
+              taxable: ln.taxable !== false,
+            })),
+            vatPercent: 18,
+          },
+          "FRW",
+        );
+      }
       setError(null);
+      setSuccess(sale.message || `Invoice ${sale.saleNumber} printed`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not convert delivery to invoice");
+    }
+  }
+
+  async function viewDelivery(row: DeliveryOrderRow) {
+    try {
+      const data = await apiFetch<DeliveryOrderDetail>(
+        `/api/v1/hotels/${hotelId}/inventory/deliveries/${row.deliveryOrderId}`,
+      );
+      setViewingDelivery(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not open this delivery");
     }
   }
 
@@ -1144,6 +1378,7 @@ export default function InvoicesPage() {
       );
       printDepotSaleInvoice(
         {
+          ...issuer,
           saleId: data.deliveryOrderId,
           saleNumber: data.deliveryNumber,
           documentTitle: "DELIVERY",
@@ -1175,6 +1410,7 @@ export default function InvoicesPage() {
       );
       printDepotSaleInvoice(
         {
+          ...issuer,
           saleId: data.proformaId,
           saleNumber: data.proformaNumber,
           documentTitle: "PROFORMA",
@@ -1290,12 +1526,73 @@ export default function InvoicesPage() {
           >
             Refunds ({refunds.length})
           </button>
+          <button
+            type="button"
+            className={tab === "credit" ? "hms-btn-solid hms-btn-sm" : "hms-btn-outline hms-btn-sm"}
+            onClick={() => setTab("credit")}
+          >
+            Credit ({unifiedInvoices.filter((row) => (row.paymentMethod || "").toUpperCase() === "CREDIT" && !isRefundedStatus(row.refundStatus)).length})
+          </button>
         </div>
       </section>
 
       {success && <p className="text-sm text-green-700 font-medium">{success}</p>}
       {error && <p className="error">{error}</p>}
       {loading && <div className="hms-section-card">Loading…</div>}
+
+      {!loading && tab === "credit" && (
+        <section className="hms-section-card space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Invoices given on credit. They stay here until you press Paid. Paid invoices move to All Invoices as cash, and the open credit on Credit &amp; debt is cleared.
+          </p>
+          <div className="hms-table-wrap">
+            <table className="hms-table">
+              <thead>
+                <tr>
+                  <th>Invoice #</th>
+                  <th>Customer</th>
+                  <th>Waiter</th>
+                  <th>Total</th>
+                  <th>Created</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unifiedInvoices
+                  .filter((row) => (row.paymentMethod || "").toUpperCase() === "CREDIT" && !isRefundedStatus(row.refundStatus))
+                  .map((row) => (
+                    <tr key={row.id}>
+                      <td className="font-medium">{row.invoiceNumber}</td>
+                      <td>{row.customer}</td>
+                      <td>{row.waiterName || "—"}</td>
+                      <td>
+                        {formatMoney(Number(row.totalAmount))} {row.currency}
+                      </td>
+                      <td>{new Date(row.createdAt).toLocaleString()}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="hms-btn-solid hms-btn-sm"
+                          disabled={payingCreditId === row.id}
+                          onClick={() => void markCreditPaid(row)}
+                        >
+                          {payingCreditId === row.id ? "…" : "Paid"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                {unifiedInvoices.filter((row) => (row.paymentMethod || "").toUpperCase() === "CREDIT" && !isRefundedStatus(row.refundStatus)).length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="text-center text-muted-foreground">
+                      No invoices are waiting on credit.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {!loading && tab === "reservation" && (
         <section className="hms-section-card space-y-4">
@@ -1307,17 +1604,33 @@ export default function InvoicesPage() {
           <p className="text-sm text-muted-foreground">
             Final invoices and fully paid event billing documents. Proformas and delivery notes are on their tabs.
           </p>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <label className="text-sm font-medium text-foreground" htmlFor="invoice-search">
-              Search invoices
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <label className="text-sm font-medium text-foreground sm:max-w-xs w-full" htmlFor="invoice-waiter">
+              Waiter
+              <select
+                id="invoice-waiter"
+                className="hms-input mt-1 w-full"
+                value={waiterFilter}
+                onChange={(e) => setWaiterFilter(e.target.value)}
+              >
+                <option value="">All waiters</option>
+                {waiterOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
             </label>
-            <input
-              id="invoice-search"
-              className="hms-input w-full sm:max-w-sm"
-              placeholder="Search invoice #, type, customer, reference..."
-              value={invoiceSearch}
-              onChange={(e) => setInvoiceSearch(e.target.value)}
-            />
+            <label className="text-sm font-medium text-foreground w-full sm:max-w-sm" htmlFor="invoice-search">
+              Search invoices
+              <input
+                id="invoice-search"
+                className="hms-input mt-1 w-full"
+                placeholder="Search invoice #, type, customer, waiter..."
+                value={invoiceSearch}
+                onChange={(e) => setInvoiceSearch(e.target.value)}
+              />
+            </label>
           </div>
           <div className="hms-table-wrap">
             <table className="hms-table">
@@ -1327,6 +1640,7 @@ export default function InvoicesPage() {
                   <th>Invoice #</th>
                   <th>Reference</th>
                   <th>Customer</th>
+                  <th>Waiter</th>
                   <th>Payment</th>
                   <th>Total</th>
                   <th>Created</th>
@@ -1340,6 +1654,7 @@ export default function InvoicesPage() {
                     <td className="font-medium">{row.invoiceNumber}</td>
                     <td>{row.reference}</td>
                     <td>{row.customer}</td>
+                    <td>{row.waiterName || "—"}</td>
                     <td>{row.paymentMethod ?? (row.action === "pos" ? "CASH" : "—")}</td>
                     <td>
                       {formatMoney(Number(row.totalAmount))} {row.currency}
@@ -1452,8 +1767,8 @@ export default function InvoicesPage() {
                 ))}
                 {filteredUnifiedInvoices.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="text-center text-muted-foreground">
-                      No invoices found.
+                    <td colSpan={9} className="text-center text-muted-foreground">
+                      {waiterFilter ? `No invoices for ${waiterFilter}.` : "No invoices found."}
                     </td>
                   </tr>
                 )}
@@ -1832,9 +2147,34 @@ export default function InvoicesPage() {
           <div>
             <h2 className="mb-1 text-lg font-semibold">Deliveries</h2>
             <p className="mb-3 text-sm text-muted-foreground">
-              Waiter and mobile POS orders land here first. Use <strong>Make invoice</strong> when the guest pays.
-              Event contracts with no payment also appear below.
+              Waiter and mobile POS orders land here first. Use <strong>Make invoice</strong> for one delivery.
+              Tick the deliveries you want together, then use <strong>Make one invoice</strong>.
             </p>
+            {selectedDeliveryIds.length > 0 ? (
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  {selectedDeliveryIds.length} selected
+                </span>
+                <button
+                  type="button"
+                  className="hms-btn-solid hms-btn-sm"
+                  onClick={() =>
+                    void convertDeliveryToInvoice(
+                      deliveries.filter((d) => selectedDeliveryIds.includes(d.deliveryOrderId)),
+                    )
+                  }
+                >
+                  {selectedDeliveryIds.length > 1 ? "Make one invoice" : "Make invoice"}
+                </button>
+                <button
+                  type="button"
+                  className="hms-btn-outline hms-btn-sm"
+                  onClick={() => setSelectedDeliveryIds([])}
+                >
+                  Clear
+                </button>
+              </div>
+            ) : null}
             {(deliveriesLoading || eventDocsLoading) && (
               <p className="text-sm text-muted-foreground" aria-live="polite">
                 Loading deliveries...
@@ -1844,28 +2184,50 @@ export default function InvoicesPage() {
               <table className="hms-table">
                 <thead>
                   <tr>
+                    <th className="w-10">
+                      <span className="sr-only">Select</span>
+                    </th>
                     <th>Delivery #</th>
                     <th>Source</th>
                     <th>Reference</th>
                     <th>Client</th>
                     <th>Location</th>
+                    <th>Waiter</th>
                     <th>Total</th>
                     <th>Created</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {deliveries.map((row) => (
+                  {deliveries.map((row) => {
+                    const checked = selectedDeliveryIds.includes(row.deliveryOrderId);
+                    return (
                     <tr key={`pos-${row.deliveryOrderId}`}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${row.deliveryNumber}`}
+                          checked={checked}
+                          onChange={() => toggleDeliverySelected(row.deliveryOrderId)}
+                        />
+                      </td>
                       <td className="font-medium">{row.deliveryNumber}</td>
                       <td>POS</td>
                       <td>{row.depotName}</td>
                       <td>{row.customerName || "Walk-in"}</td>
                       <td>{row.locationLabel || "-"}</td>
+                      <td>{row.waiterName || "—"}</td>
                       <td>{Number(row.totalAmount).toFixed(2)}</td>
                       <td>{new Date(row.createdAt).toLocaleString()}</td>
                       <td>
                         <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="hms-btn-outline hms-btn-sm"
+                            onClick={() => void viewDelivery(row)}
+                          >
+                            View delivery
+                          </button>
                           <button
                             type="button"
                             className="hms-btn-outline hms-btn-sm"
@@ -1876,21 +2238,24 @@ export default function InvoicesPage() {
                           <button
                             type="button"
                             className="hms-btn-solid hms-btn-sm"
-                            onClick={() => void convertDeliveryToInvoice(row)}
+                            onClick={() => void convertDeliveryToInvoice([row])}
                           >
                             Make invoice
                           </button>
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                   {eventDeliveries.map((row) => (
                     <tr key={`event-${row.id}`}>
+                      <td />
                       <td className="font-medium">{row.documentNumber}</td>
                       <td>Event</td>
                       <td>{row.eventName}</td>
                       <td>{row.contactPerson || row.groupName}</td>
                       <td>{row.groupName}</td>
+                      <td>—</td>
                       <td>
                         {Number(row.totalAmount).toFixed(2)} {row.currency}
                       </td>
@@ -1908,7 +2273,7 @@ export default function InvoicesPage() {
                   ))}
                   {deliveries.length + eventDeliveries.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="text-center text-muted-foreground">
+                      <td colSpan={10} className="text-center text-muted-foreground">
                         No delivery notes yet.
                       </td>
                     </tr>
@@ -2011,6 +2376,7 @@ export default function InvoicesPage() {
                     {" · "}
                     {viewListModal.reference}
                     {viewListModal.paymentMethod ? ` · ${viewListModal.paymentMethod}` : ""}
+                    {viewListModal.waiterName ? ` · Waiter ${viewListModal.waiterName}` : ""}
                   </p>
                 </div>
                 <button type="button" className="hms-btn-outline hms-btn-sm" onClick={() => closeViewListModal()}>
@@ -2179,6 +2545,55 @@ export default function InvoicesPage() {
                 onClick={() => void submitRefundFromModal()}
               >
                 {refundingSaleId ? "Processing refund…" : "Confirm refund"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewingDelivery && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-border bg-card p-5 shadow-xl">
+            <h3 className="text-lg font-semibold">{viewingDelivery.deliveryNumber}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {viewingDelivery.depotName} · {viewingDelivery.customerName || "Walk-in"} · {viewingDelivery.locationLabel || "No table"}
+            </p>
+            <p className="text-sm">Waiter: {viewingDelivery.waiterName || "—"}</p>
+            <div className="mt-3 overflow-x-auto">
+              <table className="hms-table w-full text-sm">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(viewingDelivery.lines ?? []).map((ln, i) => (
+                    <tr key={`${ln.productCode}-${i}`}>
+                      <td>{ln.productName}</td>
+                      <td>{Number(ln.quantity)}</td>
+                      <td>{Number(ln.lineTotal).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-3 text-right font-semibold">Total {Number(viewingDelivery.totalAmount).toFixed(2)}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="hms-btn-outline" onClick={() => setViewingDelivery(null)}>
+                Close
+              </button>
+              <button
+                type="button"
+                className="hms-btn-solid"
+                onClick={() => {
+                  const row = viewingDelivery;
+                  setViewingDelivery(null);
+                  void reprintDelivery(row);
+                }}
+              >
+                Print delivery
               </button>
             </div>
           </div>

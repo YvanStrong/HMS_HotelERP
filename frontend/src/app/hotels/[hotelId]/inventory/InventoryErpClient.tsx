@@ -448,6 +448,8 @@ export function InventoryErpClient() {
   const [formulaLineDraft, setFormulaLineDraft] = useState({ componentItemId: "", quantity: "", notes: "" });
   const [formulaLines, setFormulaLines] = useState<FabricationFormulaLine[]>([]);
   const [savingFormula, setSavingFormula] = useState(false);
+  const [editingFormulaId, setEditingFormulaId] = useState<string | null>(null);
+  const [opsItems, setOpsItems] = useState<ItemRow[]>([]);
   const [fabricationRunForm, setFabricationRunForm] = useState({
     formulaId: "",
     quantityProduced: "",
@@ -508,7 +510,7 @@ export function InventoryErpClient() {
   const loadExtensions = useCallback(async () => {
     if (!getToken()) return;
     try {
-      const [dash, mov, pos, wh, outlets, depotProducts, trf, supD] = await Promise.all([
+      const [dash, mov, pos, wh, outlets, depotProducts, trf, supD, allItems] = await Promise.all([
         apiFetch<DashboardPayload>(`/api/v1/hotels/${hotelId}/inventory/dashboard`),
         apiFetch<MovementRow[]>(`/api/v1/hotels/${hotelId}/inventory/movements?limit=150`),
         apiFetch<PoSummary[]>(`/api/v1/hotels/${hotelId}/inventory/purchase-orders`),
@@ -517,6 +519,7 @@ export function InventoryErpClient() {
         apiFetch<DepotProductStockRow[]>(`/api/v1/hotels/${hotelId}/inventory/depot-products`).catch(() => []),
         apiFetch<TransferRow[]>(`/api/v1/hotels/${hotelId}/inventory/stock-transfers`),
         apiFetch<SupplierDetail[]>(`/api/v1/hotels/${hotelId}/inventory/suppliers/detail`).catch(() => []),
+        apiFetch<ItemsPayload>(`/api/v1/hotels/${hotelId}/inventory/items`).catch(() => ({ data: [] })),
       ]);
       setDashboard(dash);
       setMovements(mov ?? []);
@@ -524,6 +527,7 @@ export function InventoryErpClient() {
       setWarehouses(wh ?? []);
       setMenuOutlets(Array.isArray(outlets) ? outlets : []);
       setDepotProductStocks(Array.isArray(depotProducts) ? depotProducts : []);
+      setOpsItems(Array.isArray(allItems?.data) ? allItems.data : []);
       setTransfers(trf ?? []);
       setSupplierDetails(Array.isArray(supD) ? supD : []);
       if (wh && wh.length > 0) {
@@ -550,6 +554,10 @@ export function InventoryErpClient() {
     () => items.filter((item) => item.stockType !== "NON_STOCK"),
     [items],
   );
+  const formulaStockItems = useMemo(() => {
+    const source = opsItems.length > 0 ? opsItems : items;
+    return source.filter((item) => item.stockType !== "NON_STOCK" && item.active !== false);
+  }, [opsItems, items]);
   const selectedTransferItem = useMemo(
     () => stockItems.find((item) => item.id === trItem) ?? null,
     [stockItems, trItem],
@@ -595,13 +603,13 @@ export function InventoryErpClient() {
       ]);
       setFabricationFormulas(formulas ?? []);
       setFabricationRuns(runs ?? []);
-      setFormulaForm((f) => ({ ...f, outputItemId: f.outputItemId || stockItems[0]?.id || "" }));
-      setFormulaLineDraft((d) => ({ ...d, componentItemId: d.componentItemId || stockItems[0]?.id || "" }));
+      setFormulaForm((f) => ({ ...f, outputItemId: f.outputItemId || formulaStockItems[0]?.id || "" }));
+      setFormulaLineDraft((d) => ({ ...d, componentItemId: d.componentItemId || formulaStockItems[0]?.id || "" }));
       setFabricationRunForm((f) => ({ ...f, formulaId: f.formulaId || formulas?.[0]?.id || "" }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Fabrication load failed");
     }
-  }, [hotelId, stockItems]);
+  }, [hotelId, formulaStockItems]);
 
   useEffect(() => {
     void load();
@@ -865,7 +873,7 @@ export function InventoryErpClient() {
   }
 
   function addFormulaLine() {
-    const component = stockItems.find((item) => item.id === formulaLineDraft.componentItemId);
+    const component = formulaStockItems.find((item) => item.id === formulaLineDraft.componentItemId);
     const quantity = Number(formulaLineDraft.quantity);
     if (!component || !Number.isFinite(quantity) || quantity <= 0) {
       setError("Choose an ingredient and enter a positive quantity.");
@@ -887,7 +895,37 @@ export function InventoryErpClient() {
         notes: formulaLineDraft.notes.trim() || null,
       },
     ]);
-    setFormulaLineDraft({ componentItemId: stockItems[0]?.id || "", quantity: "", notes: "" });
+    setFormulaLineDraft({ componentItemId: formulaStockItems[0]?.id || "", quantity: "", notes: "" });
+  }
+
+  function startEditFormula(formula: FabricationFormula) {
+    setEditingFormulaId(formula.id);
+    setFormulaForm({
+      name: formula.name,
+      outputItemId: formula.outputItemId,
+      outputQuantity: String(formula.outputQuantity ?? 1),
+      notes: formula.notes ?? "",
+    });
+    setFormulaLines(
+      (formula.lines ?? []).map((line) => ({
+        id: line.id,
+        componentItemId: line.componentItemId,
+        componentName: line.componentName,
+        componentSku: line.componentSku,
+        quantity: line.quantity,
+        currentStock: line.currentStock,
+        unitOfMeasure: line.unitOfMeasure,
+        notes: line.notes,
+      })),
+    );
+    setMsg(null);
+    setError(null);
+  }
+
+  function cancelEditFormula() {
+    setEditingFormulaId(null);
+    setFormulaForm({ name: "", outputItemId: formulaStockItems[0]?.id || "", outputQuantity: "1", notes: "" });
+    setFormulaLines([]);
   }
 
   async function createFabricationFormula(e: React.FormEvent) {
@@ -900,26 +938,36 @@ export function InventoryErpClient() {
     setError(null);
     setMsg(null);
     try {
-      await apiFetch<FabricationFormula>(`/api/v1/hotels/${hotelId}/inventory/fabrication/formulas`, {
-        method: "POST",
-        body: JSON.stringify({
-          name: formulaForm.name.trim(),
-          outputItemId: formulaForm.outputItemId,
-          outputQuantity: Number(formulaForm.outputQuantity) || 1,
-          notes: formulaForm.notes.trim() || null,
-          lines: formulaLines.map((line) => ({
-            componentItemId: line.componentItemId,
-            quantity: Number(line.quantity),
-            notes: line.notes || null,
-          })),
-        }),
-      });
-      setMsg("Fabrication formula saved.");
-      setFormulaForm({ name: "", outputItemId: stockItems[0]?.id || "", outputQuantity: "1", notes: "" });
+      const body = {
+        name: formulaForm.name.trim(),
+        outputItemId: formulaForm.outputItemId,
+        outputQuantity: Number(formulaForm.outputQuantity) || 1,
+        notes: formulaForm.notes.trim() || null,
+        lines: formulaLines.map((line) => ({
+          componentItemId: line.componentItemId,
+          quantity: Number(line.quantity),
+          notes: line.notes || null,
+        })),
+      };
+      if (editingFormulaId) {
+        await apiFetch<FabricationFormula>(
+          `/api/v1/hotels/${hotelId}/inventory/fabrication/formulas/${editingFormulaId}`,
+          { method: "PUT", body: JSON.stringify(body) },
+        );
+        setMsg("Fabrication formula updated.");
+      } else {
+        await apiFetch<FabricationFormula>(`/api/v1/hotels/${hotelId}/inventory/fabrication/formulas`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        setMsg("Fabrication formula saved.");
+      }
+      setEditingFormulaId(null);
+      setFormulaForm({ name: "", outputItemId: formulaStockItems[0]?.id || "", outputQuantity: "1", notes: "" });
       setFormulaLines([]);
       await loadFabrication();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Create fabrication formula failed");
+      setError(e instanceof Error ? e.message : "Save fabrication formula failed");
     } finally {
       setSavingFormula(false);
     }
@@ -1224,6 +1272,22 @@ export function InventoryErpClient() {
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Update failed");
+    }
+  }
+
+  async function deleteProduct(it: ItemRow) {
+    if (!window.confirm(`Delete "${it.name}"? It will be removed from inventory and POS. Past sales stay on record.`)) {
+      return;
+    }
+    setError(null);
+    setMsg(null);
+    try {
+      await apiFetch(`/api/v1/hotels/${hotelId}/inventory/items/${it.id}`, { method: "DELETE" });
+      setMsg("Product deleted.");
+      if (editItem?.id === it.id) setEditItem(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
     }
   }
 
@@ -1557,6 +1621,7 @@ export function InventoryErpClient() {
                       {c.name}
                     </option>
                   ))}
+                  <option value="DEACTIVATED">Deactivated</option>
                 </select>
               </div>
               <div className="flex items-end gap-2">
@@ -1573,6 +1638,11 @@ export function InventoryErpClient() {
 
           <div className="panel rounded-xl border border-border/60 bg-card p-4 shadow-soft">
             <p style={{ color: "var(--muted)", marginTop: 0 }}>{items.length} product(s)</p>
+            {categoryFilter === "DEACTIVATED" ? (
+              <p className="text-sm text-muted-foreground mb-2">
+                These products are hidden from POS. Edit one and turn Active on to sell it again, or delete it.
+              </p>
+            ) : null}
             <table>
               <thead>
                 <tr>
@@ -1603,9 +1673,14 @@ export function InventoryErpClient() {
                     <td className="text-xs">{productWarehouseLabels.get(r.id) ?? "—"}</td>
                     <td>{r.stockType === "NON_STOCK" ? "—" : r.currentStock ?? "—"}</td>
                     <td>
-                      <button type="button" className="hms-btn-outline text-xs" onClick={() => openEdit(r)}>
-                        Edit
-                      </button>
+                      <div className="flex flex-wrap gap-1">
+                        <button type="button" className="hms-btn-outline text-xs" onClick={() => openEdit(r)}>
+                          Edit
+                        </button>
+                        <button type="button" className="hms-btn-outline text-xs" onClick={() => void deleteProduct(r)}>
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1859,13 +1934,13 @@ export function InventoryErpClient() {
                 <label>Item</label>
                 <select value={adjust.itemId} onChange={(e) => setAdjust((a) => ({ ...a, itemId: e.target.value }))}>
                   <option value="">Select…</option>
-                  {stockItems.map((i) => (
+                  {formulaStockItems.map((i) => (
                     <option key={i.id} value={i.id}>
                       {i.name} ({i.sku})
                     </option>
                   ))}
                 </select>
-                {stockItems.length === 0 ? (
+                {formulaStockItems.length === 0 ? (
                   <p className="mt-1 text-xs text-muted-foreground">
                     No stock products available. Non-stock products are not shown here.
                   </p>
@@ -1939,7 +2014,9 @@ export function InventoryErpClient() {
       {tab === "fabrication" && (
         <div className="space-y-4">
           <div className="rounded-xl border border-border/60 bg-card p-4 shadow-soft">
-            <h2 className="text-lg font-semibold mb-2">Fabrication formula</h2>
+            <h2 className="text-lg font-semibold mb-2">
+              {editingFormulaId ? "Edit fabrication formula" : "Fabrication formula"}
+            </h2>
             <p className="mb-3 text-sm text-muted-foreground">
               Define ingredients for one finished product. Example: one doughnut uses flour, eggs, sugar, milk,
               oil, and other ingredients.
@@ -1961,7 +2038,7 @@ export function InventoryErpClient() {
                     onChange={(e) => setFormulaForm((f) => ({ ...f, outputItemId: e.target.value }))}
                   >
                     <option value="">Choose stock product...</option>
-                    {stockItems.map((item) => (
+                    {formulaStockItems.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.name} ({item.sku ?? "—"})
                       </option>
@@ -1988,7 +2065,7 @@ export function InventoryErpClient() {
                     onChange={(e) => setFormulaLineDraft((d) => ({ ...d, componentItemId: e.target.value }))}
                   >
                     <option value="">Choose ingredient...</option>
-                    {stockItems
+                    {formulaStockItems
                       .filter((item) => item.id !== formulaForm.outputItemId)
                       .map((item) => (
                         <option key={item.id} value={item.id}>
@@ -2059,9 +2136,20 @@ export function InventoryErpClient() {
                 onChange={(e) => setFormulaForm((f) => ({ ...f, notes: e.target.value }))}
                 placeholder="Formula notes (optional)"
               />
-              <button type="submit" className="hms-btn-solid text-sm" disabled={savingFormula}>
-                {savingFormula ? "Saving formula..." : "Save formula"}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button type="submit" className="hms-btn-solid text-sm" disabled={savingFormula}>
+                  {savingFormula
+                    ? "Saving formula..."
+                    : editingFormulaId
+                      ? "Update formula"
+                      : "Save formula"}
+                </button>
+                {editingFormulaId ? (
+                  <button type="button" className="hms-btn-outline text-sm" onClick={cancelEditFormula}>
+                    Cancel edit
+                  </button>
+                ) : null}
+              </div>
             </form>
           </div>
 
@@ -2180,6 +2268,7 @@ export function InventoryErpClient() {
                       <th>Ingredients</th>
                       <th>Notes</th>
                       <th>Status</th>
+                      <th />
                     </tr>
                   </thead>
                   <tbody>
@@ -2225,6 +2314,11 @@ export function InventoryErpClient() {
                           <span className={f.active ? "badge badge-success" : "badge badge-neutral"}>
                             {f.active ? "Active" : "Inactive"}
                           </span>
+                        </td>
+                        <td>
+                          <button type="button" className="hms-btn-outline text-xs" onClick={() => startEditFormula(f)}>
+                            Edit
+                          </button>
                         </td>
                       </tr>
                     ))}

@@ -1,6 +1,7 @@
 package com.hms.service;
 
 import com.hms.api.dto.InventoryDtos;
+import com.hms.domain.DepotType;
 import com.hms.domain.StockTransactionType;
 import com.hms.entity.DepotProduct;
 import com.hms.entity.Hotel;
@@ -42,8 +43,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -201,6 +204,8 @@ public class InvExtService {
         }
         item.setCurrentStock(after);
         itemRepository.save(item);
+        Hotel hotel = hotelRepository.findById(hotelId).orElseThrow(() -> notFound("Hotel"));
+        applyOutletStockDelta(hotelId, hotel, item, after.subtract(before));
 
         StockTransaction tx = new StockTransaction();
         tx.setItem(item);
@@ -248,6 +253,49 @@ public class InvExtService {
         f.setName(req.name().trim());
         f.setOutputQuantity(outputQty);
         f.setNotes(cleanNullable(req.notes()));
+        for (InventoryDtos.FabricationFormulaLineRequest lineReq : req.lines()) {
+            if (lineReq.quantity() == null || lineReq.quantity().signum() <= 0) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Ingredient quantity must be positive");
+            }
+            InventoryItem component = itemRepository.findByIdAndHotel_Id(lineReq.componentItemId(), hotelId)
+                    .orElseThrow(() -> notFound("Ingredient product"));
+            ensureStockManaged(component, "Ingredient product");
+            if (component.getId().equals(output.getId())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Finished product cannot also be an ingredient");
+            }
+            InvFabricationFormulaLine line = new InvFabricationFormulaLine();
+            line.setFormula(f);
+            line.setComponent(component);
+            line.setQuantity(lineReq.quantity());
+            line.setNotes(cleanNullable(lineReq.notes()));
+            f.getLines().add(line);
+        }
+        f = fabricationFormulaRepository.save(f);
+        return toFabricationFormulaItem(f);
+    }
+
+    @Transactional
+    public InventoryDtos.FabricationFormulaItem updateFabricationFormula(
+            UUID hotelId, String hotelHeader, UUID formulaId, InventoryDtos.FabricationFormulaCreateRequest req) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (req.lines() == null || req.lines().isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Add at least one ingredient line");
+        }
+        BigDecimal outputQty = req.outputQuantity() == null ? BigDecimal.ONE : req.outputQuantity();
+        if (outputQty.signum() <= 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "outputQuantity must be positive");
+        }
+        InvFabricationFormula f = fabricationFormulaRepository
+                .findDetailedByIdAndHotelId(formulaId, hotelId)
+                .orElseThrow(() -> notFound("Fabrication formula"));
+        InventoryItem output = itemRepository.findByIdAndHotel_Id(req.outputItemId(), hotelId)
+                .orElseThrow(() -> notFound("Output product"));
+        ensureStockManaged(output, "Output product");
+        f.setOutputItem(output);
+        f.setName(req.name().trim());
+        f.setOutputQuantity(outputQty);
+        f.setNotes(cleanNullable(req.notes()));
+        f.getLines().clear();
         for (InventoryDtos.FabricationFormulaLineRequest lineReq : req.lines()) {
             if (lineReq.quantity() == null || lineReq.quantity().signum() <= 0) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "Ingredient quantity must be positive");
@@ -327,6 +375,7 @@ public class InvExtService {
             BigDecimal after = before.subtract(required);
             component.setCurrentStock(after);
             itemRepository.save(component);
+            consumeOutletStock(hotelId, component, required);
 
             InvFabricationRunLine runLine = new InvFabricationRunLine();
             runLine.setRun(run);
@@ -349,6 +398,8 @@ public class InvExtService {
         BigDecimal outputBefore = output.getCurrentStock();
         output.setCurrentStock(outputBefore.add(req.quantityProduced()).setScale(4, RoundingMode.HALF_UP));
         itemRepository.save(output);
+        Hotel hotel = hotelRepository.findById(hotelId).orElseThrow(() -> notFound("Hotel"));
+        addOutletStock(hotelId, hotel, output, req.quantityProduced());
 
         StockTransaction outTx = new StockTransaction();
         outTx.setItem(output);
@@ -416,9 +467,10 @@ public class InvExtService {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         for (InventoryItem it : allItems) {
             BigDecimal stock = it.getCurrentStock();
-            if (stock.signum() <= 0) {
+            boolean nonStock = "NON_STOCK".equals(it.getStockType());
+            if (!nonStock && stock.signum() <= 0) {
                 outCount++;
-            } else if (it.getReorderPoint() != null && stock.compareTo(it.getReorderPoint()) < 0) {
+            } else if (!nonStock && it.getReorderPoint() != null && stock.compareTo(it.getReorderPoint()) < 0) {
                 lowCount++;
             }
             String catName = it.getCategory() != null ? it.getCategory().getName() : null;
@@ -431,11 +483,11 @@ public class InvExtService {
                         it.getId(), it.getName(), it.getSku(), catName,
                         stock, it.getReorderPoint(), "EXPIRING_SOON"));
             }
-            if (stock.signum() <= 0) {
+            if (!nonStock && stock.signum() <= 0) {
                 alerts.add(new InventoryDtos.LowStockAlert(
                         it.getId(), it.getName(), it.getSku(), catName,
                         stock, it.getReorderPoint(), "OUT_OF_STOCK"));
-            } else if (it.getReorderPoint() != null && stock.compareTo(it.getReorderPoint()) < 0) {
+            } else if (!nonStock && it.getReorderPoint() != null && stock.compareTo(it.getReorderPoint()) < 0) {
                 alerts.add(new InventoryDtos.LowStockAlert(
                         it.getId(), it.getName(), it.getSku(), catName,
                         stock, it.getReorderPoint(), "LOW_STOCK"));
@@ -907,6 +959,7 @@ public class InvExtService {
         long totalCustomers = customerRepository.findByHotel_IdAndActiveTrueOrderByNameAsc(hotelId).size();
 
         List<InventoryDtos.DashboardItem> lowItems = itemRepository.findByHotel_IdAndActiveTrueOrderByNameAsc(hotelId).stream()
+                .filter(i -> i.getStockType() == null || !"NON_STOCK".equals(i.getStockType()))
                 .filter(i -> i.getCurrentStock().signum() <= 0 ||
                         (i.getReorderPoint() != null && i.getCurrentStock().compareTo(i.getReorderPoint()) < 0))
                 .limit(8)
@@ -1236,6 +1289,125 @@ public class InvExtService {
 
     private static BigDecimal scale2(BigDecimal value) {
         return (value == null ? BigDecimal.ZERO : value).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** Finished goods from fabrication / stock adjustment must land on an outlet so POS can sell them. */
+    private void addOutletStock(UUID hotelId, Hotel hotel, InventoryItem item, BigDecimal qty) {
+        if (qty == null || qty.signum() <= 0) return;
+        if ("NON_STOCK".equalsIgnoreCase(item.getStockType())) return;
+        DepotProduct p = ensurePosProduct(hotelId, hotel, item);
+        if ("NON_STOCK".equalsIgnoreCase(p.getStockType())) {
+            p.setStockType("STOCK");
+        }
+        BigDecimal cur = p.getStockQty() == null ? BigDecimal.ZERO : p.getStockQty();
+        p.setStockQty(cur.add(qty).setScale(3, RoundingMode.HALF_UP));
+        p.setActive(true);
+        depotProductRepository.save(p);
+    }
+
+    private void applyOutletStockDelta(UUID hotelId, Hotel hotel, InventoryItem item, BigDecimal delta) {
+        if (delta == null || delta.signum() == 0) return;
+        if (delta.signum() > 0) {
+            addOutletStock(hotelId, hotel, item, delta);
+        } else {
+            consumeOutletStock(hotelId, item, delta.abs());
+        }
+    }
+
+    private void consumeOutletStock(UUID hotelId, InventoryItem item, BigDecimal qty) {
+        if (qty == null || qty.signum() <= 0) return;
+        List<DepotProduct> linked = new ArrayList<>(
+                depotProductRepository.findByHotel_IdAndInventoryItem_Id(hotelId, item.getId()));
+        UUID principalId = inventoryDepotRepository
+                .findByHotel_IdAndCodeIgnoreCase(hotelId, "PRINC")
+                .or(() -> inventoryDepotRepository.findByHotel_IdAndCodeIgnoreCase(hotelId, "PRINCIPAL"))
+                .map(InventoryDepot::getId)
+                .orElse(null);
+        linked.sort(Comparator.comparing((DepotProduct p) -> {
+            if (principalId != null && p.getDepot() != null && principalId.equals(p.getDepot().getId())) {
+                return 0;
+            }
+            return 1;
+        }));
+        BigDecimal remaining = qty;
+        for (DepotProduct p : linked) {
+            if (remaining.signum() <= 0) break;
+            if ("NON_STOCK".equalsIgnoreCase(p.getStockType())) continue;
+            BigDecimal have = p.getStockQty() == null ? BigDecimal.ZERO : p.getStockQty();
+            if (have.signum() <= 0) continue;
+            BigDecimal take = have.min(remaining);
+            p.setStockQty(have.subtract(take).setScale(3, RoundingMode.HALF_UP));
+            depotProductRepository.save(p);
+            remaining = remaining.subtract(take);
+        }
+    }
+
+    private DepotProduct ensurePosProduct(UUID hotelId, Hotel hotel, InventoryItem item) {
+        List<DepotProduct> linked = depotProductRepository.findByHotel_IdAndInventoryItem_Id(hotelId, item.getId());
+        InventoryDepot principal = principalOrFirstDepot(hotelId, hotel);
+        return linked.stream()
+                .filter(p -> p.getDepot() != null && p.getDepot().getId().equals(principal.getId()))
+                .findFirst()
+                .or(() -> linked.stream().findFirst())
+                .orElseGet(() -> createLinkedDepotProduct(hotelId, hotel, principal, item));
+    }
+
+    private InventoryDepot principalOrFirstDepot(UUID hotelId, Hotel hotel) {
+        return inventoryDepotRepository
+                .findByHotel_IdAndCodeIgnoreCase(hotelId, "PRINC")
+                .or(() -> inventoryDepotRepository.findByHotel_IdAndCodeIgnoreCase(hotelId, "PRINCIPAL"))
+                .or(() -> inventoryDepotRepository.findByHotel_IdOrderByNameAsc(hotelId).stream()
+                        .filter(InventoryDepot::isActive)
+                        .findFirst())
+                .orElseGet(() -> {
+                    InventoryDepot d = new InventoryDepot();
+                    d.setHotel(hotel);
+                    d.setName("Principal");
+                    d.setCode("PRINC");
+                    d.setDepotType(DepotType.PRINCIPAL);
+                    d.setActive(true);
+                    return inventoryDepotRepository.save(d);
+                });
+    }
+
+    private DepotProduct createLinkedDepotProduct(UUID hotelId, Hotel hotel, InventoryDepot depot, InventoryItem item) {
+        DepotProduct p = new DepotProduct();
+        p.setHotel(hotel);
+        p.setDepot(depot);
+        p.setInventoryItem(item);
+        p.setProductNumber(depotProductRepository.findMaxProductNumber(hotelId) + 1);
+        p.setProductName(item.getName());
+        p.setProductCode(nextOutletProductCode(hotelId, item.getName()));
+        p.setBatchNo("NA");
+        p.setCostPrice(scale2(item.getUnitCost()));
+        p.setSellingPrice(scale2(item.getSellingPrice() != null ? item.getSellingPrice() : item.getUnitCost()));
+        p.setStockType("STOCK");
+        p.setStockQty(BigDecimal.ZERO.setScale(3, RoundingMode.HALF_UP));
+        p.setMenuName(item.getCategory() != null && item.getCategory().getCode() != null
+                ? item.getCategory().getCode()
+                : "GENERAL");
+        p.setTaxable(item.getTaxCategory() == null || !"A".equalsIgnoreCase(item.getTaxCategory()));
+        p.setPhotoUrl(item.getImageUrl());
+        p.setActive(true);
+        return depotProductRepository.save(p);
+    }
+
+    private String nextOutletProductCode(UUID hotelId, String productName) {
+        String prefix = prefixFromName(productName);
+        int max = 0;
+        for (DepotProduct p :
+                depotProductRepository.findByHotel_IdAndProductCodeStartingWithIgnoreCase(hotelId, prefix)) {
+            String code = p.getProductCode();
+            if (code == null || code.length() <= prefix.length()) continue;
+            String tail = code.substring(prefix.length());
+            if (!tail.chars().allMatch(Character::isDigit)) continue;
+            try {
+                max = Math.max(max, Integer.parseInt(tail));
+            } catch (NumberFormatException ignored) {
+                // skip
+            }
+        }
+        return prefix + String.format(Locale.ROOT, "%03d", max + 1);
     }
 
     private static void ensureStockManaged(InventoryItem item, String label) {

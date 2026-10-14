@@ -468,7 +468,7 @@ export default function StaffSelfOrdersPage() {
           Kiosk = guest ordering. TV screen = kitchen board (optional secret below).
         </p>
         <div className="flex flex-wrap gap-8 justify-start">
-          {kioskUrl ? <SelfOrderQrBlock value={kioskUrl} caption="Scan to open self-order (kiosk)" /> : null}
+          {kioskUrl ? <SelfOrderQrBlock value={kioskUrl} caption="Scan to see the menu" /> : null}
           {screenUrlForQr ? (
             <SelfOrderQrBlock value={screenUrlForQr} caption="Kitchen TV (includes board key)" />
           ) : (

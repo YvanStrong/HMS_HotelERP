@@ -39,13 +39,18 @@ import com.hms.security.TenantAccessService;
 import com.hms.web.ApiException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.Year;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -80,11 +85,19 @@ public class InventoryDepotService {
 
     @org.springframework.context.annotation.Lazy
     @org.springframework.beans.factory.annotation.Autowired
+    private CompanyObligationService companyObligationService;
+
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired
     private EbmSaleEventService ebmSaleEventService;
 
     @org.springframework.context.annotation.Lazy
     @org.springframework.beans.factory.annotation.Autowired
     private com.hms.repository.TaxableSaleEventRepository taxableSaleEventRepository;
+
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired
+    private MediaStorageService mediaStorageService;
 
     public InventoryDepotService(
             TenantAccessService tenantAccessService,
@@ -268,7 +281,7 @@ public class InventoryDepotService {
         } else {
             p.setStockQty(req.stockQty() == null ? BigDecimal.ZERO : req.stockQty().setScale(3, RoundingMode.HALF_UP));
         }
-        p.setPhotoUrl(req.photoUrl());
+        p.setPhotoUrl(mediaStorageService != null ? mediaStorageService.persistImageUrl(req.photoUrl()) : req.photoUrl());
         p.setMenuName(normalizeMenuName(req.menuName()));
         p.setTaxable(req.taxable() == null || Boolean.TRUE.equals(req.taxable()));
         if (req.inventoryItemId() != null) {
@@ -325,7 +338,9 @@ public class InventoryDepotService {
             p.setSellingPrice(scale2(req.sellingPrice()));
         }
         if (req.photoUrl() != null) {
-            p.setPhotoUrl(req.photoUrl().isBlank() ? null : req.photoUrl().trim());
+            p.setPhotoUrl(req.photoUrl().isBlank()
+                    ? null
+                    : (mediaStorageService != null ? mediaStorageService.persistImageUrl(req.photoUrl()) : req.photoUrl().trim()));
         }
         if (req.menuName() != null) {
             p.setMenuName(normalizeMenuName(req.menuName()));
@@ -459,6 +474,18 @@ public class InventoryDepotService {
         applyPromotionToSale(hotelId, sale, scale2(total), req.promoCode());
         applyForeignCurrencyPayment(sale, req);
         sale = depotSaleRepository.save(sale);
+        if ("CREDIT".equalsIgnoreCase(sale.getPaymentMethod())) {
+            String party = sale.getCustomerName() == null || sale.getCustomerName().isBlank()
+                    ? "Walk-in"
+                    : sale.getCustomerName().trim();
+            companyObligationService.recordPosCredit(
+                    hotelId,
+                    party,
+                    sale.getSaleNumber(),
+                    sale.getTotalAmount(),
+                    LocalDate.now(zone(hotel)),
+                    tenantAccessService.currentUser().getUsername());
+        }
         RoomCharge folioCharge = null;
         if (Boolean.TRUE.equals(req.chargeToRoom())) {
             if (req.reservationId() == null) {
@@ -519,8 +546,33 @@ public class InventoryDepotService {
                         s.getTotalAmount(),
                         s.getCreatedAt(),
                         s.getPaymentMethod(),
-                        s.getStatus()))
+                        s.getStatus(),
+                        staffLabel(s.getStaffUser())))
                 .toList();
+    }
+
+    @Transactional
+    public InventoryDepotDtos.SaleRow markSalePaid(UUID hotelId, String hotelHeader, UUID saleId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        DepotSale sale = depotSaleRepository
+                .findByIdAndHotel_Id(saleId, hotelId)
+                .orElseThrow(() -> notFound("Sale"));
+        if (!"CREDIT".equalsIgnoreCase(sale.getPaymentMethod())) {
+            throw new ApiException(HttpStatus.CONFLICT, "This invoice is not waiting for credit payment");
+        }
+        sale.setPaymentMethod("CASH");
+        sale = depotSaleRepository.save(sale);
+        companyObligationService.settleByReference(hotelId, sale.getSaleNumber());
+        return new InventoryDepotDtos.SaleRow(
+                sale.getId(),
+                sale.getSaleNumber(),
+                sale.getDepot().getName(),
+                sale.getCustomerName(),
+                sale.getTotalAmount(),
+                sale.getCreatedAt(),
+                sale.getPaymentMethod(),
+                sale.getStatus(),
+                staffLabel(sale.getStaffUser()));
     }
 
     @Transactional(readOnly = true)
@@ -546,6 +598,8 @@ public class InventoryDepotService {
         String ebmSdc = null;
         String ebmMrc = null;
         String ebmStatus = null;
+        String ebmInternal = null;
+        String ebmInvc = null;
         try {
             if (taxableSaleEventRepository != null) {
                 var fiscal = taxableSaleEventRepository
@@ -558,6 +612,8 @@ public class InventoryDepotService {
                     ebmSdc = fiscal.getEbmSdcId();
                     ebmMrc = fiscal.getEbmMrcNo();
                     ebmStatus = fiscal.getEbmStatus();
+                    ebmInternal = fiscal.getEbmInternalData();
+                    ebmInvc = fiscal.getEbmInvoiceNo();
                 }
             }
         } catch (Exception ignored) {
@@ -585,7 +641,9 @@ public class InventoryDepotService {
                 ebmQr,
                 ebmSdc,
                 ebmMrc,
-                ebmStatus);
+                ebmStatus,
+                ebmInternal,
+                ebmInvc);
     }
 
     @Transactional
@@ -650,6 +708,9 @@ public class InventoryDepotService {
 
         sale.setStatus("REFUNDED");
         depotSaleRepository.save(sale);
+        if ("CREDIT".equalsIgnoreCase(sale.getPaymentMethod())) {
+            companyObligationService.settleByReference(hotelId, sale.getSaleNumber());
+        }
         refund = depotSaleRefundRepository.save(refund);
 
         try {
@@ -818,38 +879,91 @@ public class InventoryDepotService {
         return toDeliveryOrderDetail(order);
     }
 
-    @Transactional
-    public InventoryDepotDtos.CreateSaleResponse convertDeliveryToSale(UUID hotelId, String hotelHeader, UUID orderId) {
+    @Transactional(readOnly = true)
+    public InventoryDepotDtos.DeliveryOrderDetailResponse getCombinedDeliveryDetail(
+            UUID hotelId, String hotelHeader, UUID orderId) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
-        PosDeliveryOrder order = posDeliveryOrderRepository
+        PosDeliveryOrder seed = posDeliveryOrderRepository
                 .findFetchedByIdAndHotelId(orderId, hotelId)
                 .orElseThrow(() -> notFound("Delivery order"));
-        if (!"PENDING".equals(order.getStatus())) {
-            throw new ApiException(HttpStatus.CONFLICT, "Only pending delivery orders can be converted to invoice");
+        List<PosDeliveryOrder> batch = pendingTableBatch(hotelId, seed);
+        return toCombinedDeliveryDetail(batch);
+    }
+
+    @Transactional
+    public InventoryDepotDtos.CreateSaleResponse convertDeliveriesToSale(
+            UUID hotelId, String hotelHeader, List<UUID> orderIds) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        if (orderIds == null || orderIds.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Select at least one delivery");
+        }
+        List<UUID> distinct = orderIds.stream().filter(id -> id != null).distinct().toList();
+        if (distinct.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Select at least one delivery");
+        }
+        Map<UUID, PosDeliveryOrder> byId = posDeliveryOrderRepository
+                .findFetchedByIdsAndHotelId(hotelId, distinct)
+                .stream()
+                .collect(Collectors.toMap(PosDeliveryOrder::getId, o -> o, (a, b) -> a));
+        List<PosDeliveryOrder> batch = new ArrayList<>();
+        for (UUID id : distinct) {
+            PosDeliveryOrder order = byId.get(id);
+            if (order == null) {
+                throw notFound("Delivery order");
+            }
+            if (!"PENDING".equals(order.getStatus())) {
+                throw new ApiException(HttpStatus.CONFLICT, "Only pending deliveries can be invoiced");
+            }
+            batch.add(order);
+        }
+        UUID depotId = batch.get(0).getDepot().getId();
+        for (PosDeliveryOrder order : batch) {
+            if (!depotId.equals(order.getDepot().getId())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Select deliveries from the same outlet");
+            }
         }
 
+        PosDeliveryOrder first = batch.get(0);
         DepotSale sale = new DepotSale();
-        sale.setHotel(order.getHotel());
-        sale.setDepot(order.getDepot());
+        sale.setHotel(first.getHotel());
+        sale.setDepot(first.getDepot());
         sale.setSaleNumber(nextSaleNumber(hotelId));
-        sale.setCustomerName(order.getCustomerName());
+        sale.setCustomerName(firstNonBlankCustomer(batch));
         sale.setPaymentMethod("CASH");
         sale.setCreatedBy(tenantAccessService.currentUser().getUsername());
+        AppUser deliveryWaiter = null;
+        for (PosDeliveryOrder order : batch) {
+            if (order.getStaffUser() != null) {
+                deliveryWaiter = order.getStaffUser();
+                break;
+            }
+        }
+        if (deliveryWaiter != null) {
+            sale.setStaffUser(deliveryWaiter);
+        } else {
+            resolveStaffUser(null, hotelId).ifPresent(sale::setStaffUser);
+        }
+
+        List<PosDeliveryOrderLine> allLines = new ArrayList<>();
+        for (PosDeliveryOrder order : batch) {
+            List<PosDeliveryOrderLine> ordered = order.getLines().stream()
+                    .sorted(Comparator.comparing(PosDeliveryOrderLine::getLineOrder))
+                    .toList();
+            allLines.addAll(ordered);
+        }
 
         BigDecimal total = BigDecimal.ZERO;
         int lineOrder = 0;
         List<InventoryDepotDtos.SaleLineRow> responseLines = new ArrayList<>();
-        for (PosDeliveryOrderLine dl : order.getLines().stream()
-                .sorted(Comparator.comparing(PosDeliveryOrderLine::getLineOrder))
-                .toList()) {
+        String deliveryRefs = batch.stream()
+                .map(PosDeliveryOrder::getDeliveryNumber)
+                .collect(Collectors.joining(", "));
+        for (PosDeliveryOrderLine dl : allLines) {
             DepotProduct p = depotProductRepository
                     .findByIdAndHotel_Id(dl.getProduct().getId(), hotelId)
                     .orElseThrow(() -> notFound("Product"));
             BigDecimal qty = dl.getQuantity();
             boolean managedStock = isManagedStockType(p.getStockType());
-            if (managedStock && p.getStockQty().compareTo(qty) < 0) {
-                throw new ApiException(HttpStatus.CONFLICT, "Insufficient stock for " + p.getProductCode());
-            }
 
             DepotSaleLine sl = new DepotSaleLine();
             sl.setSale(sale);
@@ -869,9 +983,6 @@ public class InventoryDepotService {
                     InventoryItem ii = inventoryItemRepository
                             .findByIdAndHotel_Id(p.getInventoryItem().getId(), hotelId)
                             .orElseThrow(() -> notFound("Inventory item"));
-                    if (ii.getCurrentStock().compareTo(qty) < 0) {
-                        throw new ApiException(HttpStatus.CONFLICT, "Insufficient ERP stock for linked item " + ii.getSku());
-                    }
                     ii.setCurrentStock(ii.getCurrentStock().subtract(qty).setScale(4, RoundingMode.HALF_UP));
                     inventoryItemRepository.save(ii);
                     StockTransaction st = new StockTransaction();
@@ -879,9 +990,9 @@ public class InventoryDepotService {
                     st.setType(StockTransactionType.CONSUMPTION);
                     st.setQuantity(qty);
                     st.setReference("MENU_SALE:" + sale.getSaleNumber());
-                    st.setNotes("Converted from delivery " + order.getDeliveryNumber());
+                    st.setNotes("Converted from deliveries " + deliveryRefs);
                     st.setPerformedBy(tenantAccessService.currentUser().getUsername());
-                    st.setFromLocation(order.getDepot().getName());
+                    st.setFromLocation(first.getDepot().getName());
                     stockTransactionRepository.save(st);
                 }
             }
@@ -890,28 +1001,121 @@ public class InventoryDepotService {
         }
 
         sale.setTotalAmount(scale2(total));
-        copyPromotionOntoSale(sale, order.getSubtotalAmount(), order.getDiscountAmount(), order.getPromoCode(), order.getPromotion());
+        BigDecimal subtotalSum = batch.stream()
+                .map(o -> o.getSubtotalAmount() != null ? o.getSubtotalAmount() : o.getTotalAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal discountSum = batch.stream()
+                .map(o -> o.getDiscountAmount() != null ? o.getDiscountAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        String promoJoined = batch.stream()
+                .map(PosDeliveryOrder::getPromoCode)
+                .filter(c -> c != null && !c.isBlank())
+                .distinct()
+                .collect(Collectors.joining(", "));
+        copyPromotionOntoSale(
+                sale,
+                subtotalSum,
+                discountSum,
+                promoJoined.isBlank() ? first.getPromoCode() : promoJoined,
+                first.getPromotion());
         sale = depotSaleRepository.save(sale);
-        order.setSale(sale);
-        order.setStatus("INVOICED");
-        order.setInvoicedAt(java.time.Instant.now());
-        posDeliveryOrderRepository.save(order);
+        java.time.Instant now = java.time.Instant.now();
+        for (PosDeliveryOrder order : batch) {
+            order.setSale(sale);
+            order.setStatus("INVOICED");
+            order.setInvoicedAt(now);
+        }
+        posDeliveryOrderRepository.saveAll(batch);
+        String msg = batch.size() > 1
+                ? "Deliveries " + deliveryRefs + " combined into one invoice"
+                : "Delivery converted to invoice";
         return new InventoryDepotDtos.CreateSaleResponse(
                 sale.getId(),
                 sale.getSaleNumber(),
-                order.getDepot().getId(),
+                first.getDepot().getId(),
                 sale.getTotalAmount(),
                 sale.getCreatedAt(),
                 responseLines,
                 null,
                 sale.getPaymentMethod(),
-                "Delivery converted to invoice",
+                msg,
                 sale.getSubtotalAmount(),
                 sale.getDiscountAmount(),
                 sale.getPromoCode(),
                 sale.getPaymentCurrency(),
                 sale.getExchangeRate(),
                 sale.getForeignAmount());
+    }
+
+    private List<PosDeliveryOrder> pendingTableBatch(UUID hotelId, PosDeliveryOrder seed) {
+        String loc = seed.getLocationLabel();
+        if (loc == null || loc.isBlank()) {
+            return List.of(seed);
+        }
+        List<PosDeliveryOrder> found = posDeliveryOrderRepository.findPendingFetchedByHotelDepotAndLocation(
+                hotelId, seed.getDepot().getId(), loc.trim());
+        if (found == null || found.isEmpty()) {
+            return List.of(seed);
+        }
+        return found;
+    }
+
+    private static String firstNonBlankCustomer(List<PosDeliveryOrder> batch) {
+        for (PosDeliveryOrder o : batch) {
+            if (o.getCustomerName() != null && !o.getCustomerName().isBlank()) {
+                return o.getCustomerName().trim();
+            }
+        }
+        return "Walk-in";
+    }
+
+    private InventoryDepotDtos.DeliveryOrderDetailResponse toCombinedDeliveryDetail(List<PosDeliveryOrder> batch) {
+        PosDeliveryOrder first = batch.get(0);
+        List<InventoryDepotDtos.SaleLineRow> lineRows = new ArrayList<>();
+        BigDecimal total = BigDecimal.ZERO;
+        BigDecimal subtotal = BigDecimal.ZERO;
+        BigDecimal discount = BigDecimal.ZERO;
+        for (PosDeliveryOrder order : batch) {
+            total = total.add(order.getTotalAmount() != null ? order.getTotalAmount() : BigDecimal.ZERO);
+            subtotal = subtotal.add(order.getSubtotalAmount() != null ? order.getSubtotalAmount() : order.getTotalAmount());
+            discount = discount.add(order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO);
+            order.getLines().stream()
+                    .sorted(Comparator.comparing(PosDeliveryOrderLine::getLineOrder))
+                    .forEach(dl -> lineRows.add(new InventoryDepotDtos.SaleLineRow(
+                            dl.getProduct().getProductName(),
+                            dl.getProduct().getProductCode(),
+                            dl.getQuantity(),
+                            dl.getUnitPrice(),
+                            dl.getLineTotal(),
+                            dl.isTaxable())));
+        }
+        String numbers = batch.stream().map(PosDeliveryOrder::getDeliveryNumber).collect(Collectors.joining("+"));
+        String promoJoined = batch.stream()
+                .map(PosDeliveryOrder::getPromoCode)
+                .filter(c -> c != null && !c.isBlank())
+                .distinct()
+                .collect(Collectors.joining(", "));
+        DepotSale sale = first.getSale();
+        return new InventoryDepotDtos.DeliveryOrderDetailResponse(
+                first.getId(),
+                numbers,
+                first.getDepot().getName(),
+                firstNonBlankCustomer(batch),
+                first.getLocationLabel(),
+                scale2(total),
+                first.getStatus(),
+                first.getCreatedAt(),
+                sale != null ? sale.getId() : null,
+                sale != null ? sale.getSaleNumber() : null,
+                lineRows,
+                scale2(subtotal),
+                scale2(discount),
+                promoJoined.isBlank() ? first.getPromoCode() : promoJoined,
+                batch.stream()
+                        .map(o -> staffLabel(o.getStaffUser()))
+                        .filter(name -> name != null && !name.isBlank())
+                        .distinct()
+                        .collect(Collectors.joining(", ")));
     }
 
     @Transactional
@@ -1123,6 +1327,7 @@ public class InventoryDepotService {
         String normalized = raw.trim().toUpperCase(java.util.Locale.ROOT);
         return switch (normalized) {
             case "MOMO", "MOBILE MONEY", "MOBILE_MONEY" -> "MOMO";
+            case "CREDIT" -> "CREDIT";
             case "CREDIT CARD", "CREDIT_CARD", "CARD" -> "CREDIT CARD";
             case "BANK", "BANK TRANSFER", "BANK_TRANSFER" -> "BANK";
             case "CASH" -> "CASH";
@@ -1158,7 +1363,8 @@ public class InventoryDepotService {
                 order.getStatus(),
                 order.getCreatedAt(),
                 sale != null ? sale.getId() : null,
-                sale != null ? sale.getSaleNumber() : null);
+                sale != null ? sale.getSaleNumber() : null,
+                staffLabel(order.getStaffUser()));
     }
 
     private InventoryDepotDtos.DeliveryOrderDetailResponse toDeliveryOrderDetail(PosDeliveryOrder order) {
@@ -1187,7 +1393,8 @@ public class InventoryDepotService {
                 lineRows,
                 order.getSubtotalAmount() != null ? order.getSubtotalAmount() : order.getTotalAmount(),
                 order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO,
-                order.getPromoCode());
+                order.getPromoCode(),
+                staffLabel(order.getStaffUser()));
     }
 
     private void applyPromotionToSale(UUID hotelId, DepotSale sale, BigDecimal subtotal, String promoCode) {
@@ -1415,8 +1622,16 @@ public class InventoryDepotService {
     }
 
     private String nextSaleNumber(UUID hotelId) {
-        long next = depotSaleRepository.countByHotelId(hotelId) + 1;
-        return "DS-" + Year.now().getValue() + "-" + String.format("%06d", next);
+        long next = Math.max(1L, depotSaleRepository.countByHotelId(hotelId) + 1);
+        int year = Year.now().getValue();
+        for (int guard = 0; guard < 10000; guard++) {
+            String candidate = "DS-" + year + "-" + String.format("%06d", next);
+            if (!depotSaleRepository.existsBySaleNumber(candidate)) {
+                return candidate;
+            }
+            next++;
+        }
+        return "DS-" + year + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT);
     }
 
     private String nextProformaNumber(UUID hotelId) {
@@ -1476,7 +1691,7 @@ public class InventoryDepotService {
         if (Boolean.TRUE.equals(req.chargeToRoom())) {
             sale.setPaymentMethod("ROOM");
         } else if (req.paymentMethod() != null && !req.paymentMethod().isBlank()) {
-            sale.setPaymentMethod(req.paymentMethod().trim().toUpperCase(Locale.ROOT));
+            sale.setPaymentMethod(normalizePaymentMethod(req.paymentMethod()));
         }
         resolveStaffUser(req.staffId(), hotelId).ifPresent(sale::setStaffUser);
     }
@@ -1486,6 +1701,21 @@ public class InventoryDepotService {
         return appUserRepository
                 .findByIdWithHotel(id)
                 .filter(u -> u.getHotel() != null && hotelId.equals(u.getHotel().getId()));
+    }
+
+    private static ZoneId zone(Hotel hotel) {
+        try {
+            String tz = hotel == null ? null : hotel.getTimezone();
+            if (tz == null || tz.isBlank()) return ZoneId.of("Africa/Kigali");
+            return ZoneId.of(tz.trim());
+        } catch (Exception ex) {
+            return ZoneId.of("Africa/Kigali");
+        }
+    }
+
+    private static String staffLabel(AppUser user) {
+        if (user == null || user.getUsername() == null || user.getUsername().isBlank()) return null;
+        return user.getUsername().trim();
     }
 
     private static boolean isMobilePosActivity(String tableOrLocation, AppUser staffUser) {

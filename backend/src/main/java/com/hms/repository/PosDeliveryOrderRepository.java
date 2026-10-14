@@ -18,6 +18,7 @@ public interface PosDeliveryOrderRepository extends JpaRepository<PosDeliveryOrd
             """
             select o from PosDeliveryOrder o
             join fetch o.depot d
+            left join fetch o.staffUser
             where o.hotel.id = :hotelId
               and (:status is null or o.status = :status)
             order by o.createdAt desc
@@ -29,12 +30,57 @@ public interface PosDeliveryOrderRepository extends JpaRepository<PosDeliveryOrd
             """
             select distinct o from PosDeliveryOrder o
             join fetch o.depot d
+            join fetch o.hotel h
             left join fetch o.lines l
             left join fetch l.product p
+            left join fetch o.promotion
+            left join fetch o.staffUser
+            where o.hotel.id = :hotelId and o.id in :ids
+            """)
+    List<PosDeliveryOrder> findFetchedByIdsAndHotelId(
+            @Param("hotelId") UUID hotelId, @Param("ids") List<UUID> ids);
+
+    @Query(
+            """
+            select distinct o from PosDeliveryOrder o
+            join fetch o.depot d
+            left join fetch o.lines l
+            left join fetch l.product p
+            left join fetch o.staffUser
             where o.id = :orderId and o.hotel.id = :hotelId
             """)
     Optional<PosDeliveryOrder> findFetchedByIdAndHotelId(
             @Param("orderId") UUID orderId, @Param("hotelId") UUID hotelId);
+
+    @Query(
+            """
+            select distinct o from PosDeliveryOrder o
+            join fetch o.depot d
+            left join fetch o.lines l
+            left join fetch l.product p
+            left join fetch o.promotion
+            where o.hotel.id = :hotelId
+              and o.depot.id = :depotId
+              and o.status = 'PENDING'
+              and lower(trim(o.locationLabel)) = lower(trim(:locationLabel))
+            order by o.createdAt asc
+            """)
+    List<PosDeliveryOrder> findPendingFetchedByHotelDepotAndLocation(
+            @Param("hotelId") UUID hotelId,
+            @Param("depotId") UUID depotId,
+            @Param("locationLabel") String locationLabel);
+
+    @Query(
+            """
+            select o from PosDeliveryOrder o
+            join fetch o.depot d
+            left join fetch o.staffUser
+            where o.hotel.id = :hotelId
+              and o.status = 'PENDING'
+              and o.locationLabel is not null
+            order by o.createdAt desc
+            """)
+    List<PosDeliveryOrder> findPendingForTables(@Param("hotelId") UUID hotelId);
 
     @Query(
             """

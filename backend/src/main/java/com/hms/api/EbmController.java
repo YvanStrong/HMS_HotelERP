@@ -8,7 +8,9 @@ import com.hms.repository.InventoryItemRepository;
 import com.hms.security.TenantAccessService;
 import com.hms.service.EbmDeviceService;
 import com.hms.service.EbmItemCdService;
+import com.hms.service.EbmReportService;
 import com.hms.service.EbmSaleEventService;
+import com.hms.service.EbmSyncService;
 import com.hms.web.ApiException;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +39,8 @@ public class EbmController {
     private final EbmCodeListRepository codeListRepository;
     private final TenantAccessService tenantAccessService;
     private final HmsEbmProperties properties;
+    private final EbmSyncService syncService;
+    private final EbmReportService reportService;
 
     public EbmController(
             EbmDeviceService deviceService,
@@ -45,7 +49,9 @@ public class EbmController {
             InventoryItemRepository inventoryItemRepository,
             EbmCodeListRepository codeListRepository,
             TenantAccessService tenantAccessService,
-            HmsEbmProperties properties) {
+            HmsEbmProperties properties,
+            EbmSyncService syncService,
+            EbmReportService reportService) {
         this.deviceService = deviceService;
         this.itemCdService = itemCdService;
         this.saleEventService = saleEventService;
@@ -53,6 +59,8 @@ public class EbmController {
         this.codeListRepository = codeListRepository;
         this.tenantAccessService = tenantAccessService;
         this.properties = properties;
+        this.syncService = syncService;
+        this.reportService = reportService;
     }
 
     @GetMapping("/status")
@@ -84,6 +92,74 @@ public class EbmController {
             @PathVariable UUID deviceId,
             @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
         return deviceService.disable(hotelId, hotelHeader, deviceId);
+    }
+
+    @PostMapping("/devices/{deviceId}/training")
+    public EbmDtos.DeviceView setTraining(
+            @PathVariable UUID hotelId,
+            @PathVariable UUID deviceId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestBody EbmDtos.TrainingModeRequest body) {
+        return deviceService.setTrainingMode(hotelId, hotelHeader, deviceId, body != null && body.enabled());
+    }
+
+    @PostMapping("/sync")
+    public Map<String, Object> syncNow(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(required = false) String category) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        var devices = deviceService.status(hotelId, hotelHeader).devices();
+        int n = 0;
+        for (var d : devices) {
+            if (!"ACTIVE".equalsIgnoreCase(d.status())) {
+                continue;
+            }
+            if (category != null && !category.isBlank()) {
+                syncService.syncCategory(d.id(), category.trim().toUpperCase());
+                n++;
+            } else {
+                for (String cat : EbmSyncService.CATEGORIES) {
+                    try {
+                        syncService.syncCategory(d.id(), cat);
+                        n++;
+                    } catch (Exception ignored) {
+                        // individual category failures are logged in sync service
+                    }
+                }
+            }
+        }
+        return Map.of("synced", n);
+    }
+
+    @PostMapping("/imports/status")
+    public Map<String, Object> updateImport(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestBody EbmDtos.UpdateImportRequest body) {
+        return deviceService.updateImportItem(hotelId, hotelHeader, body);
+    }
+
+    @GetMapping("/reports/xz")
+    public Map<String, Object> xzReport(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader,
+            @RequestParam(defaultValue = "X") String type) {
+        return reportService.dailyXz(hotelId, hotelHeader, type);
+    }
+
+    @GetMapping("/reports/plu")
+    public Map<String, Object> pluReport(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return reportService.plu(hotelId, hotelHeader);
+    }
+
+    @GetMapping("/reports/detailed")
+    public Map<String, Object> detailedReport(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return reportService.detailed(hotelId, hotelHeader);
     }
 
     @GetMapping("/outbox")

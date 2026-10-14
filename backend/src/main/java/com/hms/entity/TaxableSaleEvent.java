@@ -44,6 +44,12 @@ public class TaxableSaleEvent {
     @Column(name = "ebm_signature", columnDefinition = "TEXT")
     private String ebmSignature;
 
+    @Column(name = "ebm_internal_data", columnDefinition = "TEXT")
+    private String ebmInternalData;
+
+    @Column(name = "ebm_invoice_no", length = 64)
+    private String ebmInvoiceNo;
+
     @Column(name = "ebm_qr_payload", columnDefinition = "TEXT")
     private String ebmQrPayload;
 

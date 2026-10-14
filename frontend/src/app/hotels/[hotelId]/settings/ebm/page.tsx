@@ -8,11 +8,15 @@ import {
   initializeEbmDevice,
   loadEbmCodeLists,
   loadEbmOutbox,
+  loadEbmPluReport,
   loadEbmSaleEvents,
   loadEbmStatus,
+  loadEbmXzReport,
   registerEbmDevice,
   retryAllFailedEbmOutbox,
   retryEbmOutbox,
+  setEbmTrainingMode,
+  syncEbmNow,
   type EbmCodeListRow,
   type EbmOutboxRow,
   type EbmSaleEventRow,
@@ -28,7 +32,9 @@ export default function EbmSettingsPage() {
   const [events, setEvents] = useState<EbmSaleEventRow[]>([]);
   const [codes, setCodes] = useState<EbmCodeListRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reportText, setReportText] = useState<string | null>(null);
 
   const [mode, setMode] = useState("VSDC");
   const [tin, setTin] = useState("");
@@ -107,6 +113,46 @@ export default function EbmSettingsPage() {
     }
   }
 
+  async function toggleTraining(deviceId: string, enabled: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      await setEbmTrainingMode(hotelId, deviceId, enabled);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Training mode failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function syncNow() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await syncEbmNow(hotelId);
+      setMsg(`VSDC sync completed (${r.synced} category pulls).`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function showReport(kind: "X" | "Z" | "PLU") {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = kind === "PLU" ? await loadEbmPluReport(hotelId) : await loadEbmXzReport(hotelId, kind);
+      setReportText(JSON.stringify(data, null, 2));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Report failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function retryOne(id: string) {
     setBusy(true);
     setError(null);
@@ -155,6 +201,7 @@ export default function EbmSettingsPage() {
       </div>
 
       {error && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{error}</p>}
+      {msg && <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{msg}</p>}
 
       <section className="hms-section-card space-y-3">
         <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Runtime status</p>
@@ -231,6 +278,7 @@ export default function EbmSettingsPage() {
                   </p>
                   <p className="text-muted-foreground">
                     TIN {d.tin} · branch {d.branchId ?? "—"} · SDC {d.sdcId ?? "—"} · MRC {d.mrcNo ?? "—"}
+                    {d.trainingMode ? " · TRAINING MODE" : ""}
                   </p>
                   <p className="truncate text-xs text-slate-500">{d.vsdcEndpointUrl}</p>
                   {d.lastError && <p className="mt-1 text-amber-700">{d.lastError}</p>}
@@ -247,14 +295,24 @@ export default function EbmSettingsPage() {
                     </button>
                   )}
                   {d.status === "ACTIVE" && (
-                    <button
-                      type="button"
-                      className="hms-btn-outline hms-btn-sm"
-                      disabled={busy}
-                      onClick={() => void disableDevice(d.id)}
-                    >
-                      Disable
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="hms-btn-outline hms-btn-sm"
+                        disabled={busy}
+                        onClick={() => void toggleTraining(d.id, !d.trainingMode)}
+                      >
+                        {d.trainingMode ? "Disable training" : "Enable training (TS/TR)"}
+                      </button>
+                      <button
+                        type="button"
+                        className="hms-btn-outline hms-btn-sm"
+                        disabled={busy}
+                        onClick={() => void disableDevice(d.id)}
+                      >
+                        Disable
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -264,6 +322,27 @@ export default function EbmSettingsPage() {
             <li className="text-sm text-muted-foreground">No EBM device registered yet.</li>
           )}
         </ul>
+      </section>
+
+      <section className="hms-section-card space-y-3">
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">VSDC pull + reports</p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="hms-btn-solid hms-btn-sm" disabled={busy} onClick={() => void syncNow()}>
+            Sync codes / customers / notices / items / imports / purchases
+          </button>
+          <button type="button" className="hms-btn-outline hms-btn-sm" disabled={busy} onClick={() => void showReport("X")}>
+            X report
+          </button>
+          <button type="button" className="hms-btn-outline hms-btn-sm" disabled={busy} onClick={() => void showReport("Z")}>
+            Z report
+          </button>
+          <button type="button" className="hms-btn-outline hms-btn-sm" disabled={busy} onClick={() => void showReport("PLU")}>
+            PLU report
+          </button>
+        </div>
+        {reportText && (
+          <pre className="max-h-72 overflow-auto rounded-xl border bg-slate-50 p-3 text-xs">{reportText}</pre>
+        )}
       </section>
 
       <section className="hms-section-card space-y-3">

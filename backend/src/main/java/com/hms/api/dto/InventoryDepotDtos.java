@@ -107,6 +107,8 @@ public final class InventoryDepotDtos {
             /** Amount received in paymentCurrency. */
             BigDecimal foreignAmount) {}
 
+    public record ConvertDeliveriesRequest(@NotEmpty List<UUID> deliveryOrderIds) {}
+
     public record CreateDeliveryOrderRequest(
             String customerName,
             String locationLabel,
@@ -148,7 +150,8 @@ public final class InventoryDepotDtos {
             BigDecimal totalAmount,
             Instant soldAt,
             String paymentMethod,
-            String status) {}
+            String status,
+            String waiterName) {}
 
     /** Full sale for receipts / reprint (lines included). */
     public record SaleDetailResponse(
@@ -173,7 +176,9 @@ public final class InventoryDepotDtos {
             String ebmQrPayload,
             String ebmSdcId,
             String ebmMrcNo,
-            String ebmStatus) {}
+            String ebmStatus,
+            String ebmInternalData,
+            String ebmInvoiceNo) {}
 
     public record CreateRefundRequest(String reason) {}
 
@@ -221,7 +226,8 @@ public final class InventoryDepotDtos {
             String status,
             Instant createdAt,
             UUID saleId,
-            String saleNumber) {}
+            String saleNumber,
+            String waiterName) {}
 
     public record DeliveryOrderDetailResponse(
             UUID deliveryOrderId,
@@ -237,7 +243,8 @@ public final class InventoryDepotDtos {
             List<SaleLineRow> lines,
             BigDecimal subtotalAmount,
             BigDecimal discountAmount,
-            String promoCode) {}
+            String promoCode,
+            String waiterName) {}
 
     public record CreateDeliveryOrderResponse(
             UUID deliveryOrderId,

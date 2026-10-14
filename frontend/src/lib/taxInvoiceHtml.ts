@@ -1,3 +1,10 @@
+import {
+  buildRraLogoHtml,
+  buildSdcInformationHtml,
+  SDC_PRINT_CSS,
+  type EbmFiscalPrintFields,
+} from "@/lib/ebmPrint";
+
 export function escapeInvoiceHtml(v: unknown) {
   return String(v ?? "")
     .replaceAll("&", "&amp;")
@@ -46,12 +53,16 @@ export type TaxInvoiceHtmlOpts = {
   balanceAfter: number;
   hotelLogoUrl?: string | null;
   hotelName?: string;
+  /** Show RRA logos only when hotel EBM is activated. */
+  ebmActivated?: boolean;
+  ebm?: Partial<EbmFiscalPrintFields> | null;
 };
 
 export function buildTaxInvoiceHtml(opts: TaxInvoiceHtmlOpts) {
   const esc = escapeInvoiceHtml;
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const assetUrl = (path: string) => `${origin}${path.startsWith("/") ? path : `/${path}`}`;
+  const ebmActivated = Boolean(opts.ebmActivated);
   return `<!doctype html><html><head><meta charset="utf-8"/><title>Invoice ${esc(opts.invoiceNumber)}</title>
     <style>
     body{font-family:Arial,sans-serif;margin:20px;color:#111}
@@ -65,12 +76,10 @@ export function buildTaxInvoiceHtml(opts: TaxInvoiceHtmlOpts) {
     table{width:100%;border-collapse:collapse;margin-top:8px}
     th,td{border-bottom:1px solid #e2e8f0;padding:8px;text-align:left}
     tfoot td{font-weight:700}
+    ${SDC_PRINT_CSS}
     </style></head><body>
     <div class="top">
-      <div class="brand">
-        <img class="logo-img" src="${esc(assetUrl("/images/RRA_LOGO.png"))}" alt="RRA" />
-        <img class="logo-img" src="${esc(assetUrl("/images/rraLogo2.png"))}" alt="RRA" />
-      </div>
+      ${buildRraLogoHtml(assetUrl, ebmActivated)}
       ${
         opts.hotelLogoUrl
           ? `<img class="logo-img" style="height:56px" src="${esc(opts.hotelLogoUrl)}" alt="${esc(opts.hotelName || "Hotel")}" />`
@@ -97,17 +106,68 @@ export function buildTaxInvoiceHtml(opts: TaxInvoiceHtmlOpts) {
       <div class="row"><span class="muted">Payment types used</span><span>${esc(opts.paymentTypesUsed)}</span></div>
       <div class="row strong"><span>Balance after payment</span><span>${esc(opts.balanceAfter)} ${esc(opts.currency)}</span></div>
     </div>
+    ${buildSdcInformationHtml(opts.ebm ?? {}, {
+      invoiceNumberFallback: opts.invoiceNumber,
+      serviceCount: opts.items.length,
+    })}
     </body></html>`;
 }
 
-/** Open branded tax invoice in a new window and trigger print (same UX as reservation "Print Invoice"). */
-export function openTaxInvoicePrintWindow(html: string) {
-  const w = window.open("", "_blank");
-  if (!w) return false;
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
-  w.focus();
-  w.print();
-  return true;
+/**
+ * Print tax invoice via a hidden iframe (no new tab).
+ * Falls back to a temporary window only if iframe writing fails.
+ */
+export function openTaxInvoicePrintWindow(html: string): boolean {
+  if (typeof document === "undefined") return false;
+
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.title = "Print invoice";
+  Object.assign(iframe.style, {
+    position: "fixed",
+    right: "0",
+    bottom: "0",
+    width: "0",
+    height: "0",
+    border: "0",
+    opacity: "0",
+    pointerEvents: "none",
+  });
+  document.body.appendChild(iframe);
+
+  const w = iframe.contentWindow;
+  const d = iframe.contentDocument ?? w?.document ?? null;
+
+  const cleanup = () => {
+    iframe.remove();
+  };
+
+  try {
+    if (!w || !d) {
+      cleanup();
+      const win = window.open("", "_blank");
+      if (!win) return false;
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      win.print();
+      return true;
+    }
+    d.open();
+    d.write(html);
+    d.close();
+    window.setTimeout(() => {
+      try {
+        w.focus();
+        w.print();
+      } finally {
+        window.setTimeout(cleanup, 2000);
+      }
+    }, 120);
+    return true;
+  } catch {
+    cleanup();
+    return false;
+  }
 }

@@ -224,7 +224,7 @@ export default function PosTablesPage() {
                   {t.occupied ? "Occupied" : "Available"}
                 </p>
               )}
-              {t.waiterName ? <p className="mt-1 text-[11px] text-muted-foreground">{t.waiterName}</p> : null}
+              <p className="mt-1 text-[11px] font-semibold text-foreground">Waiter: {t.waiterName || "—"}</p>
               {t.activeTicketId ? (
                 <Link
                   href={staffAppPath(`pos/tickets?ticket=${t.activeTicketId}`)}

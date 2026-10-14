@@ -516,6 +516,7 @@ export default function EditHotelPage() {
             <div>
               <label htmlFor="currency" className="block text-sm font-medium mb-1.5">Currency</label>
               <select id="currency" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                <option value="RWF">RWF (FRw)</option>
                 <option value="USD">USD ($)</option>
                 <option value="EUR">EUR (€)</option>
                 <option value="GBP">GBP (£)</option>

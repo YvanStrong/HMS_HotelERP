@@ -110,10 +110,10 @@ export function BookSearchHero() {
     <div className="book-search-layout">
       <section className="book-search-hero" aria-labelledby="book-search-heading">
         <h1 id="book-search-heading" className="book-search-headline">
-          Find your next stay
+          Book a hotel in Rwanda
         </h1>
         <p className="book-search-sub">
-          Choose a property, your dates, and who is traveling — then pick a room and confirm in a few steps.
+          Choose a property, dates, and guests — then pick a room and confirm with live availability.
         </p>
 
         <form className="book-search-widget" onSubmit={onSubmit} noValidate>

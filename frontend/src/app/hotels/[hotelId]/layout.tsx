@@ -1,4 +1,11 @@
+import type { Metadata } from "next";
 import { HotelStaffShell } from "@/components/HotelStaffShell";
+import { privatePageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = {
+  ...privatePageMetadata,
+  title: "Dashboard",
+};
 
 export default function HotelLayout({
   children,

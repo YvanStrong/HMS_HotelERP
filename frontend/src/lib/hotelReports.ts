@@ -41,11 +41,23 @@ function defaultRange(): { from: string; to: string } {
 
 export { defaultRange };
 
+const HOTEL_UUID_IN_API_PATH =
+  /^\/api\/v1\/hotels\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:\/|$)/;
+
+function hotelIdForExport(path: string): string | undefined {
+  const fromPath = path.match(HOTEL_UUID_IN_API_PATH);
+  if (fromPath) return fromPath[1];
+  if (typeof window === "undefined") return undefined;
+  return localStorage.getItem("hms_hotel_id") ?? undefined;
+}
+
 export async function downloadReportExport(path: string, filename: string): Promise<void> {
   const token = getToken();
+  const hotelId = hotelIdForExport(path);
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(hotelId ? { "X-Hotel-ID": hotelId } : {}),
       Accept: "*/*",
     },
   });

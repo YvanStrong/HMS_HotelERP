@@ -129,11 +129,13 @@ public class HotelProvisioningService {
         hotelRepository.save(h);
         hotelModuleEntitlementService.applyCategory(
                 h.getId(), in.businessCategoryId() != null ? in.businessCategoryId() : defaultCategoryId(), null);
-        ensureDefaultPlatformTenant(h);
+        // applyCategory clears the persistence context; reattach before creating the tenant row.
+        final Hotel persisted = hotelRepository.getReferenceById(h.getId());
+        ensureDefaultPlatformTenant(persisted);
         platformTenantRepository
-                .findById(h.getId())
+                .findById(persisted.getId())
                 .ifPresent(pt -> {
-                    pt.setHotelName(h.getName());
+                    pt.setHotelName(persisted.getName());
                     if (in.email() != null && !in.email().isBlank()) {
                         pt.setContactEmail(in.email().trim());
                     }
@@ -147,9 +149,9 @@ public class HotelProvisioningService {
                 && in.adminPassword() != null
                 && !in.adminPassword().isBlank()) {
             platformStaffUserService.createHotelScopedUser(
-                    h.getId(), in.adminUsername(), in.adminPassword(), in.email(), "HOTEL_ADMIN");
+                    persisted.getId(), in.adminUsername(), in.adminPassword(), in.email(), "HOTEL_ADMIN");
         }
-        return h;
+        return persisted;
     }
 
     private SubscriptionStatus resolveSubscriptionForCreate(ApiDtos.HotelCreateInput in) {
@@ -394,8 +396,9 @@ public class HotelProvisioningService {
         while (platformTenantRepository.existsBySubdomainIgnoreCase(subdomain)) {
             subdomain = base + (++n);
         }
+        Hotel managed = hotelRepository.getReferenceById(h.getId());
         PlatformTenant pt = new PlatformTenant();
-        pt.setHotel(h);
+        pt.setHotel(managed);
         pt.setHotelName(h.getName());
         pt.setSubdomain(subdomain);
         pt.setTier(SubscriptionTier.STARTER);

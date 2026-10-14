@@ -460,6 +460,10 @@ public class EbmSaleEventService {
             log.debug("EBM skip enqueue hotel={} — no ACTIVE device", hotelId);
             return false;
         }
+        if (device.isTrainingMode()) {
+            log.debug("EBM skip enqueue hotel={} — training mode (TS/TR only, not sent to VSDC)", hotelId);
+            return false;
+        }
         return true;
     }
 

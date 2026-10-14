@@ -17,6 +17,9 @@ public interface InvSalesInvoiceRepository extends JpaRepository<InvSalesInvoice
     @Query("select coalesce(sum(i.totalAmount), 0) from InvSalesInvoice i where i.hotel.id = :hotelId and i.invoiceDate >= :from and i.invoiceDate <= :to and i.status <> 'CANCELLED'")
     BigDecimal sumRevenue(@Param("hotelId") UUID hotelId, @Param("from") LocalDate from, @Param("to") LocalDate to);
 
+    @Query("select coalesce(sum(i.totalAmount), 0) from InvSalesInvoice i where i.hotel.id = :hotelId and i.invoiceDate >= :from and i.invoiceDate <= :to and i.status not in ('CANCELLED', 'RETURNED', 'VOID')")
+    BigDecimal sumRecognizedRevenue(@Param("hotelId") UUID hotelId, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
     @Query("select coalesce(sum(i.amountPaid), 0) from InvSalesInvoice i where i.hotel.id = :hotelId and i.invoiceDate >= :from and i.invoiceDate <= :to and i.status <> 'CANCELLED'")
     BigDecimal sumPaid(@Param("hotelId") UUID hotelId, @Param("from") LocalDate from, @Param("to") LocalDate to);
 
@@ -28,6 +31,32 @@ public interface InvSalesInvoiceRepository extends JpaRepository<InvSalesInvoice
 
     @Query("select coalesce(sum(i.totalAmount), 0) from InvSalesInvoice i where i.hotel.id = :hotelId and i.invoiceDate = :today and i.status <> 'CANCELLED'")
     BigDecimal sumTodaySales(@Param("hotelId") UUID hotelId, @Param("today") LocalDate today);
+
+    @Query(
+            """
+            select coalesce(sum(l.quantity * coalesce(l.costPrice, 0)), 0)
+            from InvSalesInvoiceItem l
+            join l.invoice i
+            where i.hotel.id = :hotelId
+              and i.invoiceDate >= :from
+              and i.invoiceDate <= :to
+              and i.status <> 'CANCELLED'
+            """)
+    BigDecimal sumCost(
+            @Param("hotelId") UUID hotelId, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    @Query(
+            """
+            select coalesce(sum(l.quantity * coalesce(l.costPrice, 0)), 0)
+            from InvSalesInvoiceItem l
+            join l.invoice i
+            where i.hotel.id = :hotelId
+              and i.invoiceDate >= :from
+              and i.invoiceDate <= :to
+              and i.status not in ('CANCELLED', 'RETURNED', 'VOID')
+            """)
+    BigDecimal sumRecognizedCost(
+            @Param("hotelId") UUID hotelId, @Param("from") LocalDate from, @Param("to") LocalDate to);
 
     long countByHotel_IdAndStatus(UUID hotelId, String status);
 }

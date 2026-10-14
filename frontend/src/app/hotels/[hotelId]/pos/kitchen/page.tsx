@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Client } from "@stomp/stompjs";
 import { PaginationBar } from "@/components/PaginationBar";
 import { PosOutletSelect } from "@/components/PosOutletSelect";
-import { getToken } from "@/lib/api";
+import { getToken, websocketBrokerUrl } from "@/lib/api";
 import { paginateSlice } from "@/lib/pagination";
 import { staffAppPath } from "@/lib/staffAppRoutes";
 import {
@@ -20,15 +20,7 @@ import {
 } from "@/lib/posTickets";
 
 function wsBrokerUrl(): string {
-  const raw = process.env.NEXT_PUBLIC_API_URL;
-  if (raw && String(raw).trim()) {
-    return String(raw).trim().replace(/\/$/, "").replace(/^http/, "ws") + "/ws";
-  }
-  if (typeof window !== "undefined") {
-    const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    return `${proto}://${window.location.hostname}:8080/ws`;
-  }
-  return "ws://localhost:8080/ws";
+  return websocketBrokerUrl();
 }
 
 const PAGE_SIZE = 12;

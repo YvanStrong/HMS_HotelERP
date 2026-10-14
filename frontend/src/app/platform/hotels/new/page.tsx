@@ -47,7 +47,7 @@ export default function CreateHotelPage() {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [description, setDescription] = useState("");
-  const [currency, setCurrency] = useState("USD");
+  const [currency, setCurrency] = useState("RWF");
   const [timezone, setTimezone] = useState("UTC");
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
@@ -405,6 +405,7 @@ export default function CreateHotelPage() {
                 Currency <span className="text-red-500">*</span>
               </label>
               <select id="currency" value={currency} onChange={(e) => setCurrency(e.target.value)} required>
+                <option value="RWF">RWF (FRw)</option>
                 <option value="USD">USD ($)</option>
                 <option value="EUR">EUR (€)</option>
                 <option value="GBP">GBP (£)</option>

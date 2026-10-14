@@ -311,6 +311,35 @@ public final class AccountingDtos {
             BalanceSheetReport balanceSheet,
             List<BankStatementLineRow> bankStatementLines) {}
 
+    public record CompanyObligationRow(
+            UUID id,
+            String kind,
+            String partyName,
+            String description,
+            BigDecimal amount,
+            LocalDate entryDate,
+            LocalDate dueDate,
+            String status,
+            String referenceNo,
+            String recordedBy,
+            Instant settledAt,
+            Instant createdAt) {}
+
+    public record CreateCompanyObligationRequest(
+            @NotBlank String kind,
+            @NotBlank String partyName,
+            @NotBlank String description,
+            @NotNull @DecimalMin("0.01") BigDecimal amount,
+            LocalDate entryDate,
+            LocalDate dueDate,
+            String referenceNo) {}
+
+    public record CompanyObligationList(
+            BigDecimal openCredit,
+            BigDecimal openDebt,
+            BigDecimal netPosition,
+            List<CompanyObligationRow> rows) {}
+
     public record AccountingDashboard(
             SalesAnalytics analytics,
             List<AccountRow> accounts,

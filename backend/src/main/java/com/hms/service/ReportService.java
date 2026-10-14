@@ -8,14 +8,19 @@ import com.hms.domain.LoyaltyTier;
 import com.hms.domain.ReservationStatus;
 import com.hms.domain.RoomStatus;
 import com.hms.entity.Guest;
+import com.hms.entity.Hotel;
 import com.hms.entity.Payment;
 import com.hms.entity.Reservation;
 import com.hms.entity.Room;
 import com.hms.entity.RoomCharge;
+import com.hms.repository.AccountingExpenseRepository;
+import com.hms.repository.DepotSaleRepository;
 import com.hms.repository.GuestComplaintRepository;
 import com.hms.repository.GuestRepository;
 import com.hms.repository.GuestStayAnalyticsRepository;
+import com.hms.repository.HotelRepository;
 import com.hms.repository.HousekeepingTaskRepository;
+import com.hms.repository.InvSalesInvoiceRepository;
 import com.hms.repository.InvoiceRepository;
 import com.hms.repository.PaymentRepository;
 import com.hms.repository.ReservationRepository;
@@ -29,6 +34,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -65,6 +71,10 @@ public class ReportService {
     private final GuestComplaintRepository guestComplaintRepository;
     private final GuestStayAnalyticsRepository guestStayAnalyticsRepository;
     private final ReportExportHelper reportExportHelper;
+    private final HotelRepository hotelRepository;
+    private final DepotSaleRepository depotSaleRepository;
+    private final InvSalesInvoiceRepository invSalesInvoiceRepository;
+    private final AccountingExpenseRepository expenseRepository;
 
     public ReportService(
             RoomRepository roomRepository,
@@ -78,7 +88,11 @@ public class ReportService {
             FolioLedgerService folioLedgerService,
             GuestComplaintRepository guestComplaintRepository,
             GuestStayAnalyticsRepository guestStayAnalyticsRepository,
-            ReportExportHelper reportExportHelper) {
+            ReportExportHelper reportExportHelper,
+            HotelRepository hotelRepository,
+            DepotSaleRepository depotSaleRepository,
+            InvSalesInvoiceRepository invSalesInvoiceRepository,
+            AccountingExpenseRepository expenseRepository) {
         this.roomRepository = roomRepository;
         this.reservationRepository = reservationRepository;
         this.guestRepository = guestRepository;
@@ -91,6 +105,10 @@ public class ReportService {
         this.guestComplaintRepository = guestComplaintRepository;
         this.guestStayAnalyticsRepository = guestStayAnalyticsRepository;
         this.reportExportHelper = reportExportHelper;
+        this.hotelRepository = hotelRepository;
+        this.depotSaleRepository = depotSaleRepository;
+        this.invSalesInvoiceRepository = invSalesInvoiceRepository;
+        this.expenseRepository = expenseRepository;
     }
 
     @Transactional(readOnly = true)
@@ -119,7 +137,8 @@ public class ReportService {
             long occ = reservationRepository.countDistinctOccupiedRoomsForNight(hotelId, d);
             double occRateD = totalRooms > 0 ? occ * 100.0 / totalRooms : 0.0;
             occRateD = BigDecimal.valueOf(occRateD).setScale(1, RoundingMode.HALF_UP).doubleValue();
-            BigDecimal sumTotals = reservationRepository.sumTotalAmountForOccupiedNight(hotelId, d);
+            BigDecimal sumTotals = reservationRepository.sumNightlyRoomRevenue(hotelId, d);
+            if (sumTotals == null) sumTotals = BigDecimal.ZERO;
             BigDecimal adr = occ > 0
                     ? sumTotals.divide(BigDecimal.valueOf(occ), 2, RoundingMode.HALF_UP)
                     : BigDecimal.ZERO;
@@ -803,55 +822,57 @@ public class ReportService {
             UUID hotelId, String hotelHeader, LocalDate from, LocalDate to) {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         assertDateRange(from, to);
-        long totalRooms = roomRepository.countByHotel_Id(hotelId);
-        BigDecimal paymentsTotal = BigDecimal.ZERO;
-        BigDecimal invoicesTotal = BigDecimal.ZERO;
-        long invoiceCount = 0;
+        ZoneId zone = hotelZone(hotelId);
+        BigDecimal posTotal = BigDecimal.ZERO;
+        BigDecimal inventoryTotal = BigDecimal.ZERO;
+        BigDecimal salesTotal = BigDecimal.ZERO;
+        BigDecimal costTotal = BigDecimal.ZERO;
+        BigDecimal grossTotal = BigDecimal.ZERO;
+        BigDecimal expenseTotal = BigDecimal.ZERO;
+        BigDecimal netTotal = BigDecimal.ZERO;
+        BigDecimal creditTotal = BigDecimal.ZERO;
         List<Map<String, Object>> rows = new ArrayList<>();
         for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
-            Instant dayStart = d.atStartOfDay(ZoneOffset.UTC).toInstant();
-            Instant dayEnd = d.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-            long occupied = reservationRepository.countDistinctOccupiedRoomsForNight(hotelId, d);
-            BigDecimal roomRevenue = reservationRepository.sumTotalAmountForOccupiedNight(hotelId, d);
-            if (roomRevenue == null) {
-                roomRevenue = BigDecimal.ZERO;
-            }
-            BigDecimal adr = occupied > 0
-                    ? roomRevenue.divide(BigDecimal.valueOf(occupied), 2, RoundingMode.HALF_UP)
-                    : BigDecimal.ZERO;
-            double occPct = totalRooms > 0 ? occupied * 100.0 / totalRooms : 0.0;
-            BigDecimal revpar = totalRooms > 0
-                    ? roomRevenue.divide(BigDecimal.valueOf(totalRooms), 2, RoundingMode.HALF_UP)
-                    : BigDecimal.ZERO;
-            BigDecimal payments = paymentRepository.sumCompletedForHotelInRange(hotelId, dayStart, dayEnd);
-            if (payments == null) {
-                payments = BigDecimal.ZERO;
-            }
-            BigDecimal invoices = invoiceRepository.sumTotalAmountByHotelAndCreatedAtRange(hotelId, dayStart, dayEnd);
-            if (invoices == null) {
-                invoices = BigDecimal.ZERO;
-            }
-            long dayInvoices = invoiceRepository.countByHotelAndCreatedAtRange(hotelId, dayStart, dayEnd);
-            paymentsTotal = paymentsTotal.add(payments);
-            invoicesTotal = invoicesTotal.add(invoices);
-            invoiceCount += dayInvoices;
+            Instant dayStart = d.atStartOfDay(zone).toInstant();
+            Instant dayEnd = d.plusDays(1).atStartOfDay(zone).toInstant();
+            BigDecimal pos = nz(depotSaleRepository.sumCompletedSalesBetween(hotelId, dayStart, dayEnd));
+            BigDecimal inventory = nz(invSalesInvoiceRepository.sumRecognizedRevenue(hotelId, d, d));
+            BigDecimal credit = nz(depotSaleRepository.sumCreditSalesBetween(hotelId, dayStart, dayEnd));
+            BigDecimal cost = nz(depotSaleRepository.sumCompletedCostBetween(hotelId, dayStart, dayEnd))
+                    .add(nz(invSalesInvoiceRepository.sumRecognizedCost(hotelId, d, d)));
+            BigDecimal expenses = nz(expenseRepository.sumExpenses(hotelId, d, d));
+            BigDecimal sales = pos.add(inventory);
+            BigDecimal gross = sales.subtract(cost);
+            BigDecimal net = gross.subtract(expenses);
+            posTotal = posTotal.add(pos);
+            inventoryTotal = inventoryTotal.add(inventory);
+            salesTotal = salesTotal.add(sales);
+            costTotal = costTotal.add(cost);
+            grossTotal = grossTotal.add(gross);
+            expenseTotal = expenseTotal.add(expenses);
+            netTotal = netTotal.add(net);
+            creditTotal = creditTotal.add(credit);
             Map<String, Object> row = new HashMap<>();
             row.put("date", d.toString());
-            row.put("occupiedRooms", occupied);
-            row.put("occupancyPct", BigDecimal.valueOf(occPct).setScale(1, RoundingMode.HALF_UP));
-            row.put("adr", money(adr));
-            row.put("revpar", money(revpar));
-            row.put("roomRevenue", money(roomRevenue));
-            row.put("paymentsCollected", money(payments));
-            row.put("invoicesIssued", money(invoices));
-            row.put("invoiceCount", dayInvoices);
+            row.put("posSales", money(pos));
+            row.put("inventorySales", money(inventory));
+            row.put("totalSales", money(sales));
+            row.put("creditSales", money(credit));
+            row.put("costOfGoods", money(cost));
+            row.put("grossProfit", money(gross));
+            row.put("expenses", money(expenses));
+            row.put("netProfit", money(net));
             rows.add(row);
         }
         Map<String, Object> summary = new HashMap<>();
-        summary.put("paymentsCollected", money(paymentsTotal));
-        summary.put("invoicesIssued", money(invoicesTotal));
-        summary.put("invoiceCount", invoiceCount);
-        summary.put("days", rows.size());
+        summary.put("posSales", money(posTotal));
+        summary.put("inventorySales", money(inventoryTotal));
+        summary.put("totalSales", money(salesTotal));
+        summary.put("creditSales", money(creditTotal));
+        summary.put("costOfGoods", money(costTotal));
+        summary.put("grossProfit", money(grossTotal));
+        summary.put("expenses", money(expenseTotal));
+        summary.put("netProfit", money(netTotal));
         return new ReportDtos.TabularReportResponse(
                 "SALES",
                 hotelId,
@@ -860,15 +881,30 @@ public class ReportService {
                 summary,
                 List.of(
                         "date",
-                        "occupiedRooms",
-                        "occupancyPct",
-                        "adr",
-                        "revpar",
-                        "roomRevenue",
-                        "paymentsCollected",
-                        "invoicesIssued",
-                        "invoiceCount"),
+                        "posSales",
+                        "inventorySales",
+                        "totalSales",
+                        "creditSales",
+                        "costOfGoods",
+                        "grossProfit",
+                        "expenses",
+                        "netProfit"),
                 rows);
+    }
+
+    private ZoneId hotelZone(UUID hotelId) {
+        Hotel hotel = hotelRepository.findById(hotelId).orElse(null);
+        try {
+            String tz = hotel == null ? null : hotel.getTimezone();
+            if (tz == null || tz.isBlank()) return ZoneId.of("Africa/Kigali");
+            return ZoneId.of(tz.trim());
+        } catch (Exception ex) {
+            return ZoneId.of("Africa/Kigali");
+        }
+    }
+
+    private static BigDecimal nz(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
     }
 
     @Transactional(readOnly = true)

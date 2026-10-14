@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
+import { connectEpsonUsbPrinter, probeReceiptPrinter } from "@/lib/directThermalPrint";
 import { printDepotSaleInvoice } from "@/lib/printDepotSaleInvoice";
 import { printPosOrderSlip } from "@/lib/printPosOrderSlip";
 import { fetchPosTables, type PosTableRow } from "@/lib/posTickets";
@@ -159,7 +160,7 @@ type ReservationOption = {
 const ORDER_TYPES = ["Dine In", "Take Away", "Delivery", "Table"] as const;
 type OrderType = (typeof ORDER_TYPES)[number];
 
-const POS_PAYMENT_METHODS = ["MOMO", "CASH", "CREDIT CARD", "BANK"] as const;
+const POS_PAYMENT_METHODS = ["MOMO", "CASH", "CREDIT", "BANK"] as const;
 type PosPaymentMethod = (typeof POS_PAYMENT_METHODS)[number];
 
 const DRAFT_KEY = (hotelId: string) => `hms_pos_draft_${hotelId}`;
@@ -199,12 +200,17 @@ export default function PosPage() {
   const [locationLabel, setLocationLabel] = useState("");
   const [locationMode, setLocationMode] = useState<"table" | "custom">("table");
   const [selectedTableId, setSelectedTableId] = useState("");
+  const [waiters, setWaiters] = useState<{ id: string; username: string; role: string }[]>([]);
+  const [servedById, setServedById] = useState("");
   const [posTables, setPosTables] = useState<PosTableRow[]>([]);
   const [hotelPrintHeader, setHotelPrintHeader] = useState<{
     companyName: string;
     phone: string;
     tin: string;
-  }>({ companyName: "", phone: "", tin: "" });
+    email: string;
+    address: string;
+    logoUrl: string;
+  }>({ companyName: "", phone: "", tin: "", email: "", address: "", logoUrl: "" });
   const [hotelCurrency, setHotelCurrency] = useState("RWF");
   const [payCurrency, setPayCurrency] = useState<PosPayCurrency>("RWF");
   const [fxRates, setFxRates] = useState<Record<"USD" | "EUR", number>>({ ...DEFAULT_FX_RATES });
@@ -230,6 +236,7 @@ export default function PosPage() {
   const [addingItemId, setAddingItemId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [printerHint, setPrinterHint] = useState("Checking printer…");
   const [posPromotions, setPosPromotions] = useState<PosPromotionRow[]>([]);
   const [selectedPromoCode, setSelectedPromoCode] = useState("");
   const [showCreatePromo, setShowCreatePromo] = useState(false);
@@ -248,7 +255,7 @@ export default function PosPage() {
     setLoading(true);
     setError(null);
     try {
-      const [d, inv, dp, hotel, promos] = await Promise.all([
+      const [d, inv, dp, hotel, promos, waiterRows] = await Promise.all([
         apiFetch<DepotRow[]>(`/api/v1/hotels/${hotelId}/inventory/depots`),
         apiFetch<InventoryItemsPayload>(`/api/v1/hotels/${hotelId}/inventory/items`),
         apiFetch<DepotProductRow[]>(`/api/v1/hotels/${hotelId}/inventory/depot-products`),
@@ -256,23 +263,40 @@ export default function PosPage() {
           name?: string;
           companyName?: string | null;
           phone?: string | null;
+          email?: string | null;
           tinNumber?: string | null;
+          address?: string | null;
+          logoUrl?: string | null;
           currency?: string | null;
         }>(`/api/v1/hotels/${hotelId}/settings`, { quiet: true }).catch(() => null),
         apiFetch<PosPromotionRow[]>(`/api/v1/hotels/${hotelId}/inventory/pos-promotions`, { quiet: true }).catch(
           () => [],
         ),
+        apiFetch<{ id: string; username: string; role: string }[]>(`/api/v1/hotels/${hotelId}/pos/waiters`, {
+          quiet: true,
+        }).catch(() => []),
       ]);
       const activeDepots = (d ?? []).filter((x) => x.active);
       setDepots(activeDepots);
       setInventoryItems((inv?.data ?? []).filter((x) => x.active !== false));
       setDepotProducts((dp ?? []).filter((x) => x.active));
       setPosPromotions(promos ?? []);
+      const waiterList = waiterRows ?? [];
+      setWaiters(waiterList);
+      setServedById((prev) => {
+        if (prev && waiterList.some((w) => w.id === prev)) return prev;
+        const me = loadAuthUser()?.id;
+        if (me && waiterList.some((w) => w.id === me)) return me;
+        return waiterList[0]?.id ?? "";
+      });
       if (hotel) {
         setHotelPrintHeader({
           companyName: (hotel.companyName || hotel.name || "").trim(),
           phone: (hotel.phone || "").trim(),
           tin: (hotel.tinNumber || "").trim(),
+          email: (hotel.email || "").trim(),
+          address: (hotel.address || "").trim(),
+          logoUrl: (hotel.logoUrl || "").trim(),
         });
         const cur = (hotel.currency || "RWF").trim().toUpperCase() || "RWF";
         setHotelCurrency(cur);
@@ -316,6 +340,16 @@ export default function PosPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void probeReceiptPrinter().then((status) => {
+      if (!cancelled) setPrinterHint(status.label);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -478,6 +512,11 @@ export default function PosPage() {
 
     return depotProducts
       .filter((p) => p.depotId === depotId && p.active)
+      .filter((dp) => {
+        if (!dp.inventoryItemId) return true;
+        const linked = inventoryItems.find((x) => x.id === dp.inventoryItemId);
+        return Boolean(linked) && linked?.active !== false;
+      })
       .map((dp) => {
         const inv = dp.inventoryItemId
           ? inventoryItems.find((x) => x.id === dp.inventoryItemId)
@@ -934,7 +973,7 @@ export default function PosPage() {
       tin: hotelPrintHeader.tin || null,
       tableLabel: locationLabel.trim() || null,
       customerName: customerLabel.trim() || null,
-      servedBy: loadAuthUser()?.username ?? null,
+      servedBy: waiters.find((w) => w.id === servedById)?.username ?? loadAuthUser()?.username ?? null,
       outletName: outlet ? `${outlet.name} (${outlet.code})` : null,
       lines: cartRows.map((r) => ({
         itemName: r.name,
@@ -1079,6 +1118,12 @@ export default function PosPage() {
           saleNumber: res.proformaNumber,
           documentTitle: "PROFORMA",
           depotName,
+          issuerName: hotelPrintHeader.companyName || depotName,
+          issuerTin: hotelPrintHeader.tin || null,
+          issuerPhone: hotelPrintHeader.phone || null,
+          issuerEmail: hotelPrintHeader.email || null,
+          issuerAddress: hotelPrintHeader.address || null,
+          issuerLogoUrl: hotelPrintHeader.logoUrl || null,
           customerName: buildCustomerName(),
           customerTin: customerTin.trim() || null,
           totalAmount: Number(res.totalAmount),
@@ -1146,6 +1191,8 @@ export default function PosPage() {
           chargeToRoom: chargeToFolio,
           reservationId: chargeToFolio ? folioReservationId.trim() : null,
           paymentMethod: paymentMethod ?? "CASH",
+          tableLabel: locationLabel.trim() || null,
+          staffId: servedById || null,
           promoCode: selectedPromoCode || null,
           paymentCurrency: fx.paymentCurrency,
           exchangeRate: fx.exchangeRate,
@@ -1153,27 +1200,66 @@ export default function PosPage() {
         }),
       });
       const depotName = depots.find((d) => d.id === saleDepotId)?.name ?? "Outlet";
-      let fiscal: {
-        ebmReceiptNo?: string | null;
-        ebmSignature?: string | null;
-        ebmQrPayload?: string | null;
-        ebmSdcId?: string | null;
-        ebmMrcNo?: string | null;
-        ebmStatus?: string | null;
-      } = {};
+      let fiscal: Awaited<ReturnType<typeof import("@/lib/ebmPrint").resolveEbmPrintFields>> = {
+        ebmActivated: false,
+      };
       try {
-        const { loadEbmSaleEventBySource } = await import("@/lib/ebmApi");
-        // Brief wait so outbox can ACK when VSDC is local/fast
-        await new Promise((r) => setTimeout(r, 1500));
-        const ev = await loadEbmSaleEventBySource(hotelId, "DEPOT_SALE", String(res.saleId));
-        fiscal = {
-          ebmReceiptNo: ev.ebmReceiptNo,
-          ebmSignature: ev.ebmSignature,
-          ebmQrPayload: ev.ebmQrPayload,
-          ebmSdcId: ev.ebmSdcId,
-          ebmMrcNo: ev.ebmMrcNo,
-          ebmStatus: ev.ebmStatus,
-        };
+        const { resolveEbmPrintFields, hasEbmFiscalAck } = await import("@/lib/ebmPrint");
+        fiscal = await resolveEbmPrintFields(hotelId, "DEPOT_SALE", String(res.saleId), {
+          waitMs: 1200,
+        });
+        if (fiscal.trainingMode) {
+          printDepotSaleInvoice(
+            {
+              saleId: String(res.saleId),
+              saleNumber: res.saleNumber,
+              documentTitle: "TRAINING",
+              trainingMode: true,
+              depotName,
+              issuerName: hotelPrintHeader.companyName || depotName,
+              issuerTin: hotelPrintHeader.tin || null,
+              issuerPhone: hotelPrintHeader.phone || null,
+              issuerEmail: hotelPrintHeader.email || null,
+              issuerAddress: hotelPrintHeader.address || null,
+          issuerLogoUrl: hotelPrintHeader.logoUrl || null,
+              customerName: buildCustomerName(),
+              customerTin: customerTin.trim() || null,
+              totalAmount: Number(res.totalAmount),
+              subtotalAmount: Number(res.subtotalAmount ?? subtotalPayable),
+              discountAmount: Number(res.discountAmount ?? discountAmount),
+              promoCode: (res.promoCode ?? selectedPromoCode) || null,
+              paymentCurrency: res.paymentCurrency ?? fx.paymentCurrency,
+              exchangeRate: res.exchangeRate != null ? Number(res.exchangeRate) : fx.exchangeRate,
+              foreignAmount: res.foreignAmount != null ? Number(res.foreignAmount) : fx.foreignAmount,
+              baseCurrency: hotelCurrency,
+              soldAt: res.soldAt,
+              paymentMethod: res.paymentMethod ?? paymentMethod ?? "CASH",
+              lines: (res.lines ?? []).map((ln) => ({
+                productName: ln.productName,
+                productCode: ln.productCode,
+                quantity: Number(ln.quantity),
+                unitPrice: Number(ln.unitPrice),
+                lineTotal: Number(ln.lineTotal),
+                taxable: ln.taxable !== false,
+              })),
+              vatPercent: 18,
+              ebmActivated: fiscal.ebmActivated,
+            },
+            hotelCurrency || "RWF",
+          );
+          setMsg(`Training sale ${res.saleNumber} printed (not sent to VSDC).`);
+          resetRunningOrderFields();
+          sessionStorage.removeItem(DRAFT_KEY(hotelId));
+          return;
+        }
+        if (fiscal.ebmActivated && !hasEbmFiscalAck(fiscal)) {
+          setError(
+            `Sale ${res.saleNumber} saved. Official NS receipt is blocked until VSDC acknowledges the transaction. Check Settings → EBM outbox, then reprint from Invoices as COPY after ACK.`,
+          );
+          resetRunningOrderFields();
+          sessionStorage.removeItem(DRAFT_KEY(hotelId));
+          return;
+        }
       } catch {
         // Fiscal fields optional when EBM disabled or still pending
       }
@@ -1184,6 +1270,12 @@ export default function PosPage() {
             saleNumber: res.saleNumber,
             documentTitle: "INVOICE",
             depotName,
+            issuerName: hotelPrintHeader.companyName || depotName,
+            issuerTin: hotelPrintHeader.tin || null,
+            issuerPhone: hotelPrintHeader.phone || null,
+            issuerEmail: hotelPrintHeader.email || null,
+            issuerAddress: hotelPrintHeader.address || null,
+          issuerLogoUrl: hotelPrintHeader.logoUrl || null,
             customerName: buildCustomerName(),
             customerTin: customerTin.trim() || null,
             totalAmount: Number(res.totalAmount),
@@ -1205,7 +1297,16 @@ export default function PosPage() {
               taxable: ln.taxable !== false,
             })),
             vatPercent: 18,
-            ...fiscal,
+            ebmActivated: fiscal.ebmActivated,
+            ebmReceiptNo: fiscal.ebmReceiptNo,
+            ebmSignature: fiscal.ebmSignature,
+            ebmInternalData: fiscal.ebmInternalData,
+            ebmInvoiceNo: fiscal.ebmInvoiceNo,
+            ebmQrPayload: fiscal.ebmQrPayload,
+            ebmSdcId: fiscal.ebmSdcId,
+            ebmMrcNo: fiscal.ebmMrcNo,
+            ebmStatus: fiscal.ebmStatus,
+            ebmDate: fiscal.ebmDate,
           },
           hotelCurrency || "RWF",
         );
@@ -1258,6 +1359,7 @@ export default function PosPage() {
           locationLabel: locationLabel.trim() || null,
           depotId: saleDepotId,
           lines: buildCartLinePayload(),
+          staffId: servedById || null,
           promoCode: selectedPromoCode || null,
         }),
       });
@@ -1322,6 +1424,22 @@ export default function PosPage() {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            className="hms-btn-outline text-sm"
+            title={printerHint}
+            onClick={() => {
+              void connectEpsonUsbPrinter()
+                .then((m) => {
+                  setMsg(m);
+                  setPrinterHint(m);
+                  setError(null);
+                })
+                .catch((e) => setError(e instanceof Error ? e.message : "Could not connect the Xprinter"));
+            }}
+          >
+            Connect Xprinter
+          </button>
           <button type="button" className="hms-btn-outline text-sm" onClick={() => void load()}>
             Refresh
           </button>
@@ -1341,6 +1459,7 @@ export default function PosPage() {
         </p>
       ) : null}
 
+      <p className="shrink-0 text-xs text-muted-foreground">{printerHint}</p>
       {error && (
         <div className="shrink-0 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
@@ -1371,6 +1490,21 @@ export default function PosPage() {
                   {t}
                 </button>
               ))}
+            </div>
+            <div className="mt-3">
+              <label className="text-[11px] text-muted-foreground">Served by</label>
+              <select
+                className="hms-input mt-0.5 w-full text-sm"
+                value={servedById}
+                onChange={(e) => setServedById(e.target.value)}
+              >
+                <option value="">Select waiter…</option>
+                {waiters.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.username} ({w.role})
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div>
@@ -1432,12 +1566,15 @@ export default function PosPage() {
                         }
                         setLocationMode("table");
                         setSelectedTableId(id);
+                        const chosen = posTables.find((t) => t.id === id);
+                        if (chosen?.waiterUserId) setServedById(chosen.waiterUserId);
                       }}
                     >
                       <option value="">Select table…</option>
                       {posTables.map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.tableLabel}
+                          {t.waiterName ? ` · ${t.waiterName}` : ""}
                           {t.occupied ? " (occupied)" : ""}
                           {t.capacity ? ` · ${t.capacity} seats` : ""}
                         </option>
@@ -1852,14 +1989,14 @@ export default function PosPage() {
                       ? "bg-yellow-600 hover:bg-yellow-700"
                       : method === "CASH"
                         ? "bg-lime-700 hover:bg-lime-800"
-                        : method === "CREDIT CARD"
+                        : method === "CREDIT"
                           ? "bg-sky-700 hover:bg-sky-800"
                           : "bg-indigo-700 hover:bg-indigo-800"
                   }`}
                   disabled={placing || cartRows.length === 0 || orderType === "Delivery"}
                   onClick={() => void submitSale(method)}
                 >
-                  {placing ? "…" : method}
+                  {placing ? "…" : method === "CREDIT" ? "Credit" : method}
                 </button>
               ))}
             </div>

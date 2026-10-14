@@ -93,5 +93,12 @@ public class InventoryDepotSchemaPatch implements ApplicationRunner {
                 "CREATE UNIQUE INDEX IF NOT EXISTS uk_depot_product_hotel_number_idx ON depot_products(hotel_id, product_number)");
         jdbcTemplate.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS uk_depot_product_hotel_code_idx ON depot_products(hotel_id, product_code)");
+
+        // itemCd is unique per hotel (per taxpayer), not across every hotel on this server.
+        jdbcTemplate.execute("DROP INDEX IF EXISTS uk_inventory_items_item_cd");
+        jdbcTemplate.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uk_inventory_items_hotel_item_cd ON inventory_items (hotel_id, item_cd) WHERE item_cd IS NOT NULL");
+        jdbcTemplate.execute("DROP INDEX IF EXISTS uk_depot_products_item_cd");
+        jdbcTemplate.execute("DROP INDEX IF EXISTS uk_depot_products_hotel_item_cd");
     }
 }

@@ -87,13 +87,22 @@ public class AuthController {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Invalid username or password");
         }
         AppUser user = resolved.get();
+        if (user.getPasswordHash() == null || user.getPasswordHash().isBlank()) {
+            loginAttemptService.onFailure(loginKey);
+            throw new ApiException(
+                    HttpStatus.UNAUTHORIZED,
+                    "NO_LOGIN_CREDENTIALS",
+                    "This account has no login yet. Ask a manager to add login credentials.");
+        }
         if (!user.isActive()) {
             loginAttemptService.onFailure(loginKey);
             securityAuditService.logEvent(
                     "LOGIN_BLOCKED_DISABLED_ACCOUNT",
                     user.getId(),
                     user.getHotel() != null ? user.getHotel().getId() : null,
-                    java.util.Map.of("username", user.getUsername()));
+                    java.util.Map.of("username", user.getUsername()),
+                    clientIp(httpRequest),
+                    user.getUsername());
             throw new ApiException(HttpStatus.UNAUTHORIZED, "ACCOUNT_DISABLED", "This staff account is deactivated");
         }
         try {
@@ -106,7 +115,9 @@ public class AuthController {
                     "LOGIN_SUCCESS",
                     principal.getId(),
                     principal.getHotelId(),
-                    java.util.Map.of("username", principal.getUsername()));
+                    java.util.Map.of("username", principal.getUsername()),
+                    clientIp(httpRequest),
+                    principal.getUsername());
             if (principal.getRole() == Role.SUPER_ADMIN) {
                 try {
                     platformTenantService.recordCrossPlatformAudit(
@@ -126,7 +137,9 @@ public class AuthController {
                     "LOGIN_FAILED_BAD_CREDENTIALS",
                     user.getId(),
                     user.getHotel() != null ? user.getHotel().getId() : null,
-                    java.util.Map.of("username", user.getUsername()));
+                    java.util.Map.of("username", user.getUsername()),
+                    clientIp(httpRequest),
+                    user.getUsername());
             throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Invalid username or password");
         }
     }

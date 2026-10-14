@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Pricing & demo",
   description:
-    "HMS HotelERP subscription plans — Starter, Professional, and Enterprise. Book a product demo for your property.",
-};
+    "HotelERP plans in Rwandan francs: Starter, Professional, and Enterprise. Reservations, POS, housekeeping, and guest booking. Request a product demo for your property.",
+  path: "/pricing",
+});
 
 export default function PricingLayout({ children }: { children: React.ReactNode }) {
   return children;

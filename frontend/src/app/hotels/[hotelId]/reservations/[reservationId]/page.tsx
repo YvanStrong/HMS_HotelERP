@@ -742,7 +742,7 @@ export default function StaffReservationDetailPage() {
       });
       setCheckOutOpen(false);
       setBanner({ kind: "ok", text: "Checked out successfully." });
-      printInvoiceDoc(result);
+      await printInvoiceDoc(result);
       await load();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Check-out failed";
@@ -769,7 +769,7 @@ export default function StaffReservationDetailPage() {
     }
   }
 
-  function printInvoiceDoc(result: CheckOutResponse) {
+  async function printInvoiceDoc(result: CheckOutResponse) {
     if (!folio) return;
     const bd = result.invoiceBreakdown;
     let totalCharges: number;
@@ -809,6 +809,8 @@ export default function StaffReservationDetailPage() {
     const guestNm = inv.guestName ?? folio.guest.name;
     const curr = inv.currency ?? folio.summary.currency;
     const whenLbl = inv.createdAt ? new Date(inv.createdAt).toLocaleString() : checkoutAt;
+    const { resolveEbmPrintFields } = await import("@/lib/ebmPrint");
+    const ebm = await resolveEbmPrintFields(hotelId, "INVOICE", inv.id, { waitMs: 800 });
     const html = buildTaxInvoiceHtml({
       invoiceNumber: result.invoice.invoiceNumber,
       items: result.invoice.items ?? [],
@@ -826,6 +828,8 @@ export default function StaffReservationDetailPage() {
       balanceAfter: dueAfterPayment,
       hotelLogoUrl: hotel.logoUrl,
       hotelName: hotel.name,
+      ebmActivated: ebm.ebmActivated,
+      ebm,
     });
     openTaxInvoicePrintWindow(html);
   }
@@ -1039,6 +1043,8 @@ export default function StaffReservationDetailPage() {
         const guestNm = inv.guestName ?? folio.guest.name;
         const currency = inv.currency ?? fallbackCurrency;
         const whenLabel = inv.createdAt ? new Date(inv.createdAt).toLocaleString() : new Date().toLocaleString();
+        const { resolveEbmPrintFields } = await import("@/lib/ebmPrint");
+        const ebm = await resolveEbmPrintFields(hotelId, "INVOICE", inv.id);
         const html = buildTaxInvoiceHtml({
           invoiceNumber: inv.invoiceNumber,
           items: inv.items ?? [],
@@ -1056,6 +1062,8 @@ export default function StaffReservationDetailPage() {
           balanceAfter: sums.balanceAfter,
           hotelLogoUrl: hotel.logoUrl,
           hotelName: hotel.name,
+          ebmActivated: ebm.ebmActivated,
+          ebm,
         });
         openTaxInvoicePrintWindow(html);
         return;
@@ -1080,6 +1088,8 @@ export default function StaffReservationDetailPage() {
         .reverse()
         .find((p) => p.status === "COMPLETED" && String(p.type).toUpperCase() !== "DEPOSIT");
       const pm = lastPay?.method ?? "—";
+      const { resolveEbmPrintFields } = await import("@/lib/ebmPrint");
+      const ebmOnly = await resolveEbmPrintFields(hotelId);
       const html = buildTaxInvoiceHtml({
         invoiceNumber: `Estimate · ${folio.booking_reference ?? folio.confirmationCode ?? folio.reservationId}`,
         items,
@@ -1097,6 +1107,8 @@ export default function StaffReservationDetailPage() {
         balanceAfter: sums.balanceAfter,
         hotelLogoUrl: hotel.logoUrl,
         hotelName: hotel.name,
+        ebmActivated: ebmOnly.ebmActivated,
+        ebm: ebmOnly,
       });
       openTaxInvoicePrintWindow(html);
     } catch (e) {

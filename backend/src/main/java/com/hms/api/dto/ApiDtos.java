@@ -58,11 +58,12 @@ public final class ApiDtos {
             String role,
             boolean isActive,
             boolean hasPosPin,
+            boolean hasLogin,
             Instant createdAt) {}
 
     public record HotelStaffCreateRequest(
             @NotBlank String username,
-            @NotBlank String password,
+            String password,
             @Email String email,
             @NotBlank String role) {}
 

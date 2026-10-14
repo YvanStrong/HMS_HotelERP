@@ -1,11 +1,52 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // This VPS is 2 GB RAM. Skip ESLint in `next build` and keep webpack on one CPU.
+  eslint: { ignoreDuringBuilds: true },
+  // Typecheck OOMs this 2 GB VPS during `next build`; webpack still compiles.
+  typescript: { ignoreBuildErrors: true },
+  productionBrowserSourceMaps: false,
+  experimental: {
+    cpus: 1,
+    webpackBuildWorker: false,
+    optimizePackageImports: ["lucide-react", "recharts"],
+  },
+  allowedDevOrigins: ["kivucloud.rw", "www.kivucloud.rw", "10.10.147.68", "197.243.29.204"],
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.kivucloud.rw" }],
+        destination: "https://kivucloud.rw/:path*",
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
-    return [{ source: "/favicon.ico", destination: "/icon.png" }];
+    return [{ source: "/favicon.ico", destination: "/images/kivu-cloud-mark.png" }];
   },
   images: {
     remotePatterns: [
+      {
+        protocol: "http",
+        hostname: "kivucloud.rw",
+        pathname: "/**",
+      },
+      {
+        protocol: "http",
+        hostname: "www.kivucloud.rw",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "kivucloud.rw",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "www.kivucloud.rw",
+        pathname: "/**",
+      },
       {
         protocol: "http",
         hostname: "localhost",
@@ -14,6 +55,11 @@ const nextConfig = {
       {
         protocol: "http",
         hostname: "127.0.0.1",
+        pathname: "/**",
+      },
+      {
+        protocol: "http",
+        hostname: "10.10.147.68",
         pathname: "/**",
       },
       {

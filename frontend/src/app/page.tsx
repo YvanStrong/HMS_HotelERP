@@ -44,9 +44,11 @@ export default function HomePage() {
           <div className="landing-hero-overlay" aria-hidden />
         </div>
         <div className="landing-hero-content">
-          <p className="landing-tagline">HMS Booking</p>
-          <h1 className="landing-headline">Find a place you will love</h1>
-          <p className="landing-sub">Search, choose, and confirm your stay in a few quick steps.</p>
+          <p className="landing-tagline">Kivu Cloud HotelERP · Rwanda</p>
+          <h1 className="landing-headline">Hotel software and guest booking in one place</h1>
+          <p className="landing-sub">
+            Search live rooms, confirm a stay, or run front desk, POS, and invoices for your property.
+          </p>
           <div className="landing-kpis" aria-label="Platform highlights">
             <span>Live availability</span>
             <span>Instant confirmation</span>
@@ -122,7 +124,9 @@ export default function HomePage() {
 
           <section className="panel landing-card">
             <h2 className="landing-card-title">Hotel team</h2>
-            <p className="landing-card-lead">Operations workspace for hotel staff.</p>
+            <p className="landing-card-lead">
+              Property management for Rwanda: reservations, housekeeping, billing, and EBM-ready POS.
+            </p>
             <ul className="landing-guest-links">
               <li>
                 <span className="font-semibold text-foreground">Front desk</span>
@@ -149,8 +153,8 @@ export default function HomePage() {
       <footer className="landing-site-footer">
         <div className="landing-site-footer-inner">
           <div className="landing-footer-brand">
-            <strong>HMS Stays</strong>
-            <span>Direct booking for guests. A calm workspace for your crew.</span>
+            <strong>Kivu Cloud Solutions</strong>
+            <span>HotelERP for Rwanda — direct guest booking and a workspace for hotel staff.</span>
           </div>
           <div>
             <p className="landing-footer-col-title">Explore</p>
@@ -184,7 +188,9 @@ export default function HomePage() {
             </ul>
           </div>
         </div>
-        <p className="landing-footer-bottom">© {new Date().getFullYear()} HMS</p>
+        <p className="landing-footer-bottom">
+          © {new Date().getFullYear()} Kivu Cloud Solutions · kivucloud.rw · Kigali, Rwanda
+        </p>
       </footer>
     </div>
   );

@@ -45,6 +45,14 @@ public class MobilePosController {
     private final PosShiftService posShiftService;
     private final TenantAccessService tenantAccessService;
 
+    @GetMapping("/waiters")
+    @PreAuthorize(PosStaffRoles.ANY)
+    public List<MobilePosDtos.PosWaiterOption> listWaiters(
+            @PathVariable UUID hotelId,
+            @RequestHeader(value = "X-Hotel-ID", required = false) String hotelHeader) {
+        return posTableTicketService.listWaiters(hotelId, hotelHeader);
+    }
+
     @GetMapping("/tables")
     @PreAuthorize(PosStaffRoles.ANY)
     public List<MobilePosDtos.PosTableRow> listTables(

@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
+import { staffAppPath } from "@/lib/staffAppRoutes";
 import { apiFetch } from "@/lib/api";
 import { loadAuthUser, type AuthUser } from "@/lib/auth";
 
@@ -483,6 +485,9 @@ export default function AccountingPage() {
           <p className="text-sm text-muted-foreground">
             Sales analytics, expense recording, and petty cash approvals.
           </p>
+          <Link href={staffAppPath("accounting/credit-debt")} className="text-sm underline">
+            Credit & debt
+          </Link>
         </div>
         {canManage ? (
           <div className="flex flex-wrap items-end gap-2">

@@ -14,6 +14,7 @@ export type EbmDeviceView = {
   lastError: string | null;
   hasSigningKey: boolean;
   createdAt: string;
+  trainingMode?: boolean;
 };
 
 export type EbmStatus = {
@@ -24,6 +25,7 @@ export type EbmStatus = {
   failedSaleEvents: number;
   offlineAlertLevel: string;
   lastSignatureAt: string | null;
+  trainingMode?: boolean;
 };
 
 export type EbmOutboxRow = {
@@ -46,6 +48,8 @@ export type EbmSaleEventRow = {
   ebmStatus: string;
   ebmReceiptNo: string | null;
   ebmSignature?: string | null;
+  ebmInternalData?: string | null;
+  ebmInvoiceNo?: string | null;
   ebmQrPayload?: string | null;
   ebmSdcId?: string | null;
   ebmMrcNo?: string | null;
@@ -91,6 +95,26 @@ export function disableEbmDevice(hotelId: string, deviceId: string) {
   return apiFetch<EbmDeviceView>(`/api/v1/hotels/${hotelId}/ebm/devices/${deviceId}/disable`, {
     method: "POST",
   });
+}
+
+export function setEbmTrainingMode(hotelId: string, deviceId: string, enabled: boolean) {
+  return apiFetch<EbmDeviceView>(`/api/v1/hotels/${hotelId}/ebm/devices/${deviceId}/training`, {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export function syncEbmNow(hotelId: string, category?: string) {
+  const q = category ? `?category=${encodeURIComponent(category)}` : "";
+  return apiFetch<{ synced: number }>(`/api/v1/hotels/${hotelId}/ebm/sync${q}`, { method: "POST" });
+}
+
+export function loadEbmXzReport(hotelId: string, type: "X" | "Z" = "X") {
+  return apiFetch<Record<string, unknown>>(`/api/v1/hotels/${hotelId}/ebm/reports/xz?type=${type}`, { quiet: true });
+}
+
+export function loadEbmPluReport(hotelId: string) {
+  return apiFetch<Record<string, unknown>>(`/api/v1/hotels/${hotelId}/ebm/reports/plu`, { quiet: true });
 }
 
 export function loadEbmOutbox(hotelId: string, limit = 50) {

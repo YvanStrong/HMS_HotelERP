@@ -25,6 +25,10 @@ function normalizeApiBasePath(raw: string | undefined): string {
  * browser the API base becomes `window.location.origin + "/Hotel"`. For SSR/build-time fetches,
  * prefer setting the full `NEXT_PUBLIC_API_URL` instead.
  */
+function isStandardHttpPort(port: string): boolean {
+  return port === "" || port === "80" || port === "443";
+}
+
 function resolveApiBase(): string {
   const rawUrl = process.env.NEXT_PUBLIC_API_URL;
   if (rawUrl != null && String(rawUrl).trim() !== "") {
@@ -37,6 +41,11 @@ function resolveApiBase(): string {
     if (basePath) {
       return `${window.location.origin}${basePath}`.replace(/\/$/, "");
     }
+    // Port 80/443 (kivucloud.rw) goes through the reverse proxy on the same origin.
+    // Dev ports such as :3000 still talk to the API on :8080.
+    if (isStandardHttpPort(window.location.port)) {
+      return window.location.origin.replace(/\/$/, "");
+    }
     return `${window.location.protocol}//${window.location.hostname}:8080`;
   }
 
@@ -47,6 +56,13 @@ function resolveApiBase(): string {
 }
 
 export const API_BASE = resolveApiBase();
+
+export function websocketBrokerUrl(): string {
+  if (typeof window === "undefined") {
+    return "ws://127.0.0.1:8080/ws";
+  }
+  return `${resolveApiBase().replace(/^http/, "ws")}/ws`;
+}
 
 const HOTEL_UUID_IN_API_PATH =
   /^\/api\/v1\/hotels\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:\/|$)/;
@@ -89,6 +105,13 @@ function userFacingApiMessage(status: number, body: ApiErrorBody | null): string
   const fallbacks: Record<string, string> = {
     GROUP_HAS_RESERVATIONS:
       "This group still has reservations attached. Finish or cancel those stays first, then try deleting the group again.",
+    ROOM_UNAVAILABLE:
+      "No clean vacant rooms are available for this room type and dates. Try different dates, another room type, or pick a specific available room.",
+    CHECK_IN_IN_PAST: "Check-in cannot be in the past. Choose today or a future date.",
+    CHECK_OUT_IN_PAST: "Check-out cannot be in the past. Choose a future check-out date.",
+    PREFERRED_ROOM_NOT_FOUND: "The preferred room was not found. Clear the room selection and try again.",
+    PREFERRED_ROOM_TYPE_MISMATCH:
+      "The preferred room does not match the selected room type. Clear the room choice or pick a matching room.",
   };
   if (code && fallbacks[code]) return fallbacks[code];
 

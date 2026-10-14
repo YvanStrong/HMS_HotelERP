@@ -42,7 +42,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -71,6 +73,13 @@ public class InventoryService {
     @org.springframework.context.annotation.Lazy
     @org.springframework.beans.factory.annotation.Autowired
     private EbmSaleEventService ebmSaleEventService;
+
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired
+    private MediaStorageService mediaStorageService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private JdbcTemplate jdbcTemplate;
 
     public InventoryService(
             InventoryItemRepository inventoryItemRepository,
@@ -113,6 +122,10 @@ public class InventoryService {
         tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
         String cat = category != null && !category.isBlank() ? category.trim() : null;
         String s = search != null && !search.isBlank() ? search.trim() : null;
+        if (cat != null && "DEACTIVATED".equalsIgnoreCase(cat)) {
+            List<InventoryItem> inactive = filterListed(inventoryItemRepository.findInactive(hotelId), s, lowStock);
+            return itemsResponse(hotelId, inactive);
+        }
         UUID categoryId = null;
         if (cat != null) {
             categoryId = inventoryCategoryRepository.findByHotel_IdOrderByNameAsc(hotelId).stream()
@@ -131,23 +144,35 @@ public class InventoryService {
             }
         }
         List<InventoryItem> raw = inventoryItemRepository.search(hotelId, categoryId, s);
+        return itemsResponse(hotelId, filterListed(raw, s, lowStock));
+    }
+
+    private List<InventoryItem> filterListed(List<InventoryItem> raw, String search, Boolean lowStock) {
         List<InventoryItem> filtered = new ArrayList<>();
         for (InventoryItem i : raw) {
-            if (s != null) {
-                String needle = s.toLowerCase();
+            if (search != null) {
+                String needle = search.toLowerCase();
                 String name = i.getName() != null ? i.getName().toLowerCase() : "";
                 String sku = i.getSku() != null ? i.getSku().toLowerCase() : "";
                 if (!name.contains(needle) && !sku.contains(needle)) {
                     continue;
                 }
             }
-            if (Boolean.TRUE.equals(lowStock) && i.getReorderPoint() != null) {
-                if (i.getCurrentStock().compareTo(i.getReorderPoint()) >= 0) {
-                    continue;
-                }
+            if (Boolean.TRUE.equals(lowStock)
+                    && !"NON_STOCK".equals(normalizeStockType(i.getStockType()))
+                    && i.getReorderPoint() != null
+                    && i.getCurrentStock().compareTo(i.getReorderPoint()) >= 0) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(lowStock) && "NON_STOCK".equals(normalizeStockType(i.getStockType()))) {
+                continue;
             }
             filtered.add(i);
         }
+        return filtered;
+    }
+
+    private InventoryDtos.InventoryItemsResponse itemsResponse(UUID hotelId, List<InventoryItem> filtered) {
         List<InventoryDtos.InventoryItemRow> rows = filtered.stream().map(this::toRow).toList();
         long totalItems = inventoryItemRepository.countByHotel_IdAndActiveTrue(hotelId);
         long low = inventoryItemRepository.countLowStock(hotelId);
@@ -266,6 +291,10 @@ public class InventoryService {
         }
         if (req.active() != null) {
             i.setActive(req.active());
+            for (DepotProduct linked : depotProductRepository.findByHotel_IdAndInventoryItem_Id(hotelId, i.getId())) {
+                linked.setActive(Boolean.TRUE.equals(req.active()));
+                depotProductRepository.save(linked);
+            }
         }
         if (req.allergens() != null) {
             i.setAllergens(new ArrayList<>(req.allergens()));
@@ -287,6 +316,42 @@ public class InventoryService {
             syncDepotProductImage(hotelId, i);
         }
         return toRow(i);
+    }
+
+    @Transactional
+    public void deleteItem(UUID hotelId, String hotelHeader, UUID itemId) {
+        tenantAccessService.assertHotelAccess(hotelId, hotelHeader);
+        InventoryItem item = inventoryItemRepository
+                .findByIdAndHotel_Id(itemId, hotelId)
+                .orElseThrow(() -> notFound("Item"));
+        UUID id = item.getId();
+        jdbcTemplate.update(
+                "UPDATE depot_products SET is_active = false, inventory_item_id = NULL WHERE hotel_id = ? AND inventory_item_id = ?",
+                hotelId,
+                id);
+        jdbcTemplate.update(
+                "UPDATE menu_items SET linked_inventory_item_id = NULL WHERE linked_inventory_item_id = ?", id);
+        jdbcTemplate.update("DELETE FROM stock_transactions WHERE item_id = ?", id);
+        jdbcTemplate.update("DELETE FROM housekeeping_restock_tasks WHERE inventory_item_id = ?", id);
+        jdbcTemplate.update("DELETE FROM room_minibar_stock WHERE inventory_item_id = ?", id);
+        jdbcTemplate.update("DELETE FROM inv_fabrication_run_lines WHERE component_id = ?", id);
+        jdbcTemplate.update(
+                "DELETE FROM inv_fabrication_run_lines WHERE run_id IN (SELECT id FROM inv_fabrication_runs WHERE output_item_id = ?)",
+                id);
+        jdbcTemplate.update("DELETE FROM inv_fabrication_runs WHERE output_item_id = ?", id);
+        jdbcTemplate.update("DELETE FROM inv_fabrication_formula_lines WHERE component_id = ?", id);
+        jdbcTemplate.update(
+                "DELETE FROM inv_fabrication_formula_lines WHERE formula_id IN (SELECT id FROM inv_fabrication_formulas WHERE output_item_id = ?)",
+                id);
+        jdbcTemplate.update("DELETE FROM inv_fabrication_formulas WHERE output_item_id = ?", id);
+        try {
+            inventoryItemRepository.delete(item);
+            inventoryItemRepository.flush();
+        } catch (DataIntegrityViolationException ex) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "This product is still used on a saved document and cannot be deleted. Turn Active off instead.");
+        }
     }
 
     private InventoryDtos.InventoryItemRow toRow(InventoryItem i) {
@@ -331,6 +396,9 @@ public class InventoryService {
     }
 
     private static String stockStatus(InventoryItem i) {
+        if ("NON_STOCK".equals(i.getStockType())) {
+            return "ADEQUATE";
+        }
         if (i.getCurrentStock().compareTo(BigDecimal.ZERO) <= 0) {
             return "OUT_OF_STOCK";
         }
@@ -764,7 +832,7 @@ public class InventoryService {
         }
         i.setTaxCategory(normalizeTaxCategory(req.taxCategory()));
         if (req.imageUrl() != null && !req.imageUrl().isBlank()) {
-            i.setImageUrl(req.imageUrl().trim());
+            i.setImageUrl(mediaStorageService != null ? mediaStorageService.persistImageUrl(req.imageUrl()) : req.imageUrl().trim());
         }
         if (req.expiryDate() != null) {
             i.setExpiryDate(req.expiryDate());

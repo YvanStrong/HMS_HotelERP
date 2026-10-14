@@ -5,8 +5,10 @@ import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
-import { printDepotSaleInvoice } from "@/lib/printDepotSaleInvoice";
+import { issuerFieldsFromHotel, printDepotSaleInvoice } from "@/lib/printDepotSaleInvoice";
 import { staffAppPath } from "@/lib/staffAppRoutes";
+import { useHotelContext } from "@/lib/useHotelContext";
+import { SelfOrderQrBlock } from "@/components/SelfOrderQrBlock";
 
 type DepotRow = {
   id: string;
@@ -88,6 +90,14 @@ type SaleDetailResponse = {
     lineTotal: number | string;
     taxable?: boolean;
   }[];
+  ebmReceiptNo?: string | null;
+  ebmSignature?: string | null;
+  ebmInternalData?: string | null;
+  ebmInvoiceNo?: string | null;
+  ebmQrPayload?: string | null;
+  ebmSdcId?: string | null;
+  ebmMrcNo?: string | null;
+  ebmStatus?: string | null;
 };
 
 type CreateSaleResponse = {
@@ -133,9 +143,33 @@ function depotIdForWarehouse(wh: WarehouseRow, depotsList: DepotRow[]): string {
   return "";
 }
 
+function printMenuQr(title: string, url: string) {
+  const svg = document.querySelector("#menu-qr-card svg");
+  const markup = svg ? svg.outerHTML : "";
+  const w = window.open("", "_blank", "noopener,noreferrer,width=480,height=640");
+  if (!w) return;
+  w.document.write(`<!doctype html><html><head><title>Menu QR</title></head>
+    <body style="font-family:Arial,sans-serif;text-align:center;padding:24px">
+      <h1 style="font-size:22px;margin-bottom:8px">${title.replace(/</g, "")}</h1>
+      <p style="margin-top:0">Scan to see our menu</p>
+      <div>${markup}</div>
+      <p style="font-size:12px;word-break:break-all">${url}</p>
+    </body></html>`);
+  w.document.close();
+  w.focus();
+  w.print();
+}
+
 export default function MenuPage() {
   const params = useParams();
   const hotelId = String(params.hotelId);
+  const { hotel } = useHotelContext(hotelId);
+  const [origin, setOrigin] = useState("");
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
+  const menuQrUrl = origin ? `${origin}/book/order/${hotelId}` : "";
+  const issuer = issuerFieldsFromHotel(hotel);
 
   const [error, setError] = useState<string | null>(null);
   const [depots, setDepots] = useState<DepotRow[]>([]);
@@ -484,6 +518,7 @@ export default function MenuPage() {
       try {
         printDepotSaleInvoice(
           {
+            ...issuer,
             saleId: String(res.saleId),
             saleNumber: res.saleNumber,
             depotName,
@@ -525,8 +560,11 @@ export default function MenuPage() {
       );
       const clientLabel = detail.customerName?.trim() || null;
       try {
+        const { resolveEbmPrintFields } = await import("@/lib/ebmPrint");
+        const ebm = await resolveEbmPrintFields(hotelId, "DEPOT_SALE", String(detail.saleId));
         printDepotSaleInvoice(
           {
+            ...issuer,
             saleId: String(detail.saleId),
             saleNumber: detail.saleNumber,
             depotName: detail.depotName,
@@ -543,6 +581,16 @@ export default function MenuPage() {
               taxable: ln.taxable !== false,
             })),
             vatPercent: 18,
+            ebmActivated: ebm.ebmActivated,
+            ebmReceiptNo: detail.ebmReceiptNo ?? ebm.ebmReceiptNo,
+            ebmSignature: detail.ebmSignature ?? ebm.ebmSignature,
+            ebmInternalData: detail.ebmInternalData ?? ebm.ebmInternalData,
+            ebmInvoiceNo: detail.ebmInvoiceNo ?? ebm.ebmInvoiceNo,
+            ebmQrPayload: detail.ebmQrPayload ?? ebm.ebmQrPayload,
+            ebmSdcId: detail.ebmSdcId ?? ebm.ebmSdcId,
+            ebmMrcNo: detail.ebmMrcNo ?? ebm.ebmMrcNo,
+            ebmStatus: detail.ebmStatus ?? ebm.ebmStatus,
+            ebmDate: ebm.ebmDate ?? detail.soldAt,
           },
           "FRW",
         );
@@ -578,6 +626,23 @@ export default function MenuPage() {
           Refresh
         </button>
       </div>
+
+      <section id="menu-qr-card" className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+        <h2 className="text-lg font-semibold">Menu QR code</h2>
+        <p className="text-sm text-muted-foreground mt-1 mb-4">
+          Print this and put it on the table. A guest scans it and sees the menu. No login.
+        </p>
+        <div className="flex flex-wrap items-start gap-6">
+          {menuQrUrl ? <SelfOrderQrBlock value={menuQrUrl} caption="Scan to see our menu" /> : null}
+          <div className="space-y-3 max-w-xl">
+            <label className="text-xs font-medium block">Menu link</label>
+            <input readOnly value={menuQrUrl} className="font-mono text-xs w-full" onFocus={(e) => e.target.select()} />
+            <button type="button" className="hms-btn-solid text-sm" onClick={() => printMenuQr(hotel?.companyName || hotel?.name || "Menu", menuQrUrl)}>
+              Print QR
+            </button>
+          </div>
+        </div>
+      </section>
 
       {error && <div className="error">{error}</div>}
       {setupMsg && <p className="text-sm text-emerald-700 dark:text-emerald-300 px-1">{setupMsg}</p>}
